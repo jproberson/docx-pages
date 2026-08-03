@@ -13,8 +13,10 @@ export type { FontMetrics, MetricsLookup } from "./layout/font-metrics.js";
 export { readFontMetrics } from "./layout/font-file.js";
 export type { FontFileFormat, ReadFontMetricsResult } from "./layout/font-file.js";
 
-export { readParagraphs, paragraphText, paragraphDescendants, MC_NS } from "./docx/paragraphs.js";
-export type { Paragraph } from "./docx/paragraphs.js";
+export { readBlocks, readParagraphs, blockParagraphs, MC_NS } from "./docx/blocks.js";
+export type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from "./docx/blocks.js";
+
+export { paragraphText, paragraphDescendants } from "./docx/paragraphs.js";
 
 export {
   readStyleTable,

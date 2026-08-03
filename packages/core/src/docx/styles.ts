@@ -1,4 +1,5 @@
-import { paragraphRuns, type Paragraph } from "./paragraphs.js";
+import type { Paragraph } from "./blocks.js";
+import { paragraphRuns } from "./paragraphs.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";

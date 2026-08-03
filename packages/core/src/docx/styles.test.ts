@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { openDocx } from "./package.js";
 import { readStyleTable, resolveParagraphMark } from "./styles.js";
-import { readParagraphs } from "./paragraphs.js";
+import { readParagraphs } from "./blocks.js";
 
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 

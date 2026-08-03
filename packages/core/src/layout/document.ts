@@ -1,5 +1,5 @@
 import { readAnchors } from "../docx/anchors.js";
-import { readParagraphs, type Paragraph } from "../docx/paragraphs.js";
+import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultHeaderPart } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
@@ -33,11 +33,12 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const headerTopPt = twipsToPoints(page.margin.headerTwips);
 
   const headerPart = defaultHeaderPart(pkg);
+  const headerBlocks = headerPart === null ? [] : readBlocks(pkg, headerPart);
   const headerStack =
     headerPart === null
       ? null
       : measureStack({
-          paragraphs: readParagraphs(pkg, headerPart),
+          blocks: headerBlocks,
           styles,
           metricsFor,
           part: headerPart,
@@ -51,8 +52,9 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const headerHeightPt = headerStack === null ? 0 : headerStack.heightPt;
   const bodyTopPt = Math.max(twipsToPoints(page.margin.topTwips), headerTopPt + headerHeightPt);
 
+  const bodyBlocks = readBlocks(pkg);
   const bodyStack = measureStack({
-    paragraphs: readParagraphs(pkg),
+    blocks: bodyBlocks,
     styles,
     metricsFor,
     part: MAIN_DOCUMENT_PART,
@@ -62,28 +64,29 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
 
   const floatsFor = (
-    paragraphs: readonly Paragraph[],
+    blocks: readonly Block[],
     boxes: readonly ParagraphBox[],
-  ): readonly PlacedFloat[] =>
-    paragraphs.flatMap((paragraph, at) =>
+  ): readonly PlacedFloat[] => {
+    const topOf = new Map(boxes.map((box) => [box.index, box.topPt]));
+    return blockParagraphs(blocks).flatMap((paragraph) =>
       readAnchors(paragraph).map((anchor) =>
         placeFloat({
           anchor,
           page,
-          paragraphTopPt: boxes[at]?.topPt ?? bodyTopPt,
+          paragraphTopPt: topOf.get(paragraph.index) ?? bodyTopPt,
           bodyTopPt,
         }),
       ),
     );
+  };
 
-  const headerParagraphs = headerPart === null ? [] : readParagraphs(pkg, headerPart);
   const headerBoxes = headerStack === null ? [] : headerStack.boxes;
 
   return {
     kind: "laid-out",
     page,
-    headerFloats: floatsFor(headerParagraphs, headerBoxes),
-    bodyFloats: floatsFor(readParagraphs(pkg), bodyStack.boxes),
+    headerFloats: floatsFor(headerBlocks, headerBoxes),
+    bodyFloats: floatsFor(bodyBlocks, bodyStack.boxes),
     headerTopPt,
     headerHeightPt,
     bodyTopPt,

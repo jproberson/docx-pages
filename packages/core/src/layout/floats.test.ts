@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { readAnchors, type FloatingAnchor } from "../docx/anchors.js";
 import { openDocx } from "../docx/package.js";
-import { readParagraphs } from "../docx/paragraphs.js";
+import { readParagraphs } from "../docx/blocks.js";
 import type { SectionGeometry } from "../docx/section.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { placeFloat } from "./floats.js";

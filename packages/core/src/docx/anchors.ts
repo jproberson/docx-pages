@@ -1,4 +1,5 @@
-import { paragraphOwnDrawings, type Paragraph } from "./paragraphs.js";
+import type { Paragraph } from "./blocks.js";
+import { paragraphOwnDrawings } from "./paragraphs.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { openDocx } from "./package.js";
-import { paragraphText, readParagraphs } from "./paragraphs.js";
+import { readParagraphs } from "./blocks.js";
+import { paragraphText } from "./paragraphs.js";
 
 const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 

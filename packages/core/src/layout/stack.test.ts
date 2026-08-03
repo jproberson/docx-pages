@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { readBlocks } from "../docx/blocks.js";
 import { openDocx } from "../docx/package.js";
-import { readParagraphs } from "../docx/paragraphs.js";
 import { readStyleTable } from "../docx/styles.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { lookupFontMetrics } from "./font-metrics.js";
@@ -18,7 +18,7 @@ const measure = (body: string, stylesXml: string = NORMAL) => {
     buildDocx({ "word/document.xml": wordDocument(body), "word/styles.xml": stylesXml }),
   );
   return measureStack({
-    paragraphs: readParagraphs(pkg),
+    blocks: readBlocks(pkg),
     styles: readStyleTable(pkg),
     metricsFor: (name) => lookupFontMetrics(name),
     part: "word/document.xml",
@@ -87,5 +87,64 @@ describe("measureStack", () => {
     const result = measure(``);
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
     expect(result).toStrictEqual({ kind: "measured", boxes: [], heightPt: 0 });
+  });
+});
+
+const cell = (inner: string, properties = "") =>
+  `<w:tc><w:tcPr>${properties}</w:tcPr>${inner}</w:tc>`;
+const table = (...cells: readonly string[]) => `<w:tbl><w:tr>${cells.join("")}</w:tr></w:tbl>`;
+
+describe("measureStack over tables", () => {
+  it("gives a row the height of its tallest cell, not the sum of them", () => {
+    const result = measure(table(cell(`<w:p/>`), cell(`<w:p/><w:p/><w:p/>`)));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.heightPt).toBeCloseTo(ARIAL_12 * 3, 9);
+  });
+
+  it("starts every cell of a row at the row's top", () => {
+    const result = measure(table(cell(`<w:p/>`), cell(`<w:p/><w:p/>`)));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes.map((box) => box.topPt)).toStrictEqual([36, 36, 36 + ARIAL_12]);
+  });
+
+  it("continues the stack below the table rather than below its tallest cell alone", () => {
+    const result = measure(`${table(cell(`<w:p/><w:p/>`))}<w:p/>`);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes[2]?.topPt).toBeCloseTo(36 + ARIAL_12 * 2, 9);
+  });
+
+  it("centres a short cell in a taller row when the cell asks for it", () => {
+    const centred = `<w:vAlign w:val="center"/>`;
+    const result = measure(table(cell(`<w:p/>`, centred), cell(`<w:p/><w:p/><w:p/>`)));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes[0]?.topPt).toBeCloseTo(36 + ARIAL_12, 9);
+  });
+
+  it("seats a bottom-aligned cell against the row's baseline edge", () => {
+    const result = measure(
+      table(cell(`<w:p/>`, `<w:vAlign w:val="bottom"/>`), cell(`<w:p/><w:p/><w:p/>`)),
+    );
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes[0]?.topPt).toBeCloseTo(36 + ARIAL_12 * 2, 9);
+  });
+
+  it("stacks rows one below the next", () => {
+    const body = `<w:tbl><w:tr>${cell(`<w:p/><w:p/>`)}</w:tr><w:tr>${cell(`<w:p/>`)}</w:tr></w:tbl>`;
+    const result = measure(body);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes[2]?.topPt).toBeCloseTo(36 + ARIAL_12 * 2, 9);
+    expect(result.heightPt).toBeCloseTo(ARIAL_12 * 3, 9);
+  });
+
+  it("reports the cell paragraph that blocks measurement", () => {
+    const styles = NORMAL.replace('w:ascii="Arial"', 'w:ascii="Meridian Sans Medium"');
+    const result = measure(table(cell(`<w:p/>`)), styles);
+    if (result.kind !== "blocked") throw new Error("expected to be blocked");
+    expect(result.blocker).toStrictEqual({
+      kind: "unknown-font-metrics",
+      part: "word/document.xml",
+      paragraphIndex: 0,
+      fontName: "Meridian Sans Medium",
+    });
   });
 });
