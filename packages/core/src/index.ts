@@ -23,3 +23,12 @@ export {
   WORD_DEFAULT_FONT_SIZE_PT,
 } from "./docx/styles.js";
 export type { FontChoice, ParagraphMark, StyleTable } from "./docx/styles.js";
+
+export {
+  readRelationships,
+  relationshipsPartFor,
+  defaultHeaderPart,
+  R_NS,
+  PKG_REL_NS,
+} from "./docx/relationships.js";
+export type { Relationship } from "./docx/relationships.js";

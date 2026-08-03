@@ -23,8 +23,11 @@ function collect(node: XmlElement, into: XmlElement[]): void {
   }
 }
 
-export function readParagraphs(pkg: DocxPackage): readonly Paragraph[] {
-  const root = partXml(pkg, MAIN_DOCUMENT_PART);
+export function readParagraphs(
+  pkg: DocxPackage,
+  part: string = MAIN_DOCUMENT_PART,
+): readonly Paragraph[] {
+  const root = partXml(pkg, part);
   const elements: XmlElement[] = [];
   collect(root, elements);
   return elements.map((element, index) => ({ index, element }));
