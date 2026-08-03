@@ -9,3 +9,6 @@ export type { PageMargin, SectionGeometry } from "./docx/section.js";
 
 export { ascentPt, lineHeightPt, lookupFontMetrics } from "./layout/font-metrics.js";
 export type { FontMetrics, MetricsLookup } from "./layout/font-metrics.js";
+
+export { readFontMetrics } from "./layout/font-file.js";
+export type { FontFileFormat, ReadFontMetricsResult } from "./layout/font-file.js";
