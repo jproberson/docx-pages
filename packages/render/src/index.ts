@@ -1,2 +1,2 @@
-// Backends, the docx inspector and the manifest builder land in the next commits.
-export {};
+export { OnePagerError, isOnePagerError } from "@onepager/core";
+export type { ErrorContext } from "@onepager/core";

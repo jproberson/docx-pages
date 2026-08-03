@@ -1,3 +1,2 @@
-// The React viewer lands in a later commit. The package exists now so the lint rule
-// keeping Node built-ins out of the browser bundle is wired and verified.
-export {};
+export { OnePagerError, isOnePagerError } from "@onepager/core";
+export type { ErrorContext } from "@onepager/core";

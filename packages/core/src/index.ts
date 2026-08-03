@@ -1,2 +1,2 @@
-// Domain types, the manifest schema and the error type land in the next commits.
-export {};
+export { OnePagerError, isOnePagerError } from "./errors.js";
+export type { ContextValue, ErrorContext, OnePagerErrorInit } from "./errors.js";
