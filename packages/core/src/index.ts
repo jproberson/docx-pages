@@ -33,7 +33,7 @@ export {
 } from "./docx/relationships.js";
 export type { Relationship } from "./docx/relationships.js";
 
-export { measureStack, EMU_PER_POINT, WP_NS } from "./layout/stack.js";
+export { measureStack, WP_NS } from "./layout/stack.js";
 export type {
   LayoutBlocker,
   MeasureStackInput,
@@ -42,7 +42,7 @@ export type {
   StackMeasurement,
 } from "./layout/stack.js";
 
-export { layOutDocument, twipsToPoints, TWIPS_PER_POINT } from "./layout/document.js";
+export { layOutDocument } from "./layout/document.js";
 export type { DocumentLayout } from "./layout/document.js";
 
 export { readAnchors } from "./docx/anchors.js";
@@ -50,3 +50,5 @@ export type { AnchorOrigin, AnchorPosition, FloatingAnchor, WrapMode } from "./d
 
 export { placeFloat } from "./layout/floats.js";
 export type { PlacedFloat, PlaceFloatInput } from "./layout/floats.js";
+
+export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";

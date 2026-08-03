@@ -7,9 +7,9 @@ import {
 } from "../docx/styles.js";
 import { attribute } from "../docx/xml.js";
 import { lineHeightPt, type MetricsLookup } from "./font-metrics.js";
+import { EMU_PER_POINT } from "./units.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
-export const EMU_PER_POINT = 12700;
 
 export type MetricsResolver = (fontName: string) => MetricsLookup;
 

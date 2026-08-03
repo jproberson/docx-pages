@@ -1,4 +1,5 @@
-import { readParagraphs } from "../docx/paragraphs.js";
+import { readAnchors } from "../docx/anchors.js";
+import { readParagraphs, type Paragraph } from "../docx/paragraphs.js";
 import { defaultHeaderPart } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
@@ -9,10 +10,8 @@ import {
   type MetricsResolver,
   type ParagraphBox,
 } from "./stack.js";
-
-export const TWIPS_PER_POINT = 20;
-
-export const twipsToPoints = (twips: number): number => twips / TWIPS_PER_POINT;
+import { placeFloat, type PlacedFloat } from "./floats.js";
+import { twipsToPoints } from "./units.js";
 
 export type DocumentLayout =
   | {
@@ -23,6 +22,8 @@ export type DocumentLayout =
       readonly bodyTopPt: number;
       readonly header: readonly ParagraphBox[];
       readonly body: readonly ParagraphBox[];
+      readonly headerFloats: readonly PlacedFloat[];
+      readonly bodyFloats: readonly PlacedFloat[];
     }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
@@ -60,13 +61,33 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
 
+  const floatsFor = (
+    paragraphs: readonly Paragraph[],
+    boxes: readonly ParagraphBox[],
+  ): readonly PlacedFloat[] =>
+    paragraphs.flatMap((paragraph, at) =>
+      readAnchors(paragraph).map((anchor) =>
+        placeFloat({
+          anchor,
+          page,
+          paragraphTopPt: boxes[at]?.topPt ?? bodyTopPt,
+          bodyTopPt,
+        }),
+      ),
+    );
+
+  const headerParagraphs = headerPart === null ? [] : readParagraphs(pkg, headerPart);
+  const headerBoxes = headerStack === null ? [] : headerStack.boxes;
+
   return {
     kind: "laid-out",
     page,
+    headerFloats: floatsFor(headerParagraphs, headerBoxes),
+    bodyFloats: floatsFor(readParagraphs(pkg), bodyStack.boxes),
     headerTopPt,
     headerHeightPt,
     bodyTopPt,
-    header: headerStack === null ? [] : headerStack.boxes,
+    header: headerBoxes,
     body: bodyStack.boxes,
   };
 }

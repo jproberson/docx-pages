@@ -1,7 +1,6 @@
 import type { AnchorOrigin, AnchorPosition, FloatingAnchor } from "../docx/anchors.js";
 import type { SectionGeometry } from "../docx/section.js";
-import { twipsToPoints } from "./document.js";
-import { EMU_PER_POINT } from "./stack.js";
+import { emuToPoints, twipsToPoints } from "./units.js";
 
 export type PlacedFloat = {
   readonly anchor: FloatingAnchor;
@@ -17,8 +16,6 @@ export type PlaceFloatInput = {
   readonly paragraphTopPt: number;
   readonly bodyTopPt: number;
 };
-
-const emuToPoints = (emu: number): number => emu / EMU_PER_POINT;
 
 type Band = { readonly startPt: number; readonly extentPt: number };
 
