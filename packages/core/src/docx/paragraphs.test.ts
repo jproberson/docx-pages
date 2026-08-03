@@ -50,6 +50,6 @@ describe("readParagraphs", () => {
   });
 
   it("concatenates the runs of one paragraph without separators", () => {
-    expect(firstTextOf(`<w:p>${run("Wind")}${run("break")}</w:p>`)).toBe("Reference");
+    expect(firstTextOf(`<w:p>${run("one")}${run("pager")}</w:p>`)).toBe("onepager");
   });
 });

@@ -1,67 +1,89 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { layOutDocument, lookupFontMetrics, openDocx, type FontMetrics } from "@onepager/core";
+import { layOutDocument, lookupFontMetrics, type PlacedFloat } from "@onepager/core";
 
-const SAMPLES = resolve(process.env["ONEPAGER_SAMPLE_DIR"] ?? "samples");
-const MERIDIAN_SANS: FontMetrics = { unitsPerEm: 1000, ascender: 971, descender: -242, lineGap: 0 };
-const sample = resolve(SAMPLES, "Reference.docx");
+import { readReferenceDocument } from "../testing/documents.js";
+import { referenceCases, suppliedMetrics, type ReferenceCase } from "../testing/cases.js";
 
-const laidOut = () => {
-  const result = layOutDocument(openDocx(new Uint8Array(readFileSync(sample))), (name) =>
-    lookupFontMetrics(name, new Map([["Meridian Sans Medium", MERIDIAN_SANS]])),
+const layoutOf = (each: ReferenceCase) => {
+  const supplied = suppliedMetrics();
+  const result = layOutDocument(readReferenceDocument(each), (name) =>
+    lookupFontMetrics(name, supplied),
   );
   if (result.kind !== "laid-out") throw new Error(`blocked: ${result.blocker.kind}`);
   return result;
 };
 
-const named = (name: string) => {
-  const { headerFloats, bodyFloats } = laidOut();
-  const found = [...headerFloats, ...bodyFloats].find((placed) => placed.anchor.name === name);
-  if (found === undefined) throw new Error(`no float named ${name}`);
+const floatsOf = (each: ReferenceCase): readonly PlacedFloat[] => {
+  const { headerFloats, bodyFloats } = layoutOf(each);
+  return [...headerFloats, ...bodyFloats];
+};
+
+const at = (floats: readonly PlacedFloat[], index: number): PlacedFloat => {
+  const found = floats[index];
+  if (found === undefined) throw new Error(`no float ${String(index)}`);
   return found;
 };
 
-// Left and top as Word drew them, read out of the reference pdf content stream.
-const WORD = {
-  "Picture 12": { leftPt: 445.35, topPt: 8.85 },
-  "Picture 9": { leftPt: 25.5, topPt: 21.75 },
-  "Picture 1": { leftPt: 303.75, topPt: 259.73 },
-  "Picture 6": { leftPt: 303.75, topPt: 494.97 },
-} as const;
+const overlaps = (one: PlacedFloat, other: PlacedFloat): boolean =>
+  one.leftPt < other.leftPt + other.widthPt &&
+  other.leftPt < one.leftPt + one.widthPt &&
+  one.topPt < other.topPt + other.heightPt &&
+  other.topPt < one.topPt + one.heightPt;
 
-describe.skipIf(!existsSync(sample))("float placement against Word", () => {
-  it.each(Object.entries(WORD))("places %s horizontally where Word did", (name, expected) => {
-    expect(named(name).leftPt).toBeCloseTo(expected.leftPt, 1);
-  });
+const CASES = referenceCases();
 
-  it.each(Object.entries(WORD))(
-    "places %s vertically within half a point of Word",
-    (name, expected) => {
-      expect(Math.abs(named(name).topPt - expected.topPt)).toBeLessThan(0.5);
-    },
-  );
+describe.skipIf(CASES.length === 0)("float placement against Word", () => {
+  for (const each of CASES) {
+    describe(each.id, () => {
+      for (const expected of each.floatsPt) {
+        it(`places float ${String(expected.index)} horizontally where Word did`, () => {
+          expect(at(floatsOf(each), expected.index).leftPt).toBeCloseTo(expected.leftPt, 1);
+        });
 
-  it("keeps the header logo above the header paragraph it is anchored to", () => {
-    const logo = named("Picture 12");
-    expect(logo.topPt).toBeLessThan(laidOut().headerTopPt);
-    expect(logo.anchor.vertical).toStrictEqual({
-      kind: "offset",
-      from: "paragraph",
-      offsetEmu: -162119,
+        it(`places float ${String(expected.index)} vertically where Word did`, () => {
+          expect(Math.abs(at(floatsOf(each), expected.index).topPt - expected.topPt)).toBeLessThan(
+            each.tolerancePt,
+          );
+        });
+      }
+
+      for (const [one, other] of each.disjointFloatPairs) {
+        it(`keeps floats ${String(one)} and ${String(other)} clear of each other`, () => {
+          const floats = floatsOf(each);
+          expect(overlaps(at(floats, one), at(floats, other))).toBe(false);
+        });
+      }
+
+      it.runIf(each.headerFloatCount !== null)("finds every float in the header", () => {
+        expect(layoutOf(each).headerFloats).toHaveLength(each.headerFloatCount ?? 0);
+      });
+
+      it.runIf(each.leastBodyFloatCount !== null)("finds every float in the body", () => {
+        expect(layoutOf(each).bodyFloats.length).toBeGreaterThanOrEqual(
+          each.leastBodyFloatCount ?? 0,
+        );
+      });
+
+      // A negative paragraph-relative offset is the case other engines get wrong:
+      // the object belongs above the paragraph that anchors it, not clamped to it.
+      it("lets a negatively offset float rise above the paragraph that anchors it", () => {
+        const { header, body, headerFloats, bodyFloats } = layoutOf(each);
+        const rising = [
+          ...headerFloats.map((float) => ({ float, boxes: header })),
+          ...bodyFloats.map((float) => ({ float, boxes: body })),
+        ].filter(
+          ({ float }) =>
+            float.anchor.vertical.kind === "offset" &&
+            float.anchor.vertical.from === "paragraph" &&
+            float.anchor.vertical.offsetEmu < 0,
+        );
+
+        for (const { float, boxes } of rising) {
+          const anchoring = boxes.find((box) => box.index === float.anchor.paragraphIndex);
+          expect(float.topPt).toBeLessThan(anchoring?.topPt ?? Number.POSITIVE_INFINITY);
+        }
+      });
     });
-  });
-
-  it("finds every floating object in the document", () => {
-    const { headerFloats, bodyFloats } = laidOut();
-    expect(headerFloats).toHaveLength(3);
-    expect(bodyFloats.length).toBeGreaterThanOrEqual(10);
-  });
-
-  it("separates the tractor photo from the MEASUREMENTS box instead of overlapping them", () => {
-    const photo = named("Picture 6");
-    const box = named("Text Box 13");
-    expect(photo.leftPt).toBeGreaterThan(box.leftPt + box.widthPt);
-  });
+  }
 });

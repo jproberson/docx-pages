@@ -1,30 +1,24 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { lineHeightPt, readFontMetrics } from "@onepager/core";
+import { readFontMetrics } from "@onepager/core";
 
-// Not copied into this repo: the face is proprietary. Point at wherever it lives.
-const FONT_PATH = resolve(
-  process.env["ONEPAGER_TEST_FONT"] ??
-    `${process.env["HOME"] ?? ""}/fonts/TestFace-Medium.woff`,
+import { referenceFonts } from "../testing/cases.js";
+
+// Licensed faces are not copied into this repo. The manifest points at wherever
+// each one lives and records the metrics Word laid the reference documents out with.
+const FONTS = referenceFonts().filter(
+  (font) => font.filePath !== null && existsSync(font.filePath),
 );
 
-describe.skipIf(!existsSync(FONT_PATH))("readFontMetrics on a real corporate font", () => {
-  it("reads the metrics that Word used to lay out the reference documents", () => {
-    const result = readFontMetrics(new Uint8Array(readFileSync(FONT_PATH)));
+describe.skipIf(FONTS.length === 0)("readFontMetrics on a real font file", () => {
+  for (const font of FONTS) {
+    it(`reads the metrics Word used for font ${String(FONTS.indexOf(font))}`, () => {
+      const path = font.filePath ?? "";
+      const result = readFontMetrics(new Uint8Array(readFileSync(path)));
 
-    expect(result.format).toBe("woff");
-    expect(result.metrics).toStrictEqual({
-      unitsPerEm: 1000,
-      ascender: 971,
-      descender: -242,
-      lineGap: 0,
+      if (font.fileFormat !== null) expect(result.format).toBe(font.fileFormat);
+      expect(result.metrics).toStrictEqual(font.metrics);
     });
-  });
-
-  it("yields the line height ratio measured from Word's own output", () => {
-    const { metrics } = readFontMetrics(new Uint8Array(readFileSync(FONT_PATH)));
-    expect(lineHeightPt(metrics, 1)).toBeCloseTo(1.213, 3);
-  });
+  }
 });

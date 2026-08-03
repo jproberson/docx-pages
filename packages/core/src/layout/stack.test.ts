@@ -50,7 +50,7 @@ describe("measureStack", () => {
 
   it("takes the tallest run, not the paragraph mark, when a run is bigger", () => {
     const body = `<w:p><w:pPr><w:rPr><w:sz w:val="16"/></w:rPr></w:pPr>
-      <w:r><w:rPr><w:sz w:val="44"/></w:rPr><w:t>Reference</w:t></w:r></w:p>`;
+      <w:r><w:rPr><w:sz w:val="44"/></w:rPr><w:t>Heading</w:t></w:r></w:p>`;
     const result = measure(body);
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
     expect(result.boxes[0]?.heightPt).toBeCloseTo(22 * 1.14990234375, 9);
@@ -65,14 +65,14 @@ describe("measureStack", () => {
   });
 
   it("blocks on a font whose metrics are unknown instead of guessing", () => {
-    const styles = NORMAL.replace('w:ascii="Arial"', 'w:ascii="Meridian Sans Medium"');
+    const styles = NORMAL.replace('w:ascii="Arial"', 'w:ascii="Meridian Sans"');
     const result = measure(`<w:p/>`, styles);
     if (result.kind !== "blocked") throw new Error("expected to be blocked");
     expect(result.blocker).toStrictEqual({
       kind: "unknown-font-metrics",
       part: "word/document.xml",
       paragraphIndex: 0,
-      fontName: "Meridian Sans Medium",
+      fontName: "Meridian Sans",
     });
   });
 
@@ -137,14 +137,14 @@ describe("measureStack over tables", () => {
   });
 
   it("reports the cell paragraph that blocks measurement", () => {
-    const styles = NORMAL.replace('w:ascii="Arial"', 'w:ascii="Meridian Sans Medium"');
+    const styles = NORMAL.replace('w:ascii="Arial"', 'w:ascii="Meridian Sans"');
     const result = measure(table(cell(`<w:p/>`)), styles);
     if (result.kind !== "blocked") throw new Error("expected to be blocked");
     expect(result.blocker).toStrictEqual({
       kind: "unknown-font-metrics",
       part: "word/document.xml",
       paragraphIndex: 0,
-      fontName: "Meridian Sans Medium",
+      fontName: "Meridian Sans",
     });
   });
 });

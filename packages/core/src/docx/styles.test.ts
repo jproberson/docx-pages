@@ -46,10 +46,10 @@ describe("resolveParagraphMark", () => {
   });
 
   it("is the case that caught the spacer paragraphs: size overridden, font inherited", () => {
-    const body = `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Meridian Sans Medium"/></w:rPr></w:pPr></w:p>`;
+    const body = `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Meridian Sans"/></w:rPr></w:pPr></w:p>`;
     expect(markOf(body, styles(NORMAL)).font).toStrictEqual({
       kind: "named",
-      name: "Meridian Sans Medium",
+      name: "Meridian Sans",
     });
   });
 

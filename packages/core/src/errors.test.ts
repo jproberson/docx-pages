@@ -24,7 +24,7 @@ describe("OnePagerError", () => {
       code: "manifest-invalid",
       message: "pages must not be empty",
       at: "core/manifest.parseManifest",
-      context: { sourceFileName: "Reference.docx" },
+      context: { sourceFileName: "one-pager.docx" },
     });
 
     expect(error.message).toBe("[core/manifest.parseManifest] pages must not be empty");

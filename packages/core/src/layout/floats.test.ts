@@ -79,7 +79,7 @@ describe("readAnchors", () => {
 
 describe("placeFloat", () => {
   it("resolves a column offset against the left margin", () => {
-    // The Reference header logo: 5199353 EMU right of the column origin.
+    // A header logo 5199353 EMU right of the column origin.
     expect(place(anchorXml({ h: offsetH(5199353), v: offsetV(0) }), 21.6).leftPt).toBeCloseTo(
       445.398,
       3,

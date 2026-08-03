@@ -44,21 +44,18 @@ describe("lookupFontMetrics", () => {
   });
 
   it("reports a missing font rather than substituting a default", () => {
-    expect(lookupFontMetrics("Meridian Sans Medium")).toStrictEqual({
+    expect(lookupFontMetrics("Meridian Sans")).toStrictEqual({
       kind: "missing",
-      fontName: "Meridian Sans Medium",
+      fontName: "Meridian Sans",
     });
   });
 
   it("takes supplied metrics for a font it does not know", () => {
-    const meridianSans: FontMetrics = { unitsPerEm: 2048, ascender: 1944, descender: -546, lineGap: 0 };
-    const supplied = new Map([["Meridian Sans Medium", meridianSans]]);
+    const metrics: FontMetrics = { unitsPerEm: 2048, ascender: 1944, descender: -546, lineGap: 0 };
 
-    expect(lookupFontMetrics("Meridian Sans Medium", supplied)).toStrictEqual({
-      kind: "found",
-      source: "supplied",
-      metrics: meridianSans,
-    });
+    expect(lookupFontMetrics("Meridian Sans", new Map([["Meridian Sans", metrics]]))).toStrictEqual(
+      { kind: "found", source: "supplied", metrics },
+    );
   });
 
   it("lets supplied metrics override a built-in, so a substituted face keeps the original metrics", () => {
