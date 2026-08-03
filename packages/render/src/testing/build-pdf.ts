@@ -27,7 +27,7 @@ export function buildPdf(fixture: PdfFixture): Uint8Array {
     encoder.encode("<</Type/Pages/Kids[3 0 R]/Count 1>>"),
     encoder.encode(
       `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${String(width)} ${String(height)}]` +
-        `/Resources<</XObject<</Im0 5 0 R>>>>/Contents 4 0 R>>`,
+        `/Resources<</XObject<</Im0 5 0 R>>/Font<</F0 6 0 R>>>>/Contents 4 0 R>>`,
     ),
     concat([
       encoder.encode(`<</Length ${String(stream.length)}>>\nstream\n`),
@@ -42,6 +42,7 @@ export function buildPdf(fixture: PdfFixture): Uint8Array {
       new Uint8Array([0]),
       encoder.encode("\nendstream"),
     ]),
+    encoder.encode("<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>"),
   ];
 
   const chunks: Uint8Array[] = [encoder.encode("%PDF-1.7\n")];
