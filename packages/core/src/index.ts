@@ -44,3 +44,9 @@ export type {
 
 export { layOutDocument, twipsToPoints, TWIPS_PER_POINT } from "./layout/document.js";
 export type { DocumentLayout } from "./layout/document.js";
+
+export { readAnchors } from "./docx/anchors.js";
+export type { AnchorOrigin, AnchorPosition, FloatingAnchor, WrapMode } from "./docx/anchors.js";
+
+export { placeFloat } from "./layout/floats.js";
+export type { PlacedFloat, PlaceFloatInput } from "./layout/floats.js";
