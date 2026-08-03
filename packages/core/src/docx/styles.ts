@@ -1,4 +1,4 @@
-import type { Paragraph } from "./paragraphs.js";
+import { paragraphRuns, type Paragraph } from "./paragraphs.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
@@ -167,4 +167,37 @@ export function resolveParagraphMark(paragraph: Paragraph, table: StyleTable): P
         ? WORD_DEFAULT_FONT_SIZE_PT
         : resolved.fontSizeHalfPoints / 2,
   };
+}
+
+function runStyleChain(table: StyleTable, run: XmlElement): readonly StyleDefinition[] {
+  const rPr = firstNamed(run, W_NS, "rPr");
+  const rStyle = rPr === null ? null : firstNamed(rPr, W_NS, "rStyle");
+  const id = rStyle === null ? undefined : attribute(rStyle, W_NS, "val");
+  return styleChain(table, id);
+}
+
+export function resolveRunMarks(paragraph: Paragraph, table: StyleTable): readonly ParagraphMark[] {
+  const pPr = firstNamed(paragraph.element, W_NS, "pPr");
+  const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
+  const named = pStyle === null ? undefined : attribute(pStyle, W_NS, "val");
+  const paragraphStyleId = named ?? table.defaultParagraphStyleId;
+
+  let inherited = table.docDefaults;
+  for (const style of styleChain(table, paragraphStyleId)) inherited = merge(inherited, style.mark);
+
+  return paragraphRuns(paragraph).map((run) => {
+    let resolved = inherited;
+    for (const style of runStyleChain(table, run)) resolved = merge(resolved, style.mark);
+    resolved = merge(resolved, readMark(run, table.themeFonts));
+    return {
+      font:
+        resolved.fontName === undefined
+          ? { kind: "unresolved" }
+          : { kind: "named", name: resolved.fontName },
+      fontSizePt:
+        resolved.fontSizeHalfPoints === undefined
+          ? WORD_DEFAULT_FONT_SIZE_PT
+          : resolved.fontSizeHalfPoints / 2,
+    };
+  });
 }

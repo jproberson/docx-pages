@@ -32,3 +32,15 @@ export {
   PKG_REL_NS,
 } from "./docx/relationships.js";
 export type { Relationship } from "./docx/relationships.js";
+
+export { measureStack, EMU_PER_POINT, WP_NS } from "./layout/stack.js";
+export type {
+  LayoutBlocker,
+  MeasureStackInput,
+  MetricsResolver,
+  ParagraphBox,
+  StackMeasurement,
+} from "./layout/stack.js";
+
+export { layOutDocument, twipsToPoints, TWIPS_PER_POINT } from "./layout/document.js";
+export type { DocumentLayout } from "./layout/document.js";

@@ -21,6 +21,7 @@ export const ascentPt = (metrics: FontMetrics, fontSizePt: number): number =>
 
 const BUILTIN: ReadonlyMap<string, FontMetrics> = new Map([
   ["arial", { unitsPerEm: 2048, ascender: 1854, descender: -434, lineGap: 67 }],
+  ["calibri", { unitsPerEm: 2048, ascender: 1950, descender: -550, lineGap: 0 }],
   ["times new roman", { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 }],
   ["courier new", { unitsPerEm: 2048, ascender: 1705, descender: -615, lineGap: 0 }],
   ["georgia", { unitsPerEm: 2048, ascender: 1878, descender: -449, lineGap: 0 }],
