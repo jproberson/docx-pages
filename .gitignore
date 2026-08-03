@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.vitest-reports/
+
+# Reference one-pagers. Labelled internal collateral, never committed.
+samples/
+
+# Working notes, not part of the library.
+BRIEF.md
