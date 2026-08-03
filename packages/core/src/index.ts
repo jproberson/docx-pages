@@ -6,3 +6,6 @@ export type { DocxPackage } from "./docx/package.js";
 
 export { readSectionGeometry, W_NS } from "./docx/section.js";
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
+
+export { ascentPt, lineHeightPt, lookupFontMetrics } from "./layout/font-metrics.js";
+export type { FontMetrics, MetricsLookup } from "./layout/font-metrics.js";
