@@ -31,7 +31,7 @@ const anchorXml = (options: {
 }) => `<w:p><w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" behindDoc="0" relativeHeight="5">
   <wp:extent cx="${String(options.cx ?? 2286000)}" cy="${String(options.cy ?? 904240)}"/>
   ${options.wrap ?? "<wp:wrapNone/>"}
-  <wp:docPr id="1" name="Picture 12"/>
+  <wp:docPr id="1" name="Logo"/>
   ${options.h}${options.v}
 </wp:anchor></w:drawing></w:r></w:p>`;
 
@@ -52,12 +52,18 @@ const firstAnchor = (body: string): FloatingAnchor => {
 };
 
 const place = (body: string, paragraphTopPt: number, bodyTopPt = 36) =>
-  placeFloat({ anchor: firstAnchor(body), page: LETTER, paragraphTopPt, bodyTopPt });
+  placeFloat({
+    anchor: firstAnchor(body),
+    page: LETTER,
+    paragraphTopPt,
+    bodyTopPt,
+    resolvePart: () => null,
+  });
 
 describe("readAnchors", () => {
   it("reads extent, wrap and stacking order", () => {
     const anchor = firstAnchor(anchorXml({ h: offsetH(0), v: offsetV(0) }));
-    expect(anchor.name).toBe("Picture 12");
+    expect(anchor.name).toBe("Logo");
     expect(anchor.widthEmu).toBe(2286000);
     expect(anchor.wrap).toBe("none");
     expect(anchor.behindDoc).toBe(false);
@@ -119,5 +125,53 @@ describe("placeFloat", () => {
     const placed = place(anchorXml({ h: offsetH(0), v: offsetV(0) }), 100);
     expect(placed.widthPt).toBeCloseTo(180, 6);
     expect(placed.heightPt).toBeCloseTo(71.2, 3);
+  });
+});
+
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+const pictureXml = (fill: string) =>
+  anchorXml({
+    h: offsetH(0),
+    v: offsetV(0),
+  }).replace(
+    "</wp:anchor>",
+    `<a:graphic xmlns:a="${A_NS}"><a:graphicData><pic:pic xmlns:pic="${PIC_NS}"
+       xmlns:r="${R_NS}"><pic:blipFill>${fill}</pic:blipFill></pic:pic>
+     </a:graphicData></a:graphic></wp:anchor>`,
+  );
+
+const placeResolving = (body: string, resolvePart: (id: string) => string | null) =>
+  placeFloat({
+    anchor: firstAnchor(body),
+    page: LETTER,
+    paragraphTopPt: 100,
+    bodyTopPt: 36,
+    resolvePart,
+  });
+
+describe("placeFloat content", () => {
+  it("resolves a picture to the part that holds its bytes", () => {
+    const placed = placeResolving(
+      pictureXml(`<a:blip r:embed="rId7"/><a:srcRect t="7272"/>`),
+      (id) => (id === "rId7" ? "word/media/image1.png" : null),
+    );
+    expect(placed.content).toStrictEqual({
+      kind: "picture",
+      part: "word/media/image1.png",
+      crop: { left: 0, top: 0.07272, right: 0, bottom: 0 },
+    });
+  });
+
+  it("says which relationship it could not resolve rather than dropping the picture", () => {
+    const placed = placeResolving(pictureXml(`<a:blip r:embed="rId7"/>`), () => null);
+    expect(placed.content).toStrictEqual({ kind: "missing-picture", relationshipId: "rId7" });
+  });
+
+  it("carries a shape through as a frame with nothing to fetch", () => {
+    const placed = placeResolving(anchorXml({ h: offsetH(0), v: offsetV(0) }), () => null);
+    expect(placed.content).toStrictEqual({ kind: "unknown" });
   });
 });

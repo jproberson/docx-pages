@@ -1,20 +1,32 @@
 import type { AnchorOrigin, AnchorPosition, FloatingAnchor } from "../docx/anchors.js";
+import type { CropInsets } from "../docx/drawing.js";
 import type { SectionGeometry } from "../docx/section.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
 
+export type PlacedContent =
+  | { readonly kind: "picture"; readonly part: string; readonly crop: CropInsets }
+  | { readonly kind: "missing-picture"; readonly relationshipId: string }
+  | { readonly kind: "text-box" }
+  | { readonly kind: "shape" }
+  | { readonly kind: "unknown" };
+
 export type PlacedFloat = {
   readonly anchor: FloatingAnchor;
+  readonly content: PlacedContent;
   readonly leftPt: number;
   readonly topPt: number;
   readonly widthPt: number;
   readonly heightPt: number;
 };
 
+export type PartResolver = (relationshipId: string) => string | null;
+
 export type PlaceFloatInput = {
   readonly anchor: FloatingAnchor;
   readonly page: SectionGeometry;
   readonly paragraphTopPt: number;
   readonly bodyTopPt: number;
+  readonly resolvePart: PartResolver;
 };
 
 type Band = { readonly startPt: number; readonly extentPt: number };
@@ -68,6 +80,15 @@ function resolve(position: AnchorPosition, band: Band, sizePt: number): number {
   }
 }
 
+function resolveContent(anchor: FloatingAnchor, resolvePart: PartResolver): PlacedContent {
+  const { content } = anchor;
+  if (content.kind !== "picture") return content;
+  const part = resolvePart(content.relationshipId);
+  return part === null
+    ? { kind: "missing-picture", relationshipId: content.relationshipId }
+    : { kind: "picture", part, crop: content.crop };
+}
+
 export function placeFloat(input: PlaceFloatInput): PlacedFloat {
   const { anchor } = input;
   const widthPt = emuToPoints(anchor.widthEmu);
@@ -75,6 +96,7 @@ export function placeFloat(input: PlaceFloatInput): PlacedFloat {
 
   return {
     anchor,
+    content: resolveContent(anchor, input.resolvePart),
     leftPt: resolve(anchor.horizontal, horizontalBand(input.page, anchor.horizontal.from), widthPt),
     topPt: resolve(anchor.vertical, verticalBand(input, anchor.vertical.from), heightPt),
     widthPt,

@@ -1,4 +1,5 @@
 import type { Paragraph } from "./blocks.js";
+import { readDrawingContent, type DrawingContent } from "./drawing.js";
 import { paragraphOwnDrawings } from "./paragraphs.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
 
@@ -19,6 +20,7 @@ export type FloatingAnchor = {
   readonly heightEmu: number;
   readonly horizontal: AnchorPosition;
   readonly vertical: AnchorPosition;
+  readonly content: DrawingContent;
   readonly wrap: WrapMode;
   readonly behindDoc: boolean;
   readonly relativeHeight: number;
@@ -86,6 +88,7 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
       name: docPr === null ? "" : (attribute(docPr, "", "name") ?? ""),
       widthEmu: extent === null ? 0 : numberAttribute(extent, "cx", 0),
       heightEmu: extent === null ? 0 : numberAttribute(extent, "cy", 0),
+      content: readDrawingContent(anchor),
       horizontal: readPosition(anchor, "positionH", "column"),
       vertical: readPosition(anchor, "positionV", "paragraph"),
       wrap: readWrap(anchor),

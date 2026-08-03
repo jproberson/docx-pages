@@ -51,6 +51,9 @@ export { readAnchors } from "./docx/anchors.js";
 export type { AnchorOrigin, AnchorPosition, FloatingAnchor, WrapMode } from "./docx/anchors.js";
 
 export { placeFloat } from "./layout/floats.js";
-export type { PlacedFloat, PlaceFloatInput } from "./layout/floats.js";
+export type { PartResolver, PlacedContent, PlacedFloat, PlaceFloatInput } from "./layout/floats.js";
+
+export { readDrawingContent, NO_CROP, PIC_NS, WPS_NS } from "./docx/drawing.js";
+export type { CropInsets, DrawingContent } from "./docx/drawing.js";
 
 export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";

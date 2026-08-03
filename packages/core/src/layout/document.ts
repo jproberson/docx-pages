@@ -1,6 +1,6 @@
 import { readAnchors } from "../docx/anchors.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
-import { defaultHeaderPart } from "../docx/relationships.js";
+import { defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
 import { readStyleTable } from "../docx/styles.js";
@@ -66,8 +66,15 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const floatsFor = (
     blocks: readonly Block[],
     boxes: readonly ParagraphBox[],
+    part: string,
   ): readonly PlacedFloat[] => {
     const topOf = new Map(boxes.map((box) => [box.index, box.topPt]));
+    const relationships = readRelationships(pkg, part);
+    const resolvePart = (relationshipId: string): string | null => {
+      const target = relationships.get(relationshipId)?.part;
+      return target !== undefined && pkg.parts.has(target) ? target : null;
+    };
+
     return blockParagraphs(blocks).flatMap((paragraph) =>
       readAnchors(paragraph).map((anchor) =>
         placeFloat({
@@ -75,6 +82,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
           page,
           paragraphTopPt: topOf.get(paragraph.index) ?? bodyTopPt,
           bodyTopPt,
+          resolvePart,
         }),
       ),
     );
@@ -85,8 +93,8 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   return {
     kind: "laid-out",
     page,
-    headerFloats: floatsFor(headerBlocks, headerBoxes),
-    bodyFloats: floatsFor(bodyBlocks, bodyStack.boxes),
+    headerFloats: headerPart === null ? [] : floatsFor(headerBlocks, headerBoxes, headerPart),
+    bodyFloats: floatsFor(bodyBlocks, bodyStack.boxes, MAIN_DOCUMENT_PART),
     headerTopPt,
     headerHeightPt,
     bodyTopPt,
