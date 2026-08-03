@@ -16,6 +16,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@onepager/core": "workspace:*"
+    "@onepager/core": "workspace:*",
+    "pdfjs-dist": "^6.2.108"
   }
 }
