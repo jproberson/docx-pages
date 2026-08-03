@@ -124,11 +124,13 @@ export function parseXml(source: string): XmlElement | null {
   return null;
 }
 
+// An empty namespace means an unprefixed attribute, which XML puts in no namespace
+// at all rather than in the element's default one.
 export const attribute = (
   element: XmlElement,
   namespace: string,
   name: string,
-): string | undefined => element.attributes.get(clark(namespace, name));
+): string | undefined => element.attributes.get(namespace === "" ? name : clark(namespace, name));
 
 export const childrenNamed = (
   element: XmlElement,
