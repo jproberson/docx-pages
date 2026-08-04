@@ -263,7 +263,17 @@ function runStyleChain(table: StyleTable, run: XmlElement): readonly StyleDefini
   return styleChain(table, id);
 }
 
-export function resolveRunMarks(paragraph: Paragraph, table: StyleTable): readonly ParagraphMark[] {
+export type MarkedRun = {
+  readonly run: XmlElement;
+  readonly mark: ParagraphMark;
+};
+
+export const resolveRunMarks = (
+  paragraph: Paragraph,
+  table: StyleTable,
+): readonly ParagraphMark[] => resolveRuns(paragraph, table).map((marked) => marked.mark);
+
+export function resolveRuns(paragraph: Paragraph, table: StyleTable): readonly MarkedRun[] {
   const pPr = firstNamed(paragraph.element, W_NS, "pPr");
   const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
   const named = pStyle === null ? undefined : attribute(pStyle, W_NS, "val");
@@ -272,7 +282,10 @@ export function resolveRunMarks(paragraph: Paragraph, table: StyleTable): readon
   let inherited = table.docDefaults;
   for (const style of styleChain(table, paragraphStyleId)) inherited = merge(inherited, style.mark);
 
-  return paragraphRuns(paragraph).map((run) => resolveRunMark(run, inherited, table));
+  return paragraphRuns(paragraph).map((run) => ({
+    run,
+    mark: resolveRunMark(run, inherited, table),
+  }));
 }
 
 function resolveRunMark(run: XmlElement, inherited: PartialMark, table: StyleTable): ParagraphMark {

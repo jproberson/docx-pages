@@ -36,13 +36,17 @@ export type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from ".
 
 export { paragraphText, paragraphDescendants } from "./docx/paragraphs.js";
 
+export { readRuns } from "./docx/runs.js";
+export type { RunPiece, TextRun } from "./docx/runs.js";
+
 export {
   readStyleTable,
   resolveParagraphMark,
+  resolveRuns,
   A_NS,
   WORD_DEFAULT_FONT_SIZE_PT,
 } from "./docx/styles.js";
-export type { FontChoice, ParagraphMark, StyleTable } from "./docx/styles.js";
+export type { FontChoice, MarkedRun, ParagraphMark, StyleTable } from "./docx/styles.js";
 
 export {
   readRelationships,
