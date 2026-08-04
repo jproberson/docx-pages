@@ -1,36 +1,42 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { readFontFile, type GlyphAdvances } from "@onepager/core";
+import { readFontFile, type FontMetrics, type GlyphAdvances } from "@onepager/core";
 
-import { referenceFonts } from "../testing/cases.js";
+import { referenceFontFiles, referenceFonts } from "../testing/cases.js";
+
+type Subject = {
+  readonly filePath: string;
+  readonly fileFormat: string | null;
+  readonly metrics: FontMetrics;
+};
 
 // Licensed faces are not copied into this repo. The manifest points at wherever
-// each one lives and records the metrics Word laid the reference documents out with.
-const FONTS = referenceFonts().filter(
-  (font) => font.filePath !== null && existsSync(font.filePath),
-);
+// each one lives: the faces Word laid the reference documents out in, plus any
+// other file the reader is expected to cope with.
+const SUBJECTS: readonly Subject[] = [...referenceFonts(), ...referenceFontFiles()]
+  .filter((font): font is Subject => font.filePath !== null && existsSync(font.filePath))
+  .filter((font, at, all) => all.findIndex((other) => other.filePath === font.filePath) === at);
 
 const bytesOf = (path: string): Uint8Array => new Uint8Array(readFileSync(path));
 
 const advanceOf = (advanceFor: GlyphAdvances, character: string): number | null =>
   advanceFor(character.codePointAt(0) ?? 0);
 
-describe.skipIf(FONTS.length === 0)("readFontFile on a real font file", () => {
-  for (const font of FONTS) {
-    const index = String(FONTS.indexOf(font));
-    const path = font.filePath ?? "";
+describe.skipIf(SUBJECTS.length === 0)("readFontFile on a real font file", () => {
+  for (const font of SUBJECTS) {
+    const index = String(SUBJECTS.indexOf(font));
 
     it(`reads the metrics Word used for font ${index}`, () => {
-      const result = readFontFile(bytesOf(path));
+      const result = readFontFile(bytesOf(font.filePath));
 
       if (font.fileFormat !== null) expect(result.format).toBe(font.fileFormat);
       expect(result.metrics).toStrictEqual(font.metrics);
     });
 
-    // Only relations are asserted; the face's real widths stay out of the repo.
+    // Only relations are asserted; the faces' real widths stay out of the repo.
     it(`reads plausible advances for font ${index}`, () => {
-      const advances = readFontFile(bytesOf(path)).advances;
+      const advances = readFontFile(bytesOf(font.filePath)).advances;
       if (advances.kind !== "advances") throw new Error(advances.reason);
 
       const { advanceFor } = advances;

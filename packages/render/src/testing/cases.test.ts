@@ -32,6 +32,7 @@ describe("readReferenceManifest", () => {
   it("reports nothing to run when no manifest exists", () => {
     expect(readReferenceManifest(resolve(directory, "absent.json"))).toStrictEqual({
       fonts: [],
+      fontFiles: [],
       cases: [],
     });
   });

@@ -69,12 +69,21 @@ export type ReferenceCase = {
   readonly renderedPageIndexes: readonly number[];
 };
 
+// Font files the reader has to cope with, whether or not any reference document
+// is laid out in them.
+export type ReferenceFontFile = {
+  readonly filePath: string;
+  readonly fileFormat: string | null;
+  readonly metrics: FontMetrics;
+};
+
 export type ReferenceManifest = {
   readonly fonts: readonly ReferenceFont[];
+  readonly fontFiles: readonly ReferenceFontFile[];
   readonly cases: readonly ReferenceCase[];
 };
 
-const EMPTY: ReferenceManifest = { fonts: [], cases: [] };
+const EMPTY: ReferenceManifest = { fonts: [], fontFiles: [], cases: [] };
 
 // `where` carries the manifest path as its root, so it locates the fault on its own.
 const invalid = (message: string, where: string): OnePagerError =>
@@ -147,6 +156,15 @@ const readFont = (value: unknown, where: string): ReferenceFont => {
     bold: flag(source, "bold", where),
     italic: flag(source, "italic", where),
     filePath: optionalText(source, "filePath", where),
+    fileFormat: optionalText(source, "fileFormat", where),
+    metrics: readMetrics(source["metrics"], `${where}.metrics`),
+  };
+};
+
+const readFontFileEntry = (value: unknown, where: string): ReferenceFontFile => {
+  const source = record(value, where);
+  return {
+    filePath: text(source, "filePath", where),
     fileFormat: optionalText(source, "fileFormat", where),
     metrics: readMetrics(source["metrics"], `${where}.metrics`),
   };
@@ -248,11 +266,17 @@ export function readReferenceManifest(path: string = MANIFEST_PATH): ReferenceMa
     fonts: entries(source, "fonts", path).map((entry, at) =>
       readFont(entry, `${path}#fonts[${String(at)}]`),
     ),
+    fontFiles: entries(source, "fontFiles", path).map((entry, at) =>
+      readFontFileEntry(entry, `${path}#fontFiles[${String(at)}]`),
+    ),
     cases: entries(source, "cases", path).map((entry, at) => readCase(entry, at, path)),
   };
 }
 
 export const referenceFonts = (): readonly ReferenceFont[] => readReferenceManifest().fonts;
+
+export const referenceFontFiles = (): readonly ReferenceFontFile[] =>
+  readReferenceManifest().fontFiles;
 
 export const referenceCases = (): readonly ReferenceCase[] =>
   readReferenceManifest().cases.filter((each) => existsSync(each.documentPath));
