@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readAnchors, WHOLE_FRAME, type FloatingAnchor } from "../docx/anchors.js";
+import { readAnchors, WHOLE_FRAME, type FloatingAnchor, type WrapArea } from "../docx/anchors.js";
 import { openDocx } from "../docx/package.js";
 import { readParagraphs } from "../docx/blocks.js";
 import type { SectionGeometry } from "../docx/section.js";
@@ -60,6 +60,15 @@ const offsetV = (emu: number, from = "paragraph") =>
 const alignH = (align: string, from = "margin") =>
   `<wp:positionH relativeFrom="${from}"><wp:align>${align}</wp:align></wp:positionH>`;
 
+// The rectangle a wrap area comes down to, which most of these ask about; the
+// corners it was drawn from have their own test.
+const edgesOf = (area: WrapArea) => ({
+  left: area.left,
+  top: area.top,
+  right: area.right,
+  bottom: area.bottom,
+});
+
 const firstAnchor = (body: string): FloatingAnchor => {
   const pkg = openDocx(buildDocx({ "word/document.xml": wordDocument(body) }));
   const paragraph = readParagraphs(pkg)[0];
@@ -108,14 +117,27 @@ describe("readAnchors", () => {
       anchorXml({ h: offsetH(0), v: offsetV(0), wrap: tightWrap(5400, 16200) }),
     );
     expect(anchor.wrap).toBe("tight");
-    expect(anchor.area).toStrictEqual({ left: 0.25, top: 0, right: 1, bottom: 0.75 });
+    expect(edgesOf(anchor.area)).toStrictEqual({ left: 0.25, top: 0, right: 1, bottom: 0.75 });
   });
 
   it("turns that polygon over with an object that was flipped", () => {
     const anchor = firstAnchor(
       anchorXml({ h: offsetH(0), v: offsetV(0), wrap: tightWrap(5400, 16200), flip: 'flipH="1"' }),
     );
-    expect(anchor.area).toStrictEqual({ left: 0, top: 0, right: 0.75, bottom: 0.75 });
+    expect(edgesOf(anchor.area)).toStrictEqual({ left: 0, top: 0, right: 0.75, bottom: 0.75 });
+  });
+
+  it("keeps every corner of that polygon, turned over with it", () => {
+    const anchor = firstAnchor(
+      anchorXml({ h: offsetH(0), v: offsetV(0), wrap: tightWrap(5400, 16200), flip: 'flipH="1"' }),
+    );
+    expect(anchor.area.corners).toStrictEqual([
+      { x: 0.75, y: 0 },
+      { x: 0.75, y: 0.75 },
+      { x: 0, y: 0.75 },
+      { x: 0, y: 0 },
+      { x: 0.75, y: 0 },
+    ]);
   });
 
   it("takes a tight wrap with no polygon as the whole frame", () => {

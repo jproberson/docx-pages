@@ -1,10 +1,16 @@
+// A point on the outline a wrapping object keeps text off, in page points.
+export type OutlinePoint = { readonly xPt: number; readonly yPt: number };
+
 // The rectangle a wrapping object keeps text out of: its own frame grown by the
-// distances the anchor asks text to stay off it.
+// distances the anchor asks text to stay off it. An object whose wrap draws an
+// outline narrower than that rectangle in places carries it as well, and the
+// rectangle stays the one every line is blocked by.
 export type WrapBand = {
   readonly leftPt: number;
   readonly rightPt: number;
   readonly topPt: number;
   readonly bottomPt: number;
+  readonly outline?: readonly OutlinePoint[];
 };
 
 // Where a line ended up: the run of free space it was given, at the height it had
@@ -63,6 +69,53 @@ export function freeSpans(
   return spans;
 }
 
+// How far an outline reaches across between two heights, which is asked of the
+// part of each edge lying between them: an edge is straight, so its own extremes
+// over that stretch are at the two ends it is cut to.
+function acrossPt(outline: readonly OutlinePoint[], topPt: number, bottomPt: number): Span | null {
+  const xs: number[] = [];
+
+  for (const [at, from] of outline.entries()) {
+    const to = outline[(at + 1) % outline.length];
+    if (to === undefined) continue;
+
+    const lowPt = Math.min(from.yPt, to.yPt);
+    const highPt = Math.max(from.yPt, to.yPt);
+    if (highPt < topPt - EPSILON || lowPt > bottomPt + EPSILON) continue;
+    if (highPt - lowPt <= EPSILON) {
+      xs.push(from.xPt, to.xPt);
+      continue;
+    }
+
+    for (const atPt of [Math.max(lowPt, topPt), Math.min(highPt, bottomPt)]) {
+      const along = (atPt - from.yPt) / (to.yPt - from.yPt);
+      xs.push(from.xPt + along * (to.xPt - from.xPt));
+    }
+  }
+
+  return xs.length === 0 ? null : { leftPt: Math.min(...xs), rightPt: Math.max(...xs) };
+}
+
+// A line meets only the stretch of an object's outline beside it, so the band it
+// has to keep clear of is drawn in from its own edges by however far the outline
+// falls short of them there. Word wraps a logo's outline this way: the same
+// paragraph's taller first line starts a point to the left of the one under it,
+// because the widest part of the shape hangs below it.
+function besideLine(band: WrapBand, topPt: number, bottomPt: number): WrapBand {
+  const outline = band.outline;
+  if (outline === undefined) return band;
+
+  const whole = acrossPt(outline, -Infinity, Infinity);
+  const here = acrossPt(outline, topPt, bottomPt);
+  if (whole === null || here === null) return band;
+
+  return {
+    ...band,
+    leftPt: band.leftPt + (here.leftPt - whole.leftPt),
+    rightPt: band.rightPt - (whole.rightPt - here.rightPt),
+  };
+}
+
 // An object stands in a line's way while it covers the middle of it: Word lets a
 // line whose top half is behind an object stay where it is, and moves one whose
 // middle is. Measured against Word by moving an object down a little at a time,
@@ -80,7 +133,9 @@ export function fitLine(input: FitLineInput): LineSlot {
   let topPt = input.topPt;
 
   while (topPt <= lowestPt + EPSILON) {
-    const crossing = bands.filter((band) => covers(band, topPt + heightPt / 2));
+    const crossing = bands
+      .filter((band) => covers(band, topPt + heightPt / 2))
+      .map((band) => besideLine(band, topPt, topPt + heightPt));
     const leastPt = Math.max(widthPt, LEAST_SPAN_PT);
     const span = freeSpans(leftPt, rightPt, crossing).find(
       (each) => each.rightPt - each.leftPt >= leastPt - EPSILON,

@@ -18,7 +18,7 @@ import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from 
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
-import type { WrapBand } from "./wrapping.js";
+import type { OutlinePoint, WrapBand } from "./wrapping.js";
 
 // The header and the footer are drawn again on every page, so only the body is
 // broken up: a page is the run of it that fitted between the two.
@@ -156,6 +156,7 @@ const placeFloatIn = (
 function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
   const { area, distances, wrap } = float.anchor;
   const spansPage = wrap === "topAndBottom";
+  const outline = spansPage ? undefined : outlineOf(float);
   return {
     leftPt: spansPage
       ? 0
@@ -165,7 +166,25 @@ function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
       : float.leftPt + float.widthPt * area.right + emuToPoints(distances.rightEmu),
     topPt: float.topPt + float.heightPt * area.top - emuToPoints(distances.topEmu),
     bottomPt: float.topPt + float.heightPt * area.bottom + emuToPoints(distances.bottomEmu),
+    ...(outline === undefined ? {} : { outline }),
   };
+}
+
+// A polygon that is its own rectangle says nothing the band does not already, so
+// only a shape narrower than that somewhere is carried into the layout.
+function outlineOf(float: PlacedFloat): readonly OutlinePoint[] | undefined {
+  const { corners } = float.anchor.area;
+  const rectangular = corners.every(
+    (corner) =>
+      (corner.x === float.anchor.area.left || corner.x === float.anchor.area.right) &&
+      (corner.y === float.anchor.area.top || corner.y === float.anchor.area.bottom),
+  );
+  if (rectangular) return undefined;
+
+  return corners.map((corner) => ({
+    xPt: float.leftPt + float.widthPt * corner.x,
+    yPt: float.topPt + float.heightPt * corner.y,
+  }));
 }
 
 // Only geometry matters here, so a picture's part is left unresolved.

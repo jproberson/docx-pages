@@ -26,18 +26,24 @@ export type WrapDistances = {
   readonly leftEmu: number;
 };
 
+// A corner of a wrap polygon, as fractions of the frame it belongs to.
+export type WrapCorner = { readonly x: number; readonly y: number };
+
 // How much of an object's frame text is kept off, as fractions of it. A tight or
 // through wrap carries a polygon instead of taking the whole frame, and Word
 // keeps text off the rectangle around that polygon: measured by pulling one
-// inside its frame and watching the text beside it move in by as much.
+// inside its frame and watching the text beside it move in by as much. The
+// corners are kept as well, since a line meeting only part of a polygon that is
+// not a rectangle is held off that part alone.
 export type WrapArea = {
   readonly left: number;
   readonly top: number;
   readonly right: number;
   readonly bottom: number;
+  readonly corners: readonly WrapCorner[];
 };
 
-export const WHOLE_FRAME: WrapArea = { left: 0, top: 0, right: 1, bottom: 1 };
+export const WHOLE_FRAME: WrapArea = { left: 0, top: 0, right: 1, bottom: 1, corners: [] };
 
 export type FloatingAnchor = {
   readonly paragraphIndex: number;
@@ -98,8 +104,7 @@ function readPosition(
 // round that frame ended up.
 const POLYGON_UNITS = 21600;
 
-const turned = (low: number, high: number, flipped: boolean): readonly [number, number] =>
-  flipped ? [1 - high, 1 - low] : [low, high];
+const over = (at: number, flipped: boolean): number => (flipped ? 1 - at : at);
 
 function readWrapArea(wrap: XmlElement, flip: DrawingFlip): WrapArea {
   const polygon = firstNamed(wrap, WP_NS, "wrapPolygon");
@@ -113,11 +118,19 @@ function readWrapArea(wrap: XmlElement, flip: DrawingFlip): WrapArea {
         });
   if (corners.length === 0) return WHOLE_FRAME;
 
-  const xs = corners.map(([x]) => x / POLYGON_UNITS);
-  const ys = corners.map(([, y]) => y / POLYGON_UNITS);
-  const [left, right] = turned(Math.min(...xs), Math.max(...xs), flip.horizontal);
-  const [top, bottom] = turned(Math.min(...ys), Math.max(...ys), flip.vertical);
-  return { left, top, right, bottom };
+  const turnedCorners = corners.map(([x, y]) => ({
+    x: over(x / POLYGON_UNITS, flip.horizontal),
+    y: over(y / POLYGON_UNITS, flip.vertical),
+  }));
+  const xs = turnedCorners.map((corner) => corner.x);
+  const ys = turnedCorners.map((corner) => corner.y);
+  return {
+    left: Math.min(...xs),
+    right: Math.max(...xs),
+    top: Math.min(...ys),
+    bottom: Math.max(...ys),
+    corners: turnedCorners,
+  };
 }
 
 type Wrapping = { readonly mode: WrapMode; readonly area: WrapArea };

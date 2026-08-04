@@ -127,6 +127,28 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 100, leftPt: 200, rightPt: 230 });
   });
 
+  // A wedge inside the same band: nothing of it at the top, all 50pt of it across
+  // the foot, with the band 4pt wider on the left and 6pt on the right for the
+  // distances text is kept off it by.
+  const wedge: WrapBand = {
+    ...band(16, 76, 90, 130),
+    outline: [
+      { xPt: 20, yPt: 90 },
+      { xPt: 70, yPt: 130 },
+      { xPt: 20, yPt: 130 },
+    ],
+  };
+
+  it("keeps a line off the part of an outline beside it, not the whole of it", () => {
+    const slot = fit({ widthPt: 200, topPt: 100, bands: [wedge] });
+    expect(slot).toStrictEqual({ topPt: 100, leftPt: 53.5, rightPt: 576 });
+  });
+
+  it("keeps a line off the whole of an outline where the whole of it is beside it", () => {
+    const slot = fit({ widthPt: 200, topPt: 118, bands: [wedge] });
+    expect(slot).toStrictEqual({ topPt: 118, leftPt: 76, rightPt: 576 });
+  });
+
   // A line with no height of its own has no step to take, so it stays put rather
   // than looking for room for ever.
   it("leaves a line that cannot step where it started", () => {
