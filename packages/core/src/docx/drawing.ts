@@ -41,6 +41,9 @@ export type TextBoxBody = {
   readonly insets: TextBoxInsets;
   readonly anchor: TextBoxAnchor;
   readonly wraps: boolean;
+  // A box that fits itself to its text keeps no stored height worth wrapping
+  // around: Word measures the text again and wraps against that.
+  readonly fitsText: boolean;
 };
 
 export type DrawingContent =
@@ -117,6 +120,7 @@ function readTextBoxBody(shape: XmlElement, txbx: XmlElement): TextBoxBody {
     },
     anchor: anchorOf(bodyPr),
     wraps: (bodyPr === null ? undefined : attribute(bodyPr, "", "wrap")) !== "none",
+    fitsText: bodyPr !== null && firstNamed(bodyPr, A_NS, "spAutoFit") !== null,
   };
 }
 

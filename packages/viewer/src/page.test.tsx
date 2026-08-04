@@ -27,6 +27,7 @@ const EMPTY_BODY: TextBoxBody = {
   insets: { leftEmu: 0, topEmu: 0, rightEmu: 0, bottomEmu: 0 },
   anchor: "top",
   wraps: true,
+  fitsText: false,
 };
 
 const textBox = (boxes: readonly ParagraphBox[] = []): PlacedContent => ({

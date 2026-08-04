@@ -211,6 +211,13 @@ describe("measureStack over text", () => {
     expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12, 9);
   });
 
+  it("stands a line held open by a tab alone at the height of the run holding it", () => {
+    const body = `<w:p><w:pPr><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>
+      <w:r><w:rPr><w:sz w:val="48"/></w:rPr><w:tab/></w:r></w:p>`;
+
+    expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
+  });
+
   it("keeps an empty paragraph at its mark's height", () => {
     expect(firstBox(`<w:p/>`).lines).toStrictEqual([]);
   });

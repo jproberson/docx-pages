@@ -8,6 +8,7 @@ import { readStyleTable, resolveParagraphFrame, type StyleTable } from "../docx/
 import {
   measureStack,
   shiftBoxes,
+  type BandResolver,
   type LayoutBlocker,
   type MetricsResolver,
   type ParagraphBox,
@@ -16,7 +17,8 @@ import { breakStack, type PageStack } from "./pages.js";
 import { placeFloat, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
-import { twipsToPoints } from "./units.js";
+import { emuToPoints, twipsToPoints } from "./units.js";
+import type { WrapBand } from "./wrapping.js";
 
 // The header and the footer are drawn again on every page, so only the body is
 // broken up: a page is the run of it that fitted between the two.
@@ -89,6 +91,69 @@ function fillTextBoxes(
   return { kind: "filled", floats: filled };
 }
 
+type BandFrame = {
+  readonly page: SectionGeometry;
+  readonly styles: StyleTable;
+  readonly metricsFor: MetricsResolver;
+  readonly part: string;
+  // Where the story's own text column starts, which is what a column-relative
+  // offset is measured from.
+  readonly columnTopPt: number;
+};
+
+// A box that fits itself to its text is as tall as the text plus its insets,
+// whatever height the file stored for it.
+function wrappingHeightPt(float: PlacedFloat, frame: BandFrame): number {
+  const { content } = float;
+  if (content.kind !== "text-box" || !content.body.fitsText) return float.heightPt;
+
+  const laid = layOutTextBox({
+    body: content.body,
+    rect: float,
+    styles: frame.styles,
+    metricsFor: frame.metricsFor,
+    part: frame.part,
+  });
+  if (laid.kind === "blocked") return float.heightPt;
+
+  const insets = content.body.insets;
+  return laid.text.contentHeightPt + emuToPoints(insets.topEmu) + emuToPoints(insets.bottomEmu);
+}
+
+// Text stays off an object by the distances its anchor asks for; an object wrapped
+// top and bottom takes the whole width of the page with it.
+function bandFor(float: PlacedFloat, frame: BandFrame): WrapBand {
+  const { distances, wrap } = float.anchor;
+  const spansPage = wrap === "topAndBottom";
+  return {
+    leftPt: spansPage ? 0 : float.leftPt - emuToPoints(distances.leftEmu),
+    rightPt: spansPage
+      ? twipsToPoints(frame.page.widthTwips)
+      : float.leftPt + float.widthPt + emuToPoints(distances.rightEmu),
+    topPt: float.topPt - emuToPoints(distances.topEmu),
+    bottomPt: float.topPt + wrappingHeightPt(float, frame) + emuToPoints(distances.bottomEmu),
+  };
+}
+
+// Only geometry matters here, so a picture's part is left unresolved.
+const bandsIn =
+  (frame: BandFrame): BandResolver =>
+  (paragraph, topPt) =>
+    readAnchors(paragraph)
+      .filter((anchor) => anchor.wrap !== "none")
+      .map((anchor) =>
+        bandFor(
+          placeFloat({
+            anchor,
+            page: frame.page,
+            paragraphTopPt: topPt,
+            bodyTopPt: frame.columnTopPt,
+            resolvePart: () => null,
+          }),
+          frame,
+        ),
+      );
+
 type Story = {
   readonly kind: "measured";
   readonly part: string | null;
@@ -113,11 +178,12 @@ function measureStory(
   part: string | null,
   frame: StoryFrame,
   originPt: number,
+  bandsFor: BandResolver,
 ): StoryMeasurement {
   if (part === null) return EMPTY_STORY;
 
   const blocks = readBlocks(pkg, part);
-  const measured = measureStack({ ...frame, blocks, part, originPt });
+  const measured = measureStack({ ...frame, blocks, part, originPt, bandsFor });
   if (measured.kind === "blocked") return measured;
   return { kind: "measured", part, blocks, boxes: measured.boxes, heightPt: measured.heightPt };
 }
@@ -131,7 +197,22 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const widthPt = twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
   const frame: StoryFrame = { styles, metricsFor, leftPt, widthPt };
 
-  const header = measureStory(pkg, defaultHeaderPart(pkg), frame, headerTopPt);
+  const bandFrame = (part: string | null, columnTopPt: number): BandFrame => ({
+    page,
+    styles,
+    metricsFor,
+    part: part ?? MAIN_DOCUMENT_PART,
+    columnTopPt,
+  });
+
+  const headerPart = defaultHeaderPart(pkg);
+  const header = measureStory(
+    pkg,
+    headerPart,
+    frame,
+    headerTopPt,
+    bandsIn(bandFrame(headerPart, headerTopPt)),
+  );
   if (header.kind === "blocked") return header;
 
   const headerHeightPt = header.heightPt;
@@ -139,7 +220,8 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
 
   // The footer hangs from the bottom edge, so it is measured at the origin and then
   // dropped to the height it turned out to need.
-  const measuredFooter = measureStory(pkg, defaultFooterPart(pkg), frame, 0);
+  const footerPart = defaultFooterPart(pkg);
+  const measuredFooter = measureStory(pkg, footerPart, frame, 0, bandsIn(bandFrame(footerPart, 0)));
   if (measuredFooter.kind === "blocked") return measuredFooter;
   const footerTopPt =
     pageHeightPt - twipsToPoints(page.margin.footerTwips) - measuredFooter.heightPt;
@@ -158,6 +240,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     blocks: bodyBlocks,
     part: MAIN_DOCUMENT_PART,
     originPt: bodyTopPt,
+    bandsFor: bandsIn(bandFrame(MAIN_DOCUMENT_PART, bodyTopPt)),
   });
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };

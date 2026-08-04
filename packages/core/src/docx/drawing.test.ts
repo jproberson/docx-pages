@@ -108,6 +108,11 @@ describe("a text box's body", () => {
     expect(bodyOf(`<wps:bodyPr wrap="none"/>`).wraps).toBe(false);
   });
 
+  it("reads a box that fits itself to the text it holds", () => {
+    expect(bodyOf(``).fitsText).toBe(false);
+    expect(bodyOf(`<wps:bodyPr><a:spAutoFit/></wps:bodyPr>`).fitsText).toBe(true);
+  });
+
   it("reads a box whose content is missing as an empty one", () => {
     const found = drawing(`<wps:wsp><wps:txbx/></wps:wsp>`);
     expect(found.kind === "text-box" && found.body.blocks).toStrictEqual([]);

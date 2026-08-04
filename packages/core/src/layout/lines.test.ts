@@ -151,6 +151,20 @@ describe("breakLines", () => {
     expect(lines[0]?.widthPt).toBeCloseTo(36 + 10, 9);
   });
 
+  it("holds a line open as far as a trailing tab reached, though it draws nothing", () => {
+    const lines = linesOf([piecesRun([{ kind: "tab" }])], 200);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.widthPt).toBeCloseTo(36, 9);
+    expect(lines[0]?.segments).toStrictEqual([]);
+  });
+
+  it("counts a tab after the text as part of the line's width", () => {
+    const run = piecesRun([{ kind: "text", text: "ab" }, { kind: "tab" }]);
+
+    expect(linesOf([run], 200)[0]?.widthPt).toBeCloseTo(36, 9);
+  });
+
   it("gives a drawing the width it takes on the line", () => {
     const run = piecesRun([{ kind: "drawing", widthEmu: 914400, heightEmu: 457200 }]);
     const lines = linesOf([run], 200);

@@ -40,6 +40,7 @@ function bodyOf(inner: string, options: BodyOptions = {}): [TextBoxBody, StyleTa
       insets: options.insets ?? NO_INSETS,
       anchor: options.anchor ?? "top",
       wraps: options.wraps ?? true,
+      fitsText: false,
     },
     readStyleTable(pkg),
   ];

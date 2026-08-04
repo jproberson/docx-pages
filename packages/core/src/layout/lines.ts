@@ -230,6 +230,7 @@ class Breaker {
   private heightPt = 0;
   private ascentPt = 0;
   private wrapped = false;
+  private tabbed = false;
 
   constructor(
     private readonly widthPt: number,
@@ -247,6 +248,7 @@ class Breaker {
     this.pending = [];
     this.pendingPt = 0;
     this.wrapped = false;
+    this.tabbed = false;
   }
 
   private get filled(): number {
@@ -257,11 +259,14 @@ class Breaker {
     return this.segments.length === 0;
   }
 
+  // A trailing space hangs past the edge, but a trailing tab holds the line open
+  // as far as the stop it reached: Word wraps that line around the width the tab
+  // gave it, even when nothing is drawn there.
   flush(): void {
-    if (!this.empty) {
+    if (!this.empty || this.tabbed) {
       this.lines.push({
         segments: this.segments,
-        widthPt: this.committedPt,
+        widthPt: this.committedPt + (this.tabbed ? this.pendingPt : 0),
         heightPt: this.heightPt,
         ascentPt: this.ascentPt,
       });
@@ -272,6 +277,7 @@ class Breaker {
     this.pendingPt = 0;
     this.heightPt = 0;
     this.ascentPt = 0;
+    this.tabbed = false;
   }
 
   space(fragments: readonly Fragment[]): void {
@@ -287,6 +293,7 @@ class Breaker {
     if (this.empty && this.wrapped) return;
     const { originPt, stopsPt } = this.tabs;
     this.pendingPt = nextTabStopPt(originPt + this.filled, stopsPt) - originPt - this.committedPt;
+    this.tabbed = true;
   }
 
   drawing(widthPt: number, heightPt: number): void {

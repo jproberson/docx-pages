@@ -449,7 +449,11 @@ function layOutParagraph(
   let top = input.topPt + beforePt;
 
   lines.forEach((line, at) => {
-    const naturalPt = line.heightPt;
+    // A line a tab alone holds open has nothing measured on it to give it a
+    // height, so it takes the tallest mark the paragraph has, as an empty
+    // paragraph does.
+    const naturalPt =
+      line.segments.length === 0 ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
     const heightPt = spacedHeightPt(naturalPt, paragraphFrame);
     const firstLinePt = at === 0 ? insets.firstLinePt : 0;
     // The number takes the first line's own start, so the text after it begins
