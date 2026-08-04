@@ -492,6 +492,19 @@ describe("measureStack around wrapping objects", () => {
     expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(36 + ARIAL_12 * 2, 9);
   });
 
+  // Word moves an empty paragraph out of an object's way like any other line, and
+  // the paragraphs under it follow, which is what decides where a page breaks.
+  it("steps an empty paragraph out of an object's way, though it draws nothing", () => {
+    const boxes = wrapped(
+      `<w:p/>` + paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines).toStrictEqual([]);
+    expect(boxes[0]?.heightPt).toBeCloseTo(ARIAL_12 * 6, 9);
+    expect(boxes[1]?.topPt).toBeCloseTo(36 + ARIAL_12 * 6, 9);
+  });
+
   it("keeps an object out of the paragraphs ahead of the one it is anchored to", () => {
     const boxes = wrapped(
       paragraph(``, "aaaa") + paragraph(``, "bbbb"),

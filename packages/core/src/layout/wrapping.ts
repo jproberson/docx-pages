@@ -29,6 +29,13 @@ export type FitLineInput = {
 // need absorbing; a band that ends exactly where a line starts does not cross it.
 const EPSILON = 1e-9;
 
+// Word will not put a line in a sliver of space, however little the line needs.
+// Narrowing the gap between two objects until an empty paragraph stopped sitting
+// in it brackets the least it will take at 17.59pt to 17.85pt, one document on
+// each side; this is the middle of that. It is measured rather than derived, so
+// treat a document that lands within a tenth of it as unsettled.
+export const LEAST_SPAN_PT = 17.7;
+
 type Span = { readonly leftPt: number; readonly rightPt: number };
 
 // The runs of the frame left over once every band crossing the line is taken out
@@ -73,8 +80,9 @@ export function fitLine(input: FitLineInput): LineSlot {
 
   while (topPt <= lowestPt + EPSILON) {
     const crossing = bands.filter((band) => covers(band, topPt + heightPt / 2));
+    const leastPt = Math.max(widthPt, LEAST_SPAN_PT);
     const span = freeSpans(leftPt, rightPt, crossing).find(
-      (each) => each.rightPt - each.leftPt >= widthPt - EPSILON,
+      (each) => each.rightPt - each.leftPt >= leastPt - EPSILON,
     );
     if (span !== undefined) return { topPt, leftPt: span.leftPt, rightPt: span.rightPt };
     if (heightPt <= EPSILON) break;

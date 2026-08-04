@@ -444,13 +444,24 @@ function layOutParagraph(
   const beforePt = twipsToPoints(paragraphFrame.spaceBeforeTwips);
   const afterPt = twipsToPoints(paragraphFrame.spaceAfterTwips);
 
+  // An empty paragraph is a line like any other as far as objects are concerned:
+  // Word moves it out of their way even though it draws nothing there.
   if (lines.length === 0) {
+    const slot = fitLine({
+      topPt: input.topPt + beforePt,
+      heightPt: input.markHeightPt,
+      leftPt: frame.leftPt + insets.leftPt,
+      rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
+      widthPt: 0,
+      bands: input.bands,
+    });
+
     return {
       index,
       topPt: input.topPt,
-      heightPt: beforePt + input.markHeightPt + afterPt,
+      heightPt: slot.topPt + input.markHeightPt + afterPt - input.topPt,
       lines: [],
-      marker: markerAt(number, input.topPt + beforePt + (number?.ascentPt ?? 0)),
+      marker: markerAt(number, slot.topPt + (number?.ascentPt ?? 0)),
     };
   }
 

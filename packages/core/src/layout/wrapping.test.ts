@@ -110,6 +110,23 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 100, leftPt: 36, rightPt: 576 });
   });
 
+  // Word refuses a gap this narrow even to a line that needs no room at all.
+  it("will not put a line in a gap too narrow to be worth having", () => {
+    const slot = fit({
+      widthPt: 0,
+      bands: [band(0, 200, 90, 130), band(210, 600, 90, 130)],
+    });
+    expect(slot.topPt).toBe(124);
+  });
+
+  it("takes a gap wide enough to be worth having", () => {
+    const slot = fit({
+      widthPt: 0,
+      bands: [band(0, 200, 90, 130), band(230, 600, 90, 130)],
+    });
+    expect(slot).toStrictEqual({ topPt: 100, leftPt: 200, rightPt: 230 });
+  });
+
   // A line with no height of its own has no step to take, so it stays put rather
   // than looking for room for ever.
   it("leaves a line that cannot step where it started", () => {
