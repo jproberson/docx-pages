@@ -23,9 +23,10 @@ const rendered = (
 };
 
 // A text layer states its size twice: once as a box on the page, in points, and
-// once as the coordinates its contents are written in. The two have to agree.
+// once as the extent of the coordinates its contents are written in. The two have
+// to agree, wherever on the page the layer's own origin is.
 const TEXT_LAYER =
-  /data-kind="text"[^>]*width="([\d.]+)pt" height="([\d.]+)pt" viewBox="0 0 ([\d.]+ [\d.]+)"/g;
+  /data-kind="text"[^>]*width="([\d.]+)pt" height="([\d.]+)pt" viewBox="[\d.-]+ [\d.-]+ ([\d.]+ [\d.]+)"/g;
 
 const DRAWN_AT = /<text [^>]*?x="([-\d.]+)" y="([-\d.]+)"/g;
 

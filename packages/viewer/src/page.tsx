@@ -230,14 +230,25 @@ function textLayer(
   // in the browser's own pixels instead, every glyph is drawn three quarters of
   // the size layout measured it at and lands three quarters of the way to where
   // layout put it.
+  //
+  // Text cut to a shape's frame is drawn in a layer that is the frame, which an
+  // svg clips its contents to. The coordinates inside are the page's either way,
+  // so a line is written at the point layout put it on the page.
+  const { clipTo } = drawable;
+  const window = clipTo ?? { leftPt: 0, topPt: 0, widthPt, heightPt };
   return (
     <svg
       key={drawable.key}
       data-kind="text"
-      style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}
-      width={pt(widthPt)}
-      height={pt(heightPt)}
-      viewBox={`0 0 ${String(widthPt)} ${String(heightPt)}`}
+      style={{
+        position: "absolute",
+        left: pt(window.leftPt),
+        top: pt(window.topPt),
+        ...(clipTo === null ? { overflow: "visible" } : {}),
+      }}
+      width={pt(window.widthPt)}
+      height={pt(window.heightPt)}
+      viewBox={`${String(window.leftPt)} ${String(window.topPt)} ${String(window.widthPt)} ${String(window.heightPt)}`}
       fill="currentColor"
     >
       {lines}

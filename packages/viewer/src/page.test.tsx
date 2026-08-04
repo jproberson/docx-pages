@@ -225,6 +225,15 @@ describe("OnePagerPage", () => {
     expect(html).toContain("height:1.5pt");
   });
 
+  // Measured against Word, which cuts a line off mid-glyph where it runs past the
+  // box holding it rather than moving it or letting it overrun.
+  it("cuts a shape's text off at the frame, and lets a story's own text run on", () => {
+    const html = markup(layoutWith([float(textBox([paragraphOf("held")]))], [paragraphOf("free")]));
+    expect(html).toContain('width="180pt" height="90pt" viewBox="100 200 180 90"');
+    expect(html).toContain('width="612pt" height="792pt" viewBox="0 0 612 792"');
+    expect(html).toContain("overflow:visible");
+  });
+
   it("outlines frames on request so placement can be checked without content", () => {
     const html = markup(layoutWith([float(textBox())]), { frames: "outlined" });
     expect(html).toContain('data-kind="text-box"');

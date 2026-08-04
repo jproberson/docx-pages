@@ -22,7 +22,17 @@ export type Drawable =
       readonly kind: "text";
       readonly key: string;
       readonly boxes: readonly ParagraphBox[];
+      // The rectangle the text is cut to, which a shape's own text has and the
+      // text a story flowed down the page does not.
+      readonly clipTo: Rect | null;
     };
+
+export type Rect = {
+  readonly leftPt: number;
+  readonly topPt: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+};
 
 const fromFloat = (float: PlacedFloat, key: string): Drawable => ({
   kind: "object",
@@ -51,12 +61,23 @@ const hasText = (boxes: readonly ParagraphBox[]): boolean =>
 
 // A text box draws its own text straight after its frame, so the two keep the one
 // place in the stack that Word gave the shape.
+//
+// Word cuts that text off at the frame. A box told to fit itself to its text was
+// grown to hold all of it and loses nothing, but one that was not keeps the size
+// it was stored at and shows only as much as fits: the rest is not moved
+// anywhere, it is simply not drawn.
 function textOf(float: PlacedFloat, key: string): readonly Drawable[] {
   const { content } = float;
   if (content.kind !== "text-box" || content.text === null || !hasText(content.text.boxes)) {
     return [];
   }
-  return [{ kind: "text", key: `${key}-text`, boxes: content.text.boxes }];
+  const clipTo = {
+    leftPt: float.leftPt,
+    topPt: float.topPt,
+    widthPt: float.widthPt,
+    heightPt: float.heightPt,
+  };
+  return [{ kind: "text", key: `${key}-text`, boxes: content.text.boxes, clipTo }];
 }
 
 // Word stacks the floats of one story by relativeHeight alone. It is not two
@@ -82,7 +103,7 @@ export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonl
 
   const flowed = [...layout.header, ...page.body, ...layout.footer];
   const text: readonly Drawable[] = hasText(flowed)
-    ? [{ kind: "text", key: "flowed-text", boxes: flowed }]
+    ? [{ kind: "text", key: "flowed-text", boxes: flowed, clipTo: null }]
     : [];
 
   return [
