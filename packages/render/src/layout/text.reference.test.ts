@@ -242,30 +242,39 @@ function comparisonOf(each: ReferenceCase): Promise<Comparison> {
   return made;
 }
 
-describe.skipIf(CASES.length === 0)("text lines against Word", () => {
-  for (const each of CASES) {
-    describe(each.id, () => {
-      it("breaks paragraphs into the lines Word broke them into", async () => {
-        const { matched } = await comparisonOf(each);
-        expect(matched).toBeGreaterThanOrEqual(each.textLinesMatched ?? 0);
-      });
+// Laying a document out and reading a pdf of it back is a second or two of work
+// each, and the whole suite runs its files side by side, so the first assertion
+// of a case waits far longer than a unit test's own patience allows for.
+const COMPARISON_TIMEOUT_MS = 60_000;
 
-      it("puts those lines where Word put them, on the page Word put them on", async () => {
-        const { placed } = await comparisonOf(each);
-        expect(placed).toBeGreaterThanOrEqual(each.textLinesPlaced ?? 0);
-      });
+describe.skipIf(CASES.length === 0)(
+  "text lines against Word",
+  { timeout: COMPARISON_TIMEOUT_MS },
+  () => {
+    for (const each of CASES) {
+      describe(each.id, () => {
+        it("breaks paragraphs into the lines Word broke them into", async () => {
+          const { matched } = await comparisonOf(each);
+          expect(matched).toBeGreaterThanOrEqual(each.textLinesMatched ?? 0);
+        });
 
-      it("starts each of a line's runs where Word started it", async () => {
-        const { runsMatched, runsPlaced } = await comparisonOf(each);
-        expect(runsMatched).toBeGreaterThanOrEqual(each.textRunsMatched ?? 0);
-        expect(runsPlaced).toBeGreaterThanOrEqual(each.textRunsPlaced ?? 0);
-      });
+        it("puts those lines where Word put them, on the page Word put them on", async () => {
+          const { placed } = await comparisonOf(each);
+          expect(placed).toBeGreaterThanOrEqual(each.textLinesPlaced ?? 0);
+        });
 
-      it("puts a list's number where Word put it", async () => {
-        const { numbersMatched, numbersPlaced } = await comparisonOf(each);
-        expect(numbersMatched).toBeGreaterThanOrEqual(each.numbersMatched ?? 0);
-        expect(numbersPlaced).toBeGreaterThanOrEqual(each.numbersPlaced ?? 0);
+        it("starts each of a line's runs where Word started it", async () => {
+          const { runsMatched, runsPlaced } = await comparisonOf(each);
+          expect(runsMatched).toBeGreaterThanOrEqual(each.textRunsMatched ?? 0);
+          expect(runsPlaced).toBeGreaterThanOrEqual(each.textRunsPlaced ?? 0);
+        });
+
+        it("puts a list's number where Word put it", async () => {
+          const { numbersMatched, numbersPlaced } = await comparisonOf(each);
+          expect(numbersMatched).toBeGreaterThanOrEqual(each.numbersMatched ?? 0);
+          expect(numbersPlaced).toBeGreaterThanOrEqual(each.numbersPlaced ?? 0);
+        });
       });
-    });
-  }
-});
+    }
+  },
+);
