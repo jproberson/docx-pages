@@ -107,7 +107,7 @@ describe("layOutTextBox", () => {
     const line = text.boxes[0]?.lines[0];
 
     expect(line?.topPt).toBeCloseTo(200 + 90 - ARIAL_12, 9);
-    expect(line?.baselinePt).toBeCloseTo(200 + 90 - ARIAL_12 + (12 * 1854) / 2048, 9);
+    expect(line?.baselinePt).toBeCloseTo(200 + 90 - ARIAL_12 + (12 * (1854 + 67)) / 2048, 9);
   });
 
   it("lets text overflow a box too short for it rather than clipping it away", () => {

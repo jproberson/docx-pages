@@ -52,8 +52,13 @@ describe("lineHeightPt", () => {
 });
 
 describe("ascentPt", () => {
-  it("uses the ascender alone, not the full line height", () => {
-    expect(ascentPt(found("Arial"), 12)).toBeCloseTo(10.8633, 4);
+  it("counts the line gap above the ascender, since that is where Word leads", () => {
+    expect(ascentPt(found("Arial"), 12)).toBeCloseTo(11.2559, 4);
+  });
+
+  it("leaves only the descender below the baseline", () => {
+    const arial = found("Arial");
+    expect(lineHeightPt(arial, 12) - ascentPt(arial, 12)).toBeCloseTo(2.543, 4);
   });
 });
 

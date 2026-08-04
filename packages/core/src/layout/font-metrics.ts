@@ -52,8 +52,10 @@ export type MetricsLookup =
 export const lineHeightPt = (metrics: FontMetrics, fontSizePt: number): number =>
   (fontSizePt * (metrics.ascender - metrics.descender + metrics.lineGap)) / metrics.unitsPerEm;
 
+// A face's line gap leads the line from above, so the baseline sits below it as
+// well as below the ascender.
 export const ascentPt = (metrics: FontMetrics, fontSizePt: number): number =>
-  (fontSizePt * metrics.ascender) / metrics.unitsPerEm;
+  (fontSizePt * (metrics.ascender + metrics.lineGap)) / metrics.unitsPerEm;
 
 export const advanceWidthPt = (advance: number, metrics: FontMetrics, fontSizePt: number): number =>
   (fontSizePt * advance) / metrics.unitsPerEm;

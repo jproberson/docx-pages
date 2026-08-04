@@ -122,7 +122,7 @@ describe("measureStack", () => {
 
 // Every glyph in the test face is half an em, so 12pt text is 6pt a character.
 const PER_CHARACTER = 6;
-const ARIAL_ASCENT_12 = (12 * 1854) / 2048;
+const ARIAL_ASCENT_12 = (12 * (1854 + 67)) / 2048;
 
 describe("measureStack over text", () => {
   it("carries the lines a paragraph breaks into", () => {
