@@ -5,6 +5,7 @@ import {
   NO_ADVANCES,
   OnePagerError,
   readFontFile,
+  type FaceRequest,
   type FontMetrics,
   type SuppliedFace,
 } from "@onepager/core";
@@ -97,13 +98,24 @@ export type ReferenceFontFile = {
   readonly metrics: FontMetrics;
 };
 
+// The face a document was authored in, as against the one Word had to fall back
+// on when it rendered the reference pdf. Everything about it is read from the file
+// itself, since no substitute's metrics stand in for it.
+export type AuthoredFace = {
+  readonly name: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly filePath: string;
+};
+
 export type ReferenceManifest = {
   readonly fonts: readonly ReferenceFont[];
+  readonly authoredFonts: readonly AuthoredFace[];
   readonly fontFiles: readonly ReferenceFontFile[];
   readonly cases: readonly ReferenceCase[];
 };
 
-const EMPTY: ReferenceManifest = { fonts: [], fontFiles: [], cases: [] };
+const EMPTY: ReferenceManifest = { fonts: [], authoredFonts: [], fontFiles: [], cases: [] };
 
 // `where` carries the manifest path as its root, so it locates the fault on its own.
 const invalid = (message: string, where: string): OnePagerError =>
@@ -178,6 +190,16 @@ const readFont = (value: unknown, where: string): ReferenceFont => {
     filePath: optionalText(source, "filePath", where),
     fileFormat: optionalText(source, "fileFormat", where),
     metrics: readMetrics(source["metrics"], `${where}.metrics`),
+  };
+};
+
+const readAuthoredFace = (value: unknown, where: string): AuthoredFace => {
+  const source = record(value, where);
+  return {
+    name: text(source, "name", where),
+    bold: flag(source, "bold", where),
+    italic: flag(source, "italic", where),
+    filePath: text(source, "filePath", where),
   };
 };
 
@@ -294,6 +316,9 @@ export function readReferenceManifest(path: string = MANIFEST_PATH): ReferenceMa
     fonts: entries(source, "fonts", path).map((entry, at) =>
       readFont(entry, `${path}#fonts[${String(at)}]`),
     ),
+    authoredFonts: entries(source, "authoredFonts", path).map((entry, at) =>
+      readAuthoredFace(entry, `${path}#authoredFonts[${String(at)}]`),
+    ),
     fontFiles: entries(source, "fontFiles", path).map((entry, at) =>
       readFontFileEntry(entry, `${path}#fontFiles[${String(at)}]`),
     ),
@@ -325,3 +350,30 @@ function faceOf(font: ReferenceFont): SuppliedFace {
 }
 
 export const suppliedFaces = (): readonly SuppliedFace[] => referenceFonts().map(faceOf);
+
+export const authoredFonts = (): readonly AuthoredFace[] =>
+  readReferenceManifest().authoredFonts.filter((each) => existsSync(each.filePath));
+
+// The authored file is the whole answer for the face it names: its own metrics as
+// well as its own advances, since the manifest's are the substitute's.
+function authoredFaceOf(face: AuthoredFace): SuppliedFace {
+  const read = readFontFile(new Uint8Array(readFileSync(face.filePath)));
+  return {
+    name: face.name,
+    bold: face.bold,
+    italic: face.italic,
+    metrics: read.metrics,
+    advances: read.advances,
+  };
+}
+
+const styleKey = (face: FaceRequest): string =>
+  `${face.name.toLowerCase()}|${String(face.bold)}|${String(face.italic)}`;
+
+// Every face the reference documents need, with the authored ones in place of the
+// substitutes Word fell back on.
+export function authoredFaces(): readonly SuppliedFace[] {
+  const authored = authoredFonts().map(authoredFaceOf);
+  const taken = new Set(authored.map(styleKey));
+  return [...authored, ...suppliedFaces().filter((each) => !taken.has(styleKey(each)))];
+}
