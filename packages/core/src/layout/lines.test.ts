@@ -10,7 +10,7 @@ import { breakLines, type TextLine } from "./lines.js";
 // Every glyph is half an em wide, so a 10pt run measures exactly 5pt a character
 // and the expected break points can be counted rather than computed.
 const HALF_EM = 500;
-const CHARACTERS = "abcdefghijklmnopqrstuvwxyz ";
+const CHARACTERS = "abcdefghijklmnopqrstuvwxyz -";
 
 const FIXTURE = {
   unitsPerEm: 1000,
@@ -92,6 +92,18 @@ describe("breakLines", () => {
     const lines = linesOf([runOf("abc def")], 20);
 
     expect(lines.map(textOf)).toStrictEqual(["abc", "def"]);
+  });
+
+  it("breaks after a hyphen inside a word, leaving the hyphen on the line it ends", () => {
+    // "ab-cd" is 25pt and "ab-" alone is 15pt, so a 20pt line ends on the hyphen.
+    expect(linesOf([runOf("ab-cd")], 20).map(textOf)).toStrictEqual(["ab-", "cd"]);
+  });
+
+  it("keeps a hyphenated word whole when the line has room for it", () => {
+    const lines = linesOf([runOf("ab-cd ef")], 100);
+
+    expect(lines.map(textOf)).toStrictEqual(["ab-cd ef"]);
+    expect(lines[0]?.widthPt).toBeCloseTo(40, 9);
   });
 
   it("drops the space a wrap happens at rather than starting a line with it", () => {

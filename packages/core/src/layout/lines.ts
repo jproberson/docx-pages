@@ -165,12 +165,19 @@ class Measurer {
 
 const IS_SPACE = /^\s+$/;
 
+// Word lets a line end on a hyphen inside a word, so each one closes the word it
+// belongs to and the rest of it becomes a word of its own.
+const AFTER_HYPHEN = /(?<=-)/;
+
+const endsOnHyphen = (unit: Unit): boolean =>
+  unit.kind === "word" && (unit.fragments.at(-1)?.text ?? "").endsWith("-");
+
 function tokenize(runs: readonly TextRun[], measurer: Measurer): Measured<readonly Unit[]> {
   const units: Unit[] = [];
 
   const append = (kind: "word" | "space", fragment: Fragment): void => {
     const last = units.at(-1);
-    if (last !== undefined && last.kind === kind) {
+    if (last !== undefined && last.kind === kind && !endsOnHyphen(last)) {
       units[units.length - 1] = { kind, fragments: [...last.fragments, fragment] };
       return;
     }
@@ -211,9 +218,12 @@ function addPiece(
   }
 
   for (const token of piece.text.split(/(\s+)/).filter((each) => each !== "")) {
-    const fragment = measurer.fragment(mark, token);
-    if (fragment === null) return false;
-    append(IS_SPACE.test(token) ? "space" : "word", fragment);
+    const space = IS_SPACE.test(token);
+    for (const part of space ? [token] : token.split(AFTER_HYPHEN)) {
+      const fragment = measurer.fragment(mark, part);
+      if (fragment === null) return false;
+      append(space ? "space" : "word", fragment);
+    }
   }
   return true;
 }
