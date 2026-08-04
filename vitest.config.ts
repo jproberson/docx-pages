@@ -17,6 +17,10 @@ export const config = defineConfig({
   },
   test: {
     include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx"],
+    // Reading a pdf back loads pdfjs first, and the file that happens to do it
+    // while every other file is running waits far longer than a unit test's own
+    // patience allows for.
+    testTimeout: 60_000,
   },
 });
 
