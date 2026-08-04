@@ -51,8 +51,11 @@ export type TextBoxBody = {
 // rectangle the size of the object, or a line across it.
 export type ShapeGeometry = "rectangle" | "line";
 
+// An outline takes its width along the shape's edge whether or not it paints
+// anything there, which is what a box fitting itself to its text has to leave
+// room for. A line with nothing to draw with carries no colour.
 export type ShapeOutline = {
-  readonly color: ColorReference;
+  readonly color: ColorReference | null;
   readonly widthPt: number;
 };
 
@@ -110,8 +113,6 @@ function readOutline(shapeProperties: XmlElement): ShapeOutline | null {
 
   const fill = firstNamed(line, A_NS, "solidFill");
   const color = fill === null ? null : readColorReference(fill);
-  if (color === null) return null;
-
   const raw = attribute(line, "", "w");
   const width = raw === undefined ? Number.NaN : Number(raw);
   return {

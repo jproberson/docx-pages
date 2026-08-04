@@ -126,13 +126,21 @@ function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
     return stored;
   }
 
+  // The box is as tall as its text, its insets, and the outline that runs round
+  // the whole of it: an outline is centred on the edge, so it takes half its width
+  // above the text and half below. Measured against Word by fitting one line inside
+  // outlines of nothing, three quarters of a point and three points.
   const { insets, wraps } = content.body;
+  const outlinePt = content.paint.outline?.widthPt ?? 0;
   return {
     widthPt: wraps
       ? stored.widthPt
       : laid.text.contentWidthPt + emuToPoints(insets.leftEmu) + emuToPoints(insets.rightEmu),
     heightPt:
-      laid.text.contentHeightPt + emuToPoints(insets.topEmu) + emuToPoints(insets.bottomEmu),
+      laid.text.contentHeightPt +
+      emuToPoints(insets.topEmu) +
+      emuToPoints(insets.bottomEmu) +
+      outlinePt,
   };
 }
 

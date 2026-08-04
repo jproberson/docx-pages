@@ -123,7 +123,10 @@ function resolve(position: AnchorPosition, band: Band, sizePt: number): number {
 }
 
 const resolvePaint = (paint: ShapePaint, theme: Theme): PlacedPaint => {
-  const outlineColor = paint.outline === null ? null : themeColor(theme, paint.outline.color);
+  const outlineColor =
+    paint.outline?.color === undefined || paint.outline.color === null
+      ? null
+      : themeColor(theme, paint.outline.color);
   return {
     fillColor: paint.fill === null ? null : themeColor(theme, paint.fill),
     outline:

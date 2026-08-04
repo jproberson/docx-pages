@@ -194,8 +194,10 @@ describe("the paint a shape carries", () => {
     expect(outlined(`w="25400"`)).toBe(2);
   });
 
-  it("reads an outline that is turned off as no outline at all", () => {
-    expect(shapePaint(`<a:ln w="9525"><a:noFill/></a:ln>`).outline).toBeNull();
+  it("reads an outline that paints nothing as one that takes room and no colour", () => {
+    const found = shapePaint(`<a:ln w="9525"><a:noFill/></a:ln>`).outline;
+    expect(found?.widthPt).toBeCloseTo(0.75, 5);
+    expect(found?.color).toBeNull();
   });
 
   it("tells a line apart from every other preset, which are all rectangles here", () => {
@@ -211,6 +213,6 @@ describe("the paint a shape carries", () => {
         <pic:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="FFFFFF">
           <a:lumMod val="50000"/></a:srgbClr></a:solidFill></a:ln></pic:spPr></pic:pic>`,
     );
-    expect(found.kind === "picture" && found.paint.outline?.color.luminanceScale).toBe(0.5);
+    expect(found.kind === "picture" && found.paint.outline?.color?.luminanceScale).toBe(0.5);
   });
 });
