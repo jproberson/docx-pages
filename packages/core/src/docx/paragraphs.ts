@@ -38,14 +38,18 @@ function collectNamed(node: XmlElement, name: string, into: XmlElement[]): void 
 const WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
 // A run holding only a floating anchor places nothing on the line, so it does not
-// contribute to the line's height. Word lays floats out of flow.
+// contribute to the line's height. Word lays floats out of flow. A run holding
+// only a break is not that: it ends the line it sits on, and dropping it runs the
+// text either side of it together.
+const LINE_CONTENT = new Set(["t", "tab", "br"]);
+
 function placesContentInLine(run: XmlElement): boolean {
   let found = false;
   const visit = (node: XmlElement): void => {
     if (found) return;
     for (const child of node.children) {
       if (isDetachedContent(child)) continue;
-      const isText = child.namespace === W_NS && (child.name === "t" || child.name === "tab");
+      const isText = child.namespace === W_NS && LINE_CONTENT.has(child.name);
       const isInline = child.namespace === WP_DRAWING_NS && child.name === "inline";
       if (isText || isInline) {
         found = true;

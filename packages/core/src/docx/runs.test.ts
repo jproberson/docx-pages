@@ -70,6 +70,20 @@ describe("readRuns", () => {
     expect(runs[0]?.pieces.map((piece) => piece.kind)).toStrictEqual(["text", "break", "text"]);
   });
 
+  // A run of its own is where Word puts a break the author typed between two runs
+  // of text, and a run carrying nothing else still ends the line it sits on.
+  it("keeps a break that is a run of its own", () => {
+    const runs = runsOf(
+      `<w:p><w:r><w:t>a</w:t></w:r><w:r><w:br/></w:r><w:r><w:t>b</w:t></w:r></w:p>`,
+    );
+
+    expect(runs.map((run) => run.pieces.map((piece) => piece.kind))).toStrictEqual([
+      ["text"],
+      ["break"],
+      ["text"],
+    ]);
+  });
+
   it("carries the size a drawing takes on the line", () => {
     const drawing = `<w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
       <wp:inline><wp:extent cx="914400" cy="457200"/></wp:inline></w:drawing>`;
