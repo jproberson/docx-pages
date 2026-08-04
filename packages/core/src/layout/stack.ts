@@ -65,6 +65,9 @@ export type PlacedLine = {
   readonly line: TextLine;
   readonly leftPt: number;
   readonly topPt: number;
+  // What the line takes out of the stack, which is its own height plus whatever
+  // the paragraph's line rule adds to it.
+  readonly heightPt: number;
   readonly baselinePt: number;
 };
 
@@ -436,6 +439,7 @@ function layOutParagraph(
       line,
       leftPt: lineStartPt(paragraphFrame, startPt, endPt, line.widthPt),
       topPt: top,
+      heightPt,
       // Extra leading sits above the text, which is where Word puts it.
       baselinePt: top + (heightPt - naturalPt) + line.ascentPt,
     });

@@ -93,6 +93,9 @@ export type {
   StackMeasurement,
 } from "./layout/stack.js";
 
+export { breakStack } from "./layout/pages.js";
+export type { BreakStackInput, PageStack } from "./layout/pages.js";
+
 export { layOutTextBox } from "./layout/text-boxes.js";
 export type {
   LayOutTextBoxInput,
