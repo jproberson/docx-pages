@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readDrawingContent, NO_CROP } from "./drawing.js";
+import { readDrawingContent, DEFAULT_TEXT_INSETS, NO_CROP } from "./drawing.js";
 import { parseXml } from "./xml.js";
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
@@ -60,5 +60,56 @@ describe("readDrawingContent", () => {
 
   it("reports content it does not recognise instead of failing", () => {
     expect(drawing(`<a:chart/>`).kind).toBe("unknown");
+  });
+});
+
+const textBox = (bodyPr: string, content = "<w:p/>") =>
+  drawing(`<wps:wsp><wps:txbx><w:txbxContent>${content}</w:txbxContent></wps:txbx>
+    ${bodyPr}</wps:wsp>`);
+
+const bodyOf = (bodyPr: string, content?: string) => {
+  const found = textBox(bodyPr, content);
+  if (found.kind !== "text-box") throw new Error(found.kind);
+  return found.body;
+};
+
+describe("a text box's body", () => {
+  it("reads the paragraphs it holds, numbered within the box", () => {
+    const body = bodyOf(``, `<w:p/><w:p/>`);
+
+    expect(
+      body.blocks.map((block) => block.kind === "paragraph" && block.paragraph.index),
+    ).toStrictEqual([0, 1]);
+  });
+
+  it("takes Word's own insets when the shape states none", () => {
+    expect(bodyOf(``).insets).toStrictEqual(DEFAULT_TEXT_INSETS);
+  });
+
+  it("reads the insets the shape does state, including a zero one", () => {
+    const bodyPr = `<wps:bodyPr lIns="0" tIns="45720" rIns="0" bIns="12700"/>`;
+
+    expect(bodyOf(bodyPr).insets).toStrictEqual({
+      leftEmu: 0,
+      topEmu: 45720,
+      rightEmu: 0,
+      bottomEmu: 12700,
+    });
+  });
+
+  it("reads where the text sits when the box is taller than the text", () => {
+    expect(bodyOf(``).anchor).toBe("top");
+    expect(bodyOf(`<wps:bodyPr anchor="ctr"/>`).anchor).toBe("center");
+    expect(bodyOf(`<wps:bodyPr anchor="b"/>`).anchor).toBe("bottom");
+  });
+
+  it("reads a box that refuses to wrap its text", () => {
+    expect(bodyOf(``).wraps).toBe(true);
+    expect(bodyOf(`<wps:bodyPr wrap="none"/>`).wraps).toBe(false);
+  });
+
+  it("reads a box whose content is missing as an empty one", () => {
+    const found = drawing(`<wps:wsp><wps:txbx/></wps:wsp>`);
+    expect(found.kind === "text-box" && found.body.blocks).toStrictEqual([]);
   });
 });

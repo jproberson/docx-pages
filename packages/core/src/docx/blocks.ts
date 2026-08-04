@@ -73,9 +73,15 @@ function verticalAlignOf(cell: XmlElement): CellVerticalAlign {
 }
 
 export function readBlocks(pkg: DocxPackage, part: string = MAIN_DOCUMENT_PART): readonly Block[] {
+  return blocksIn(partXml(pkg, part));
+}
+
+// A text box's blocks are numbered from zero within it, since they stack in its
+// own frame rather than in the part's.
+export function blocksIn(element: XmlElement): readonly Block[] {
   const blocks: Block[] = [];
   let index = 0;
-  collect(partXml(pkg, part), blocks, () => index++);
+  collect(element, blocks, () => index++);
   return blocks;
 }
 
