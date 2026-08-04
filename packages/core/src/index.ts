@@ -93,6 +93,9 @@ export type {
   StackMeasurement,
 } from "./layout/stack.js";
 
+export { fitLine, freeSpans } from "./layout/wrapping.js";
+export type { FitLineInput, LineSlot, WrapBand } from "./layout/wrapping.js";
+
 export { breakStack } from "./layout/pages.js";
 export type { BreakStackInput, PageStack } from "./layout/pages.js";
 
