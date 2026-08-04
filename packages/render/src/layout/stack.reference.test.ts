@@ -23,6 +23,10 @@ const topOf = (
   return box.topPt;
 };
 
+// Word reports a paragraph's top against the page it landed on, so the boxes are
+// read the same way: page by page, in order.
+const bodyBoxes = (each: ReferenceCase) => layoutOf(each).pages.flatMap((page) => page.body);
+
 const CASES = referenceCases();
 
 describe.skipIf(CASES.length === 0)("paragraph stack against Word", () => {
@@ -38,9 +42,7 @@ describe.skipIf(CASES.length === 0)("paragraph stack against Word", () => {
 
       for (const { index, topPt } of each.bodyTopsPt) {
         it(`puts body paragraph ${String(index)} where Word put it`, () => {
-          expect(Math.abs(topOf(layoutOf(each).body, index) - topPt)).toBeLessThan(
-            each.tolerancePt,
-          );
+          expect(Math.abs(topOf(bodyBoxes(each), index) - topPt)).toBeLessThan(each.tolerancePt);
         });
       }
 
@@ -49,7 +51,7 @@ describe.skipIf(CASES.length === 0)("paragraph stack against Word", () => {
       it.runIf(each.bodyTopsPt.length > 1)("accumulates no drift between two known tops", () => {
         const [first, last] = [each.bodyTopsPt.at(0), each.bodyTopsPt.at(-1)];
         if (first === undefined || last === undefined) throw new Error("need two tops");
-        const { body } = layoutOf(each);
+        const body = bodyBoxes(each);
         const span = topOf(body, last.index) - topOf(body, first.index);
         expect(Math.abs(span - (last.topPt - first.topPt))).toBeLessThan(0.1);
       });

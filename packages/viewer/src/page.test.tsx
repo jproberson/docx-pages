@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CropInsets,
   LaidOutDocument,
+  LaidOutPage,
   ParagraphBox,
   ParagraphMark,
   PlacedContent,
@@ -106,23 +107,28 @@ const layoutWith = (
   bodyBottomPt: 792,
   footerTopPt: 784.8,
   header: [],
-  body,
   footer: [],
   headerFloats: [],
-  bodyFloats: floats,
   footerFloats: [],
   headerInlines: [],
-  bodyInlines: [],
   footerInlines: [],
+  pages: [{ index: 0, body, floats, inlines: [] }],
 });
+
+const firstPage = (layout: LaidOutDocument): LaidOutPage => {
+  const [page] = layout.pages;
+  if (page === undefined) throw new Error("the layout has no pages");
+  return page;
+};
 
 const markup = (
   layout: LaidOutDocument,
-  options: Parameters<typeof OnePagerPage>[0] | null = null,
+  options: Partial<Parameters<typeof OnePagerPage>[0]> | null = null,
 ) =>
   renderToStaticMarkup(
     <OnePagerPage
       layout={layout}
+      page={firstPage(layout)}
       imageUrl={(part) =>
         part === "word/media/image1.png" ? "data:image/png;base64,AA" : undefined
       }
@@ -138,9 +144,7 @@ describe("OnePagerPage", () => {
   });
 
   it("scales the whole page rather than each object in it", () => {
-    const html = renderToStaticMarkup(
-      <OnePagerPage layout={layoutWith([])} imageUrl={() => undefined} scale={0.5} />,
-    );
+    const html = markup(layoutWith([]), { scale: 0.5 });
     expect(html).toContain("transform:scale(0.5)");
     expect(html).toContain("transform-origin:top left");
   });
@@ -171,38 +175,25 @@ describe("OnePagerPage", () => {
   });
 
   it("outlines frames on request so placement can be checked without content", () => {
-    const html = renderToStaticMarkup(
-      <OnePagerPage
-        layout={layoutWith([float(textBox())])}
-        imageUrl={() => undefined}
-        frames="outlined"
-      />,
-    );
+    const html = markup(layoutWith([float(textBox())]), { frames: "outlined" });
     expect(html).toContain('data-kind="text-box"');
     expect(html).toContain("left:100pt");
   });
 
   it("marks a picture whose part never resolved rather than drawing a broken image", () => {
-    const html = renderToStaticMarkup(
-      <OnePagerPage
-        layout={layoutWith([float({ kind: "missing-picture", relationshipId: "rId7" })])}
-        imageUrl={() => undefined}
-        frames="outlined"
-      />,
-    );
+    const html = markup(layoutWith([float({ kind: "missing-picture", relationshipId: "rId7" })]), {
+      frames: "outlined",
+    });
     expect(html).toContain('data-kind="missing-picture"');
   });
 
   it("stacks objects behind the text below the ones in front of it", () => {
-    const html = renderToStaticMarkup(
-      <OnePagerPage
-        layout={layoutWith([
-          float({ kind: "shape" }, { height: 5 }),
-          float(textBox(), { behindDoc: true, height: 9 }),
-        ])}
-        imageUrl={() => undefined}
-        frames="outlined"
-      />,
+    const html = markup(
+      layoutWith([
+        float({ kind: "shape" }, { height: 5 }),
+        float(textBox(), { behindDoc: true, height: 9 }),
+      ]),
+      { frames: "outlined" },
     );
     expect(html.indexOf('data-kind="text-box"')).toBeLessThan(html.indexOf('data-kind="shape"'));
   });
@@ -220,8 +211,6 @@ describe("OnePagerPage drawing text", () => {
 
   it("names the authored face first and lets the page fall back behind it", () => {
     const html = markup(layoutWith([], [paragraphOf("Hello")]), {
-      layout: layoutWith([], [paragraphOf("Hello")]),
-      imageUrl: () => undefined,
       fallbackFonts: "Open Sans, sans-serif",
     });
 
@@ -252,13 +241,9 @@ describe("OnePagerPage drawing text", () => {
   });
 
   it("draws a text box's text after the frame it belongs to", () => {
-    const html = renderToStaticMarkup(
-      <OnePagerPage
-        layout={layoutWith([float(textBox([paragraphOf("Inside")]))])}
-        imageUrl={() => undefined}
-        frames="outlined"
-      />,
-    );
+    const html = markup(layoutWith([float(textBox([paragraphOf("Inside")]))]), {
+      frames: "outlined",
+    });
     expect(html.indexOf('data-kind="text-box"')).toBeLessThan(html.indexOf("Inside"));
   });
 

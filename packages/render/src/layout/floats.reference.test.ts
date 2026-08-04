@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { layOutDocument, lookupFontMetrics, type PlacedFloat } from "@onepager/core";
+import {
+  layOutDocument,
+  lookupFontMetrics,
+  type PlacedFloat,
+  type PlacedInline,
+} from "@onepager/core";
 
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
@@ -14,10 +19,18 @@ const layoutOf = (each: ReferenceCase) => {
   return result;
 };
 
-const floatsOf = (each: ReferenceCase): readonly PlacedFloat[] => {
-  const { headerFloats, bodyFloats } = layoutOf(each);
-  return [...headerFloats, ...bodyFloats];
-};
+// Floats keep the order the document gives them: the header's, then the body's
+// page by page.
+const bodyFloatsOf = (each: ReferenceCase): readonly PlacedFloat[] =>
+  layoutOf(each).pages.flatMap((page) => page.floats);
+
+const floatsOf = (each: ReferenceCase): readonly PlacedFloat[] => [
+  ...layoutOf(each).headerFloats,
+  ...bodyFloatsOf(each),
+];
+
+const inlinesOf = (each: ReferenceCase): readonly PlacedInline[] =>
+  layoutOf(each).pages.flatMap((page) => page.inlines);
 
 const at = (floats: readonly PlacedFloat[], index: number): PlacedFloat => {
   const found = floats[index];
@@ -52,7 +65,7 @@ describe.skipIf(CASES.length === 0)("float placement against Word", () => {
         it.runIf(expected.leftPt !== null)(
           `places inline drawing ${String(expected.index)} horizontally where Word did`,
           () => {
-            const found = layoutOf(each).bodyInlines[expected.index];
+            const found = inlinesOf(each)[expected.index];
             expect(found?.leftPt).toBeCloseTo(expected.leftPt ?? 0, 1);
           },
         );
@@ -60,7 +73,7 @@ describe.skipIf(CASES.length === 0)("float placement against Word", () => {
         it.runIf(expected.topPt !== null)(
           `places inline drawing ${String(expected.index)} vertically where Word did`,
           () => {
-            const found = layoutOf(each).bodyInlines[expected.index];
+            const found = inlinesOf(each)[expected.index];
             expect(Math.abs((found?.topPt ?? 0) - (expected.topPt ?? 0))).toBeLessThan(
               each.tolerancePt,
             );
@@ -80,18 +93,16 @@ describe.skipIf(CASES.length === 0)("float placement against Word", () => {
       });
 
       it.runIf(each.leastBodyFloatCount !== null)("finds every float in the body", () => {
-        expect(layoutOf(each).bodyFloats.length).toBeGreaterThanOrEqual(
-          each.leastBodyFloatCount ?? 0,
-        );
+        expect(bodyFloatsOf(each).length).toBeGreaterThanOrEqual(each.leastBodyFloatCount ?? 0);
       });
 
       // A negative paragraph-relative offset is the case other engines get wrong:
       // the object belongs above the paragraph that anchors it, not clamped to it.
       it("lets a negatively offset float rise above the paragraph that anchors it", () => {
-        const { header, body, headerFloats, bodyFloats } = layoutOf(each);
+        const { header, headerFloats, pages } = layoutOf(each);
         const rising = [
           ...headerFloats.map((float) => ({ float, boxes: header })),
-          ...bodyFloats.map((float) => ({ float, boxes: body })),
+          ...pages.flatMap((page) => page.floats.map((float) => ({ float, boxes: page.body }))),
         ].filter(
           ({ float }) =>
             float.anchor.vertical.kind === "offset" &&

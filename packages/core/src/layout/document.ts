@@ -12,10 +12,20 @@ import {
   type MetricsResolver,
   type ParagraphBox,
 } from "./stack.js";
+import { breakStack, type PageStack } from "./pages.js";
 import { placeFloat, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
 import { twipsToPoints } from "./units.js";
+
+// The header and the footer are drawn again on every page, so only the body is
+// broken up: a page is the run of it that fitted between the two.
+export type LaidOutPage = {
+  readonly index: number;
+  readonly body: readonly ParagraphBox[];
+  readonly floats: readonly PlacedFloat[];
+  readonly inlines: readonly PlacedInline[];
+};
 
 export type LaidOutDocument = {
   readonly kind: "laid-out";
@@ -26,14 +36,12 @@ export type LaidOutDocument = {
   readonly bodyBottomPt: number;
   readonly footerTopPt: number;
   readonly header: readonly ParagraphBox[];
-  readonly body: readonly ParagraphBox[];
   readonly footer: readonly ParagraphBox[];
   readonly headerFloats: readonly PlacedFloat[];
-  readonly bodyFloats: readonly PlacedFloat[];
   readonly footerFloats: readonly PlacedFloat[];
   readonly headerInlines: readonly PlacedInline[];
-  readonly bodyInlines: readonly PlacedInline[];
   readonly footerInlines: readonly PlacedInline[];
+  readonly pages: readonly LaidOutPage[];
 };
 
 export type DocumentLayout =
@@ -154,37 +162,36 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
 
+  // A drawing belongs to the page its anchoring paragraph landed on, and is placed
+  // against the top that paragraph has there.
   const drawingsFor = (
     blocks: readonly Block[],
-    boxes: readonly ParagraphBox[],
+    topOf: ReadonlyMap<number, number>,
     part: string,
   ): { readonly floats: readonly PlacedFloat[]; readonly inlines: readonly PlacedInline[] } => {
-    const topOf = new Map(boxes.map((box) => [box.index, box.topPt]));
     const relationships = readRelationships(pkg, part);
     const resolvePart = (relationshipId: string): string | null => {
       const target = relationships.get(relationshipId)?.part;
       return target !== undefined && pkg.parts.has(target) ? target : null;
     };
 
-    const paragraphs = blockParagraphs(blocks);
+    const anchored = blockParagraphs(blocks).flatMap((paragraph) => {
+      const paragraphTopPt = topOf.get(paragraph.index);
+      return paragraphTopPt === undefined ? [] : [{ paragraph, paragraphTopPt }];
+    });
+
     return {
-      floats: paragraphs.flatMap((paragraph) =>
+      floats: anchored.flatMap(({ paragraph, paragraphTopPt }) =>
         readAnchors(paragraph).map((anchor) =>
-          placeFloat({
-            anchor,
-            page,
-            paragraphTopPt: topOf.get(paragraph.index) ?? bodyTopPt,
-            bodyTopPt,
-            resolvePart,
-          }),
+          placeFloat({ anchor, page, paragraphTopPt, bodyTopPt, resolvePart }),
         ),
       ),
-      inlines: paragraphs.flatMap((paragraph) =>
+      inlines: anchored.flatMap(({ paragraph, paragraphTopPt }) =>
         placeInlines({
           drawings: readInlines(paragraph),
           page,
           frame: resolveParagraphFrame(paragraph, styles),
-          paragraphTopPt: topOf.get(paragraph.index) ?? bodyTopPt,
+          paragraphTopPt,
           resolvePart,
         }),
       ),
@@ -194,32 +201,33 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const drawingsIn = (story: Story) =>
     story.part === null
       ? { floats: [], inlines: [] }
-      : drawingsFor(story.blocks, story.boxes, story.part);
+      : drawingsFor(story.blocks, topsOf(story.boxes), story.part);
 
   const headerDrawings = drawingsIn(header);
   const footerDrawings = drawingsIn(footer);
-  const bodyDrawings = drawingsFor(bodyBlocks, bodyStack.boxes, MAIN_DOCUMENT_PART);
+  const broken = breakStack({ boxes: bodyStack.boxes, topPt: bodyTopPt, bottomPt: bodyBottomPt });
+  const bodyDrawings = pageTops(broken).map((topOf) =>
+    drawingsFor(bodyBlocks, topOf, MAIN_DOCUMENT_PART),
+  );
 
   const filled = fillTextBoxes(
     [
       { floats: headerDrawings.floats, part: header.part ?? MAIN_DOCUMENT_PART },
-      { floats: bodyDrawings.floats, part: MAIN_DOCUMENT_PART },
       { floats: footerDrawings.floats, part: footer.part ?? MAIN_DOCUMENT_PART },
+      ...bodyDrawings.map((drawings) => ({ floats: drawings.floats, part: MAIN_DOCUMENT_PART })),
     ],
     styles,
     metricsFor,
   );
   if (filled.kind === "blocked") return filled;
-  const [headerFloats = [], bodyFloats = [], footerFloats = []] = filled.floats;
+  const [headerFloats = [], footerFloats = [], ...pageFloats] = filled.floats;
 
   return {
     kind: "laid-out",
     page,
     headerFloats,
-    bodyFloats,
     footerFloats,
     headerInlines: headerDrawings.inlines,
-    bodyInlines: bodyDrawings.inlines,
     footerInlines: footerDrawings.inlines,
     headerTopPt,
     headerHeightPt,
@@ -227,7 +235,30 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     bodyBottomPt,
     footerTopPt,
     header: header.boxes,
-    body: bodyStack.boxes,
     footer: footer.boxes,
+    pages: broken.map((each) => ({
+      index: each.index,
+      body: each.boxes,
+      floats: pageFloats[each.index] ?? [],
+      inlines: bodyDrawings[each.index]?.inlines ?? [],
+    })),
   };
+}
+
+const topsOf = (boxes: readonly ParagraphBox[]): ReadonlyMap<number, number> =>
+  new Map(boxes.map((box) => [box.index, box.topPt]));
+
+// A paragraph the break ran through is on two pages; its drawings belong to the
+// first of them, where the paragraph starts.
+function pageTops(pages: readonly PageStack[]): readonly ReadonlyMap<number, number>[] {
+  const seen = new Set<number>();
+  return pages.map((page) => {
+    const tops = new Map<number, number>();
+    for (const box of page.boxes) {
+      if (seen.has(box.index)) continue;
+      seen.add(box.index);
+      tops.set(box.index, box.topPt);
+    }
+    return tops;
+  });
 }

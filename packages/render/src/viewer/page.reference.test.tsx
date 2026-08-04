@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { layOutDocument, lookupFontMetrics, type LaidOutDocument } from "@onepager/core";
-import { imageResolver, OnePagerPage } from "@onepager/viewer";
+import { imageResolver, OnePagerDocument } from "@onepager/viewer";
 
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 import { readReferenceDocument } from "../testing/documents.js";
@@ -17,7 +17,7 @@ const rendered = (
   return {
     layout,
     html: renderToStaticMarkup(
-      <OnePagerPage layout={layout} imageUrl={imageResolver(pkg)} frames="outlined" />,
+      <OnePagerDocument layout={layout} imageUrl={imageResolver(pkg)} frames="outlined" />,
     ),
   };
 };
@@ -27,14 +27,22 @@ const CASES = referenceCases();
 describe.skipIf(CASES.length === 0)("rendering a real document", () => {
   for (const each of CASES) {
     describe(each.id, () => {
+      // The header and the footer are drawn again on every page, so what they hold
+      // counts once per page.
       it("draws every picture the layout resolved", () => {
         const { html, layout } = rendered(each);
-        const pictures = [
+        const surrounding = [
           ...layout.headerFloats,
-          ...layout.bodyFloats,
+          ...layout.footerFloats,
           ...layout.headerInlines,
-          ...layout.bodyInlines,
-        ].filter((placed) => placed.content.kind === "picture");
+          ...layout.footerInlines,
+        ];
+        const drawn = layout.pages.flatMap((page) => [
+          ...surrounding,
+          ...page.floats,
+          ...page.inlines,
+        ]);
+        const pictures = drawn.filter((placed) => placed.content.kind === "picture");
 
         expect(pictures.length).toBeGreaterThan(0);
         expect(html.split('data-kind="picture"')).toHaveLength(pictures.length + 1);

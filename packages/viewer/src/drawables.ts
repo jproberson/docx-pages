@@ -1,5 +1,6 @@
 import type {
   LaidOutDocument,
+  LaidOutPage,
   ParagraphBox,
   PlacedContent,
   PlacedFloat,
@@ -60,8 +61,8 @@ function textOf(float: PlacedFloat, key: string): readonly Drawable[] {
 
 // Word stacks floats by relativeHeight, with behindDoc ones under the text and the
 // rest over it. Inline drawings live in the text itself, so they sit between.
-export function drawablesOf(layout: LaidOutDocument): readonly Drawable[] {
-  const floats = [...layout.headerFloats, ...layout.bodyFloats, ...layout.footerFloats].map(
+export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonly Drawable[] {
+  const floats = [...layout.headerFloats, ...page.floats, ...layout.footerFloats].map(
     (float, at) => {
       const key = `float-${String(at)}`;
       return { float, drawables: [fromFloat(float, key), ...textOf(float, key)] };
@@ -73,11 +74,11 @@ export function drawablesOf(layout: LaidOutDocument): readonly Drawable[] {
 
   const behind = floats.filter((each) => each.float.anchor.behindDoc).sort(byHeight);
   const above = floats.filter((each) => !each.float.anchor.behindDoc).sort(byHeight);
-  const inlines = [...layout.headerInlines, ...layout.bodyInlines, ...layout.footerInlines].map(
+  const inlines = [...layout.headerInlines, ...page.inlines, ...layout.footerInlines].map(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
   );
 
-  const flowed = [...layout.header, ...layout.body, ...layout.footer];
+  const flowed = [...layout.header, ...page.body, ...layout.footer];
   const text: readonly Drawable[] = hasText(flowed)
     ? [{ kind: "text", key: "flowed-text", boxes: flowed }]
     : [];

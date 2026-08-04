@@ -1,5 +1,5 @@
-export { OnePagerPage } from "./page.js";
-export type { FrameStyle, OnePagerPageProps } from "./page.js";
+export { OnePagerDocument, OnePagerPage } from "./page.js";
+export type { FrameStyle, OnePagerDocumentProps, OnePagerPageProps } from "./page.js";
 
 export { imageDataUrl, imageResolver } from "./images.js";
 export type { ImageResolver } from "./images.js";

@@ -4,6 +4,7 @@ import {
   twipsToPoints,
   type CropInsets,
   type LaidOutDocument,
+  type LaidOutPage,
   type ParagraphBox,
   type ParagraphMark,
   type ParagraphMarker,
@@ -15,13 +16,17 @@ import type { ImageResolver } from "./images.js";
 
 export type FrameStyle = "hidden" | "outlined";
 
-export type OnePagerPageProps = {
+export type OnePagerDocumentProps = {
   readonly layout: LaidOutDocument;
   readonly imageUrl: ImageResolver;
   readonly scale?: number;
   readonly frames?: FrameStyle;
   readonly fallbackFonts?: string;
   readonly className?: string;
+};
+
+export type OnePagerPageProps = OnePagerDocumentProps & {
+  readonly page: LaidOutPage;
 };
 
 // The document names the face it was authored in; whatever the page can actually
@@ -150,8 +155,10 @@ function textLayer(
   heightPt: number,
   fallback: string,
 ): ReactElement {
-  const lines = drawable.boxes.flatMap((paragraph: ParagraphBox) => {
-    const key = String(paragraph.index);
+  // The header, the body and the footer each number their paragraphs from zero, so
+  // a key is where the box sits in the layer rather than the index it carries.
+  const lines = drawable.boxes.flatMap((paragraph: ParagraphBox, box: number) => {
+    const key = String(box);
     const marker =
       paragraph.marker === null ? null : markerText(paragraph.marker, `${key}-number`, fallback);
     return [
@@ -205,6 +212,7 @@ function renderObject(
 export function OnePagerPage(props: OnePagerPageProps): ReactElement {
   const {
     layout,
+    page,
     imageUrl,
     scale = 1,
     frames = "hidden",
@@ -217,7 +225,7 @@ export function OnePagerPage(props: OnePagerPageProps): ReactElement {
   return (
     <div
       className={className}
-      data-onepager-page=""
+      data-onepager-page={page.index}
       style={{
         position: "relative",
         width: pt(widthPt),
@@ -227,11 +235,23 @@ export function OnePagerPage(props: OnePagerPageProps): ReactElement {
         transformOrigin: "top left",
       }}
     >
-      {drawablesOf(layout).map((drawable) =>
+      {drawablesOf(layout, page).map((drawable) =>
         drawable.kind === "text"
           ? textLayer(drawable, widthPt, heightPt, fallbackFonts)
           : renderObject(drawable, imageUrl, frames),
       )}
     </div>
+  );
+}
+
+// Every page the body broke onto, in order, each drawn in the page's own
+// coordinates.
+export function OnePagerDocument(props: OnePagerDocumentProps): ReactElement {
+  return (
+    <>
+      {props.layout.pages.map((page) => (
+        <OnePagerPage key={page.index} {...props} page={page} />
+      ))}
+    </>
   );
 }

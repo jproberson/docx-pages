@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { layOutDocument, lookupFontMetrics } from "@onepager/core";
-import { imageResolver, OnePagerPage, type FrameStyle } from "@onepager/viewer";
+import { imageResolver, OnePagerDocument, type FrameStyle } from "@onepager/viewer";
 
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 import { readReferenceDocument } from "../testing/documents.js";
@@ -21,7 +21,7 @@ const document = (title: string, body: string): string =>
     <title>${title}</title>
     <style>
       body { margin: 0; padding: 24px; background: #6b6b6b; }
-      [data-onepager-page] { background: #fff; box-shadow: 0 2px 16px rgb(0 0 0 / 40%); margin: 0 auto; }
+      [data-onepager-page] { background: #fff; box-shadow: 0 2px 16px rgb(0 0 0 / 40%); margin: 0 auto 24px; }
     </style>
   </head>
   <body>${body}</body>
@@ -37,7 +37,7 @@ export function writePreview(each: ReferenceCase, frames: FrameStyle): string {
   }
 
   const body = renderToStaticMarkup(
-    <OnePagerPage
+    <OnePagerDocument
       layout={layout}
       imageUrl={imageResolver(pkg)}
       frames={frames}

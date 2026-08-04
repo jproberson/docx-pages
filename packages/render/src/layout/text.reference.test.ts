@@ -5,6 +5,7 @@ import {
   layOutDocument,
   lookupFontMetrics,
   type LaidOutDocument,
+  type LaidOutPage,
   type ParagraphBox,
   type PlacedLine,
 } from "@onepager/core";
@@ -32,17 +33,17 @@ const outOfSymbolPage = (text: string): string =>
 
 const normalise = (text: string): string => outOfSymbolPage(text.replace(/\s+/g, " ").trim());
 
-function boxesOf(layout: LaidOutDocument): readonly ParagraphBox[] {
-  const inBoxes = [...layout.headerFloats, ...layout.bodyFloats].flatMap((float) =>
+// The header and the footer are drawn again on every page, so every page holds
+// their boxes as well as its own.
+function boxesOnPage(layout: LaidOutDocument, page: LaidOutPage): readonly ParagraphBox[] {
+  const floats = [...layout.headerFloats, ...layout.footerFloats, ...page.floats];
+  const inBoxes = floats.flatMap((float) =>
     float.content.kind === "text-box" && float.content.text !== null
       ? [...float.content.text.boxes]
       : [],
   );
-  return [...layout.header, ...layout.body, ...inBoxes];
+  return [...layout.header, ...layout.footer, ...page.body, ...inBoxes];
 }
-
-const linesOf = (layout: LaidOutDocument): readonly PlacedLine[] =>
-  boxesOf(layout).flatMap((box) => box.lines);
 
 type Comparison = {
   readonly matched: number;
@@ -68,35 +69,56 @@ async function laidOut(each: ReferenceCase): Promise<{
 }
 
 // Word draws each line as its own run of text, so its own output says both which
-// lines it broke the paragraph into and where each one sat. A list number is drawn
-// as a run of its own too, but every bullet in a document reads the same, so a
-// number is identified by the baseline of the line it belongs to rather than by
-// its text alone.
+// lines it broke the paragraph into and where each one sat. Breaking is asked of
+// the whole document and placement of the page: a line counts as placed only when
+// the line Word drew with that text on that same page sits where ours does.
 async function compare(each: ReferenceCase): Promise<Comparison> {
   const { layout, drawn } = await laidOut(each);
 
   const taken = new Set<TextPlacement>();
+  const elsewhere: string[] = [];
   let matched = 0;
   let placed = 0;
+  let numbersMatched = 0;
+  let numbersPlaced = 0;
 
-  for (const line of linesOf(layout)) {
-    const text = normalise(textOf(line));
-    if (text === "") continue;
+  for (const page of layout.pages) {
+    const onPage = drawn.filter((item) => item.pageIndex === page.index);
+    const boxes = boxesOnPage(layout, page);
 
+    for (const line of boxes.flatMap((box) => box.lines)) {
+      const text = normalise(textOf(line));
+      if (text === "") continue;
+
+      const found = onPage.find((item) => !taken.has(item) && normalise(item.text) === text);
+      if (found === undefined) {
+        elsewhere.push(text);
+        continue;
+      }
+      taken.add(found);
+      matched += 1;
+
+      const off = Math.max(
+        Math.abs(found.leftPt - line.leftPt),
+        Math.abs(found.baselinePt - line.baselinePt),
+      );
+      if (off <= each.textTolerancePt) placed += 1;
+    }
+
+    const numbers = compareNumbers(each, boxes, onPage);
+    numbersMatched += numbers.numbersMatched;
+    numbersPlaced += numbers.numbersPlaced;
+  }
+
+  // A line Word drew on another page was still broken the way Word broke it.
+  for (const text of elsewhere) {
     const found = drawn.find((item) => !taken.has(item) && normalise(item.text) === text);
     if (found === undefined) continue;
     taken.add(found);
     matched += 1;
-
-    const off = Math.max(
-      Math.abs(found.leftPt - line.leftPt),
-      Math.abs(found.baselinePt - line.baselinePt),
-    );
-    if (off <= each.textTolerancePt) placed += 1;
   }
 
-  const numbers = compareNumbers(each, boxesOf(layout), drawn);
-  return { matched, placed, ...numbers };
+  return { matched, placed, numbersMatched, numbersPlaced };
 }
 
 // How near a number's line has to sit to Word's own before the number drawn there
@@ -142,7 +164,7 @@ describe.skipIf(CASES.length === 0)("text lines against Word", () => {
         expect(matched).toBeGreaterThanOrEqual(each.textLinesMatched ?? 0);
       });
 
-      it("puts those lines where Word put them", async () => {
+      it("puts those lines where Word put them, on the page Word put them on", async () => {
         const { placed } = await compare(each);
         expect(placed).toBeGreaterThanOrEqual(each.textLinesPlaced ?? 0);
       });
