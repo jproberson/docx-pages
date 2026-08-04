@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { layOutDocument, lookupFontMetrics, type LaidOutDocument } from "@onepager/core";
-import { imageResolver, OnePagerDocument } from "@onepager/viewer";
+import { drawablesOf, imageResolver, OnePagerDocument } from "@onepager/viewer";
 
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 import { readReferenceDocument } from "../testing/documents.js";
@@ -21,6 +21,33 @@ const rendered = (
     ),
   };
 };
+
+// A text layer states its size twice: once as a box on the page, in points, and
+// once as the coordinates its contents are written in. The two have to agree.
+const TEXT_LAYER =
+  /data-kind="text"[^>]*width="([\d.]+)pt" height="([\d.]+)pt" viewBox="0 0 ([\d.]+ [\d.]+)"/g;
+
+const DRAWN_AT = /<text [^>]*?x="([-\d.]+)" y="([-\d.]+)"/g;
+
+// Where the drawing is expected to start each line and each list number, in the
+// page's own points.
+const placedAt = (layout: LaidOutDocument): readonly string[] =>
+  layout.pages.flatMap((page) =>
+    drawablesOf(layout, page).flatMap((drawable) =>
+      drawable.kind !== "text"
+        ? []
+        : drawable.boxes.flatMap((box) => [
+            ...(box.marker === null || box.marker.text === ""
+              ? []
+              : [`${String(box.marker.leftPt)},${String(box.marker.baselinePt)}`]),
+            ...box.lines.flatMap((line) =>
+              line.line.segments.some((segment) => segment.kind === "text")
+                ? [`${String(line.leftPt)},${String(line.baselinePt)}`]
+                : [],
+            ),
+          ]),
+    ),
+  );
 
 const CASES = referenceCases();
 
@@ -64,6 +91,26 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
         const { html } = rendered(each);
         expect(html).toContain("width:612pt");
         expect(html).toContain("height:792pt");
+      });
+
+      // Everything else the suite pins stops at the laid-out model. A layer sized
+      // in the browser's own pixels while the page around it is sized in points
+      // draws every glyph at three quarters of its size, three quarters of the way
+      // to where it belongs, and nothing above this would notice.
+      it("draws text in the points layout measured it in", () => {
+        const { html } = rendered(each);
+        for (const [, width, height, box] of html.matchAll(TEXT_LAYER)) {
+          expect(`${String(width)} ${String(height)}`).toBe(box);
+        }
+        expect(html).toMatch(TEXT_LAYER);
+      });
+
+      it("puts every line where layout put it", () => {
+        const { html, layout } = rendered(each);
+        const drawn = [...html.matchAll(DRAWN_AT)].map(([, x, y]) => `${String(x)},${String(y)}`);
+
+        expect(drawn.length).toBeGreaterThan(0);
+        expect(new Set(drawn)).toStrictEqual(new Set(placedAt(layout)));
       });
     });
   }

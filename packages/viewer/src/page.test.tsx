@@ -156,6 +156,13 @@ describe("OnePagerPage", () => {
     expect(html).toContain("height:792pt");
   });
 
+  it("sizes the text layer in points too, so a glyph is drawn at the size it was measured at", () => {
+    const html = markup(layoutWith([], [paragraphOf("Hello", MARK)]));
+    expect(html).toContain('width="612pt"');
+    expect(html).toContain('height="792pt"');
+    expect(html).toContain('viewBox="0 0 612 792"');
+  });
+
   it("scales the whole page rather than each object in it", () => {
     const html = markup(layoutWith([]), { scale: 0.5 });
     expect(html).toContain("transform:scale(0.5)");

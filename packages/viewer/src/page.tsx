@@ -173,13 +173,17 @@ function textLayer(
     ];
   });
 
+  // The page around it is sized in points, so the layer has to be as well: sized
+  // in the browser's own pixels instead, every glyph is drawn three quarters of
+  // the size layout measured it at and lands three quarters of the way to where
+  // layout put it.
   return (
     <svg
       key={drawable.key}
       data-kind="text"
       style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}
-      width={widthPt}
-      height={heightPt}
+      width={pt(widthPt)}
+      height={pt(heightPt)}
       viewBox={`0 0 ${String(widthPt)} ${String(heightPt)}`}
       fill="currentColor"
     >
