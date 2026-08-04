@@ -57,7 +57,16 @@ export {
 } from "./docx/relationships.js";
 export type { Relationship } from "./docx/relationships.js";
 
-export { faceRequestFor, measureStack, WP_NS } from "./layout/stack.js";
+export { breakLines, faceRequestFor, DEFAULT_TAB_STOP_PT } from "./layout/lines.js";
+export type {
+  BreakLinesInput,
+  LineBreaking,
+  LineSegment,
+  MeasureFailure,
+  TextLine,
+} from "./layout/lines.js";
+
+export { measureStack, WP_NS } from "./layout/stack.js";
 export type {
   LayoutBlocker,
   MeasureStackInput,
