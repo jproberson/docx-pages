@@ -31,8 +31,22 @@ export type {
   ReadFontMetricsResult,
 } from "./layout/font-file.js";
 
-export { readBlocks, readParagraphs, blocksIn, blockParagraphs, MC_NS } from "./docx/blocks.js";
-export type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from "./docx/blocks.js";
+export {
+  readBlocks,
+  readParagraphs,
+  blocksIn,
+  blockParagraphs,
+  DEFAULT_TABLE_INSETS,
+  MC_NS,
+} from "./docx/blocks.js";
+export type {
+  Block,
+  CellVerticalAlign,
+  Paragraph,
+  TableCell,
+  TableInsets,
+  TableRow,
+} from "./docx/blocks.js";
 
 export { paragraphText, paragraphDescendants } from "./docx/paragraphs.js";
 

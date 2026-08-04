@@ -271,6 +271,20 @@ describe("measureStack over tables", () => {
     expect(result.heightPt).toBeCloseTo(ARIAL_12 * 3, 9);
   });
 
+  it("holds a cell's text off its edge by the margin Word leaves there", () => {
+    const boxes = boxesOf(table(cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)));
+    // The frame starts at 72pt and Word's own cell margin is an eighth of an inch.
+    expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 5.4, 9);
+  });
+
+  it("indents a table by what it asks for, and takes the margin it asks for", () => {
+    const properties =
+      `<w:tblPr><w:tblInd w:w="-100" w:type="dxa"/>` +
+      `<w:tblCellMar><w:left w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
+    const body = `<w:tbl>${properties}<w:tr>${cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)}</w:tr></w:tbl>`;
+    expect(boxesOf(body)[0]?.lines[0]?.leftPt).toBeCloseTo(72 - 5, 9);
+  });
+
   it("reports the cell paragraph that blocks measurement", () => {
     const styles = NORMAL.replace('w:ascii="Arial"', 'w:ascii="Meridian Sans"');
     const result = measure(table(cell(`<w:p/>`)), styles);

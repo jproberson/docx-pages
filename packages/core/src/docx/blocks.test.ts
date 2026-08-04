@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
-import { readBlocks, type Block } from "./blocks.js";
+import { readBlocks, DEFAULT_TABLE_INSETS, type Block } from "./blocks.js";
 import { openDocx } from "./package.js";
 import { paragraphText } from "./paragraphs.js";
 
@@ -61,6 +61,30 @@ describe("readBlocks", () => {
     );
     if (block?.kind !== "table") throw new Error("expected a table");
     expect(block.rows[0]?.cells.map((each) => each.verticalAlign)).toStrictEqual(["top", "center"]);
+  });
+
+  it("holds a cell's content off its edges by Word's own margin when the table is silent", () => {
+    const [block] = blocksOf(table(row(cell(para("in")))));
+    if (block?.kind !== "table") throw new Error("expected a table");
+    expect(block.insets).toStrictEqual(DEFAULT_TABLE_INSETS);
+  });
+
+  it("reads the margins and the indent a table asks for", () => {
+    const properties =
+      `<w:tblPr><w:tblInd w:w="-5" w:type="dxa"/>` +
+      `<w:tblCellMar><w:left w:w="72" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>` +
+      `</w:tblPr>`;
+    const [block] = blocksOf(`<w:tbl>${properties}${row(cell(para("in")))}</w:tbl>`);
+    if (block?.kind !== "table") throw new Error("expected a table");
+    expect(block.insets).toStrictEqual({ indentTwips: -5, leftTwips: 72, rightTwips: 0 });
+  });
+
+  it("keeps Word's margin for a side the table leaves out", () => {
+    const properties = `<w:tblPr><w:tblCellMar><w:left w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
+    const [block] = blocksOf(`<w:tbl>${properties}${row(cell(para("in")))}</w:tbl>`);
+    if (block?.kind !== "table") throw new Error("expected a table");
+    expect(block.insets.leftTwips).toBe(0);
+    expect(block.insets.rightTwips).toBe(DEFAULT_TABLE_INSETS.rightTwips);
   });
 
   it("reads a table nested inside a cell as its own block", () => {

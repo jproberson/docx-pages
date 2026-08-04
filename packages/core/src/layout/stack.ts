@@ -1,4 +1,11 @@
-import type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from "../docx/blocks.js";
+import type {
+  Block,
+  CellVerticalAlign,
+  Paragraph,
+  TableCell,
+  TableInsets,
+  TableRow,
+} from "../docx/blocks.js";
 import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js";
 import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns } from "../docx/runs.js";
@@ -162,7 +169,7 @@ function measureBlocks(
     }
 
     for (const row of block.rows) {
-      const measured = measureRow(row, context, top, frame);
+      const measured = measureRow(row, context, top, frame, block.insets);
       if (measured.kind === "blocked") return measured;
       boxes.push(...measured.boxes);
       top += measured.heightPt;
@@ -179,28 +186,37 @@ type MeasuredCell = {
 };
 
 // A row is as tall as its tallest cell, and every cell starts at the row's top;
-// cells sit beside each other, so their heights never add up.
+// cells sit beside each other, so their heights never add up. A cell holds its
+// own content off its edges by the table's margins, which is what a paragraph
+// inside one is indented from.
 function measureRow(
   row: TableRow,
   context: Context,
   topPt: number,
   frame: Frame,
+  insets: TableInsets,
 ): StackMeasurement {
   const measured: MeasuredCell[] = [];
+  const leftMarginPt = twipsToPoints(insets.leftTwips);
+  const rightMarginPt = twipsToPoints(insets.rightTwips);
   let heightPt = 0;
-  let leftPt = frame.leftPt;
+  let leftPt = frame.leftPt + twipsToPoints(insets.indentTwips);
 
   // A cell is measured from its own origin and only then moved down to the row, so
   // the page coordinates a wrapping object stands in cannot reach inside one.
   const inCell: Context = { ...context, region: { bands: [] }, bandsFor: () => [] };
 
   for (const cell of row.cells) {
-    const cellFrame = { leftPt, widthPt: cellWidthPt(cell) ?? frame.widthPt };
+    const widthPt = cellWidthPt(cell) ?? frame.widthPt;
+    const cellFrame = {
+      leftPt: leftPt + leftMarginPt,
+      widthPt: Math.max(0, widthPt - leftMarginPt - rightMarginPt),
+    };
     const of = measureBlocks(cell.blocks, inCell, 0, cellFrame);
     if (of.kind === "blocked") return of;
     measured.push({ align: cell.verticalAlign, boxes: of.boxes, heightPt: of.heightPt });
     heightPt = Math.max(heightPt, of.heightPt);
-    leftPt += cellFrame.widthPt;
+    leftPt += widthPt;
   }
 
   const boxes: ParagraphBox[] = [];
