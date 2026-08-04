@@ -108,8 +108,8 @@ export type { InlineDrawing } from "./docx/inlines.js";
 export { placeInlines } from "./layout/inlines.js";
 export type { PlacedInline, PlaceInlinesInput } from "./layout/inlines.js";
 
-export { resolveParagraphFrame } from "./docx/styles.js";
-export type { ParagraphAlignment, ParagraphFrame } from "./docx/styles.js";
+export { resolveParagraphFrame, resolveParagraphNumbering } from "./docx/styles.js";
+export type { ParagraphAlignment, ParagraphFrame, ParagraphNumbering } from "./docx/styles.js";
 
 export {
   readDrawingContent,

@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { openDocx } from "./package.js";
-import { readStyleTable, resolveParagraphMark } from "./styles.js";
+import {
+  readStyleTable,
+  resolveParagraphFrame,
+  resolveParagraphMark,
+  resolveParagraphNumbering,
+} from "./styles.js";
 import { readParagraphs } from "./blocks.js";
 
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -126,5 +131,129 @@ describe("resolveParagraphMark", () => {
   it("uses hAnsi when ascii is absent", () => {
     const body = `<w:p><w:pPr><w:rPr><w:rFonts w:hAnsi="Verdana"/></w:rPr></w:pPr></w:p>`;
     expect(markOf(body, styles("")).font).toStrictEqual({ kind: "named", name: "Verdana" });
+  });
+});
+
+const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+const numbering = `<?xml version="1.0"?>
+<w:numbering xmlns:w="${W_NS}">
+  <w:abstractNum w:abstractNumId="0">
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet"/><w:lvlText w:val="-"/>
+      <w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>
+      <w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:numFmt w:val="decimal"/><w:lvlText w:val="%2."/>
+      <w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+</w:numbering>`;
+
+const resolved = (body: string, stylesXml: string = styles(NORMAL)) => {
+  const pkg = openDocx(
+    buildDocx({
+      "word/document.xml": wordDocument(body),
+      "word/styles.xml": stylesXml,
+      "word/numbering.xml": numbering,
+    }),
+  );
+  const paragraph = readParagraphs(pkg)[0];
+  if (paragraph === undefined) throw new Error("expected a paragraph");
+  const table = readStyleTable(pkg);
+  return {
+    frame: resolveParagraphFrame(paragraph, table),
+    numbering: resolveParagraphNumbering(paragraph, table),
+  };
+};
+
+const numbered = (properties = "") =>
+  `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>
+     ${properties}</w:pPr></w:p>`;
+
+describe("resolveParagraphNumbering", () => {
+  it("resolves the level a paragraph's numPr names", () => {
+    expect(resolved(numbered()).numbering).toMatchObject({
+      numId: "1",
+      ilvl: 0,
+      level: { format: "bullet", text: "-" },
+    });
+  });
+
+  it("defaults to the first level when the paragraph gives only a numId", () => {
+    const body = `<w:p><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:p>`;
+    expect(resolved(body).numbering?.ilvl).toBe(0);
+  });
+
+  it("takes the numId from the style and the level from the paragraph", () => {
+    const listStyle = styles(
+      `${NORMAL}<w:style w:type="paragraph" w:styleId="List">
+         <w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style>`,
+    );
+    const body = `<w:p><w:pPr><w:pStyle w:val="List"/>
+      <w:numPr><w:ilvl w:val="1"/></w:numPr></w:pPr></w:p>`;
+    expect(resolved(body, listStyle).numbering).toMatchObject({
+      ilvl: 1,
+      level: { format: "decimal" },
+    });
+  });
+
+  it("reads numbering a paragraph carries only through its style", () => {
+    const listStyle = styles(
+      `${NORMAL}<w:style w:type="paragraph" w:styleId="List">
+         <w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style>`,
+    );
+    const body = `<w:p><w:pPr><w:pStyle w:val="List"/></w:pPr></w:p>`;
+    expect(resolved(body, listStyle).numbering?.ilvl).toBe(1);
+  });
+
+  it("takes numId zero as the paragraph refusing the numbering it inherits", () => {
+    const listStyle = styles(
+      `${NORMAL}<w:style w:type="paragraph" w:styleId="List">
+         <w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style>`,
+    );
+    const body = `<w:p><w:pPr><w:pStyle w:val="List"/>
+      <w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:p>`;
+    expect(resolved(body, listStyle).numbering).toBeNull();
+  });
+
+  it("has no numbering for a paragraph that names none", () => {
+    expect(resolved(`<w:p/>`).numbering).toBeNull();
+  });
+
+  it("has no numbering when the numId resolves to no level", () => {
+    const body = `<w:p><w:pPr><w:numPr><w:numId w:val="9"/></w:numPr></w:pPr></w:p>`;
+    expect(resolved(body).numbering).toBeNull();
+  });
+});
+
+describe("resolveParagraphFrame", () => {
+  it("indents a numbered paragraph the way its level does", () => {
+    expect(resolved(numbered()).frame).toMatchObject({
+      indentLeftTwips: 720,
+      indentFirstLineTwips: -360,
+    });
+  });
+
+  it("lets the paragraph's own indent override the level's", () => {
+    const frame = resolved(numbered(`<w:ind w:left="1080"/>`)).frame;
+    expect(frame.indentLeftTwips).toBe(1080);
+    expect(frame.indentFirstLineTwips).toBe(-360);
+  });
+
+  it("lets the level's indent override the style's", () => {
+    const indented = styles(
+      `${NORMAL}<w:style w:type="paragraph" w:styleId="List">
+         <w:pPr><w:ind w:left="2880"/></w:pPr></w:style>`,
+    );
+    const body = `<w:p><w:pPr><w:pStyle w:val="List"/>
+      <w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:p>`;
+    expect(resolved(body, indented).frame.indentLeftTwips).toBe(720);
+  });
+
+  it("leaves an unnumbered paragraph on the margin", () => {
+    expect(resolved(`<w:p/>`).frame.indentLeftTwips).toBe(0);
   });
 });

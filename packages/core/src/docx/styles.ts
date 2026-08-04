@@ -1,4 +1,10 @@
 import type { Paragraph } from "./blocks.js";
+import {
+  numberingLevel,
+  readNumberingTable,
+  type NumberingLevel,
+  type NumberingTable,
+} from "./numbering.js";
 import { paragraphRuns } from "./paragraphs.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
@@ -42,11 +48,19 @@ type PartialFrame = {
   readonly lineRule: LineRule | undefined;
 };
 
+// Either half can arrive on its own: a style names the list, a paragraph the
+// level within it.
+type PartialNumbering = {
+  readonly numId: string | undefined;
+  readonly ilvl: number | undefined;
+};
+
 type StyleDefinition = {
   readonly id: string;
   readonly basedOn: string | undefined;
   readonly mark: PartialMark;
   readonly frame: PartialFrame;
+  readonly numbering: PartialNumbering;
 };
 
 export type StyleTable = {
@@ -55,6 +69,7 @@ export type StyleTable = {
   readonly docDefaults: PartialMark;
   readonly docDefaultsFrame: PartialFrame;
   readonly themeFonts: ReadonlyMap<string, string>;
+  readonly numbering: NumberingTable;
 };
 
 const EMPTY: PartialMark = {
@@ -75,6 +90,13 @@ const EMPTY_FRAME: PartialFrame = {
   lineTwips: undefined,
   lineRule: undefined,
 };
+
+const NO_NUMBERING: PartialNumbering = { numId: undefined, ilvl: undefined };
+
+const mergeNumbering = (base: PartialNumbering, over: PartialNumbering): PartialNumbering => ({
+  numId: over.numId ?? base.numId,
+  ilvl: over.ilvl ?? base.ilvl,
+});
 
 const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   alignment: over.alignment ?? base.alignment,
@@ -131,6 +153,21 @@ function readFrame(container: XmlElement | null): PartialFrame {
     spaceAfterTwips: twipsAttribute(spacing, "after"),
     lineTwips: twipsAttribute(spacing, "line"),
     lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
+  };
+}
+
+function readNumbering(container: XmlElement | null): PartialNumbering {
+  const pPr = container === null ? null : firstNamed(container, W_NS, "pPr");
+  const numPr = pPr === null ? null : firstNamed(pPr, W_NS, "numPr");
+  if (numPr === null) return NO_NUMBERING;
+
+  const numId = firstNamed(numPr, W_NS, "numId");
+  const ilvl = firstNamed(numPr, W_NS, "ilvl");
+  const level = ilvl === null ? Number.NaN : Number(attribute(ilvl, W_NS, "val"));
+
+  return {
+    numId: numId === null ? undefined : attribute(numId, W_NS, "val"),
+    ilvl: Number.isInteger(level) ? level : undefined,
   };
 }
 
@@ -218,6 +255,7 @@ const themeSlot = (reference: string): string =>
 
 export function readStyleTable(pkg: DocxPackage): StyleTable {
   const themeFonts = readThemeFonts(pkg);
+  const numbering = readNumberingTable(pkg);
   if (!pkg.parts.has(STYLES_PART)) {
     return {
       byId: new Map(),
@@ -225,6 +263,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       docDefaults: EMPTY,
       docDefaultsFrame: EMPTY_FRAME,
       themeFonts,
+      numbering,
     };
   }
 
@@ -245,6 +284,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       basedOn: basedOnElement === null ? undefined : attribute(basedOnElement, W_NS, "val"),
       mark: readMark(style, themeFonts),
       frame: readFrame(style),
+      numbering: readNumbering(style),
     });
     const isParagraph = (attribute(style, W_NS, "type") ?? "paragraph") === "paragraph";
     if (isParagraph && attribute(style, W_NS, "default") === "1") defaultParagraphStyleId = id;
@@ -258,6 +298,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       defaults === null ? null : firstNamed(defaults, W_NS, "pPrDefault"),
     ),
     themeFonts,
+    numbering,
   };
 }
 
@@ -290,14 +331,14 @@ const markOf = (resolved: PartialMark): ParagraphMark => ({
 });
 
 export function resolveParagraphMark(paragraph: Paragraph, table: StyleTable): ParagraphMark {
-  const pPr = firstNamed(paragraph.element, W_NS, "pPr");
-  const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
-  const named = pStyle === null ? undefined : attribute(pStyle, W_NS, "val");
-  const styleId = named ?? table.defaultParagraphStyleId;
-
   let resolved = table.docDefaults;
-  for (const style of styleChain(table, styleId)) resolved = merge(resolved, style.mark);
-  resolved = merge(resolved, readMark(pPr, table.themeFonts));
+  for (const style of styleChain(table, styleIdOf(paragraph, table))) {
+    resolved = merge(resolved, style.mark);
+  }
+  resolved = merge(
+    resolved,
+    readMark(firstNamed(paragraph.element, W_NS, "pPr"), table.themeFonts),
+  );
 
   return markOf(resolved);
 }
@@ -320,13 +361,10 @@ export const resolveRunMarks = (
 ): readonly ParagraphMark[] => resolveRuns(paragraph, table).map((marked) => marked.mark);
 
 export function resolveRuns(paragraph: Paragraph, table: StyleTable): readonly MarkedRun[] {
-  const pPr = firstNamed(paragraph.element, W_NS, "pPr");
-  const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
-  const named = pStyle === null ? undefined : attribute(pStyle, W_NS, "val");
-  const paragraphStyleId = named ?? table.defaultParagraphStyleId;
-
   let inherited = table.docDefaults;
-  for (const style of styleChain(table, paragraphStyleId)) inherited = merge(inherited, style.mark);
+  for (const style of styleChain(table, styleIdOf(paragraph, table))) {
+    inherited = merge(inherited, style.mark);
+  }
 
   return paragraphRuns(paragraph).map((run) => ({
     run,
@@ -357,14 +395,52 @@ export type ParagraphFrame = {
   readonly lineRule: LineRule;
 };
 
-export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): ParagraphFrame {
+export type ParagraphNumbering = {
+  readonly numId: string;
+  readonly ilvl: number;
+  readonly level: NumberingLevel;
+};
+
+// numId zero is how a paragraph says it wants none of the numbering its style
+// would otherwise hand it.
+const NO_LIST = "0";
+
+export function resolveParagraphNumbering(
+  paragraph: Paragraph,
+  table: StyleTable,
+): ParagraphNumbering | null {
+  let resolved = NO_NUMBERING;
+  for (const style of styleChain(table, styleIdOf(paragraph, table))) {
+    resolved = mergeNumbering(resolved, style.numbering);
+  }
+  resolved = mergeNumbering(resolved, readNumbering(paragraph.element));
+
+  const { numId } = resolved;
+  if (numId === undefined || numId === NO_LIST) return null;
+
+  const ilvl = resolved.ilvl ?? 0;
+  const level = numberingLevel(table.numbering, numId, ilvl);
+  return level === null ? null : { numId, ilvl, level };
+}
+
+function styleIdOf(paragraph: Paragraph, table: StyleTable): string | undefined {
   const pPr = firstNamed(paragraph.element, W_NS, "pPr");
   const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
   const named = pStyle === null ? undefined : attribute(pStyle, W_NS, "val");
+  return named ?? table.defaultParagraphStyleId;
+}
 
+// A list level's own indents sit above the style's and below the paragraph's, so
+// a bulleted paragraph is indented without losing an indent it sets itself.
+export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): ParagraphFrame {
   let resolved = table.docDefaultsFrame;
-  for (const style of styleChain(table, named ?? table.defaultParagraphStyleId)) {
+  for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = mergeFrames(resolved, style.frame);
+  }
+
+  const numbering = resolveParagraphNumbering(paragraph, table);
+  if (numbering !== null) {
+    resolved = mergeFrames(resolved, readFrame(numbering.level.properties));
   }
   resolved = mergeFrames(resolved, readFrame(paragraph.element));
 
