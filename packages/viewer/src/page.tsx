@@ -105,6 +105,7 @@ function lineText(placed: PlacedLine, key: string, fallback: string): ReactEleme
           <tspan
             key={at}
             x={placed.leftPt + segment.offsetPt}
+            y={placed.baselinePt - segment.mark.raisePt}
             xmlSpace="preserve"
             fontFamily={familyOf(segment.mark, fallback)}
             fontSize={segment.mark.fontSizePt}

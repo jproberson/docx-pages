@@ -20,11 +20,17 @@ export const WORD_DEFAULT_FONT_SIZE_PT = 10;
 export type FontChoice =
   { readonly kind: "named"; readonly name: string } | { readonly kind: "unresolved" };
 
+export type VerticalAlign = "baseline" | "superscript" | "subscript";
+
 export type ParagraphMark = {
   readonly font: FontChoice;
+  // What the run is actually set at, which a superscript or a subscript has
+  // already shrunk; the size the file declared is not what Word draws.
   readonly fontSizePt: number;
   readonly bold: boolean;
   readonly italic: boolean;
+  // How far the run sits off the line's baseline, upwards.
+  readonly raisePt: number;
   // Null where the run leaves its colour to whatever it is drawn on.
   readonly color: string | null;
 };
@@ -34,6 +40,7 @@ type PartialMark = {
   readonly fontSizeHalfPoints: number | undefined;
   readonly bold: boolean | undefined;
   readonly italic: boolean | undefined;
+  readonly verticalAlign: VerticalAlign | undefined;
   readonly color: string | undefined;
 };
 
@@ -85,6 +92,7 @@ const EMPTY: PartialMark = {
   fontSizeHalfPoints: undefined,
   bold: undefined,
   italic: undefined,
+  verticalAlign: undefined,
   color: undefined,
 };
 
@@ -208,6 +216,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   fontSizeHalfPoints: over.fontSizeHalfPoints ?? base.fontSizeHalfPoints,
   bold: over.bold ?? base.bold,
   italic: over.italic ?? base.italic,
+  verticalAlign: over.verticalAlign ?? base.verticalAlign,
   color: over.color ?? base.color,
 });
 
@@ -271,8 +280,16 @@ function readMark(
       halfPoints === undefined || !Number.isFinite(halfPoints) ? undefined : halfPoints,
     bold: toggle(rPr, "b"),
     italic: toggle(rPr, "i"),
+    verticalAlign: verticalAlignOf(rPr),
     color: colorOf(rPr),
   };
+}
+
+function verticalAlignOf(rPr: XmlElement): VerticalAlign | undefined {
+  const element = firstNamed(rPr, W_NS, "vertAlign");
+  const value = element === null ? undefined : attribute(element, W_NS, "val");
+  if (value === "superscript" || value === "subscript") return value;
+  return value === undefined ? undefined : "baseline";
 }
 
 // "auto" leaves the colour to the page, which is not a colour this can name.
@@ -348,19 +365,38 @@ function styleChain(table: StyleTable, styleId: string | undefined): readonly St
   return chain;
 }
 
-const markOf = (resolved: PartialMark): ParagraphMark => ({
-  font:
-    resolved.fontName === undefined
-      ? { kind: "unresolved" }
-      : { kind: "named", name: resolved.fontName },
-  fontSizePt:
+// Word sets a superscript or a subscript at about two thirds of the run's size,
+// which is what both reference faces carry as their own superscript size, and
+// moves it a third of that size off the baseline.
+const SCRIPT_SIZE = 0.65;
+const SCRIPT_RAISE = 1 / 3;
+
+const raiseOf = (align: VerticalAlign | undefined, fontSizePt: number): number => {
+  if (align === "superscript") return fontSizePt * SCRIPT_RAISE;
+  if (align === "subscript") return -fontSizePt * SCRIPT_RAISE;
+  return 0;
+};
+
+function markOf(resolved: PartialMark): ParagraphMark {
+  const declaredPt =
     resolved.fontSizeHalfPoints === undefined
       ? WORD_DEFAULT_FONT_SIZE_PT
-      : resolved.fontSizeHalfPoints / 2,
-  bold: resolved.bold ?? false,
-  italic: resolved.italic ?? false,
-  color: resolved.color ?? null,
-});
+      : resolved.fontSizeHalfPoints / 2;
+  const scripted =
+    resolved.verticalAlign === "superscript" || resolved.verticalAlign === "subscript";
+
+  return {
+    font:
+      resolved.fontName === undefined
+        ? { kind: "unresolved" }
+        : { kind: "named", name: resolved.fontName },
+    fontSizePt: scripted ? declaredPt * SCRIPT_SIZE : declaredPt,
+    bold: resolved.bold ?? false,
+    italic: resolved.italic ?? false,
+    raisePt: raiseOf(resolved.verticalAlign, declaredPt),
+    color: resolved.color ?? null,
+  };
+}
 
 function paragraphMarkOf(paragraph: Paragraph, table: StyleTable): PartialMark {
   let resolved = table.docDefaults;

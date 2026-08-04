@@ -34,6 +34,9 @@ const markOf = (body: string, stylesXml?: string, themeXml?: string) => {
 const NORMAL = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal">
   <w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="22"/></w:rPr></w:style>`;
 
+const runMark = (rPr: string) =>
+  markOf(`<w:p><w:pPr><w:rPr>${rPr}</w:rPr></w:pPr></w:p>`, styles(NORMAL));
+
 describe("resolveParagraphMark", () => {
   it("falls back to the default paragraph style when the paragraph names none", () => {
     expect(markOf(`<w:p/>`, styles(NORMAL))).toStrictEqual({
@@ -41,6 +44,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 11,
       bold: false,
       italic: false,
+      raisePt: 0,
       color: null,
     });
   });
@@ -52,6 +56,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 14,
       bold: false,
       italic: false,
+      raisePt: 0,
       color: null,
     });
   });
@@ -75,6 +80,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 20,
       bold: false,
       italic: false,
+      raisePt: 0,
       color: null,
     });
   });
@@ -89,6 +95,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 10,
       bold: false,
       italic: false,
+      raisePt: 0,
       color: null,
     });
   });
@@ -103,6 +110,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 12,
       bold: false,
       italic: false,
+      raisePt: 0,
       color: null,
     });
   });
@@ -118,12 +126,36 @@ describe("resolveParagraphMark", () => {
     });
   });
 
+  // Word sets a superscript smaller than the run it belongs to and lifts it off
+  // the baseline; the size the file declares is not the size it draws.
+  it("shrinks a superscript and lifts it off the baseline", () => {
+    const mark = runMark(`<w:sz w:val="28"/><w:vertAlign w:val="superscript"/>`);
+
+    expect(mark.fontSizePt).toBeCloseTo(14 * 0.65, 9);
+    expect(mark.raisePt).toBeCloseTo(14 / 3, 9);
+  });
+
+  it("drops a subscript below the baseline by as much", () => {
+    const mark = runMark(`<w:sz w:val="28"/><w:vertAlign w:val="subscript"/>`);
+
+    expect(mark.fontSizePt).toBeCloseTo(14 * 0.65, 9);
+    expect(mark.raisePt).toBeCloseTo(-14 / 3, 9);
+  });
+
+  it("leaves a run asked for at the baseline the size it was declared at", () => {
+    const mark = runMark(`<w:sz w:val="28"/><w:vertAlign w:val="baseline"/>`);
+
+    expect(mark.fontSizePt).toBe(14);
+    expect(mark.raisePt).toBe(0);
+  });
+
   it("reports an unresolved font rather than guessing one", () => {
     expect(markOf(`<w:p/>`, styles(""))).toStrictEqual({
       font: { kind: "unresolved" },
       fontSizePt: 10,
       bold: false,
       italic: false,
+      raisePt: 0,
       color: null,
     });
   });

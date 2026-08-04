@@ -19,6 +19,7 @@ const MARK: ParagraphMark = {
   fontSizePt: 12,
   bold: false,
   italic: false,
+  raisePt: 0,
   color: null,
 };
 
@@ -240,6 +241,13 @@ describe("OnePagerPage drawing text", () => {
   it("starts each run where layout put it, not after the run before it", () => {
     const html = markup(layoutWith([], [paragraphOf("Hello", MARK, { offsetPt: 25 })]));
     expect(html).toContain('x="145"');
+  });
+
+  it("lifts a run off the line's baseline when its mark asks to be raised", () => {
+    const raised: ParagraphMark = { ...MARK, raisePt: 4 };
+    const html = markup(layoutWith([], [paragraphOf("2", raised, { baselinePt: 41 })]));
+
+    expect(html).toContain('y="37"');
   });
 
   it("carries a run's own weight, slant, size and colour onto the page", () => {
