@@ -1,5 +1,10 @@
 import type { Paragraph } from "./blocks.js";
-import { readDrawingContent, type DrawingContent } from "./drawing.js";
+import {
+  readDrawingContent,
+  readDrawingFlip,
+  type DrawingContent,
+  type DrawingFlip,
+} from "./drawing.js";
 import { paragraphOwnDrawings } from "./paragraphs.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
 
@@ -21,6 +26,19 @@ export type WrapDistances = {
   readonly leftEmu: number;
 };
 
+// How much of an object's frame text is kept off, as fractions of it. A tight or
+// through wrap carries a polygon instead of taking the whole frame, and Word
+// keeps text off the rectangle around that polygon: measured by pulling one
+// inside its frame and watching the text beside it move in by as much.
+export type WrapArea = {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+};
+
+export const WHOLE_FRAME: WrapArea = { left: 0, top: 0, right: 1, bottom: 1 };
+
 export type FloatingAnchor = {
   readonly paragraphIndex: number;
   readonly name: string;
@@ -30,6 +48,7 @@ export type FloatingAnchor = {
   readonly vertical: AnchorPosition;
   readonly content: DrawingContent;
   readonly wrap: WrapMode;
+  readonly area: WrapArea;
   readonly distances: WrapDistances;
   readonly behindDoc: boolean;
   readonly relativeHeight: number;
@@ -75,11 +94,40 @@ function readPosition(
   return { kind: "offset", from, offsetEmu: Number.isFinite(value) ? value : 0 };
 }
 
-function readWrap(anchor: XmlElement): WrapMode {
+// The polygon is written in 21600ths of the frame it belongs to, whichever way
+// round that frame ended up.
+const POLYGON_UNITS = 21600;
+
+const turned = (low: number, high: number, flipped: boolean): readonly [number, number] =>
+  flipped ? [1 - high, 1 - low] : [low, high];
+
+function readWrapArea(wrap: XmlElement, flip: DrawingFlip): WrapArea {
+  const polygon = firstNamed(wrap, WP_NS, "wrapPolygon");
+  const corners =
+    polygon === null
+      ? []
+      : polygon.children.flatMap((point) => {
+          const x = numberAttribute(point, "x", Number.NaN);
+          const y = numberAttribute(point, "y", Number.NaN);
+          return Number.isFinite(x) && Number.isFinite(y) ? [[x, y] as const] : [];
+        });
+  if (corners.length === 0) return WHOLE_FRAME;
+
+  const xs = corners.map(([x]) => x / POLYGON_UNITS);
+  const ys = corners.map(([, y]) => y / POLYGON_UNITS);
+  const [left, right] = turned(Math.min(...xs), Math.max(...xs), flip.horizontal);
+  const [top, bottom] = turned(Math.min(...ys), Math.max(...ys), flip.vertical);
+  return { left, top, right, bottom };
+}
+
+type Wrapping = { readonly mode: WrapMode; readonly area: WrapArea };
+
+function readWrapping(anchor: XmlElement, flip: DrawingFlip): Wrapping {
   for (const [name, mode] of WRAPS) {
-    if (firstNamed(anchor, WP_NS, name) !== null) return mode;
+    const wrap = firstNamed(anchor, WP_NS, name);
+    if (wrap !== null) return { mode, area: readWrapArea(wrap, flip) };
   }
-  return "none";
+  return { mode: "none", area: WHOLE_FRAME };
 }
 
 const numberAttribute = (element: XmlElement, name: string, fallback: number): number => {
@@ -92,6 +140,7 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
   return paragraphOwnDrawings(paragraph, WP_NS, "anchor").map((anchor) => {
     const extent = firstNamed(anchor, WP_NS, "extent");
     const docPr = firstNamed(anchor, WP_NS, "docPr");
+    const wrapping = readWrapping(anchor, readDrawingFlip(anchor));
     return {
       paragraphIndex: paragraph.index,
       name: docPr === null ? "" : (attribute(docPr, "", "name") ?? ""),
@@ -100,7 +149,8 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
       content: readDrawingContent(anchor),
       horizontal: readPosition(anchor, "positionH", "column"),
       vertical: readPosition(anchor, "positionV", "paragraph"),
-      wrap: readWrap(anchor),
+      wrap: wrapping.mode,
+      area: wrapping.area,
       distances: {
         topEmu: numberAttribute(anchor, "distT", 0),
         rightEmu: numberAttribute(anchor, "distR", 0),

@@ -31,15 +31,11 @@ const EPSILON = 1e-9;
 
 // Word will not put a line in a sliver of space, however little the line needs.
 // Bisected against Word with a document whose objects are placed to the hundredth
-// of a point: between two `wrapSquare` objects the least it will take is exactly
-// 18pt, a quarter inch, and 17.99pt is refused.
-//
-// `wrapTight` does not agree, and is not understood: the same experiment refuses
-// an 18pt gap between two tight objects and takes a 22pt one, while a reference
-// document has Word taking a 17.85pt tight gap whose geometry Word itself
-// confirms. So tight wrapping has a rule of its own still to be measured, and
-// this sits below every gap the reference documents rely on until it is.
-export const LEAST_SPAN_PT = 17.7;
+// of a point: the least run of free space it takes is exactly 18pt, a quarter
+// inch, and 17.99pt is refused. The same beside a `wrapTight` object as beside a
+// `wrapSquare` one, against the column's own edge as between two objects, and at
+// any size of text.
+export const LEAST_SPAN_PT = 18;
 
 type Span = { readonly leftPt: number; readonly rightPt: number };
 

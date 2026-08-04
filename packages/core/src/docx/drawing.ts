@@ -124,6 +124,22 @@ function readTextBoxBody(shape: XmlElement, txbx: XmlElement): TextBoxBody {
   };
 }
 
+// Which way round an object was turned after it was drawn. A wrap polygon is
+// written for the object the right way round, so a flip turns the polygon over
+// with it.
+export type DrawingFlip = {
+  readonly horizontal: boolean;
+  readonly vertical: boolean;
+};
+
+export const readDrawingFlip = (drawing: XmlElement): DrawingFlip => {
+  const transform = findOwn(drawing, A_NS, "xfrm");
+  return {
+    horizontal: transform !== null && attribute(transform, "", "flipH") === "1",
+    vertical: transform !== null && attribute(transform, "", "flipV") === "1",
+  };
+};
+
 export function readDrawingContent(drawing: XmlElement): DrawingContent {
   const picture = findOwn(drawing, PIC_NS, "pic");
   if (picture !== null) return readPicture(picture);

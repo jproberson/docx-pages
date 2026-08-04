@@ -148,18 +148,21 @@ const placeFloatIn = (
     sizePt: fittedSizePt(anchor, frame),
   });
 
-// Text stays off an object by the distances its anchor asks for; an object wrapped
-// top and bottom takes the whole width of the page with it.
+// Text stays off the part of an object its wrap covers by the distances its
+// anchor asks for; an object wrapped top and bottom takes the whole width of the
+// page with it.
 function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
-  const { distances, wrap } = float.anchor;
+  const { area, distances, wrap } = float.anchor;
   const spansPage = wrap === "topAndBottom";
   return {
-    leftPt: spansPage ? 0 : float.leftPt - emuToPoints(distances.leftEmu),
+    leftPt: spansPage
+      ? 0
+      : float.leftPt + float.widthPt * area.left - emuToPoints(distances.leftEmu),
     rightPt: spansPage
       ? twipsToPoints(frame.page.widthTwips)
-      : float.leftPt + float.widthPt + emuToPoints(distances.rightEmu),
-    topPt: float.topPt - emuToPoints(distances.topEmu),
-    bottomPt: float.topPt + float.heightPt + emuToPoints(distances.bottomEmu),
+      : float.leftPt + float.widthPt * area.right + emuToPoints(distances.rightEmu),
+    topPt: float.topPt + float.heightPt * area.top - emuToPoints(distances.topEmu),
+    bottomPt: float.topPt + float.heightPt * area.bottom + emuToPoints(distances.bottomEmu),
   };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readAnchors, type FloatingAnchor } from "../docx/anchors.js";
+import { readAnchors, WHOLE_FRAME, type FloatingAnchor } from "../docx/anchors.js";
 import { openDocx } from "../docx/package.js";
 import { readParagraphs } from "../docx/blocks.js";
 import type { SectionGeometry } from "../docx/section.js";
@@ -8,6 +8,7 @@ import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { placeFloat } from "./floats.js";
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
 const LETTER: SectionGeometry = {
   widthTwips: 12240,
@@ -31,13 +32,26 @@ const anchorXml = (options: {
   cy?: number;
   wrap?: string;
   distances?: boolean;
-}) => `<w:p><w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" behindDoc="0" relativeHeight="5"
-  ${options.distances === true ? DISTANCES : ""}>
+  flip?: string;
+}) => `<w:p><w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}"
+  behindDoc="0" relativeHeight="5" ${options.distances === true ? DISTANCES : ""}>
   <wp:extent cx="${String(options.cx ?? 2286000)}" cy="${String(options.cy ?? 904240)}"/>
   ${options.wrap ?? "<wp:wrapNone/>"}
   <wp:docPr id="1" name="Logo"/>
   ${options.h}${options.v}
+  <a:graphic><a:graphicData><a:xfrm ${options.flip ?? ""}/></a:graphicData></a:graphic>
 </wp:anchor></w:drawing></w:r></w:p>`;
+
+// A polygon over the object's own 21600ths, kept off the frame's left edge and
+// its foot.
+const tightWrap = (left: number, bottom: number) =>
+  `<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon>
+     <wp:start x="${String(left)}" y="0"/>
+     <wp:lineTo x="${String(left)}" y="${String(bottom)}"/>
+     <wp:lineTo x="21600" y="${String(bottom)}"/>
+     <wp:lineTo x="21600" y="0"/>
+     <wp:lineTo x="${String(left)}" y="0"/>
+   </wp:wrapPolygon></wp:wrapTight>`;
 
 const offsetH = (emu: number, from = "column") =>
   `<wp:positionH relativeFrom="${from}"><wp:posOffset>${String(emu)}</wp:posOffset></wp:positionH>`;
@@ -79,6 +93,35 @@ describe("readAnchors", () => {
       anchorXml({ h: offsetH(0), v: offsetV(0), wrap: '<wp:wrapSquare wrapText="bothSides"/>' }),
     );
     expect(anchor.wrap).toBe("square");
+  });
+
+  it("keeps text off the whole of an object wrapped square", () => {
+    const anchor = firstAnchor(
+      anchorXml({ h: offsetH(0), v: offsetV(0), wrap: '<wp:wrapSquare wrapText="bothSides"/>' }),
+    );
+    expect(anchor.area).toStrictEqual(WHOLE_FRAME);
+  });
+
+  it("keeps text off the rectangle around a tight wrap's polygon", () => {
+    const anchor = firstAnchor(
+      anchorXml({ h: offsetH(0), v: offsetV(0), wrap: tightWrap(5400, 16200) }),
+    );
+    expect(anchor.wrap).toBe("tight");
+    expect(anchor.area).toStrictEqual({ left: 0.25, top: 0, right: 1, bottom: 0.75 });
+  });
+
+  it("turns that polygon over with an object that was flipped", () => {
+    const anchor = firstAnchor(
+      anchorXml({ h: offsetH(0), v: offsetV(0), wrap: tightWrap(5400, 16200), flip: 'flipH="1"' }),
+    );
+    expect(anchor.area).toStrictEqual({ left: 0, top: 0, right: 0.75, bottom: 0.75 });
+  });
+
+  it("takes a tight wrap with no polygon as the whole frame", () => {
+    const anchor = firstAnchor(
+      anchorXml({ h: offsetH(0), v: offsetV(0), wrap: "<wp:wrapTight/>" }),
+    );
+    expect(anchor.area).toStrictEqual(WHOLE_FRAME);
   });
 
   it("reads the distances text is kept off a wrapping object", () => {
@@ -167,7 +210,6 @@ describe("placeFloat", () => {
   });
 });
 
-const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 

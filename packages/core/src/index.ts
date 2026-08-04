@@ -114,11 +114,12 @@ export type {
 export { layOutDocument } from "./layout/document.js";
 export type { DocumentLayout, LaidOutDocument, LaidOutPage } from "./layout/document.js";
 
-export { readAnchors } from "./docx/anchors.js";
+export { readAnchors, WHOLE_FRAME } from "./docx/anchors.js";
 export type {
   AnchorOrigin,
   AnchorPosition,
   FloatingAnchor,
+  WrapArea,
   WrapDistances,
   WrapMode,
 } from "./docx/anchors.js";
@@ -143,6 +144,7 @@ export type { ParagraphAlignment, ParagraphFrame, ParagraphNumbering } from "./d
 
 export {
   readDrawingContent,
+  readDrawingFlip,
   DEFAULT_TEXT_INSETS,
   NO_CROP,
   PIC_NS,
@@ -151,6 +153,7 @@ export {
 export type {
   CropInsets,
   DrawingContent,
+  DrawingFlip,
   TextBoxAnchor,
   TextBoxBody,
   TextBoxInsets,

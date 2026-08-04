@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readDrawingContent, DEFAULT_TEXT_INSETS, NO_CROP } from "./drawing.js";
+import { readDrawingContent, readDrawingFlip, DEFAULT_TEXT_INSETS, NO_CROP } from "./drawing.js";
 import { parseXml } from "./xml.js";
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
@@ -21,6 +21,28 @@ const drawing = (inner: string) => {
 };
 
 const picture = (fill: string) => `<pic:pic><pic:blipFill>${fill}</pic:blipFill></pic:pic>`;
+
+const flipOf = (transform: string) => {
+  const root = parseXml(
+    `<wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}" xmlns:pic="${PIC_NS}">
+       <a:graphic><a:graphicData><pic:pic><pic:spPr>${transform}</pic:spPr></pic:pic>
+       </a:graphicData></a:graphic></wp:anchor>`,
+  );
+  if (root === null) throw new Error("unparsed");
+  return readDrawingFlip(root);
+};
+
+describe("readDrawingFlip", () => {
+  it("reads an object left the way it was drawn", () => {
+    expect(flipOf(`<a:xfrm/>`)).toStrictEqual({ horizontal: false, vertical: false });
+    expect(flipOf(``)).toStrictEqual({ horizontal: false, vertical: false });
+  });
+
+  it("reads an object turned over", () => {
+    expect(flipOf(`<a:xfrm flipH="1"/>`)).toStrictEqual({ horizontal: true, vertical: false });
+    expect(flipOf(`<a:xfrm flipV="1"/>`)).toStrictEqual({ horizontal: false, vertical: true });
+  });
+});
 
 describe("readDrawingContent", () => {
   it("reads a picture's relationship and reports it uncropped", () => {
