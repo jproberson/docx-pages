@@ -21,11 +21,18 @@ const CASES = referenceCases().filter(
 const textOf = (placed: PlacedLine): string =>
   placed.line.segments.map((segment) => (segment.kind === "text" ? segment.text : "")).join("");
 
+// Where the byte a symbol face shadows stands for a character Unicode already
+// names, Word says so on the way into the pdf and the character is what comes
+// back: Symbol's 0xb7 is the bullet, and arrives as one.
+const NAMED_IN_UNICODE = new Map([[0xf0b7, 0x2022]]);
+
 // A symbol face's characters reach the page through the private use page Word
 // writes them in, and come back out of the pdf in the low byte they shadow.
 const outOfSymbolPage = (text: string): string =>
   Array.from(text, (character) => {
     const codePoint = character.codePointAt(0) ?? 0;
+    const named = NAMED_IN_UNICODE.get(codePoint);
+    if (named !== undefined) return String.fromCodePoint(named);
     return codePoint >= 0xf020 && codePoint <= 0xf0ff
       ? String.fromCodePoint(codePoint - 0xf000)
       : character;
