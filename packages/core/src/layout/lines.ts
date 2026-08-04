@@ -10,6 +10,7 @@ import {
   type GlyphAdvances,
   type MetricsLookup,
 } from "./font-metrics.js";
+import { nextTabStopPt } from "./tab-stops.js";
 import { emuToPoints } from "./units.js";
 
 export type MetricsResolver = (request: FaceRequest) => MetricsLookup;
@@ -48,15 +49,21 @@ export type LineBreaking =
   | { readonly kind: "lines"; readonly lines: readonly TextLine[] }
   | { readonly kind: "unmeasurable"; readonly failure: MeasureFailure };
 
+// Tab stops are measured from the left edge of the text area, so a line has to say
+// how far its own start sits from that edge for a tab to land on the right one.
+export type LineTabs = {
+  readonly stopsPt: readonly number[];
+  readonly originPt: number;
+};
+
 export type BreakLinesInput = {
   readonly runs: readonly TextRun[];
   readonly widthPt: number;
   readonly metricsFor: MetricsResolver;
+  readonly tabs?: LineTabs;
 };
 
-// Word's own default, from w:defaultTabStop; no reference document sets one, and
-// none of them uses a tab.
-export const DEFAULT_TAB_STOP_PT = 36;
+const NO_TABS: LineTabs = { stopsPt: [], originPt: 0 };
 
 // Widths are compared, not accumulated into a coordinate, so this only has to
 // absorb the last bits of a sum of exact ratios.
@@ -95,9 +102,6 @@ const charactersOf = (text: string): readonly string[] => Array.from(text);
 
 const widthOf = (fragments: readonly Fragment[]): number =>
   fragments.reduce((sum, fragment) => sum + fragment.widthPt, 0);
-
-const nextTabStop = (fromPt: number): number =>
-  (Math.floor(fromPt / DEFAULT_TAB_STOP_PT + EPSILON) + 1) * DEFAULT_TAB_STOP_PT;
 
 class Measurer {
   private readonly faces = new Map<ParagraphMark, Face>();
@@ -227,7 +231,10 @@ class Breaker {
   private ascentPt = 0;
   private wrapped = false;
 
-  constructor(private readonly widthPt: number) {}
+  constructor(
+    private readonly widthPt: number,
+    private readonly tabs: LineTabs,
+  ) {}
 
   private raise(heightPt: number, ascentPt: number): void {
     this.heightPt = Math.max(this.heightPt, heightPt);
@@ -278,7 +285,8 @@ class Breaker {
 
   tab(): void {
     if (this.empty && this.wrapped) return;
-    this.pendingPt = nextTabStop(this.filled) - this.committedPt;
+    const { originPt, stopsPt } = this.tabs;
+    this.pendingPt = nextTabStopPt(originPt + this.filled, stopsPt) - originPt - this.committedPt;
   }
 
   drawing(widthPt: number, heightPt: number): void {
@@ -402,7 +410,7 @@ export function breakLines(input: BreakLinesInput): LineBreaking {
     return { kind: "unmeasurable", failure: measurer.failure ?? { kind: "unresolved-font" } };
   }
 
-  const breaker = new Breaker(input.widthPt);
+  const breaker = new Breaker(input.widthPt, input.tabs ?? NO_TABS);
   for (const unit of tokens.value) {
     switch (unit.kind) {
       case "word":

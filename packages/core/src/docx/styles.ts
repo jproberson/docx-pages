@@ -8,7 +8,7 @@ import {
 import { paragraphRuns } from "./paragraphs.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
-import { attribute, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, childrenNamed, firstNamed, type XmlElement } from "./xml.js";
 
 export const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
@@ -37,6 +37,13 @@ type PartialMark = {
   readonly color: string | undefined;
 };
 
+// A stop is either declared at a position or clears one the cascade already put
+// there, so the two arrive in the same list and are resolved in order.
+type TabStopEntry = {
+  readonly positionTwips: number;
+  readonly kind: "stop" | "clear";
+};
+
 type PartialFrame = {
   readonly alignment: ParagraphAlignment | undefined;
   readonly indentLeftTwips: number | undefined;
@@ -46,6 +53,7 @@ type PartialFrame = {
   readonly spaceAfterTwips: number | undefined;
   readonly lineTwips: number | undefined;
   readonly lineRule: LineRule | undefined;
+  readonly tabStops: readonly TabStopEntry[] | undefined;
 };
 
 // Either half can arrive on its own: a style names the list, a paragraph the
@@ -89,6 +97,7 @@ const EMPTY_FRAME: PartialFrame = {
   spaceAfterTwips: undefined,
   lineTwips: undefined,
   lineRule: undefined,
+  tabStops: undefined,
 };
 
 const NO_NUMBERING: PartialNumbering = { numId: undefined, ilvl: undefined };
@@ -107,6 +116,10 @@ const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   spaceAfterTwips: over.spaceAfterTwips ?? base.spaceAfterTwips,
   lineTwips: over.lineTwips ?? base.lineTwips,
   lineRule: over.lineRule ?? base.lineRule,
+  // Tab stops add to the ones already inherited rather than replacing them, which
+  // is why a clear has to travel with them.
+  tabStops:
+    over.tabStops === undefined ? base.tabStops : [...(base.tabStops ?? []), ...over.tabStops],
 });
 
 function toLineRule(value: string | undefined): LineRule | undefined {
@@ -153,7 +166,26 @@ function readFrame(container: XmlElement | null): PartialFrame {
     spaceAfterTwips: twipsAttribute(spacing, "after"),
     lineTwips: twipsAttribute(spacing, "line"),
     lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
+    tabStops: readTabStops(pPr),
   };
+}
+
+// A stop's alignment is not honoured yet: text still starts at the stop, which is
+// where a left stop puts it and is the only kind the reference documents use.
+function readTabStops(pPr: XmlElement): readonly TabStopEntry[] | undefined {
+  const tabs = firstNamed(pPr, W_NS, "tabs");
+  if (tabs === null) return undefined;
+
+  const entries: TabStopEntry[] = [];
+  for (const tab of childrenNamed(tabs, W_NS, "tab")) {
+    const positionTwips = twipsAttribute(tab, "pos");
+    if (positionTwips === undefined) continue;
+    entries.push({
+      positionTwips,
+      kind: attribute(tab, W_NS, "val") === "clear" ? "clear" : "stop",
+    });
+  }
+  return entries;
 }
 
 function readNumbering(container: XmlElement | null): PartialNumbering {
@@ -393,6 +425,9 @@ export type ParagraphFrame = {
   readonly spaceAfterTwips: number;
   readonly lineTwips: number | null;
   readonly lineRule: LineRule;
+  // In ascending order, measured from the left edge of the text area rather than
+  // from the paragraph's own indent.
+  readonly tabStopsTwips: readonly number[];
 };
 
 export type ParagraphNumbering = {
@@ -453,5 +488,15 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     spaceAfterTwips: resolved.spaceAfterTwips ?? 0,
     lineTwips: resolved.lineTwips ?? null,
     lineRule: resolved.lineRule ?? "auto",
+    tabStopsTwips: settledStops(resolved.tabStops),
   };
+}
+
+function settledStops(entries: readonly TabStopEntry[] | undefined): readonly number[] {
+  const positions = new Set<number>();
+  for (const entry of entries ?? []) {
+    if (entry.kind === "clear") positions.delete(entry.positionTwips);
+    else positions.add(entry.positionTwips);
+  }
+  return [...positions].sort((left, right) => left - right);
 }

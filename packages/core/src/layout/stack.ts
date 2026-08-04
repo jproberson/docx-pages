@@ -18,6 +18,7 @@ import {
   type MetricsResolver,
   type TextLine,
 } from "./lines.js";
+import { tabStopsPt } from "./tab-stops.js";
 import { twipsToPoints } from "./units.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
@@ -218,6 +219,7 @@ function measureParagraph(
         ? Number.POSITIVE_INFINITY
         : frame.widthPt - insets.leftPt - insets.rightPt,
     metricsFor: context.metricsFor,
+    tabs: { stopsPt: tabStopsPt(paragraphFrame), originPt: insets.leftPt },
   });
 
   if (breaking.kind === "unmeasurable") {
