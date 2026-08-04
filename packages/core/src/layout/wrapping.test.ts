@@ -70,12 +70,21 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 100, leftPt: 76, rightPt: 576 });
   });
 
-  it("drops a line below an object it is too wide to sit beside", () => {
+  // The line starts at 100 and is 12 tall, so its middle is at 106 and each step
+  // down puts it at 112, 124, and so on.
+  it("steps a line down by its own height until an object stops covering its middle", () => {
     const slot = fit({ widthPt: 500, bands: [band(300, 580, 90, 130)] });
-    expect(slot).toStrictEqual({ topPt: 130, leftPt: 36, rightPt: 576 });
+    expect(slot).toStrictEqual({ topPt: 124, leftPt: 36, rightPt: 576 });
   });
 
-  it("keeps falling until it clears every object in turn", () => {
+  // Measured against Word: an object reaching into the top of a line leaves it
+  // where it is, and only moves it once it reaches the middle.
+  it("leaves a line an object only reaches the top of", () => {
+    const slot = fit({ widthPt: 500, bands: [band(300, 580, 90, 104)] });
+    expect(slot).toStrictEqual({ topPt: 100, leftPt: 36, rightPt: 576 });
+  });
+
+  it("keeps stepping past each object in turn", () => {
     const slot = fit({
       widthPt: 500,
       bands: [band(300, 580, 90, 130), band(280, 580, 125, 160)],
@@ -83,12 +92,12 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 160, leftPt: 36, rightPt: 576 });
   });
 
-  it("stops falling once an object no longer reaches the line", () => {
+  it("stops stepping once no object reaches the line's middle", () => {
     const slot = fit({
       widthPt: 500,
       bands: [band(300, 580, 90, 130), band(280, 580, 145, 200)],
     });
-    expect(slot).toStrictEqual({ topPt: 130, leftPt: 36, rightPt: 576 });
+    expect(slot).toStrictEqual({ topPt: 124, leftPt: 36, rightPt: 576 });
   });
 
   it("sits beside an object rather than under it when the room is there", () => {
@@ -101,8 +110,10 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 100, leftPt: 36, rightPt: 576 });
   });
 
-  it("leaves a line that fits nowhere in the frame it started in", () => {
-    const slot = fit({ widthPt: 500, bands: [band(0, 600, 90, 130)] });
-    expect(slot).toStrictEqual({ topPt: 130, leftPt: 36, rightPt: 576 });
+  // A line with no height of its own has no step to take, so it stays put rather
+  // than looking for room for ever.
+  it("leaves a line that cannot step where it started", () => {
+    const slot = fit({ widthPt: 500, heightPt: 0, bands: [band(0, 600, 90, 130)] });
+    expect(slot).toStrictEqual({ topPt: 100, leftPt: 36, rightPt: 576 });
   });
 });

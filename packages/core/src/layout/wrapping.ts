@@ -55,26 +55,31 @@ export function freeSpans(
   return spans;
 }
 
-// A line falls past every object it cannot sit beside, and takes the first run of
-// free space wide enough to hold it. Word gives up the same way this does: a line
-// that fits nowhere is left in the frame it started in.
+// An object stands in a line's way while it covers the middle of it: Word lets a
+// line whose top half is behind an object stay where it is, and moves one whose
+// middle is. Measured against Word by moving an object down a little at a time,
+// which leaves the line alone until the step below opens up.
+const covers = (band: WrapBand, middlePt: number): boolean =>
+  band.topPt < middlePt - EPSILON && band.bottomPt > middlePt + EPSILON;
+
+// A line that cannot sit beside the objects in its way drops by its own height and
+// tries again, rather than falling to the bottom edge of whatever blocked it, and
+// takes the first run of free space wide enough to hold it. Word gives up the same
+// way this does: a line that fits nowhere is left in the frame it started in.
 export function fitLine(input: FitLineInput): LineSlot {
   const { bands, heightPt, leftPt, rightPt, widthPt } = input;
+  const lowestPt = Math.max(...bands.map((band) => band.bottomPt), input.topPt);
   let topPt = input.topPt;
 
-  for (;;) {
-    const crossing = bands.filter(
-      (band) => band.topPt < topPt + heightPt - EPSILON && band.bottomPt > topPt + EPSILON,
-    );
+  while (topPt <= lowestPt + EPSILON) {
+    const crossing = bands.filter((band) => covers(band, topPt + heightPt / 2));
     const span = freeSpans(leftPt, rightPt, crossing).find(
       (each) => each.rightPt - each.leftPt >= widthPt - EPSILON,
     );
     if (span !== undefined) return { topPt, leftPt: span.leftPt, rightPt: span.rightPt };
-
-    const below = crossing
-      .map((band) => band.bottomPt)
-      .filter((bottomPt) => bottomPt > topPt + EPSILON);
-    if (below.length === 0) return { topPt, leftPt, rightPt };
-    topPt = Math.min(...below);
+    if (heightPt <= EPSILON) break;
+    topPt += heightPt;
   }
+
+  return { topPt, leftPt, rightPt };
 }
