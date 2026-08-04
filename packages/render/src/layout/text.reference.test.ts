@@ -155,16 +155,21 @@ async function compare(each: ReferenceCase): Promise<Comparison> {
       for (const item of items) taken.add(item);
       matched += 1;
 
+      // Only where the run starts is asked of it: a superscript sits off the
+      // line's own baseline, which the line itself is already pinned against.
+      const ours = startsOf(runsOf(line));
+      const theirs = startsOf(items);
+
+      // Where the line lies is asked of its first inked character rather than of
+      // its own start, since a tab opening the line leaves a gap ahead of the
+      // first item Word drew and the two starts are then not the same place.
       const off = Math.max(
-        Math.abs(found.leftPt - line.leftPt),
+        Math.abs((theirs.get(0) ?? found.leftPt) - (ours.get(0) ?? line.leftPt)),
         Math.abs(found.baselinePt - line.baselinePt),
       );
       if (off <= each.textTolerancePt) placed += 1;
 
-      // Only where the run starts is asked of it: a superscript sits off the
-      // line's own baseline, which the line itself is already pinned against.
-      const ours = startsOf(runsOf(line));
-      for (const [at, leftPt] of startsOf(items)) {
+      for (const [at, leftPt] of theirs) {
         const mine = ours.get(at);
         if (mine === undefined) continue;
         runsMatched += 1;
