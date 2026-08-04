@@ -399,8 +399,9 @@ type LayOutParagraphInput = {
   readonly number: MeasuredNumber | null;
 };
 
-// The paragraph mark sits at the end of the last line, so it raises that line's
-// height and nothing else. An empty paragraph is the mark's height alone.
+// A paragraph with text is as tall as the lines its runs measured to: Word does
+// not let the paragraph mark raise a line it shares with a run, however much
+// bigger the mark is. An empty paragraph is the mark's height alone.
 function layOutParagraph(
   index: number,
   lines: readonly TextLine[],
@@ -425,8 +426,7 @@ function layOutParagraph(
   let top = input.topPt + beforePt;
 
   lines.forEach((line, at) => {
-    const last = at === lines.length - 1;
-    const naturalPt = last ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
+    const naturalPt = line.heightPt;
     const heightPt = spacedHeightPt(naturalPt, paragraphFrame);
     const firstLinePt = at === 0 ? insets.firstLinePt : 0;
     // The number takes the first line's own start, so the text after it begins
