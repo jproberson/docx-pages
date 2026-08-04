@@ -488,9 +488,10 @@ function layOutParagraph(
     // A line a tab alone holds open has nothing measured on it to give it a
     // height, so it takes the tallest mark the paragraph has, as an empty
     // paragraph does.
-    const naturalPt =
+    const ownPt =
       line.segments.length === 0 ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
-    const heightPt = spacedHeightPt(naturalPt, paragraphFrame);
+    const raisedPt = at === 0 ? liftOfNumber(number, line) : 0;
+    const heightPt = spacedHeightPt(ownPt + raisedPt, paragraphFrame);
     const firstLinePt = at === 0 ? insets.firstLinePt : 0;
     // The number takes the first line's own start, so the text after it begins
     // wherever the number's suffix moved on to.
@@ -512,7 +513,7 @@ function layOutParagraph(
       leftPt: lineStartPt(paragraphFrame, slot.leftPt, slot.rightPt, line.widthPt),
       topPt: slot.topPt,
       heightPt,
-      baselinePt: slot.topPt + line.ascentPt,
+      baselinePt: slot.topPt + line.ascentPt + raisedPt,
     });
     top = slot.topPt + heightPt;
   });
@@ -525,6 +526,14 @@ function layOutParagraph(
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
   };
 }
+
+// A number lifts the top of the line it sits on by however much its own ascent
+// reaches above the line's, and never reaches below the baseline: a Symbol bullet
+// raises a 12pt Calibri line from 14.65pt to 15.29pt, which is its ascent over
+// that text's descent, while a Courier one with a deeper descent leaves the line
+// alone.
+const liftOfNumber = (number: MeasuredNumber | null, line: TextLine): number =>
+  number === null ? 0 : Math.max(0, number.ascentPt - line.ascentPt);
 
 const markerAt = (number: MeasuredNumber | null, baselinePt: number): ParagraphMarker | null =>
   number === null

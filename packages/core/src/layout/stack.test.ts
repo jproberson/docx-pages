@@ -320,7 +320,7 @@ const numberedBoxes = (body: string, numberingXml = LISTS, widthPt = 468) => {
   const result = measureStack({
     blocks: readBlocks(pkg),
     styles: readStyleTable(pkg),
-    metricsFor: (request) => lookupFontMetrics(request, [ARIAL, SYMBOLS]),
+    metricsFor: (request) => lookupFontMetrics(request, [ARIAL, SYMBOLS, TALL_MARKS, DEEP_MARKS]),
     part: "word/document.xml",
     originPt: 36,
     leftPt: 72,
@@ -348,6 +348,25 @@ const SYMBOLS = buildFace({
   advance: 250,
   characters: "1.",
 });
+
+// One face reaching above the text's ascender and one reaching below its
+// descender, which are the two halves of what a number can do to a line.
+const TALL_MARKS = buildFace({
+  name: "Tall Marks",
+  metrics: { unitsPerEm: 1000, ascender: 1000, descender: -200, lineGap: 0 },
+  advance: 250,
+  characters: "1.",
+});
+
+const DEEP_MARKS = buildFace({
+  name: "Deep Marks",
+  metrics: { unitsPerEm: 1000, ascender: 700, descender: -500, lineGap: 0 },
+  advance: 250,
+  characters: "1.",
+});
+
+const levelInFace = (name: string) =>
+  numbering(decimalLevel(`<w:rPr><w:rFonts w:ascii="${name}" w:hAnsi="${name}"/></w:rPr>`));
 
 describe("measureStack over a numbered paragraph", () => {
   it("draws the number at the position the hanging indent pulls back to", () => {
@@ -392,6 +411,28 @@ describe("measureStack over a numbered paragraph", () => {
     const marker = numberedFirst(listItem(), lists).marker;
     expect(marker?.mark.font).toStrictEqual({ kind: "named", name: "Symbols" });
     expect(marker?.widthPt).toBeCloseTo((12 * 250 * 2) / 1000, 9);
+  });
+
+  it("lifts the top of the line by how far its number reaches over the text", () => {
+    const box = numberedFirst(listItem("aaaa"), levelInFace("Tall Marks"));
+    expect(box.heightPt).toBeCloseTo(ARIAL_12 + (12 - ARIAL_ASCENT_12), 9);
+    expect(box.lines[0]?.baselinePt).toBeCloseTo(36 + 12, 9);
+  });
+
+  it("leaves the line alone for a number that only reaches below the baseline", () => {
+    const box = numberedFirst(listItem("aaaa"), levelInFace("Deep Marks"));
+    expect(box.heightPt).toBeCloseTo(ARIAL_12, 9);
+    expect(box.lines[0]?.baselinePt).toBeCloseTo(36 + ARIAL_ASCENT_12, 9);
+  });
+
+  it("lifts only the line the number sits on", () => {
+    const box = numberedFirst(listItem(), levelInFace("Tall Marks"), 36 + 30);
+    const [first, second] = box.lines;
+    expect((second?.topPt ?? 0) - (first?.topPt ?? 0)).toBeCloseTo(
+      ARIAL_12 + (12 - ARIAL_ASCENT_12),
+      9,
+    );
+    expect((second?.baselinePt ?? 0) - (second?.topPt ?? 0)).toBeCloseTo(ARIAL_ASCENT_12, 9);
   });
 
   it("leaves the text against the number when the level asks for no suffix", () => {
