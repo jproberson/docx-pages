@@ -99,6 +99,7 @@ type FloatFrame = {
   // Where the story's own text column starts, which is what a column-relative
   // offset is measured from.
   readonly columnTopPt: number;
+  readonly marginTopPt: number;
 };
 
 // "Resize shape to fit text": the box is as tall as its text, and as wide as it
@@ -144,6 +145,7 @@ const placeFloatIn = (
     page: frame.page,
     paragraphTopPt,
     bodyTopPt: frame.columnTopPt,
+    marginTopPt: frame.marginTopPt,
     resolvePart,
     sizePt: fittedSizePt(anchor, frame),
   });
@@ -222,26 +224,44 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const widthPt = twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
   const frame: StoryFrame = { styles, metricsFor, leftPt, widthPt };
 
-  const floatFrame = (part: string | null, columnTopPt: number): FloatFrame => ({
+  const floatFrame = (
+    part: string | null,
+    columnTopPt: number,
+    marginTopPt: number,
+  ): FloatFrame => ({
     page,
     styles,
     metricsFor,
     part: part ?? MAIN_DOCUMENT_PART,
     columnTopPt,
+    marginTopPt,
   });
 
+  // A header's own objects are placed against the top of the body, which is not
+  // known until the header has been measured. So it is measured once against the
+  // margin the page asks for, and again against the body top that came of it.
   const headerPart = defaultHeaderPart(pkg);
-  const header = measureStory(
-    pkg,
-    headerPart,
-    frame,
-    headerTopPt,
-    bandsIn(floatFrame(headerPart, headerTopPt)),
-  );
+  const measureHeader = (marginTopPt: number): StoryMeasurement =>
+    measureStory(
+      pkg,
+      headerPart,
+      frame,
+      headerTopPt,
+      bandsIn(floatFrame(headerPart, headerTopPt, marginTopPt)),
+    );
+  const bodyTopUnder = (story: StoryMeasurement): number =>
+    Math.max(
+      twipsToPoints(page.margin.topTwips),
+      headerTopPt + (story.kind === "blocked" ? 0 : story.heightPt),
+    );
+
+  const firstPass = measureHeader(twipsToPoints(page.margin.topTwips));
+  if (firstPass.kind === "blocked") return firstPass;
+  const bodyTopPt = bodyTopUnder(firstPass);
+  const header = measureHeader(bodyTopPt);
   if (header.kind === "blocked") return header;
 
   const headerHeightPt = header.heightPt;
-  const bodyTopPt = Math.max(twipsToPoints(page.margin.topTwips), headerTopPt + headerHeightPt);
 
   // The footer hangs from the bottom edge, so it is measured at the origin and then
   // dropped to the height it turned out to need.
@@ -251,7 +271,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     footerPart,
     frame,
     0,
-    bandsIn(floatFrame(footerPart, 0)),
+    bandsIn(floatFrame(footerPart, 0, bodyTopPt)),
   );
   if (measuredFooter.kind === "blocked") return measuredFooter;
   const footerTopPt =
@@ -271,7 +291,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     blocks: bodyBlocks,
     part: MAIN_DOCUMENT_PART,
     originPt: bodyTopPt,
-    bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt)),
+    bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
   });
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
@@ -316,13 +336,17 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const drawingsIn = (story: Story, columnTopPt: number) =>
     story.part === null
       ? { floats: [], inlines: [] }
-      : drawingsFor(story.blocks, topsOf(story.boxes), floatFrame(story.part, columnTopPt));
+      : drawingsFor(
+          story.blocks,
+          topsOf(story.boxes),
+          floatFrame(story.part, columnTopPt, bodyTopPt),
+        );
 
   const headerDrawings = drawingsIn(header, headerTopPt);
   const footerDrawings = drawingsIn(footer, footerTopPt);
   const broken = breakStack({ boxes: bodyStack.boxes, topPt: bodyTopPt, bottomPt: bodyBottomPt });
   const bodyDrawings = pageTops(broken).map((topOf) =>
-    drawingsFor(bodyBlocks, topOf, floatFrame(MAIN_DOCUMENT_PART, bodyTopPt)),
+    drawingsFor(bodyBlocks, topOf, floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
   );
 
   const filled = fillTextBoxes(

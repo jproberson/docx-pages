@@ -75,6 +75,7 @@ const place = (body: string, paragraphTopPt: number, bodyTopPt = 36) =>
     page: LETTER,
     paragraphTopPt,
     bodyTopPt,
+    marginTopPt: 36,
     resolvePart: () => null,
   });
 
@@ -174,6 +175,20 @@ describe("placeFloat", () => {
     );
   });
 
+  it("measures a margin-relative offset from where the body's text starts", () => {
+    // Word puts this header picture, asked for 55.77pt above the margin, 13.3pt
+    // down a page whose header holds the body off until 69.04pt.
+    const placed = placeFloat({
+      anchor: firstAnchor(anchorXml({ h: offsetH(0), v: offsetV(-708274, "margin") })),
+      page: LETTER,
+      paragraphTopPt: 21.6,
+      bodyTopPt: 21.6,
+      marginTopPt: 69.04,
+      resolvePart: () => null,
+    });
+    expect(placed.topPt).toBeCloseTo(13.27, 2);
+  });
+
   it("measures a page-relative offset from the page edge, not the margin", () => {
     expect(place(anchorXml({ h: offsetH(0, "page"), v: offsetV(0) }), 100).leftPt).toBe(0);
   });
@@ -194,6 +209,7 @@ describe("placeFloat", () => {
       page: LETTER,
       paragraphTopPt: 100,
       bodyTopPt: 36,
+      marginTopPt: 36,
       resolvePart: () => null,
       sizePt: { widthPt: 44.5, heightPt: 27.2 },
     });
@@ -230,6 +246,7 @@ const placeResolving = (body: string, resolvePart: (id: string) => string | null
     page: LETTER,
     paragraphTopPt: 100,
     bodyTopPt: 36,
+    marginTopPt: 36,
     resolvePart,
   });
 

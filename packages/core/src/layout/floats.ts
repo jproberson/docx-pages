@@ -32,6 +32,9 @@ export type PlaceFloatInput = {
   readonly page: SectionGeometry;
   readonly paragraphTopPt: number;
   readonly bodyTopPt: number;
+  // Where the body's own text starts, which a margin-relative offset is measured
+  // down from even for an object anchored in the header.
+  readonly marginTopPt: number;
   readonly resolvePart: PartResolver;
   // What the object turned out to be, for one that sizes itself to its content.
   // An aligned object lands on its own size, so this decides where it goes.
@@ -57,16 +60,19 @@ function horizontalBand(page: SectionGeometry, from: AnchorOrigin): Band {
   }
 }
 
+// Measured against Word, which put a header picture 55.77pt above the margin at
+// 13.3pt down the page: the top margin an offset is measured from is where the
+// body's text begins, which a header deep enough to overrun the margin pushes
+// down with it.
 function verticalBand(input: PlaceFloatInput, from: AnchorOrigin): Band {
-  const { page, paragraphTopPt, bodyTopPt } = input;
-  const top = twipsToPoints(page.margin.topTwips);
+  const { page, paragraphTopPt, bodyTopPt, marginTopPt } = input;
   const bottom = twipsToPoints(page.margin.bottomTwips);
   const height = twipsToPoints(page.heightTwips);
   switch (from) {
     case "page":
       return { startPt: 0, extentPt: height };
     case "margin":
-      return { startPt: top, extentPt: height - top - bottom };
+      return { startPt: marginTopPt, extentPt: height - marginTopPt - bottom };
     case "paragraph":
     case "line":
     case "character":
