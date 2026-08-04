@@ -56,6 +56,8 @@ describe("readReferenceManifest", () => {
       renderedPageIndexes: [],
       textLinesMatched: null,
       textLinesPlaced: null,
+      numbersMatched: null,
+      numbersPlaced: null,
       textTolerancePt: 1,
     });
   });

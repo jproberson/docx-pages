@@ -72,6 +72,10 @@ export type ReferenceCase = {
   // here; both are read from the document and Word's own output at run time.
   readonly textLinesMatched: number | null;
   readonly textLinesPlaced: number | null;
+  // How many list numbers are expected to be identified against Word's own output
+  // and to sit where Word drew them.
+  readonly numbersMatched: number | null;
+  readonly numbersPlaced: number | null;
   readonly textTolerancePt: number;
 };
 
@@ -250,6 +254,8 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     renderedPageIndexes: list("renderedPageIndexes", readIndex),
     textLinesMatched: optionalNumber(source, "textLinesMatched", where),
     textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
+    numbersMatched: optionalNumber(source, "numbersMatched", where),
+    numbersPlaced: optionalNumber(source, "numbersPlaced", where),
     textTolerancePt: optionalNumber(source, "textTolerancePt", where) ?? 1,
   };
 }
