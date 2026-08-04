@@ -1,12 +1,13 @@
 import type { AnchorOrigin, AnchorPosition, FloatingAnchor } from "../docx/anchors.js";
-import type { CropInsets, DrawingContent } from "../docx/drawing.js";
+import type { CropInsets, DrawingContent, TextBoxBody } from "../docx/drawing.js";
 import type { SectionGeometry } from "../docx/section.js";
+import type { PlacedTextBox } from "./text-boxes.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
 
 export type PlacedContent =
   | { readonly kind: "picture"; readonly part: string; readonly crop: CropInsets }
   | { readonly kind: "missing-picture"; readonly relationshipId: string }
-  | { readonly kind: "text-box" }
+  | { readonly kind: "text-box"; readonly body: TextBoxBody; readonly text: PlacedTextBox | null }
   | { readonly kind: "shape" }
   | { readonly kind: "unknown" };
 
@@ -80,8 +81,12 @@ function resolve(position: AnchorPosition, band: Band, sizePt: number): number {
   }
 }
 
+// A text box's own text is laid out once its frame has a place on the page, so it
+// arrives here unresolved and is filled in afterwards.
 export function resolveContent(content: DrawingContent, resolvePart: PartResolver): PlacedContent {
+  if (content.kind === "text-box") return { kind: "text-box", body: content.body, text: null };
   if (content.kind !== "picture") return content;
+
   const part = resolvePart(content.relationshipId);
   return part === null
     ? { kind: "missing-picture", relationshipId: content.relationshipId }

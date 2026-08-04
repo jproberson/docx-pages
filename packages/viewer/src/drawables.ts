@@ -1,16 +1,30 @@
-import type { LaidOutDocument, PlacedContent, PlacedFloat, PlacedInline } from "@onepager/core";
+import type {
+  LaidOutDocument,
+  ParagraphBox,
+  PlacedContent,
+  PlacedFloat,
+  PlacedInline,
+} from "@onepager/core";
 
-export type Drawable = {
-  readonly key: string;
-  readonly name: string;
-  readonly content: PlacedContent;
-  readonly leftPt: number;
-  readonly topPt: number;
-  readonly widthPt: number;
-  readonly heightPt: number;
-};
+export type Drawable =
+  | {
+      readonly kind: "object";
+      readonly key: string;
+      readonly name: string;
+      readonly content: PlacedContent;
+      readonly leftPt: number;
+      readonly topPt: number;
+      readonly widthPt: number;
+      readonly heightPt: number;
+    }
+  | {
+      readonly kind: "text";
+      readonly key: string;
+      readonly boxes: readonly ParagraphBox[];
+    };
 
 const fromFloat = (float: PlacedFloat, key: string): Drawable => ({
+  kind: "object",
   key,
   name: float.anchor.name,
   content: float.content,
@@ -21,6 +35,7 @@ const fromFloat = (float: PlacedFloat, key: string): Drawable => ({
 });
 
 const fromInline = (inline: PlacedInline, key: string): Drawable => ({
+  kind: "object",
   key,
   name: inline.drawing.name,
   content: inline.content,
@@ -30,22 +45,45 @@ const fromInline = (inline: PlacedInline, key: string): Drawable => ({
   heightPt: inline.heightPt,
 });
 
+const hasText = (boxes: readonly ParagraphBox[]): boolean =>
+  boxes.some((box) => box.lines.length > 0);
+
+// A text box draws its own text straight after its frame, so the two keep the one
+// place in the stack that Word gave the shape.
+function textOf(float: PlacedFloat, key: string): readonly Drawable[] {
+  const { content } = float;
+  if (content.kind !== "text-box" || content.text === null || !hasText(content.text.boxes)) {
+    return [];
+  }
+  return [{ kind: "text", key: `${key}-text`, boxes: content.text.boxes }];
+}
+
 // Word stacks floats by relativeHeight, with behindDoc ones under the text and the
 // rest over it. Inline drawings live in the text itself, so they sit between.
 export function drawablesOf(layout: LaidOutDocument): readonly Drawable[] {
-  const floats = [...layout.headerFloats, ...layout.bodyFloats].map(
-    (float, at) => [float, fromFloat(float, `float-${String(at)}`)] as const,
-  );
-  const byHeight = (
-    one: readonly [PlacedFloat, Drawable],
-    other: readonly [PlacedFloat, Drawable],
-  ): number => one[0].anchor.relativeHeight - other[0].anchor.relativeHeight;
+  const floats = [...layout.headerFloats, ...layout.bodyFloats].map((float, at) => {
+    const key = `float-${String(at)}`;
+    return { float, drawables: [fromFloat(float, key), ...textOf(float, key)] };
+  });
 
-  const behind = floats.filter(([float]) => float.anchor.behindDoc).sort(byHeight);
-  const above = floats.filter(([float]) => !float.anchor.behindDoc).sort(byHeight);
+  const byHeight = (one: (typeof floats)[number], other: (typeof floats)[number]): number =>
+    one.float.anchor.relativeHeight - other.float.anchor.relativeHeight;
+
+  const behind = floats.filter((each) => each.float.anchor.behindDoc).sort(byHeight);
+  const above = floats.filter((each) => !each.float.anchor.behindDoc).sort(byHeight);
   const inlines = [...layout.headerInlines, ...layout.bodyInlines].map((inline, at) =>
     fromInline(inline, `inline-${String(at)}`),
   );
 
-  return [...behind.map(([, drawable]) => drawable), ...inlines, ...above.map(([, one]) => one)];
+  const flowed = [...layout.header, ...layout.body];
+  const text: readonly Drawable[] = hasText(flowed)
+    ? [{ kind: "text", key: "flowed-text", boxes: flowed }]
+    : [];
+
+  return [
+    ...behind.flatMap((each) => each.drawables),
+    ...text,
+    ...inlines,
+    ...above.flatMap((each) => each.drawables),
+  ];
 }

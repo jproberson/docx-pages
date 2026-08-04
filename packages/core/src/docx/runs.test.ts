@@ -81,12 +81,14 @@ describe("readRuns", () => {
       fontSizePt: 12,
       bold: false,
       italic: false,
+      color: null,
     });
     expect(runs[1]?.mark).toStrictEqual({
       font: { kind: "named", name: "Georgia" },
       fontSizePt: 24,
       bold: false,
       italic: false,
+      color: null,
     });
   });
 

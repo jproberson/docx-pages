@@ -1,9 +1,61 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { CropInsets, LaidOutDocument, PlacedContent, SectionGeometry } from "@onepager/core";
+import type {
+  CropInsets,
+  LaidOutDocument,
+  ParagraphBox,
+  ParagraphMark,
+  PlacedContent,
+  SectionGeometry,
+  TextBoxBody,
+} from "@onepager/core";
 
 import { OnePagerPage } from "./page.js";
+
+const MARK: ParagraphMark = {
+  font: { kind: "named", name: "Meridian Sans" },
+  fontSizePt: 12,
+  bold: false,
+  italic: false,
+  color: null,
+};
+
+const EMPTY_BODY: TextBoxBody = {
+  blocks: [],
+  insets: { leftEmu: 0, topEmu: 0, rightEmu: 0, bottomEmu: 0 },
+  anchor: "top",
+  wraps: true,
+};
+
+const textBox = (boxes: readonly ParagraphBox[] = []): PlacedContent => ({
+  kind: "text-box",
+  body: EMPTY_BODY,
+  text: boxes.length === 0 ? null : { boxes, contentHeightPt: 0 },
+});
+
+const paragraphOf = (
+  text: string,
+  mark: ParagraphMark = MARK,
+  options: { leftPt?: number; baselinePt?: number; widthPt?: number } = {},
+): ParagraphBox => ({
+  index: 0,
+  topPt: 0,
+  heightPt: 14,
+  lines: [
+    {
+      line: {
+        segments: [{ kind: "text", mark, text, widthPt: options.widthPt ?? 40 }],
+        widthPt: options.widthPt ?? 40,
+        heightPt: 14,
+        ascentPt: 11,
+      },
+      leftPt: options.leftPt ?? 120,
+      topPt: 30,
+      baselinePt: options.baselinePt ?? 41,
+    },
+  ],
+});
 
 const LETTER: SectionGeometry = {
   widthTwips: 12240,
@@ -40,14 +92,17 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
   heightPt: 90,
 });
 
-const layoutWith = (floats: readonly ReturnType<typeof float>[]): LaidOutDocument => ({
+const layoutWith = (
+  floats: readonly ReturnType<typeof float>[],
+  body: readonly ParagraphBox[] = [],
+): LaidOutDocument => ({
   kind: "laid-out",
   page: LETTER,
   headerTopPt: 21.6,
   headerHeightPt: 0,
   bodyTopPt: 36,
   header: [],
-  body: [],
+  body,
   headerFloats: [],
   bodyFloats: floats,
   headerInlines: [],
@@ -104,14 +159,14 @@ describe("OnePagerPage", () => {
     expect(html).toMatch(/top:-7\.058\d*pt/);
   });
 
-  it("shows nothing for a text box by default, since its text is not laid out yet", () => {
-    expect(markup(layoutWith([float({ kind: "text-box" })]))).not.toContain("<svg");
+  it("shows nothing for a text box holding no text", () => {
+    expect(markup(layoutWith([float(textBox())]))).not.toContain("<svg");
   });
 
   it("outlines frames on request so placement can be checked without content", () => {
     const html = renderToStaticMarkup(
       <OnePagerPage
-        layout={layoutWith([float({ kind: "text-box" })])}
+        layout={layoutWith([float(textBox())])}
         imageUrl={() => undefined}
         frames="outlined"
       />,
@@ -136,12 +191,71 @@ describe("OnePagerPage", () => {
       <OnePagerPage
         layout={layoutWith([
           float({ kind: "shape" }, { height: 5 }),
-          float({ kind: "text-box" }, { behindDoc: true, height: 9 }),
+          float(textBox(), { behindDoc: true, height: 9 }),
         ])}
         imageUrl={() => undefined}
         frames="outlined"
       />,
     );
     expect(html.indexOf('data-kind="text-box"')).toBeLessThan(html.indexOf('data-kind="shape"'));
+  });
+});
+
+describe("OnePagerPage drawing text", () => {
+  it("draws each line at the baseline layout gave it", () => {
+    const html = markup(layoutWith([], [paragraphOf("Hello")]));
+
+    expect(html).toContain('data-kind="text"');
+    expect(html).toContain('x="120"');
+    expect(html).toContain('y="41"');
+    expect(html).toContain("Hello");
+  });
+
+  it("names the authored face first and lets the page fall back behind it", () => {
+    const html = markup(layoutWith([], [paragraphOf("Hello")]), {
+      layout: layoutWith([], [paragraphOf("Hello")]),
+      imageUrl: () => undefined,
+      fallbackFonts: "Open Sans, sans-serif",
+    });
+
+    expect(html).toContain("&quot;Meridian Sans&quot;, Open Sans, sans-serif");
+  });
+
+  // Holding the drawn run to the width it was measured at is what keeps a
+  // substituted face from wrapping somewhere Word did not.
+  it("holds each run to the width it was measured at", () => {
+    const html = markup(layoutWith([], [paragraphOf("Hello", MARK, { widthPt: 40 })]));
+    expect(html).toContain('textLength="40"');
+    expect(html).toContain('lengthAdjust="spacing"');
+  });
+
+  it("carries a run's own weight, slant, size and colour onto the page", () => {
+    const bold: ParagraphMark = { ...MARK, bold: true, italic: true, color: "#FF0000" };
+    const html = markup(layoutWith([], [paragraphOf("Hello", bold)]));
+
+    expect(html).toContain('font-weight="bold"');
+    expect(html).toContain('font-style="italic"');
+    expect(html).toContain('font-size="12"');
+    expect(html).toContain('fill="#FF0000"');
+  });
+
+  it("draws a text box's own text as well as the text that flows on the page", () => {
+    const html = markup(layoutWith([float(textBox([paragraphOf("Inside")]))]));
+    expect(html).toContain("Inside");
+  });
+
+  it("draws a text box's text after the frame it belongs to", () => {
+    const html = renderToStaticMarkup(
+      <OnePagerPage
+        layout={layoutWith([float(textBox([paragraphOf("Inside")]))])}
+        imageUrl={() => undefined}
+        frames="outlined"
+      />,
+    );
+    expect(html.indexOf('data-kind="text-box"')).toBeLessThan(html.indexOf("Inside"));
+  });
+
+  it("draws no text layer for a document that has none", () => {
+    expect(markup(layoutWith([]))).not.toContain('data-kind="text"');
   });
 });

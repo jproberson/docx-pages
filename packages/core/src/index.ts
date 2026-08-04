@@ -76,6 +76,14 @@ export type {
   StackMeasurement,
 } from "./layout/stack.js";
 
+export { layOutTextBox } from "./layout/text-boxes.js";
+export type {
+  LayOutTextBoxInput,
+  PlacedTextBox,
+  TextBoxLayout,
+  TextBoxRect,
+} from "./layout/text-boxes.js";
+
 export { layOutDocument } from "./layout/document.js";
 export type { DocumentLayout, LaidOutDocument } from "./layout/document.js";
 

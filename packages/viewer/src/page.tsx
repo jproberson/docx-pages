@@ -1,6 +1,13 @@
 import type { CSSProperties, ReactElement } from "react";
 
-import { twipsToPoints, type CropInsets, type LaidOutDocument } from "@onepager/core";
+import {
+  twipsToPoints,
+  type CropInsets,
+  type LaidOutDocument,
+  type ParagraphBox,
+  type ParagraphMark,
+  type PlacedLine,
+} from "@onepager/core";
 
 import { drawablesOf, type Drawable } from "./drawables.js";
 import type { ImageResolver } from "./images.js";
@@ -12,12 +19,19 @@ export type OnePagerPageProps = {
   readonly imageUrl: ImageResolver;
   readonly scale?: number;
   readonly frames?: FrameStyle;
+  readonly fallbackFonts?: string;
   readonly className?: string;
 };
 
+// The document names the face it was authored in; whatever the page can actually
+// load falls in behind it.
+const DEFAULT_FALLBACK_FONTS = "sans-serif";
+
 const pt = (value: number): string => `${String(value)}pt`;
 
-const box = (drawable: Drawable): CSSProperties => ({
+type ObjectDrawable = Extract<Drawable, { kind: "object" }>;
+
+const box = (drawable: ObjectDrawable): CSSProperties => ({
   position: "absolute",
   left: pt(drawable.leftPt),
   top: pt(drawable.topPt),
@@ -27,7 +41,7 @@ const box = (drawable: Drawable): CSSProperties => ({
 
 // srcRect hides a fraction of each edge, so the whole bitmap is larger than the
 // placed rectangle by exactly that much and is shifted up and left behind it.
-function croppedImage(drawable: Drawable, url: string, crop: CropInsets): ReactElement {
+function croppedImage(drawable: ObjectDrawable, url: string, crop: CropInsets): ReactElement {
   const width = drawable.widthPt / Math.max(1 - crop.left - crop.right, Number.EPSILON);
   const height = drawable.heightPt / Math.max(1 - crop.top - crop.bottom, Number.EPSILON);
 
@@ -48,7 +62,7 @@ function croppedImage(drawable: Drawable, url: string, crop: CropInsets): ReactE
   );
 }
 
-function frame(drawable: Drawable, kind: string, frames: FrameStyle): ReactElement | null {
+function frame(drawable: ObjectDrawable, kind: string, frames: FrameStyle): ReactElement | null {
   if (frames === "hidden") return null;
   return (
     <svg
@@ -71,8 +85,71 @@ function frame(drawable: Drawable, kind: string, frames: FrameStyle): ReactEleme
   );
 }
 
-function render(
-  drawable: Drawable,
+const familyOf = (mark: ParagraphMark, fallback: string): string =>
+  mark.font.kind === "named" ? `"${mark.font.name}", ${fallback}` : fallback;
+
+// The line was measured with the authored face's own widths. Holding each run to
+// that width keeps the break points Word chose even when the page draws the text
+// in a substitute.
+function lineText(placed: PlacedLine, key: string, fallback: string): ReactElement | null {
+  const spans = placed.line.segments.flatMap((segment, at) =>
+    segment.kind === "text"
+      ? [
+          <tspan
+            key={at}
+            xmlSpace="preserve"
+            fontFamily={familyOf(segment.mark, fallback)}
+            fontSize={segment.mark.fontSizePt}
+            fontWeight={segment.mark.bold ? "bold" : undefined}
+            fontStyle={segment.mark.italic ? "italic" : undefined}
+            fill={segment.mark.color ?? undefined}
+            textLength={segment.widthPt > 0 ? segment.widthPt : undefined}
+            lengthAdjust="spacing"
+          >
+            {segment.text}
+          </tspan>,
+        ]
+      : [],
+  );
+
+  if (spans.length === 0) return null;
+  return (
+    <text key={key} x={placed.leftPt} y={placed.baselinePt}>
+      {spans}
+    </text>
+  );
+}
+
+function textLayer(
+  drawable: Extract<Drawable, { kind: "text" }>,
+  widthPt: number,
+  heightPt: number,
+  fallback: string,
+): ReactElement {
+  const lines = drawable.boxes.flatMap((paragraph: ParagraphBox) =>
+    paragraph.lines.flatMap((placed, at) => {
+      const element = lineText(placed, `${String(paragraph.index)}-${String(at)}`, fallback);
+      return element === null ? [] : [element];
+    }),
+  );
+
+  return (
+    <svg
+      key={drawable.key}
+      data-kind="text"
+      style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}
+      width={widthPt}
+      height={heightPt}
+      viewBox={`0 0 ${String(widthPt)} ${String(heightPt)}`}
+      fill="currentColor"
+    >
+      {lines}
+    </svg>
+  );
+}
+
+function renderObject(
+  drawable: ObjectDrawable,
   imageUrl: ImageResolver,
   frames: FrameStyle,
 ): ReactElement | null {
@@ -96,7 +173,14 @@ function render(
 }
 
 export function OnePagerPage(props: OnePagerPageProps): ReactElement {
-  const { layout, imageUrl, scale = 1, frames = "hidden", className } = props;
+  const {
+    layout,
+    imageUrl,
+    scale = 1,
+    frames = "hidden",
+    fallbackFonts = DEFAULT_FALLBACK_FONTS,
+    className,
+  } = props;
   const widthPt = twipsToPoints(layout.page.widthTwips);
   const heightPt = twipsToPoints(layout.page.heightTwips);
 
@@ -113,7 +197,11 @@ export function OnePagerPage(props: OnePagerPageProps): ReactElement {
         transformOrigin: "top left",
       }}
     >
-      {drawablesOf(layout).map((drawable) => render(drawable, imageUrl, frames))}
+      {drawablesOf(layout).map((drawable) =>
+        drawable.kind === "text"
+          ? textLayer(drawable, widthPt, heightPt, fallbackFonts)
+          : renderObject(drawable, imageUrl, frames),
+      )}
     </div>
   );
 }

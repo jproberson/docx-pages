@@ -69,6 +69,9 @@ export type MeasureStackInput = {
   readonly originPt: number;
   readonly leftPt: number;
   readonly widthPt: number;
+  // A shape can refuse to wrap, in which case its text runs on past the frame
+  // rather than breaking inside it.
+  readonly wraps?: boolean;
 };
 
 type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "widthPt">;
@@ -210,7 +213,10 @@ function measureParagraph(
   const insets = insetsOf(paragraphFrame);
   const breaking = breakLines({
     runs,
-    widthPt: frame.widthPt - insets.leftPt - insets.rightPt,
+    widthPt:
+      context.wraps === false
+        ? Number.POSITIVE_INFINITY
+        : frame.widthPt - insets.leftPt - insets.rightPt,
     metricsFor: context.metricsFor,
   });
 

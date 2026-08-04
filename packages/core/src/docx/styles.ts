@@ -19,6 +19,8 @@ export type ParagraphMark = {
   readonly fontSizePt: number;
   readonly bold: boolean;
   readonly italic: boolean;
+  // Null where the run leaves its colour to whatever it is drawn on.
+  readonly color: string | null;
 };
 
 type PartialMark = {
@@ -26,6 +28,7 @@ type PartialMark = {
   readonly fontSizeHalfPoints: number | undefined;
   readonly bold: boolean | undefined;
   readonly italic: boolean | undefined;
+  readonly color: string | undefined;
 };
 
 type PartialFrame = {
@@ -59,6 +62,7 @@ const EMPTY: PartialMark = {
   fontSizeHalfPoints: undefined,
   bold: undefined,
   italic: undefined,
+  color: undefined,
 };
 
 const EMPTY_FRAME: PartialFrame = {
@@ -135,6 +139,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   fontSizeHalfPoints: over.fontSizeHalfPoints ?? base.fontSizeHalfPoints,
   bold: over.bold ?? base.bold,
   italic: over.italic ?? base.italic,
+  color: over.color ?? base.color,
 });
 
 // A toggle is on when present without a value, so only an explicit off turns it
@@ -197,7 +202,15 @@ function readMark(
       halfPoints === undefined || !Number.isFinite(halfPoints) ? undefined : halfPoints,
     bold: toggle(rPr, "b"),
     italic: toggle(rPr, "i"),
+    color: colorOf(rPr),
   };
+}
+
+// "auto" leaves the colour to the page, which is not a colour this can name.
+function colorOf(rPr: XmlElement): string | undefined {
+  const element = firstNamed(rPr, W_NS, "color");
+  const value = element === null ? undefined : attribute(element, W_NS, "val");
+  return value === undefined || value === "auto" ? undefined : `#${value.replace("#", "")}`;
 }
 
 const themeSlot = (reference: string): string =>
@@ -273,6 +286,7 @@ const markOf = (resolved: PartialMark): ParagraphMark => ({
       : resolved.fontSizeHalfPoints / 2,
   bold: resolved.bold ?? false,
   italic: resolved.italic ?? false,
+  color: resolved.color ?? null,
 });
 
 export function resolveParagraphMark(paragraph: Paragraph, table: StyleTable): ParagraphMark {

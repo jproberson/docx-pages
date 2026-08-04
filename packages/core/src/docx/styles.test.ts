@@ -36,6 +36,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 11,
       bold: false,
       italic: false,
+      color: null,
     });
   });
 
@@ -46,6 +47,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 14,
       bold: false,
       italic: false,
+      color: null,
     });
   });
 
@@ -68,6 +70,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 20,
       bold: false,
       italic: false,
+      color: null,
     });
   });
 
@@ -81,6 +84,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 10,
       bold: false,
       italic: false,
+      color: null,
     });
   });
 
@@ -94,6 +98,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 12,
       bold: false,
       italic: false,
+      color: null,
     });
   });
 
@@ -114,6 +119,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 10,
       bold: false,
       italic: false,
+      color: null,
     });
   });
 

@@ -4,7 +4,7 @@ import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
-import { readStyleTable, resolveParagraphFrame } from "../docx/styles.js";
+import { readStyleTable, resolveParagraphFrame, type StyleTable } from "../docx/styles.js";
 import {
   measureStack,
   type LayoutBlocker,
@@ -13,6 +13,7 @@ import {
 } from "./stack.js";
 import { placeFloat, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
+import { layOutTextBox } from "./text-boxes.js";
 import { twipsToPoints } from "./units.js";
 
 export type LaidOutDocument = {
@@ -31,6 +32,48 @@ export type LaidOutDocument = {
 
 export type DocumentLayout =
   LaidOutDocument | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
+
+type FloatsInPart = {
+  readonly floats: readonly PlacedFloat[];
+  readonly part: string;
+};
+
+type FilledFloats =
+  | { readonly kind: "filled"; readonly floats: readonly (readonly PlacedFloat[])[] }
+  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
+
+// A text box is placed as a frame first and only then holds text, since its own
+// content is laid out against the rectangle the anchor resolved to.
+function fillTextBoxes(
+  parts: readonly FloatsInPart[],
+  styles: StyleTable,
+  metricsFor: MetricsResolver,
+): FilledFloats {
+  const filled: (readonly PlacedFloat[])[] = [];
+
+  for (const { floats, part } of parts) {
+    const placed: PlacedFloat[] = [];
+    for (const float of floats) {
+      if (float.content.kind !== "text-box") {
+        placed.push(float);
+        continue;
+      }
+
+      const laid = layOutTextBox({
+        body: float.content.body,
+        rect: float,
+        styles,
+        metricsFor,
+        part,
+      });
+      if (laid.kind === "blocked") return { kind: "blocked", blocker: laid.blocker };
+      placed.push({ ...float, content: { ...float.content, text: laid.text } });
+    }
+    filled.push(placed);
+  }
+
+  return { kind: "filled", floats: filled };
+}
 
 export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): DocumentLayout {
   const page = readSectionGeometry(pkg);
@@ -118,11 +161,22 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
       : drawingsFor(headerBlocks, headerBoxes, headerPart);
   const bodyDrawings = drawingsFor(bodyBlocks, bodyStack.boxes, MAIN_DOCUMENT_PART);
 
+  const filled = fillTextBoxes(
+    [
+      { floats: headerDrawings.floats, part: headerPart ?? MAIN_DOCUMENT_PART },
+      { floats: bodyDrawings.floats, part: MAIN_DOCUMENT_PART },
+    ],
+    styles,
+    metricsFor,
+  );
+  if (filled.kind === "blocked") return filled;
+  const [headerFloats = [], bodyFloats = []] = filled.floats;
+
   return {
     kind: "laid-out",
     page,
-    headerFloats: headerDrawings.floats,
-    bodyFloats: bodyDrawings.floats,
+    headerFloats,
+    bodyFloats,
     headerInlines: headerDrawings.inlines,
     bodyInlines: bodyDrawings.inlines,
     headerTopPt,
