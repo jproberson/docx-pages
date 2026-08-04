@@ -70,21 +70,34 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 100, leftPt: 76, rightPt: 576 });
   });
 
-  // The line starts at 100 and is 12 tall, so its middle is at 106 and each step
-  // down puts it at 112, 124, and so on.
-  it("steps a line down by its own height until an object stops covering its middle", () => {
+  // The line starts at 100 and is 12 tall.
+  it("falls a line to the foot of the object that blocked it", () => {
     const slot = fit({ widthPt: 500, bands: [band(300, 580, 90, 130)] });
-    expect(slot).toStrictEqual({ topPt: 124, leftPt: 36, rightPt: 576 });
+    expect(slot).toStrictEqual({ topPt: 130, leftPt: 36, rightPt: 576 });
   });
 
-  // Measured against Word: an object reaching into the top of a line leaves it
-  // where it is, and only moves it once it reaches the middle.
-  it("leaves a line an object only reaches the top of", () => {
+  // Measured against Word by sweeping a box's bottom edge down through a line: the
+  // line moved as soon as the edge reached it, half a point in.
+  it("moves a line an object reaches only the top of", () => {
     const slot = fit({ widthPt: 500, bands: [band(300, 580, 90, 104)] });
+    expect(slot).toStrictEqual({ topPt: 104, leftPt: 36, rightPt: 576 });
+  });
+
+  // Word answers an outline for the middle of a line alone: two documents leave a
+  // line beside an outline that reaches 4pt into the top of it.
+  it("leaves a line an outline reaches only the top of", () => {
+    const slot = fit({ widthPt: 500, bands: [{ ...band(300, 580, 90, 104), outlined: true }] });
     expect(slot).toStrictEqual({ topPt: 100, leftPt: 36, rightPt: 576 });
   });
 
-  it("keeps stepping past each object in turn", () => {
+  // And a line an outline does block steps down by its own height rather than
+  // falling to the foot of it, which lands it below the outline's own bottom.
+  it("steps a line down by its own height past an outline", () => {
+    const slot = fit({ widthPt: 500, bands: [{ ...band(300, 580, 90, 130), outlined: true }] });
+    expect(slot).toStrictEqual({ topPt: 124, leftPt: 36, rightPt: 576 });
+  });
+
+  it("keeps falling past each object in turn", () => {
     const slot = fit({
       widthPt: 500,
       bands: [band(300, 580, 90, 130), band(280, 580, 125, 160)],
@@ -92,12 +105,12 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 160, leftPt: 36, rightPt: 576 });
   });
 
-  it("stops stepping once no object reaches the line's middle", () => {
+  it("stops falling once no object reaches the line at all", () => {
     const slot = fit({
       widthPt: 500,
       bands: [band(300, 580, 90, 130), band(280, 580, 145, 200)],
     });
-    expect(slot).toStrictEqual({ topPt: 124, leftPt: 36, rightPt: 576 });
+    expect(slot).toStrictEqual({ topPt: 130, leftPt: 36, rightPt: 576 });
   });
 
   it("sits beside an object rather than under it when the room is there", () => {
@@ -116,7 +129,7 @@ describe("fitLine", () => {
       widthPt: 0,
       bands: [band(0, 200, 90, 130), band(210, 600, 90, 130)],
     });
-    expect(slot.topPt).toBe(124);
+    expect(slot.topPt).toBe(130);
   });
 
   it("takes a gap wide enough to be worth having", () => {
@@ -149,10 +162,19 @@ describe("fitLine", () => {
     expect(slot).toStrictEqual({ topPt: 118, leftPt: 76, rightPt: 576 });
   });
 
-  // A line with no height of its own has no step to take, so it stays put rather
-  // than looking for room for ever.
+  // A line with no height of its own has no step to take, so an outline it cannot
+  // sit beside leaves it where it started rather than looking for room for ever.
   it("leaves a line that cannot step where it started", () => {
-    const slot = fit({ widthPt: 500, heightPt: 0, bands: [band(0, 600, 90, 130)] });
+    const slot = fit({
+      widthPt: 500,
+      heightPt: 0,
+      bands: [{ ...band(0, 600, 90, 130), outlined: true }],
+    });
+    expect(slot).toStrictEqual({ topPt: 100, leftPt: 36, rightPt: 576 });
+  });
+
+  it("leaves a line nothing stands in the way of where the frame cannot hold it", () => {
+    const slot = fit({ widthPt: 800 });
     expect(slot).toStrictEqual({ topPt: 100, leftPt: 36, rightPt: 576 });
   });
 });

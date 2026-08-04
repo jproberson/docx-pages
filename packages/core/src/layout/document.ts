@@ -178,6 +178,7 @@ function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
     topPt: float.topPt + float.heightPt * area.top - emuToPoints(distances.topEmu),
     bottomPt: float.topPt + float.heightPt * area.bottom + emuToPoints(distances.bottomEmu),
     ...(outline === undefined ? {} : { outline }),
+    ...(wrap === "tight" || wrap === "through" ? { outlined: true } : {}),
   };
 }
 

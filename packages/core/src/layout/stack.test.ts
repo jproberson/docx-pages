@@ -555,15 +555,15 @@ describe("measureStack around wrapping objects", () => {
     expect(boxes[0]?.lines[0]?.topPt).toBe(36);
   });
 
-  // A line steps down by its own height until the object stops covering its middle,
-  // rather than dropping to the object's bottom edge.
-  it("steps a line past an object it is too wide to sit beside", () => {
+  // A line falls to the bottom edge of the object that blocked it, landing on it
+  // exactly rather than on a step of its own height.
+  it("drops a line to the foot of an object it is too wide to sit beside", () => {
     const boxes = wrapped(
       paragraph(``, "aaaa"),
       bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 }),
     );
 
-    expect(boxes[0]?.lines[0]?.topPt).toBeCloseTo(36 + ARIAL_12 * 5, 9);
+    expect(boxes[0]?.lines[0]?.topPt).toBe(100);
   });
 
   it("keeps the paragraph's own top where the flow left it, so its floats stay put", () => {
@@ -573,7 +573,7 @@ describe("measureStack around wrapping objects", () => {
     );
 
     expect(boxes[0]?.topPt).toBe(36);
-    expect(boxes[0]?.heightPt).toBeCloseTo(ARIAL_12 * 6, 9);
+    expect(boxes[0]?.heightPt).toBeCloseTo(100 + ARIAL_12 - 36, 9);
   });
 
   it("starts the next paragraph below the line that fell, not where it would have sat", () => {
@@ -582,7 +582,7 @@ describe("measureStack around wrapping objects", () => {
       bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 }),
     );
 
-    expect(boxes[1]?.topPt).toBeCloseTo(36 + ARIAL_12 * 6, 9);
+    expect(boxes[1]?.topPt).toBeCloseTo(100 + ARIAL_12, 9);
   });
 
   it("leaves a line the object no longer reaches alone", () => {
@@ -592,20 +592,20 @@ describe("measureStack around wrapping objects", () => {
     );
 
     expect(boxes[1]?.lines[0]?.leftPt).toBe(72);
-    expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(36 + ARIAL_12 * 2, 9);
+    expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(45 + ARIAL_12, 9);
   });
 
   // Word moves an empty paragraph out of an object's way like any other line, and
   // the paragraphs under it follow, which is what decides where a page breaks.
-  it("steps an empty paragraph out of an object's way, though it draws nothing", () => {
+  it("moves an empty paragraph out of an object's way, though it draws nothing", () => {
     const boxes = wrapped(
       `<w:p/>` + paragraph(``, "aaaa"),
       bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 }),
     );
 
     expect(boxes[0]?.lines).toStrictEqual([]);
-    expect(boxes[0]?.heightPt).toBeCloseTo(ARIAL_12 * 6, 9);
-    expect(boxes[1]?.topPt).toBeCloseTo(36 + ARIAL_12 * 6, 9);
+    expect(boxes[0]?.heightPt).toBeCloseTo(100 + ARIAL_12 - 36, 9);
+    expect(boxes[1]?.topPt).toBeCloseTo(100 + ARIAL_12, 9);
   });
 
   it("keeps an object out of the paragraphs ahead of the one it is anchored to", () => {

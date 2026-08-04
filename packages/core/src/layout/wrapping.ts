@@ -11,6 +11,10 @@ export type WrapBand = {
   readonly topPt: number;
   readonly bottomPt: number;
   readonly outline?: readonly OutlinePoint[];
+  // Whether the wrap follows the object's outline rather than its frame, which
+  // Word treats differently in two ways that go together: see `crosses` and
+  // `belowPt` below.
+  readonly outlined?: boolean;
 };
 
 // Where a line ended up: the run of free space it was given, at the height it had
@@ -116,33 +120,49 @@ function besideLine(band: WrapBand, topPt: number, bottomPt: number): WrapBand {
   };
 }
 
-// An object stands in a line's way while it covers the middle of it: Word lets a
-// line whose top half is behind an object stay where it is, and moves one whose
-// middle is. Measured against Word by moving an object down a little at a time,
-// which leaves the line alone until the step below opens up.
-const covers = (band: WrapBand, middlePt: number): boolean =>
-  band.topPt < middlePt - EPSILON && band.bottomPt > middlePt + EPSILON;
+// An object wrapped to its frame stands in a line's way as soon as its band reaches
+// the line at all, however little of it: sweeping a box's bottom edge down through a
+// line moved the line at the first half point, and a document's line falls past a
+// box reaching only the last third of it. An outline is answered for the middle of
+// the line alone, and leaves a line whose top it reaches into where it is: two
+// documents place a line beside an outline that covers 4pt of it.
+const crosses = (band: WrapBand, topPt: number, bottomPt: number): boolean =>
+  band.outlined === true
+    ? band.topPt < (topPt + bottomPt) / 2 - EPSILON &&
+      band.bottomPt > (topPt + bottomPt) / 2 + EPSILON
+    : band.topPt < bottomPt - EPSILON && band.bottomPt > topPt + EPSILON;
 
-// A line that cannot sit beside the objects in its way drops by its own height and
-// tries again, rather than falling to the bottom edge of whatever blocked it, and
-// takes the first run of free space wide enough to hold it. Word gives up the same
-// way this does: a line that fits nowhere is left in the frame it started in.
+// Where a line refused its place looks next: past a frame it falls to the edge that
+// blocked it, landing on it exactly, and past an outline it steps down by its own
+// height. Both are measured, and nothing lands between the two.
+const belowPt = (band: WrapBand, topPt: number, heightPt: number): number =>
+  band.outlined === true ? topPt + heightPt : band.bottomPt;
+
+// A line that cannot sit beside the objects in its way drops past the nearest of
+// them and tries again, and takes the first run of free space wide enough to hold
+// it. Word gives up the same way this does: a line that fits nowhere is left in the
+// frame it started in.
 export function fitLine(input: FitLineInput): LineSlot {
   const { bands, heightPt, leftPt, rightPt, widthPt } = input;
   const lowestPt = Math.max(...bands.map((band) => band.bottomPt), input.topPt);
   let topPt = input.topPt;
 
   while (topPt <= lowestPt + EPSILON) {
-    const crossing = bands
-      .filter((band) => covers(band, topPt + heightPt / 2))
-      .map((band) => besideLine(band, topPt, topPt + heightPt));
+    const crossing = bands.filter((band) => crosses(band, topPt, topPt + heightPt));
     const leastPt = Math.max(widthPt, LEAST_SPAN_PT);
-    const span = freeSpans(leftPt, rightPt, crossing).find(
-      (each) => each.rightPt - each.leftPt >= leastPt - EPSILON,
-    );
+    const span = freeSpans(
+      leftPt,
+      rightPt,
+      crossing.map((band) => besideLine(band, topPt, topPt + heightPt)),
+    ).find((each) => each.rightPt - each.leftPt >= leastPt - EPSILON);
     if (span !== undefined) return { topPt, leftPt: span.leftPt, rightPt: span.rightPt };
-    if (heightPt <= EPSILON) break;
-    topPt += heightPt;
+    // A line wider than the frame it is being laid into has nothing to fall past,
+    // and is left where it started rather than falling out of the story.
+    if (crossing.length === 0) break;
+
+    const nextPt = Math.min(...crossing.map((band) => belowPt(band, topPt, heightPt)));
+    if (!(nextPt > topPt + EPSILON)) break;
+    topPt = nextPt;
   }
 
   return { topPt, leftPt, rightPt };
