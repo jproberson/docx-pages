@@ -72,6 +72,11 @@ export type ReferenceCase = {
   // here; both are read from the document and Word's own output at run time.
   readonly textLinesMatched: number | null;
   readonly textLinesPlaced: number | null;
+  // How many of the runs a line is made of are expected to be found in Word's own
+  // output and to start where Word started them. A line matches by the text of
+  // the whole of it; a run is pinned one face at a time inside that.
+  readonly textRunsMatched: number | null;
+  readonly textRunsPlaced: number | null;
   // How many list numbers are expected to be identified against Word's own output
   // and to sit where Word drew them.
   readonly numbersMatched: number | null;
@@ -254,6 +259,8 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     renderedPageIndexes: list("renderedPageIndexes", readIndex),
     textLinesMatched: optionalNumber(source, "textLinesMatched", where),
     textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
+    textRunsMatched: optionalNumber(source, "textRunsMatched", where),
+    textRunsPlaced: optionalNumber(source, "textRunsPlaced", where),
     numbersMatched: optionalNumber(source, "numbersMatched", where),
     numbersPlaced: optionalNumber(source, "numbersPlaced", where),
     textTolerancePt: optionalNumber(source, "textTolerancePt", where) ?? 1,
