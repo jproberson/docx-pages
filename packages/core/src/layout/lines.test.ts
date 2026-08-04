@@ -5,7 +5,7 @@ import type { RunPiece, TextRun } from "../docx/runs.js";
 import { buildSfnt } from "../testing/build-font.js";
 import { readFontFile } from "./font-file.js";
 import { NO_ADVANCES, type MetricsLookup, type SuppliedFace } from "./font-metrics.js";
-import { breakLines, type TextLine } from "./lines.js";
+import { breakLines, justifyLine, type TextLine } from "./lines.js";
 
 // Every glyph is half an em wide, so a 10pt run measures exactly 5pt a character
 // and the expected break points can be counted rather than computed.
@@ -307,6 +307,58 @@ describe("breakLines", () => {
     });
 
     expect(result).toStrictEqual({ kind: "unmeasurable", failure: { kind: "unresolved-font" } });
+  });
+});
+
+// Measured against Word itself: every space character on the line takes an equal
+// share of the room the line did not fill, and nothing else takes any.
+describe("justifyLine", () => {
+  const offsetsOf = (line: TextLine): readonly number[] =>
+    line.segments.map((segment) => segment.offsetPt);
+
+  const only = (runs: readonly TextRun[], widthPt = 500): TextLine =>
+    linesOf(runs, widthPt)[0] ?? never();
+
+  it("hands each space an equal share of what the line did not fill", () => {
+    // "ab cd ef" is 40pt over two spaces, so a 60pt line gives each one 10pt more.
+    const line = justifyLine(only([runOf("ab cd ef")]), 60);
+
+    expect(line.widthPt).toBe(60);
+    expect(offsetsOf(line)).toStrictEqual([0, 10, 25, 35, 50]);
+  });
+
+  it("counts each space character, so a double space grows twice as far", () => {
+    // "ab  cd ef" is 45pt: three space characters, 15pt of slack, 5pt each. The
+    // double space is one segment, and takes two shares of it.
+    const line = justifyLine(only([runOf("ab  cd ef")]), 60);
+
+    expect(offsetsOf(line)).toStrictEqual([0, 10, 30, 40, 50]);
+  });
+
+  it("gives a space the same share whatever size it is set in", () => {
+    // The 20pt run's space is twice as wide as the 10pt one, and grows as much.
+    const line = justifyLine(only([runOf("ab "), runOf("cd ", mark(20)), runOf("ef")]), 90);
+    const widths = line.segments.map((segment) => (segment.kind === "text" ? segment.widthPt : 0));
+
+    expect(widths).toStrictEqual([10, 22.5, 20, 27.5, 10]);
+  });
+
+  it("leaves a no-break space out of the sharing, as part of the word around it", () => {
+    const line = justifyLine(only([runOf(`ab${NO_BREAK_SPACE}cd ef`)]), 60);
+
+    expect(offsetsOf(line)).toStrictEqual([0, 25, 50]);
+  });
+
+  it("leaves a line that already fills its room alone", () => {
+    const line = only([runOf("ab cd")]);
+
+    expect(justifyLine(line, line.widthPt)).toBe(line);
+  });
+
+  it("leaves a line with nowhere to grow alone", () => {
+    const line = only([runOf("abcd")]);
+
+    expect(justifyLine(line, 100)).toBe(line);
   });
 });
 

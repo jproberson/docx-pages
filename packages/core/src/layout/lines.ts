@@ -457,6 +457,34 @@ function splitFragment(
   ];
 }
 
+// Word justifies a line by handing every space character on it an equal share of
+// the room the line did not fill, whatever size that space is set in. A tab takes
+// none, since it holds the stop it reached; a no-break space takes none either,
+// being part of the word around it rather than a gap between words; and a space
+// the line ended on has already hung past the edge and is not on the line at all.
+export function justifyLine(line: TextLine, roomPt: number): TextLine {
+  const slackPt = roomPt - line.widthPt;
+  const spaces = line.segments.reduce((count, segment) => count + spaceCountOf(segment), 0);
+  if (slackPt <= EPSILON || spaces === 0) return line;
+
+  const sharePt = slackPt / spaces;
+  let shiftPt = 0;
+
+  const segments = line.segments.map((segment) => {
+    const moved = { ...segment, offsetPt: segment.offsetPt + shiftPt };
+    const grownPt = spaceCountOf(segment) * sharePt;
+    if (grownPt === 0) return moved;
+
+    shiftPt += grownPt;
+    return { ...moved, widthPt: segment.widthPt + grownPt };
+  });
+
+  return { ...line, segments, widthPt: roomPt };
+}
+
+const spaceCountOf = (segment: LineSegment): number =>
+  segment.kind === "text" && IS_GAP.test(segment.text) ? charactersOf(segment.text).length : 0;
+
 export type TextMeasurement =
   | {
       readonly kind: "measured";

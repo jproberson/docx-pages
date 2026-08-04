@@ -24,6 +24,7 @@ import { lineHeightPt } from "./font-metrics.js";
 import {
   breakLines,
   faceRequestFor,
+  justifyLine,
   measureText,
   type MeasureFailure,
   type MetricsResolver,
@@ -508,12 +509,20 @@ function layOutParagraph(
       bands: input.bands,
     });
 
+    // A justified line fills the room it was fitted into, which an object beside
+    // it may have narrowed. Only the paragraph's last line is left as it fell; a
+    // line that ended at a manual break is stretched like any other.
+    const filled =
+      paragraphFrame.alignment === "justify" && at < lines.length - 1
+        ? justifyLine(line, slot.rightPt - slot.leftPt)
+        : line;
+
     placed.push({
-      line,
-      leftPt: lineStartPt(paragraphFrame, slot.leftPt, slot.rightPt, line.widthPt),
+      line: filled,
+      leftPt: lineStartPt(paragraphFrame, slot.leftPt, slot.rightPt, filled.widthPt),
       topPt: slot.topPt,
       heightPt,
-      baselinePt: slot.topPt + line.ascentPt + raisedPt,
+      baselinePt: slot.topPt + filled.ascentPt + raisedPt,
     });
     top = slot.topPt + heightPt;
   });

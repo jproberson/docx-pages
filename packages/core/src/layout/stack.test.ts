@@ -158,6 +158,54 @@ describe("measureStack over text", () => {
     expect(box.lines[0]?.leftPt).toBeCloseTo(72 + 468 - 4 * PER_CHARACTER, 9);
   });
 
+  // Measured against Word: every line of a justified paragraph but its last fills
+  // the width, and one that ended at a manual break fills it too.
+  it("fills the width of every justified line but the paragraph's last", () => {
+    const box = firstBox(paragraph(`<w:jc w:val="both"/>`, "aa bb cccccc"), NORMAL, 40);
+    const widths = box.lines.map((placed) => placed.line.widthPt);
+
+    expect(textOf(box)).toStrictEqual(["aa bb", "cccccc"]);
+    expect(widths[0]).toBeCloseTo(40, 9);
+    expect(widths[1]).toBeCloseTo(6 * PER_CHARACTER, 9);
+  });
+
+  // The space a line broke at hangs past its edge rather than sitting on it, so a
+  // line with no space of its own has nowhere to put the room it did not fill.
+  it("leaves a justified line that broke at its only space where it fell", () => {
+    const box = firstBox(paragraph(`<w:jc w:val="both"/>`), NORMAL, 30);
+
+    expect(textOf(box)).toStrictEqual(["aaaa", "bbbb"]);
+    expect(box.lines[0]?.line.widthPt).toBeCloseTo(4 * PER_CHARACTER, 9);
+  });
+
+  it("stretches a justified line at its spaces, leaving its first word alone", () => {
+    const box = firstBox(paragraph(`<w:jc w:val="both"/>`, "aa bb cccccc"), NORMAL, 40);
+    const [first] = box.lines;
+
+    // "aa bb" is five characters of the forty the line has room for, and its one
+    // space takes all ten points of what is left.
+    expect(first?.leftPt).toBe(72);
+    expect(first?.line.segments.map((segment) => segment.offsetPt)).toStrictEqual([
+      0,
+      2 * PER_CHARACTER,
+      3 * PER_CHARACTER + 10,
+    ]);
+  });
+
+  it("stretches the line a manual break ended, which is not the paragraph's last", () => {
+    const body =
+      `<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>aa bb</w:t>` +
+      `<w:br/><w:t>cc dd</w:t></w:r></w:p>`;
+    const box = firstBox(body, NORMAL, 100);
+
+    expect(box.lines.map((placed) => placed.line.widthPt)).toStrictEqual([100, 5 * PER_CHARACTER]);
+  });
+
+  it("leaves a justified line alone when nothing on it can grow", () => {
+    const box = firstBox(paragraph(`<w:jc w:val="both"/>`, "aaaa"), NORMAL, 100);
+    expect(box.lines[0]?.line.widthPt).toBeCloseTo(4 * PER_CHARACTER, 9);
+  });
+
   it("moves an indented line in and breaks it at the narrower width", () => {
     const box = firstBox(paragraph(`<w:ind w:left="720" w:right="720"/>`, "aaaa"), NORMAL, 100);
     expect(box.lines[0]?.leftPt).toBeCloseTo(72 + 36, 9);
