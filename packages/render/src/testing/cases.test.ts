@@ -54,6 +54,9 @@ describe("readReferenceManifest", () => {
       disjointFloatPairs: [],
       renderedImagesPt: [],
       renderedPageIndexes: [],
+      textLinesMatched: null,
+      textLinesPlaced: null,
+      textTolerancePt: 1,
     });
   });
 

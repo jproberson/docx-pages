@@ -67,6 +67,12 @@ export type ReferenceCase = {
   readonly disjointFloatPairs: readonly (readonly [number, number])[];
   readonly renderedImagesPt: readonly PointRect[];
   readonly renderedPageIndexes: readonly number[];
+  // How many laid-out text lines are expected to land where Word drew the same
+  // line, within textTolerancePt. Neither the text nor its position is recorded
+  // here; both are read from the document and Word's own output at run time.
+  readonly textLinesMatched: number | null;
+  readonly textLinesPlaced: number | null;
+  readonly textTolerancePt: number;
 };
 
 // Font files the reader has to cope with, whether or not any reference document
@@ -242,6 +248,9 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     disjointFloatPairs: list("disjointFloatPairs", readPair),
     renderedImagesPt: list("renderedImagesPt", readRect),
     renderedPageIndexes: list("renderedPageIndexes", readIndex),
+    textLinesMatched: optionalNumber(source, "textLinesMatched", where),
+    textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
+    textTolerancePt: optionalNumber(source, "textTolerancePt", where) ?? 1,
   };
 }
 
