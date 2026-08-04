@@ -21,6 +21,9 @@ const parser = new XMLParser({
   trimValues: false,
   ignoreDeclaration: true,
   ignorePiTags: true,
+  // Named entities alone leave &#xF0A7; standing as eight characters, which is
+  // how a symbol bullet arrives when a producer escapes it.
+  htmlEntities: true,
 });
 
 type RawNode = Record<string, unknown>;
