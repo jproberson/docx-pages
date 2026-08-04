@@ -63,6 +63,7 @@ export type { FontChoice, LineRule, MarkedRun, ParagraphMark, StyleTable } from 
 export {
   readRelationships,
   relationshipsPartFor,
+  defaultFooterPart,
   defaultHeaderPart,
   R_NS,
   PKG_REL_NS,
@@ -81,7 +82,7 @@ export type {
 
 export { nextTabStopPt, tabStopsPt, DEFAULT_TAB_STOP_PT } from "./layout/tab-stops.js";
 
-export { measureStack, WP_NS } from "./layout/stack.js";
+export { measureStack, shiftBox, shiftBoxes, WP_NS } from "./layout/stack.js";
 export type {
   LayoutBlocker,
   MeasureStackInput,

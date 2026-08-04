@@ -202,7 +202,7 @@ function cellWidthPt(cell: TableCell): number | null {
   return Number.isFinite(twips) ? twipsToPoints(twips) : null;
 }
 
-const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
+export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   ...box,
   topPt: box.topPt + byPt,
   lines: box.lines.map((line) => ({
@@ -212,6 +212,11 @@ const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   })),
   marker: box.marker === null ? null : { ...box.marker, baselinePt: box.marker.baselinePt + byPt },
 });
+
+export const shiftBoxes = (
+  boxes: readonly ParagraphBox[],
+  byPt: number,
+): readonly ParagraphBox[] => (byPt === 0 ? boxes : boxes.map((box) => shiftBox(box, byPt)));
 
 function seatingOffset(
   align: CellVerticalAlign,

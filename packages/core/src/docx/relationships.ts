@@ -52,18 +52,24 @@ export function readRelationships(
   return found;
 }
 
-export function defaultHeaderPart(pkg: DocxPackage): string | null {
+function defaultReferencedPart(pkg: DocxPackage, reference: string): string | null {
   const root = partXml(pkg, MAIN_DOCUMENT_PART);
-  const references = descendantsNamed(root, W_NS, "headerReference").filter(
+  const references = descendantsNamed(root, W_NS, reference).filter(
     (node) => (attribute(node, W_NS, "type") ?? "default") === "default",
   );
-  const reference = references.at(-1);
-  if (reference === undefined) return null;
+  const found = references.at(-1);
+  if (found === undefined) return null;
 
-  const id = attribute(reference, R_NS, "id");
+  const id = attribute(found, R_NS, "id");
   if (id === undefined) return null;
 
   const relationship = readRelationships(pkg, MAIN_DOCUMENT_PART).get(id);
   if (relationship === undefined || !pkg.parts.has(relationship.part)) return null;
   return relationship.part;
 }
+
+export const defaultHeaderPart = (pkg: DocxPackage): string | null =>
+  defaultReferencedPart(pkg, "headerReference");
+
+export const defaultFooterPart = (pkg: DocxPackage): string | null =>
+  defaultReferencedPart(pkg, "footerReference");

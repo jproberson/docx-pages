@@ -2,6 +2,7 @@ import type { TextBoxAnchor, TextBoxBody } from "../docx/drawing.js";
 import type { StyleTable } from "../docx/styles.js";
 import {
   measureStack,
+  shiftBoxes,
   type LayoutBlocker,
   type MetricsResolver,
   type ParagraphBox,
@@ -58,7 +59,7 @@ export function layOutTextBox(input: LayOutTextBoxInput): TextBoxLayout {
   return {
     kind: "laid-out",
     text: {
-      boxes: offsetPt === 0 ? measured.boxes : measured.boxes.map((box) => shift(box, offsetPt)),
+      boxes: shiftBoxes(measured.boxes, offsetPt),
       contentHeightPt: measured.heightPt,
     },
   };
@@ -71,13 +72,3 @@ function seatingOffset(anchor: TextBoxAnchor, availablePt: number, contentPt: nu
   if (anchor === "bottom") return availablePt - contentPt;
   return 0;
 }
-
-const shift = (box: ParagraphBox, byPt: number): ParagraphBox => ({
-  ...box,
-  topPt: box.topPt + byPt,
-  lines: box.lines.map((line) => ({
-    ...line,
-    topPt: line.topPt + byPt,
-    baselinePt: line.baselinePt + byPt,
-  })),
-});

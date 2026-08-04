@@ -102,12 +102,17 @@ const layoutWith = (
   headerTopPt: 21.6,
   headerHeightPt: 0,
   bodyTopPt: 36,
+  bodyBottomPt: 792,
+  footerTopPt: 784.8,
   header: [],
   body,
+  footer: [],
   headerFloats: [],
   bodyFloats: floats,
+  footerFloats: [],
   headerInlines: [],
   bodyInlines: [],
+  footerInlines: [],
 });
 
 const markup = (

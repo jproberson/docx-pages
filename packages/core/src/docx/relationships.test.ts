@@ -2,10 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { openDocx } from "./package.js";
-import { defaultHeaderPart, readRelationships, relationshipsPartFor } from "./relationships.js";
+import {
+  defaultFooterPart,
+  defaultHeaderPart,
+  readRelationships,
+  relationshipsPartFor,
+} from "./relationships.js";
 
 const PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
 const HEADER_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+const FOOTER_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
 
 const rels = (inner: string) =>
   `<?xml version="1.0"?><Relationships xmlns="${PKG_REL_NS}">${inner}</Relationships>`;
@@ -19,6 +25,8 @@ const packageWith = (documentXml: string, relsXml?: string) =>
       "word/document.xml": documentXml,
       "word/header1.xml": `<?xml version="1.0"?><w:hdr
         xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:hdr>`,
+      "word/footer1.xml": `<?xml version="1.0"?><w:ftr
+        xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:ftr>`,
       ...(relsXml === undefined ? {} : { "word/_rels/document.xml.rels": relsXml }),
     }),
   );
@@ -86,5 +94,29 @@ describe("defaultHeaderPart", () => {
       rels(`<Relationship Id="rId7" Type="${HEADER_TYPE}" Target="header9.xml"/>`),
     );
     expect(defaultHeaderPart(pkg)).toBeNull();
+  });
+});
+
+describe("defaultFooterPart", () => {
+  it("follows the default footer reference to its part", () => {
+    const pkg = packageWith(
+      sectionWithHeaders(`<w:footerReference w:type="default" r:id="rId8"
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`),
+      rels(`<Relationship Id="rId8" Type="${FOOTER_TYPE}" Target="footer1.xml"/>`),
+    );
+    expect(defaultFooterPart(pkg)).toBe("word/footer1.xml");
+  });
+
+  it("ignores the first-page and even-page footers, which page one does not use", () => {
+    const pkg = packageWith(
+      sectionWithHeaders(`<w:footerReference w:type="first" r:id="rId8"
+        xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`),
+      rels(`<Relationship Id="rId8" Type="${FOOTER_TYPE}" Target="footer1.xml"/>`),
+    );
+    expect(defaultFooterPart(pkg)).toBeNull();
+  });
+
+  it("is null when the section declares no footer", () => {
+    expect(defaultFooterPart(packageWith(sectionWithHeaders("")))).toBeNull();
   });
 });
