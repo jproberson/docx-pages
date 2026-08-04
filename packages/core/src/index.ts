@@ -53,6 +53,15 @@ export type { AnchorOrigin, AnchorPosition, FloatingAnchor, WrapMode } from "./d
 export { placeFloat } from "./layout/floats.js";
 export type { PartResolver, PlacedContent, PlacedFloat, PlaceFloatInput } from "./layout/floats.js";
 
+export { readInlines } from "./docx/inlines.js";
+export type { InlineDrawing } from "./docx/inlines.js";
+
+export { placeInlines } from "./layout/inlines.js";
+export type { PlacedInline, PlaceInlinesInput } from "./layout/inlines.js";
+
+export { resolveParagraphFrame } from "./docx/styles.js";
+export type { ParagraphAlignment, ParagraphFrame } from "./docx/styles.js";
+
 export { readDrawingContent, NO_CROP, PIC_NS, WPS_NS } from "./docx/drawing.js";
 export type { CropInsets, DrawingContent } from "./docx/drawing.js";
 

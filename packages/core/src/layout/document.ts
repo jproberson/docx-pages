@@ -1,9 +1,10 @@
 import { readAnchors } from "../docx/anchors.js";
+import { readInlines } from "../docx/inlines.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
-import { readStyleTable } from "../docx/styles.js";
+import { readStyleTable, resolveParagraphFrame } from "../docx/styles.js";
 import {
   measureStack,
   type LayoutBlocker,
@@ -11,6 +12,7 @@ import {
   type ParagraphBox,
 } from "./stack.js";
 import { placeFloat, type PlacedFloat } from "./floats.js";
+import { placeInlines, type PlacedInline } from "./inlines.js";
 import { twipsToPoints } from "./units.js";
 
 export type DocumentLayout =
@@ -24,6 +26,8 @@ export type DocumentLayout =
       readonly body: readonly ParagraphBox[];
       readonly headerFloats: readonly PlacedFloat[];
       readonly bodyFloats: readonly PlacedFloat[];
+      readonly headerInlines: readonly PlacedInline[];
+      readonly bodyInlines: readonly PlacedInline[];
     }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
@@ -63,11 +67,11 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
 
-  const floatsFor = (
+  const drawingsFor = (
     blocks: readonly Block[],
     boxes: readonly ParagraphBox[],
     part: string,
-  ): readonly PlacedFloat[] => {
+  ): { readonly floats: readonly PlacedFloat[]; readonly inlines: readonly PlacedInline[] } => {
     const topOf = new Map(boxes.map((box) => [box.index, box.topPt]));
     const relationships = readRelationships(pkg, part);
     const resolvePart = (relationshipId: string): string | null => {
@@ -75,26 +79,45 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
       return target !== undefined && pkg.parts.has(target) ? target : null;
     };
 
-    return blockParagraphs(blocks).flatMap((paragraph) =>
-      readAnchors(paragraph).map((anchor) =>
-        placeFloat({
-          anchor,
+    const paragraphs = blockParagraphs(blocks);
+    return {
+      floats: paragraphs.flatMap((paragraph) =>
+        readAnchors(paragraph).map((anchor) =>
+          placeFloat({
+            anchor,
+            page,
+            paragraphTopPt: topOf.get(paragraph.index) ?? bodyTopPt,
+            bodyTopPt,
+            resolvePart,
+          }),
+        ),
+      ),
+      inlines: paragraphs.flatMap((paragraph) =>
+        placeInlines({
+          drawings: readInlines(paragraph),
           page,
+          frame: resolveParagraphFrame(paragraph, styles),
           paragraphTopPt: topOf.get(paragraph.index) ?? bodyTopPt,
-          bodyTopPt,
           resolvePart,
         }),
       ),
-    );
+    };
   };
 
   const headerBoxes = headerStack === null ? [] : headerStack.boxes;
+  const headerDrawings =
+    headerPart === null
+      ? { floats: [], inlines: [] }
+      : drawingsFor(headerBlocks, headerBoxes, headerPart);
+  const bodyDrawings = drawingsFor(bodyBlocks, bodyStack.boxes, MAIN_DOCUMENT_PART);
 
   return {
     kind: "laid-out",
     page,
-    headerFloats: headerPart === null ? [] : floatsFor(headerBlocks, headerBoxes, headerPart),
-    bodyFloats: floatsFor(bodyBlocks, bodyStack.boxes, MAIN_DOCUMENT_PART),
+    headerFloats: headerDrawings.floats,
+    bodyFloats: bodyDrawings.floats,
+    headerInlines: headerDrawings.inlines,
+    bodyInlines: bodyDrawings.inlines,
     headerTopPt,
     headerHeightPt,
     bodyTopPt,

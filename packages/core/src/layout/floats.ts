@@ -1,5 +1,5 @@
 import type { AnchorOrigin, AnchorPosition, FloatingAnchor } from "../docx/anchors.js";
-import type { CropInsets } from "../docx/drawing.js";
+import type { CropInsets, DrawingContent } from "../docx/drawing.js";
 import type { SectionGeometry } from "../docx/section.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
 
@@ -80,8 +80,7 @@ function resolve(position: AnchorPosition, band: Band, sizePt: number): number {
   }
 }
 
-function resolveContent(anchor: FloatingAnchor, resolvePart: PartResolver): PlacedContent {
-  const { content } = anchor;
+export function resolveContent(content: DrawingContent, resolvePart: PartResolver): PlacedContent {
   if (content.kind !== "picture") return content;
   const part = resolvePart(content.relationshipId);
   return part === null
@@ -96,7 +95,7 @@ export function placeFloat(input: PlaceFloatInput): PlacedFloat {
 
   return {
     anchor,
-    content: resolveContent(anchor, input.resolvePart),
+    content: resolveContent(anchor.content, input.resolvePart),
     leftPt: resolve(anchor.horizontal, horizontalBand(input.page, anchor.horizontal.from), widthPt),
     topPt: resolve(anchor.vertical, verticalBand(input, anchor.vertical.from), heightPt),
     widthPt,

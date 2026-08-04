@@ -24,20 +24,70 @@ type PartialMark = {
   readonly fontSizeHalfPoints: number | undefined;
 };
 
+type PartialFrame = {
+  readonly alignment: ParagraphAlignment | undefined;
+  readonly indentLeftTwips: number | undefined;
+  readonly indentRightTwips: number | undefined;
+};
+
 type StyleDefinition = {
   readonly id: string;
   readonly basedOn: string | undefined;
   readonly mark: PartialMark;
+  readonly frame: PartialFrame;
 };
 
 export type StyleTable = {
   readonly byId: ReadonlyMap<string, StyleDefinition>;
   readonly defaultParagraphStyleId: string | undefined;
   readonly docDefaults: PartialMark;
+  readonly docDefaultsFrame: PartialFrame;
   readonly themeFonts: ReadonlyMap<string, string>;
 };
 
 const EMPTY: PartialMark = { fontName: undefined, fontSizeHalfPoints: undefined };
+
+const EMPTY_FRAME: PartialFrame = {
+  alignment: undefined,
+  indentLeftTwips: undefined,
+  indentRightTwips: undefined,
+};
+
+const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
+  alignment: over.alignment ?? base.alignment,
+  indentLeftTwips: over.indentLeftTwips ?? base.indentLeftTwips,
+  indentRightTwips: over.indentRightTwips ?? base.indentRightTwips,
+});
+
+function toAlignment(value: string | undefined): ParagraphAlignment | undefined {
+  if (value === "right" || value === "end") return "right";
+  if (value === "center") return "center";
+  if (value === "both" || value === "distribute") return "justify";
+  if (value === "left" || value === "start") return "left";
+  return undefined;
+}
+
+function twipsAttribute(element: XmlElement | null, name: string): number | undefined {
+  if (element === null) return undefined;
+  const raw = attribute(element, W_NS, name);
+  const value = raw === undefined ? Number.NaN : Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+// Reads the paragraph properties a style element and a paragraph both spell the
+// same way, so one function serves the whole cascade.
+function readFrame(container: XmlElement | null): PartialFrame {
+  const pPr = container === null ? null : firstNamed(container, W_NS, "pPr");
+  if (pPr === null) return EMPTY_FRAME;
+
+  const jc = firstNamed(pPr, W_NS, "jc");
+  const indent = firstNamed(pPr, W_NS, "ind");
+  return {
+    alignment: toAlignment(jc === null ? undefined : attribute(jc, W_NS, "val")),
+    indentLeftTwips: twipsAttribute(indent, "left") ?? twipsAttribute(indent, "start"),
+    indentRightTwips: twipsAttribute(indent, "right") ?? twipsAttribute(indent, "end"),
+  };
+}
 
 const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   fontName: over.fontName ?? base.fontName,
@@ -102,7 +152,13 @@ const themeSlot = (reference: string): string =>
 export function readStyleTable(pkg: DocxPackage): StyleTable {
   const themeFonts = readThemeFonts(pkg);
   if (!pkg.parts.has(STYLES_PART)) {
-    return { byId: new Map(), defaultParagraphStyleId: undefined, docDefaults: EMPTY, themeFonts };
+    return {
+      byId: new Map(),
+      defaultParagraphStyleId: undefined,
+      docDefaults: EMPTY,
+      docDefaultsFrame: EMPTY_FRAME,
+      themeFonts,
+    };
   }
 
   const root = partXml(pkg, STYLES_PART);
@@ -121,6 +177,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       id,
       basedOn: basedOnElement === null ? undefined : attribute(basedOnElement, W_NS, "val"),
       mark: readMark(style, themeFonts),
+      frame: readFrame(style),
     });
     const isParagraph = (attribute(style, W_NS, "type") ?? "paragraph") === "paragraph";
     if (isParagraph && attribute(style, W_NS, "default") === "1") defaultParagraphStyleId = id;
@@ -130,6 +187,9 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
     byId,
     defaultParagraphStyleId,
     docDefaults: readMark(runDefault, themeFonts),
+    docDefaultsFrame: readFrame(
+      defaults === null ? null : firstNamed(defaults, W_NS, "pPrDefault"),
+    ),
     themeFonts,
   };
 }
@@ -201,4 +261,30 @@ export function resolveRunMarks(paragraph: Paragraph, table: StyleTable): readon
           : resolved.fontSizeHalfPoints / 2,
     };
   });
+}
+
+export type ParagraphAlignment = "left" | "right" | "center" | "justify";
+
+export type ParagraphFrame = {
+  readonly alignment: ParagraphAlignment;
+  readonly indentLeftTwips: number;
+  readonly indentRightTwips: number;
+};
+
+export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): ParagraphFrame {
+  const pPr = firstNamed(paragraph.element, W_NS, "pPr");
+  const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
+  const named = pStyle === null ? undefined : attribute(pStyle, W_NS, "val");
+
+  let resolved = table.docDefaultsFrame;
+  for (const style of styleChain(table, named ?? table.defaultParagraphStyleId)) {
+    resolved = mergeFrames(resolved, style.frame);
+  }
+  resolved = mergeFrames(resolved, readFrame(paragraph.element));
+
+  return {
+    alignment: resolved.alignment ?? "left",
+    indentLeftTwips: resolved.indentLeftTwips ?? 0,
+    indentRightTwips: resolved.indentRightTwips ?? 0,
+  };
 }

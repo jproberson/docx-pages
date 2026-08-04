@@ -30,6 +30,13 @@ export type FloatOrigin = {
   readonly topPt: number;
 };
 
+// Either coordinate may be left out when Word's value for it is not yet explained.
+export type InlineOrigin = {
+  readonly index: number;
+  readonly leftPt: number | null;
+  readonly topPt: number | null;
+};
+
 export type PointRect = {
   readonly leftPt: number;
   readonly topPt: number;
@@ -48,6 +55,7 @@ export type ReferenceCase = {
   readonly headerFloatCount: number | null;
   readonly leastBodyFloatCount: number | null;
   readonly floatsPt: readonly FloatOrigin[];
+  readonly inlinesPt: readonly InlineOrigin[];
   readonly disjointFloatPairs: readonly (readonly [number, number])[];
   readonly renderedImagesPt: readonly PointRect[];
   readonly renderedPageIndexes: readonly number[];
@@ -141,6 +149,15 @@ const readFloatOrigin = (value: unknown, where: string): FloatOrigin => {
   };
 };
 
+const readInlineOrigin = (value: unknown, where: string): InlineOrigin => {
+  const source = record(value, where);
+  return {
+    index: number(source, "index", where),
+    leftPt: optionalNumber(source, "leftPt", where),
+    topPt: optionalNumber(source, "topPt", where),
+  };
+};
+
 const readRect = (value: unknown, where: string): PointRect => {
   const source = record(value, where);
   return {
@@ -186,6 +203,7 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     headerFloatCount: optionalNumber(source, "headerFloatCount", where),
     leastBodyFloatCount: optionalNumber(source, "leastBodyFloatCount", where),
     floatsPt: list("floatsPt", readFloatOrigin),
+    inlinesPt: list("inlinesPt", readInlineOrigin),
     disjointFloatPairs: list("disjointFloatPairs", readPair),
     renderedImagesPt: list("renderedImagesPt", readRect),
     renderedPageIndexes: list("renderedPageIndexes", readIndex),

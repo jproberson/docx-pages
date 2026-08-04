@@ -48,6 +48,26 @@ describe.skipIf(CASES.length === 0)("float placement against Word", () => {
         });
       }
 
+      for (const expected of each.inlinesPt) {
+        it.runIf(expected.leftPt !== null)(
+          `places inline drawing ${String(expected.index)} horizontally where Word did`,
+          () => {
+            const found = layoutOf(each).bodyInlines[expected.index];
+            expect(found?.leftPt).toBeCloseTo(expected.leftPt ?? 0, 1);
+          },
+        );
+
+        it.runIf(expected.topPt !== null)(
+          `places inline drawing ${String(expected.index)} vertically where Word did`,
+          () => {
+            const found = layoutOf(each).bodyInlines[expected.index];
+            expect(Math.abs((found?.topPt ?? 0) - (expected.topPt ?? 0))).toBeLessThan(
+              each.tolerancePt,
+            );
+          },
+        );
+      }
+
       for (const [one, other] of each.disjointFloatPairs) {
         it(`keeps floats ${String(one)} and ${String(other)} clear of each other`, () => {
           const floats = floatsOf(each);

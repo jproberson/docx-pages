@@ -49,6 +49,7 @@ describe("readReferenceManifest", () => {
       headerFloatCount: null,
       leastBodyFloatCount: null,
       floatsPt: [],
+      inlinesPt: [],
       disjointFloatPairs: [],
       renderedImagesPt: [],
       renderedPageIndexes: [],
