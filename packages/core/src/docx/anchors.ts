@@ -13,6 +13,14 @@ export type AnchorPosition =
 
 export type WrapMode = "none" | "square" | "tight" | "through" | "topAndBottom";
 
+// How far text is kept off each edge of a wrapping object.
+export type WrapDistances = {
+  readonly topEmu: number;
+  readonly rightEmu: number;
+  readonly bottomEmu: number;
+  readonly leftEmu: number;
+};
+
 export type FloatingAnchor = {
   readonly paragraphIndex: number;
   readonly name: string;
@@ -22,6 +30,7 @@ export type FloatingAnchor = {
   readonly vertical: AnchorPosition;
   readonly content: DrawingContent;
   readonly wrap: WrapMode;
+  readonly distances: WrapDistances;
   readonly behindDoc: boolean;
   readonly relativeHeight: number;
 };
@@ -92,6 +101,12 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
       horizontal: readPosition(anchor, "positionH", "column"),
       vertical: readPosition(anchor, "positionV", "paragraph"),
       wrap: readWrap(anchor),
+      distances: {
+        topEmu: numberAttribute(anchor, "distT", 0),
+        rightEmu: numberAttribute(anchor, "distR", 0),
+        bottomEmu: numberAttribute(anchor, "distB", 0),
+        leftEmu: numberAttribute(anchor, "distL", 0),
+      },
       behindDoc: attribute(anchor, "", "behindDoc") === "1",
       relativeHeight: numberAttribute(anchor, "relativeHeight", 0),
     };

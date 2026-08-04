@@ -22,13 +22,17 @@ const LETTER: SectionGeometry = {
   },
 };
 
+const DISTANCES = `distT="45720" distB="45720" distL="114300" distR="114300"`;
+
 const anchorXml = (options: {
   h: string;
   v: string;
   cx?: number;
   cy?: number;
   wrap?: string;
-}) => `<w:p><w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" behindDoc="0" relativeHeight="5">
+  distances?: boolean;
+}) => `<w:p><w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" behindDoc="0" relativeHeight="5"
+  ${options.distances === true ? DISTANCES : ""}>
   <wp:extent cx="${String(options.cx ?? 2286000)}" cy="${String(options.cy ?? 904240)}"/>
   ${options.wrap ?? "<wp:wrapNone/>"}
   <wp:docPr id="1" name="Logo"/>
@@ -75,6 +79,26 @@ describe("readAnchors", () => {
       anchorXml({ h: offsetH(0), v: offsetV(0), wrap: '<wp:wrapSquare wrapText="bothSides"/>' }),
     );
     expect(anchor.wrap).toBe("square");
+  });
+
+  it("reads the distances text is kept off a wrapping object", () => {
+    const anchor = firstAnchor(anchorXml({ h: offsetH(0), v: offsetV(0), distances: true }));
+    expect(anchor.distances).toStrictEqual({
+      topEmu: 45720,
+      rightEmu: 114300,
+      bottomEmu: 45720,
+      leftEmu: 114300,
+    });
+  });
+
+  it("keeps text against an object that asks for no distance at all", () => {
+    const anchor = firstAnchor(anchorXml({ h: offsetH(0), v: offsetV(0) }));
+    expect(anchor.distances).toStrictEqual({
+      topEmu: 0,
+      rightEmu: 0,
+      bottomEmu: 0,
+      leftEmu: 0,
+    });
   });
 
   it("distinguishes an aligned position from an offset one", () => {

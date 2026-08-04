@@ -85,6 +85,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
     horizontal: { kind: "offset", from: "column", offsetEmu: 0 } as const,
     vertical: { kind: "offset", from: "paragraph", offsetEmu: 0 } as const,
     wrap: "none" as const,
+    distances: { topEmu: 0, rightEmu: 0, bottomEmu: 0, leftEmu: 0 },
     behindDoc: options.behindDoc ?? false,
     relativeHeight: options.height ?? 0,
   },
