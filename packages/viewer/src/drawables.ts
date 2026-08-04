@@ -59,21 +59,23 @@ function textOf(float: PlacedFloat, key: string): readonly Drawable[] {
   return [{ kind: "text", key: `${key}-text`, boxes: content.text.boxes }];
 }
 
-// Word stacks floats by relativeHeight, with behindDoc ones under the text and the
-// rest over it. Inline drawings live in the text itself, so they sit between.
+// Word stacks the floats of one story by relativeHeight alone. It is not two
+// layers either side of the text: these documents send a filled panel to the back
+// of the stack and then draw a box marked behindDoc over it, so the height a
+// shape was given is the whole of the order within a story.
+//
+// The stories themselves are layered, and the header and the footer lie under the
+// body: what a panel anchored in the body covers on the first page includes the
+// footer's own classification line, which is why Word shows that line on the
+// second page and not on the first.
+function stacked(floats: readonly PlacedFloat[], prefix: string): readonly Drawable[] {
+  return floats
+    .map((float, at) => ({ float, key: `${prefix}-${String(at)}` }))
+    .sort((one, other) => one.float.anchor.relativeHeight - other.float.anchor.relativeHeight)
+    .flatMap(({ float, key }) => [fromFloat(float, key), ...textOf(float, key)]);
+}
+
 export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonly Drawable[] {
-  const floats = [...layout.headerFloats, ...page.floats, ...layout.footerFloats].map(
-    (float, at) => {
-      const key = `float-${String(at)}`;
-      return { float, drawables: [fromFloat(float, key), ...textOf(float, key)] };
-    },
-  );
-
-  const byHeight = (one: (typeof floats)[number], other: (typeof floats)[number]): number =>
-    one.float.anchor.relativeHeight - other.float.anchor.relativeHeight;
-
-  const behind = floats.filter((each) => each.float.anchor.behindDoc).sort(byHeight);
-  const above = floats.filter((each) => !each.float.anchor.behindDoc).sort(byHeight);
   const inlines = [...layout.headerInlines, ...page.inlines, ...layout.footerInlines].map(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
   );
@@ -84,9 +86,9 @@ export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonl
     : [];
 
   return [
-    ...behind.flatMap((each) => each.drawables),
+    ...stacked([...layout.headerFloats, ...layout.footerFloats], "story"),
     ...text,
     ...inlines,
-    ...above.flatMap((each) => each.drawables),
+    ...stacked(page.floats, "float"),
   ];
 }

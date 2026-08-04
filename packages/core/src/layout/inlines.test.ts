@@ -4,6 +4,7 @@ import { readParagraphs } from "../docx/blocks.js";
 import { readInlines } from "../docx/inlines.js";
 import { openDocx } from "../docx/package.js";
 import type { SectionGeometry } from "../docx/section.js";
+import { NO_THEME } from "../docx/theme.js";
 import { readStyleTable, resolveParagraphFrame } from "../docx/styles.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { placeInlines } from "./inlines.js";
@@ -42,6 +43,7 @@ const place = (body: string, paragraphTopPt = 100) => {
     frame: resolveParagraphFrame(found, readStyleTable(pkg)),
     paragraphTopPt,
     resolvePart: () => null,
+    theme: NO_THEME,
   });
 };
 

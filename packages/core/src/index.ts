@@ -138,12 +138,13 @@ export type {
   WrapMode,
 } from "./docx/anchors.js";
 
-export { placeFloat } from "./layout/floats.js";
+export { placeFloat, UNPAINTED } from "./layout/floats.js";
 export type {
   FloatSize,
   PartResolver,
   PlacedContent,
   PlacedFloat,
+  PlacedPaint,
   PlaceFloatInput,
 } from "./layout/floats.js";
 
@@ -161,6 +162,7 @@ export {
   readDrawingFlip,
   DEFAULT_TEXT_INSETS,
   NO_CROP,
+  NO_PAINT,
   PIC_NS,
   WPS_NS,
 } from "./docx/drawing.js";
@@ -168,9 +170,15 @@ export type {
   CropInsets,
   DrawingContent,
   DrawingFlip,
+  ShapeGeometry,
+  ShapeOutline,
+  ShapePaint,
   TextBoxAnchor,
   TextBoxBody,
   TextBoxInsets,
 } from "./docx/drawing.js";
+
+export { readColorReference, readTheme, themeColor, NO_THEME, THEME_PART } from "./docx/theme.js";
+export type { ColorReference, Theme } from "./docx/theme.js";
 
 export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";

@@ -2,6 +2,7 @@ import { blocksIn, isDetachedContent, type Block } from "./blocks.js";
 import { R_NS } from "./relationships.js";
 import { W_NS } from "./section.js";
 import { A_NS } from "./styles.js";
+import { readColorReference, type ColorReference } from "./theme.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
 
 export const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
@@ -46,10 +47,33 @@ export type TextBoxBody = {
   readonly fitsText: boolean;
 };
 
+// Every preset geometry in these documents is one of two things to draw: a
+// rectangle the size of the object, or a line across it.
+export type ShapeGeometry = "rectangle" | "line";
+
+export type ShapeOutline = {
+  readonly color: ColorReference;
+  readonly widthPt: number;
+};
+
+// How a shape is painted, before the theme has said what its colours are.
+export type ShapePaint = {
+  readonly fill: ColorReference | null;
+  readonly outline: ShapeOutline | null;
+  readonly geometry: ShapeGeometry;
+};
+
+export const NO_PAINT: ShapePaint = { fill: null, outline: null, geometry: "rectangle" };
+
 export type DrawingContent =
-  | { readonly kind: "picture"; readonly relationshipId: string; readonly crop: CropInsets }
-  | { readonly kind: "text-box"; readonly body: TextBoxBody }
-  | { readonly kind: "shape" }
+  | {
+      readonly kind: "picture";
+      readonly relationshipId: string;
+      readonly crop: CropInsets;
+      readonly paint: ShapePaint;
+    }
+  | { readonly kind: "text-box"; readonly body: TextBoxBody; readonly paint: ShapePaint }
+  | { readonly kind: "shape"; readonly paint: ShapePaint }
   | { readonly kind: "unknown" };
 
 // A text box's own drawings belong to the paragraphs inside it, not to the frame.
@@ -75,6 +99,42 @@ function cropEdge(srcRect: XmlElement | null, name: string): number {
   return Number.isFinite(value) ? value / PERCENT_UNITS : 0;
 }
 
+// Word leaves the width off an outline it draws at its own default, which it
+// measures a hairline at: 9525 EMU, three quarters of a point.
+const DEFAULT_OUTLINE_WIDTH_PT = 0.75;
+const EMU_PER_POINT = 12700;
+
+function readOutline(shapeProperties: XmlElement): ShapeOutline | null {
+  const line = firstNamed(shapeProperties, A_NS, "ln");
+  if (line === null) return null;
+
+  const fill = firstNamed(line, A_NS, "solidFill");
+  const color = fill === null ? null : readColorReference(fill);
+  if (color === null) return null;
+
+  const raw = attribute(line, "", "w");
+  const width = raw === undefined ? Number.NaN : Number(raw);
+  return {
+    color,
+    widthPt: Number.isFinite(width) ? width / EMU_PER_POINT : DEFAULT_OUTLINE_WIDTH_PT,
+  };
+}
+
+// A shape with no fill element at all is as unpainted as one that says noFill:
+// nothing in these documents leaves its fill to the theme's own format scheme.
+function readPaint(shapeProperties: XmlElement | null): ShapePaint {
+  if (shapeProperties === null) return NO_PAINT;
+
+  const fill = firstNamed(shapeProperties, A_NS, "solidFill");
+  const geometry = firstNamed(shapeProperties, A_NS, "prstGeom");
+  const preset = geometry === null ? undefined : attribute(geometry, "", "prst");
+  return {
+    fill: fill === null ? null : readColorReference(fill),
+    outline: readOutline(shapeProperties),
+    geometry: preset === "line" ? "line" : "rectangle",
+  };
+}
+
 function readPicture(picture: XmlElement): DrawingContent {
   const blip = findOwn(picture, A_NS, "blip");
   const relationshipId = blip === null ? undefined : attribute(blip, R_NS, "embed");
@@ -90,6 +150,7 @@ function readPicture(picture: XmlElement): DrawingContent {
       right: cropEdge(srcRect, "r"),
       bottom: cropEdge(srcRect, "b"),
     },
+    paint: readPaint(firstNamed(picture, PIC_NS, "spPr")),
   };
 }
 
@@ -147,9 +208,10 @@ export function readDrawingContent(drawing: XmlElement): DrawingContent {
   const shape = findOwn(drawing, WPS_NS, "wsp");
   if (shape !== null) {
     const txbx = findOwn(shape, WPS_NS, "txbx");
+    const paint = readPaint(firstNamed(shape, WPS_NS, "spPr"));
     return txbx === null
-      ? { kind: "shape" }
-      : { kind: "text-box", body: readTextBoxBody(shape, txbx) };
+      ? { kind: "shape", paint }
+      : { kind: "text-box", body: readTextBoxBody(shape, txbx), paint };
   }
 
   return { kind: "unknown" };

@@ -1,6 +1,7 @@
 import type { InlineDrawing } from "../docx/inlines.js";
 import type { SectionGeometry } from "../docx/section.js";
 import type { ParagraphFrame } from "../docx/styles.js";
+import type { Theme } from "../docx/theme.js";
 import { resolveContent, type PartResolver, type PlacedContent } from "./floats.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
 
@@ -19,6 +20,7 @@ export type PlaceInlinesInput = {
   readonly frame: ParagraphFrame;
   readonly paragraphTopPt: number;
   readonly resolvePart: PartResolver;
+  readonly theme: Theme;
 };
 
 // Inline drawings sit in the paragraph's own line, so they run along it in order
@@ -38,7 +40,7 @@ export function placeInlines(input: PlaceInlinesInput): readonly PlacedInline[] 
     const widthPt = widths[at] ?? 0;
     placed.push({
       drawing,
-      content: resolveContent(drawing.content, input.resolvePart),
+      content: resolveContent(drawing.content, input.resolvePart, input.theme),
       leftPt: left,
       topPt: input.paragraphTopPt,
       widthPt,

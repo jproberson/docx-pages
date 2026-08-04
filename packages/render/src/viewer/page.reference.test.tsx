@@ -78,6 +78,25 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
         expect(html.split('data-kind="unresolved-picture"')).toHaveLength(undrawable + 1);
       });
 
+      // Every colour in these files is a theme slot under a luminance transform,
+      // so a shape that resolved one and does not carry it into the markup is a
+      // panel or a rule drawn as nothing at all.
+      it("paints every shape in the colour the theme resolved for it", () => {
+        const { html, layout } = rendered(each);
+        const painted = layout.pages.flatMap((page) =>
+          [...layout.headerFloats, ...layout.footerFloats, ...page.floats].flatMap((placed) =>
+            "paint" in placed.content ? [placed.content.paint] : [],
+          ),
+        );
+        const colors = new Set(
+          painted.flatMap((paint) => [paint.fillColor, paint.outline?.color ?? null]),
+        );
+        colors.delete(null);
+
+        expect(colors.size).toBeGreaterThan(0);
+        for (const color of colors) expect(html).toContain(color);
+      });
+
       it("leaves nothing unresolved or unrecognised", () => {
         expect(rendered(each).html).not.toContain('data-kind="missing-picture"');
         expect(rendered(each).html).not.toContain('data-kind="unknown"');

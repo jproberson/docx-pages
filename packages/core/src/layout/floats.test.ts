@@ -4,8 +4,9 @@ import { readAnchors, WHOLE_FRAME, type FloatingAnchor, type WrapArea } from "..
 import { openDocx } from "../docx/package.js";
 import { readParagraphs } from "../docx/blocks.js";
 import type { SectionGeometry } from "../docx/section.js";
+import { NO_THEME } from "../docx/theme.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
-import { placeFloat } from "./floats.js";
+import { placeFloat, UNPAINTED } from "./floats.js";
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -86,6 +87,7 @@ const place = (body: string, paragraphTopPt: number, bodyTopPt = 36) =>
     bodyTopPt,
     marginTopPt: 36,
     resolvePart: () => null,
+    theme: NO_THEME,
   });
 
 describe("readAnchors", () => {
@@ -207,6 +209,7 @@ describe("placeFloat", () => {
       bodyTopPt: 21.6,
       marginTopPt: 69.04,
       resolvePart: () => null,
+      theme: NO_THEME,
     });
     expect(placed.topPt).toBeCloseTo(13.27, 2);
   });
@@ -233,6 +236,7 @@ describe("placeFloat", () => {
       bodyTopPt: 36,
       marginTopPt: 36,
       resolvePart: () => null,
+      theme: NO_THEME,
       sizePt: { widthPt: 44.5, heightPt: 27.2 },
     });
 
@@ -270,6 +274,7 @@ const placeResolving = (body: string, resolvePart: (id: string) => string | null
     bodyTopPt: 36,
     marginTopPt: 36,
     resolvePart,
+    theme: NO_THEME,
   });
 
 describe("placeFloat content", () => {
@@ -281,6 +286,7 @@ describe("placeFloat content", () => {
     expect(placed.content).toStrictEqual({
       kind: "picture",
       part: "word/media/image1.png",
+      paint: UNPAINTED,
       crop: { left: 0, top: 0.07272, right: 0, bottom: 0 },
     });
   });

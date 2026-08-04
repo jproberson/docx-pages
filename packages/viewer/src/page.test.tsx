@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { WHOLE_FRAME } from "@onepager/core";
+import { NO_PAINT, UNPAINTED, WHOLE_FRAME } from "@onepager/core";
 import type {
   CropInsets,
   LaidOutDocument,
@@ -9,6 +9,7 @@ import type {
   ParagraphBox,
   ParagraphMark,
   PlacedContent,
+  PlacedPaint,
   SectionGeometry,
   TextBoxBody,
 } from "@onepager/core";
@@ -36,6 +37,7 @@ const textBox = (boxes: readonly ParagraphBox[] = []): PlacedContent => ({
   kind: "text-box",
   body: EMPTY_BODY,
   text: boxes.length === 0 ? null : { boxes, contentHeightPt: 0, contentWidthPt: 0 },
+  paint: UNPAINTED,
 });
 
 const paragraphOf = (
@@ -92,7 +94,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
     name: "Object",
     widthEmu: 0,
     heightEmu: 0,
-    content: { kind: "shape" } as const,
+    content: { kind: "shape", paint: NO_PAINT } as const,
     horizontal: { kind: "offset", from: "column", offsetEmu: 0 } as const,
     vertical: { kind: "offset", from: "paragraph", offsetEmu: 0 } as const,
     wrap: "none" as const,
@@ -111,6 +113,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
 const layoutWith = (
   floats: readonly ReturnType<typeof float>[],
   body: readonly ParagraphBox[] = [],
+  footerFloats: readonly ReturnType<typeof float>[] = [],
 ): LaidOutDocument => ({
   kind: "laid-out",
   page: LETTER,
@@ -122,7 +125,7 @@ const layoutWith = (
   header: [],
   footer: [],
   headerFloats: [],
-  footerFloats: [],
+  footerFloats,
   headerInlines: [],
   footerInlines: [],
   pages: [{ index: 0, body, floats, inlines: [] }],
@@ -171,7 +174,9 @@ describe("OnePagerPage", () => {
 
   it("puts a picture at the point position layout computed", () => {
     const html = markup(
-      layoutWith([float({ kind: "picture", part: "word/media/image1.png", crop: NO_CROP })]),
+      layoutWith([
+        float({ kind: "picture", part: "word/media/image1.png", crop: NO_CROP, paint: UNPAINTED }),
+      ]),
     );
     expect(html).toContain("left:100pt");
     expect(html).toContain("top:200pt");
@@ -181,7 +186,9 @@ describe("OnePagerPage", () => {
   it("draws the whole bitmap behind a window when srcRect crops it", () => {
     const crop: CropInsets = { left: 0, top: 0.07272, right: 0.293, bottom: 0 };
     const html = markup(
-      layoutWith([float({ kind: "picture", part: "word/media/image1.png", crop })]),
+      layoutWith([
+        float({ kind: "picture", part: "word/media/image1.png", crop, paint: UNPAINTED }),
+      ]),
     );
     // The window stays at the placed size; the bitmap behind it is 180 / (1 - 0.293)
     // wide and rides 7.272% of its own height above the top edge.
@@ -192,6 +199,29 @@ describe("OnePagerPage", () => {
 
   it("shows nothing for a text box holding no text", () => {
     expect(markup(layoutWith([float(textBox())]))).not.toContain("<svg");
+  });
+
+  it("fills a shape at the size it was placed at", () => {
+    const paint: PlacedPaint = { ...UNPAINTED, fillColor: "#F2F2F2" };
+    const html = markup(layoutWith([float({ kind: "shape", paint })]));
+    expect(html).toContain('fill="#F2F2F2"');
+    expect(html).toContain('width="180" height="90"');
+  });
+
+  // A line shape is stored with no height at all, so the layer it draws in has to
+  // be grown by the stroke to have any room to draw the line in.
+  it("draws a line shape as a line, which a rectangle of no height could not be", () => {
+    const paint: PlacedPaint = {
+      geometry: "line",
+      fillColor: null,
+      outline: { color: "#BFBFBF", widthPt: 0.75 },
+    };
+    const html = markup(
+      layoutWith([{ ...float({ kind: "shape", paint }), heightPt: 0, widthPt: 400 }]),
+    );
+    expect(html).toContain('stroke="#BFBFBF"');
+    expect(html).toContain('x2="400"');
+    expect(html).toContain("height:1.5pt");
   });
 
   it("outlines frames on request so placement can be checked without content", () => {
@@ -207,12 +237,29 @@ describe("OnePagerPage", () => {
     expect(html).toContain('data-kind="missing-picture"');
   });
 
-  it("stacks objects behind the text below the ones in front of it", () => {
+  // Measured against Word, which draws a panel it was told to send to the back of
+  // the stack under a text box marked behindDoc: within one story the height a
+  // shape was given is the whole of the order.
+  it("stacks a story's objects by the height each was given, whatever behindDoc says", () => {
     const html = markup(
       layoutWith([
-        float({ kind: "shape" }, { height: 5 }),
+        float({ kind: "shape", paint: UNPAINTED }, { height: 5 }),
         float(textBox(), { behindDoc: true, height: 9 }),
       ]),
+      { frames: "outlined" },
+    );
+    expect(html.indexOf('data-kind="shape"')).toBeLessThan(html.indexOf('data-kind="text-box"'));
+  });
+
+  // A panel anchored in the body covers the footer's own classification line on
+  // the first page, which is why Word shows that line on the second page alone.
+  it("draws the footer's own objects under the body's, whatever heights they carry", () => {
+    const html = markup(
+      layoutWith(
+        [float({ kind: "shape", paint: UNPAINTED }, { height: 1 })],
+        [],
+        [float(textBox(), { height: 99 })],
+      ),
       { frames: "outlined" },
     );
     expect(html.indexOf('data-kind="text-box"')).toBeLessThan(html.indexOf('data-kind="shape"'));

@@ -9,6 +9,7 @@ import {
   type ParagraphMark,
   type ParagraphMarker,
   type PlacedLine,
+  type PlacedPaint,
 } from "@onepager/core";
 
 import { drawablesOf, type Drawable } from "./drawables.js";
@@ -65,6 +66,56 @@ function croppedImage(drawable: ObjectDrawable, url: string, crop: CropInsets): 
         }}
       />
     </div>
+  );
+}
+
+// A shape's own paint. Word centres an outline on the edge it runs along, which
+// is where a stroked path sits, so the geometry is drawn at the object's own
+// bounds and the layer is grown by the stroke's width to leave room for the half
+// of it that falls outside. That room is also what lets a line shape draw at all:
+// the ones here are stored with no height.
+function painted(
+  drawable: ObjectDrawable,
+  paint: PlacedPaint,
+  key: string,
+  kind: string,
+): ReactElement | null {
+  const { widthPt, heightPt } = drawable;
+  const { outline } = paint;
+  if (paint.fillColor === null && outline === null) return null;
+
+  const room = outline === null ? 0 : outline.widthPt;
+  const layerWidth = widthPt + room * 2;
+  const layerHeight = heightPt + room * 2;
+  if (layerWidth <= 0 || layerHeight <= 0) return null;
+
+  const stroke = { stroke: outline?.color, strokeWidth: outline?.widthPt };
+  return (
+    <svg
+      key={key}
+      style={{
+        position: "absolute",
+        left: pt(drawable.leftPt - room),
+        top: pt(drawable.topPt - room),
+        width: pt(layerWidth),
+        height: pt(layerHeight),
+      }}
+      viewBox={`${String(-room)} ${String(-room)} ${String(layerWidth)} ${String(layerHeight)}`}
+      data-kind={kind}
+    >
+      {paint.geometry === "line" ? (
+        <line x1={0} y1={0} x2={widthPt} y2={heightPt} {...stroke} />
+      ) : (
+        <rect
+          x={0}
+          y={0}
+          width={widthPt}
+          height={heightPt}
+          fill={paint.fillColor ?? "none"}
+          {...stroke}
+        />
+      )}
+    </svg>
   );
 }
 
@@ -192,27 +243,52 @@ function textLayer(
   );
 }
 
+const kept = (element: ReactElement | null): readonly ReactElement[] =>
+  element === null ? [] : [element];
+
+// A picture is drawn over whatever fills its frame and under its own outline, so
+// the two halves of its paint go either side of the bitmap.
+function renderPicture(
+  drawable: ObjectDrawable,
+  paint: PlacedPaint,
+  image: ReactElement,
+): readonly ReactElement[] {
+  return [
+    ...kept(painted(drawable, { ...paint, outline: null }, `${drawable.key}-fill`, "picture-fill")),
+    image,
+    ...kept(
+      painted(drawable, { ...paint, fillColor: null }, `${drawable.key}-line`, "picture-outline"),
+    ),
+  ];
+}
+
 function renderObject(
   drawable: ObjectDrawable,
   imageUrl: ImageResolver,
   frames: FrameStyle,
-): ReactElement | null {
+): readonly ReactElement[] {
   const { content } = drawable;
+  const shown = (kind: string): readonly ReactElement[] => kept(frame(drawable, kind, frames));
+  const paint = (kind: string, own: PlacedPaint): readonly ReactElement[] => [
+    ...kept(painted(drawable, own, `${drawable.key}-paint`, kind)),
+    ...shown(kind),
+  ];
+
   switch (content.kind) {
     case "picture": {
       const url = imageUrl(content.part);
       return url === undefined
-        ? frame(drawable, "unresolved-picture", frames)
-        : croppedImage(drawable, url, content.crop);
+        ? shown("unresolved-picture")
+        : renderPicture(drawable, content.paint, croppedImage(drawable, url, content.crop));
     }
     case "missing-picture":
-      return frame(drawable, "missing-picture", frames);
+      return shown("missing-picture");
     case "text-box":
-      return frame(drawable, "text-box", frames);
+      return paint("text-box", content.paint);
     case "shape":
-      return frame(drawable, "shape", frames);
+      return paint("shape", content.paint);
     case "unknown":
-      return frame(drawable, "unknown", frames);
+      return shown("unknown");
   }
 }
 
@@ -242,9 +318,9 @@ export function OnePagerPage(props: OnePagerPageProps): ReactElement {
         transformOrigin: "top left",
       }}
     >
-      {drawablesOf(layout, page).map((drawable) =>
+      {drawablesOf(layout, page).flatMap((drawable) =>
         drawable.kind === "text"
-          ? textLayer(drawable, widthPt, heightPt, fallbackFonts)
+          ? [textLayer(drawable, widthPt, heightPt, fallbackFonts)]
           : renderObject(drawable, imageUrl, frames),
       )}
     </div>

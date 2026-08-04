@@ -5,6 +5,7 @@ import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
 import { readStyleTable, resolveParagraphFrame, type StyleTable } from "../docx/styles.js";
+import { readTheme, type Theme } from "../docx/theme.js";
 import {
   measureStack,
   shiftBoxes,
@@ -95,6 +96,7 @@ type FloatFrame = {
   readonly page: SectionGeometry;
   readonly styles: StyleTable;
   readonly metricsFor: MetricsResolver;
+  readonly theme: Theme;
   readonly part: string;
   // Where the story's own text column starts, which is what a column-relative
   // offset is measured from.
@@ -147,6 +149,7 @@ const placeFloatIn = (
     bodyTopPt: frame.columnTopPt,
     marginTopPt: frame.marginTopPt,
     resolvePart,
+    theme: frame.theme,
     sizePt: fittedSizePt(anchor, frame),
   });
 
@@ -237,6 +240,7 @@ function measureStory(
 export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): DocumentLayout {
   const page = readSectionGeometry(pkg);
   const styles = readStyleTable(pkg);
+  const theme = readTheme(pkg);
   const headerTopPt = twipsToPoints(page.margin.headerTwips);
   const pageHeightPt = twipsToPoints(page.heightTwips);
   const leftPt = twipsToPoints(page.margin.leftTwips);
@@ -251,6 +255,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     page,
     styles,
     metricsFor,
+    theme,
     part: part ?? MAIN_DOCUMENT_PART,
     columnTopPt,
     marginTopPt,
@@ -347,6 +352,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
           frame: resolveParagraphFrame(paragraph, styles),
           paragraphTopPt,
           resolvePart,
+          theme: floats.theme,
         }),
       ),
     };

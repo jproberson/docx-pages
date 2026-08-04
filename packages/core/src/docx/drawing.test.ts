@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { readDrawingContent, readDrawingFlip, DEFAULT_TEXT_INSETS, NO_CROP } from "./drawing.js";
+import {
+  readDrawingContent,
+  readDrawingFlip,
+  DEFAULT_TEXT_INSETS,
+  NO_CROP,
+  NO_PAINT,
+} from "./drawing.js";
 import { parseXml } from "./xml.js";
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
@@ -50,6 +56,7 @@ describe("readDrawingContent", () => {
       kind: "picture",
       relationshipId: "rId7",
       crop: NO_CROP,
+      paint: NO_PAINT,
     });
   });
 
@@ -59,6 +66,7 @@ describe("readDrawingContent", () => {
       kind: "picture",
       relationshipId: "rId7",
       crop: { left: 0, top: 0.07272, right: 0, bottom: 0.07272 },
+      paint: NO_PAINT,
     });
   });
 
@@ -138,5 +146,71 @@ describe("a text box's body", () => {
   it("reads a box whose content is missing as an empty one", () => {
     const found = drawing(`<wps:wsp><wps:txbx/></wps:wsp>`);
     expect(found.kind === "text-box" && found.body.blocks).toStrictEqual([]);
+  });
+});
+
+const shapePaint = (spPr: string) => {
+  const found = drawing(`<wps:wsp><wps:spPr>${spPr}</wps:spPr></wps:wsp>`);
+  if (found.kind !== "shape") throw new Error("expected a shape");
+  return found.paint;
+};
+
+describe("the paint a shape carries", () => {
+  it("reads the fill a shape is given, and none from one that declines it", () => {
+    expect(
+      shapePaint(`<a:solidFill><a:schemeClr val="bg1"><a:lumMod val="95000"/></a:schemeClr>
+        </a:solidFill>`).fill,
+    ).toStrictEqual({
+      base: { kind: "scheme", slot: "bg1" },
+      luminanceScale: 0.95,
+      luminanceOffset: 0,
+    });
+    expect(shapePaint(`<a:noFill/>`).fill).toBeNull();
+    expect(shapePaint(``)).toStrictEqual(NO_PAINT);
+  });
+
+  // A fill inside the outline is the outline's own colour, and saying so is the
+  // difference between a hairline rule and a panel of solid grey.
+  it("does not take the outline's colour for the shape's fill", () => {
+    expect(
+      shapePaint(`<a:noFill/><a:ln><a:solidFill><a:srgbClr val="BFBFBF"/></a:solidFill></a:ln>`),
+    ).toStrictEqual({
+      fill: null,
+      outline: {
+        color: { base: { kind: "literal", hex: "BFBFBF" }, luminanceScale: 1, luminanceOffset: 0 },
+        widthPt: 0.75,
+      },
+      geometry: "rectangle",
+    });
+  });
+
+  // Word leaves the width off an outline it draws at its own default, which its
+  // pdf lays down as three quarters of a point.
+  it("measures an outline, falling back on the width Word draws one at", () => {
+    const outlined = (attributes: string) =>
+      shapePaint(`<a:ln ${attributes}><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`)
+        .outline?.widthPt;
+    expect(outlined(``)).toBe(0.75);
+    expect(outlined(`w="25400"`)).toBe(2);
+  });
+
+  it("reads an outline that is turned off as no outline at all", () => {
+    expect(shapePaint(`<a:ln w="9525"><a:noFill/></a:ln>`).outline).toBeNull();
+  });
+
+  it("tells a line apart from every other preset, which are all rectangles here", () => {
+    expect(shapePaint(`<a:prstGeom prst="line"><a:avLst/></a:prstGeom>`).geometry).toBe("line");
+    expect(shapePaint(`<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`).geometry).toBe(
+      "rectangle",
+    );
+  });
+
+  it("reads a picture's own outline, which is what frames one in these files", () => {
+    const found = drawing(
+      `<pic:pic><pic:blipFill><a:blip r:embed="rId7"/></pic:blipFill>
+        <pic:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="FFFFFF">
+          <a:lumMod val="50000"/></a:srgbClr></a:solidFill></a:ln></pic:spPr></pic:pic>`,
+    );
+    expect(found.kind === "picture" && found.paint.outline?.color.luminanceScale).toBe(0.5);
   });
 });
