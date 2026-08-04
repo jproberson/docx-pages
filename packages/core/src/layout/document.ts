@@ -36,6 +36,8 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const page = readSectionGeometry(pkg);
   const styles = readStyleTable(pkg);
   const headerTopPt = twipsToPoints(page.margin.headerTwips);
+  const leftPt = twipsToPoints(page.margin.leftTwips);
+  const widthPt = twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
 
   const headerPart = defaultHeaderPart(pkg);
   const headerBlocks = headerPart === null ? [] : readBlocks(pkg, headerPart);
@@ -48,6 +50,8 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
           metricsFor,
           part: headerPart,
           originPt: headerTopPt,
+          leftPt,
+          widthPt,
         });
 
   if (headerStack !== null && headerStack.kind === "blocked") {
@@ -64,6 +68,8 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     metricsFor,
     part: MAIN_DOCUMENT_PART,
     originPt: bodyTopPt,
+    leftPt,
+    widthPt,
   });
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };

@@ -32,6 +32,11 @@ type PartialFrame = {
   readonly alignment: ParagraphAlignment | undefined;
   readonly indentLeftTwips: number | undefined;
   readonly indentRightTwips: number | undefined;
+  readonly indentFirstLineTwips: number | undefined;
+  readonly spaceBeforeTwips: number | undefined;
+  readonly spaceAfterTwips: number | undefined;
+  readonly lineTwips: number | undefined;
+  readonly lineRule: LineRule | undefined;
 };
 
 type StyleDefinition = {
@@ -60,13 +65,30 @@ const EMPTY_FRAME: PartialFrame = {
   alignment: undefined,
   indentLeftTwips: undefined,
   indentRightTwips: undefined,
+  indentFirstLineTwips: undefined,
+  spaceBeforeTwips: undefined,
+  spaceAfterTwips: undefined,
+  lineTwips: undefined,
+  lineRule: undefined,
 };
 
 const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   alignment: over.alignment ?? base.alignment,
   indentLeftTwips: over.indentLeftTwips ?? base.indentLeftTwips,
   indentRightTwips: over.indentRightTwips ?? base.indentRightTwips,
+  indentFirstLineTwips: over.indentFirstLineTwips ?? base.indentFirstLineTwips,
+  spaceBeforeTwips: over.spaceBeforeTwips ?? base.spaceBeforeTwips,
+  spaceAfterTwips: over.spaceAfterTwips ?? base.spaceAfterTwips,
+  lineTwips: over.lineTwips ?? base.lineTwips,
+  lineRule: over.lineRule ?? base.lineRule,
 });
+
+function toLineRule(value: string | undefined): LineRule | undefined {
+  if (value === "exact") return "exact";
+  if (value === "atLeast") return "atLeast";
+  if (value === "auto") return "auto";
+  return undefined;
+}
 
 function toAlignment(value: string | undefined): ParagraphAlignment | undefined {
   if (value === "right" || value === "end") return "right";
@@ -91,10 +113,20 @@ function readFrame(container: XmlElement | null): PartialFrame {
 
   const jc = firstNamed(pPr, W_NS, "jc");
   const indent = firstNamed(pPr, W_NS, "ind");
+  const spacing = firstNamed(pPr, W_NS, "spacing");
+  const hanging = twipsAttribute(indent, "hanging");
+
   return {
     alignment: toAlignment(jc === null ? undefined : attribute(jc, W_NS, "val")),
     indentLeftTwips: twipsAttribute(indent, "left") ?? twipsAttribute(indent, "start"),
     indentRightTwips: twipsAttribute(indent, "right") ?? twipsAttribute(indent, "end"),
+    // A hanging indent is a first line pulled back out of the left indent, so the
+    // two spellings are one number.
+    indentFirstLineTwips: hanging === undefined ? twipsAttribute(indent, "firstLine") : -hanging,
+    spaceBeforeTwips: twipsAttribute(spacing, "before"),
+    spaceAfterTwips: twipsAttribute(spacing, "after"),
+    lineTwips: twipsAttribute(spacing, "line"),
+    lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
   };
 }
 
@@ -296,10 +328,19 @@ function resolveRunMark(run: XmlElement, inherited: PartialMark, table: StyleTab
 
 export type ParagraphAlignment = "left" | "right" | "center" | "justify";
 
+// Word's three ways of spelling a line's height: a multiple of the natural one,
+// a floor under it, or a fixed height that replaces it.
+export type LineRule = "auto" | "exact" | "atLeast";
+
 export type ParagraphFrame = {
   readonly alignment: ParagraphAlignment;
   readonly indentLeftTwips: number;
   readonly indentRightTwips: number;
+  readonly indentFirstLineTwips: number;
+  readonly spaceBeforeTwips: number;
+  readonly spaceAfterTwips: number;
+  readonly lineTwips: number | null;
+  readonly lineRule: LineRule;
 };
 
 export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): ParagraphFrame {
@@ -317,5 +358,10 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     alignment: resolved.alignment ?? "left",
     indentLeftTwips: resolved.indentLeftTwips ?? 0,
     indentRightTwips: resolved.indentRightTwips ?? 0,
+    indentFirstLineTwips: resolved.indentFirstLineTwips ?? 0,
+    spaceBeforeTwips: resolved.spaceBeforeTwips ?? 0,
+    spaceAfterTwips: resolved.spaceAfterTwips ?? 0,
+    lineTwips: resolved.lineTwips ?? null,
+    lineRule: resolved.lineRule ?? "auto",
   };
 }

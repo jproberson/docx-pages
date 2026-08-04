@@ -12,6 +12,7 @@ export type Paragraph = {
 export type CellVerticalAlign = "top" | "center" | "bottom";
 
 export type TableCell = {
+  readonly element: XmlElement;
   readonly blocks: readonly Block[];
   readonly verticalAlign: CellVerticalAlign;
 };
@@ -56,7 +57,7 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
       if (tc.namespace !== W_NS || tc.name !== "tc") continue;
       const blocks: Block[] = [];
       collect(tc, blocks, nextIndex);
-      cells.push({ blocks, verticalAlign: verticalAlignOf(tc) });
+      cells.push({ element: tc, blocks, verticalAlign: verticalAlignOf(tc) });
     }
     rows.push({ cells });
   }

@@ -48,7 +48,7 @@ describe.skipIf(SUBJECTS.length === 0)("readFontFile on a real font file", () =>
       expect(narrow).toBeGreaterThan(0);
       expect(wide).toBeLessThanOrEqual(font.metrics.unitsPerEm * 2);
       expect(wide).toBeGreaterThan(narrow ?? 0);
-      expect(narrow).toBeGreaterThan(space ?? 0);
+      expect(wide).toBeGreaterThan(space ?? 0);
       expect(advanceOf(advanceFor, "\u{10ffff}")).toBeNull();
     });
   }

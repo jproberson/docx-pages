@@ -1,5 +1,8 @@
 import { zlibSync } from "fflate";
 
+import { readFontFile } from "../layout/font-file.js";
+import type { FontMetrics, SuppliedFace } from "../layout/font-metrics.js";
+
 export type FontFixture = {
   readonly unitsPerEm: number;
   readonly ascender: number;
@@ -212,3 +215,36 @@ export const buildWoff2 = (): Uint8Array => {
   out.set(tagBytes("wOF2"), 0);
   return out;
 };
+
+const MEASURABLE =
+  " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`" +
+  "abcdefghijklmnopqrstuvwxyz{|}~";
+
+export type FaceFixture = {
+  readonly name: string;
+  readonly metrics: FontMetrics;
+  readonly bold?: boolean;
+  readonly italic?: boolean;
+  readonly advance?: number;
+  readonly characters?: string;
+};
+
+// A face whose every glyph is the same width, so a test can count characters
+// instead of consulting a real font's widths.
+export function buildFace(fixture: FaceFixture): SuppliedFace {
+  const advance = fixture.advance ?? fixture.metrics.unitsPerEm / 2;
+  const file = buildSfnt({
+    ...fixture.metrics,
+    advances: Object.fromEntries(
+      Array.from(fixture.characters ?? MEASURABLE, (character) => [character, advance]),
+    ),
+  });
+
+  return {
+    name: fixture.name,
+    bold: fixture.bold ?? false,
+    italic: fixture.italic ?? false,
+    metrics: fixture.metrics,
+    advances: readFontFile(file).advances,
+  };
+}
