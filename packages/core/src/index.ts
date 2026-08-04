@@ -36,6 +36,9 @@ export type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from ".
 
 export { paragraphText, paragraphDescendants } from "./docx/paragraphs.js";
 
+export { numberParagraphs } from "./docx/list-numbers.js";
+export type { ParagraphNumber, ParagraphNumbers } from "./docx/list-numbers.js";
+
 export { readNumberingTable, numberingLevel, NUMBERING_PART } from "./docx/numbering.js";
 export type {
   LevelRestart,
