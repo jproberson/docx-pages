@@ -70,13 +70,27 @@ describe("readReferenceManifest", () => {
 
   it("reads a font's metrics alongside where its file lives", () => {
     const json = `{"fonts":[{"name":"Meridian Sans","filePath":"/tmp/m.woff","fileFormat":"woff",
-      "metrics":{"unitsPerEm":1000,"ascender":971,"descender":-242,"lineGap":0}}]}`;
+      "metrics":{"unitsPerEm":1000,"ascender":800,"descender":-200,"lineGap":0}},
+      {"name":"Meridian Sans","bold":true,"filePath":"/tmp/m-bold.woff","fileFormat":"woff",
+      "metrics":{"unitsPerEm":1000,"ascender":800,"descender":-200,"lineGap":0}}]}`;
+    const metrics = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
+
     expect(readReferenceManifest(manifestOf(json)).fonts).toStrictEqual([
       {
         name: "Meridian Sans",
+        bold: false,
+        italic: false,
         filePath: "/tmp/m.woff",
         fileFormat: "woff",
-        metrics: { unitsPerEm: 1000, ascender: 971, descender: -242, lineGap: 0 },
+        metrics,
+      },
+      {
+        name: "Meridian Sans",
+        bold: true,
+        italic: false,
+        filePath: "/tmp/m-bold.woff",
+        fileFormat: "woff",
+        metrics,
       },
     ]);
   });

@@ -17,11 +17,15 @@ export type FontChoice =
 export type ParagraphMark = {
   readonly font: FontChoice;
   readonly fontSizePt: number;
+  readonly bold: boolean;
+  readonly italic: boolean;
 };
 
 type PartialMark = {
   readonly fontName: string | undefined;
   readonly fontSizeHalfPoints: number | undefined;
+  readonly bold: boolean | undefined;
+  readonly italic: boolean | undefined;
 };
 
 type PartialFrame = {
@@ -45,7 +49,12 @@ export type StyleTable = {
   readonly themeFonts: ReadonlyMap<string, string>;
 };
 
-const EMPTY: PartialMark = { fontName: undefined, fontSizeHalfPoints: undefined };
+const EMPTY: PartialMark = {
+  fontName: undefined,
+  fontSizeHalfPoints: undefined,
+  bold: undefined,
+  italic: undefined,
+};
 
 const EMPTY_FRAME: PartialFrame = {
   alignment: undefined,
@@ -92,7 +101,18 @@ function readFrame(container: XmlElement | null): PartialFrame {
 const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   fontName: over.fontName ?? base.fontName,
   fontSizeHalfPoints: over.fontSizeHalfPoints ?? base.fontSizeHalfPoints,
+  bold: over.bold ?? base.bold,
+  italic: over.italic ?? base.italic,
 });
+
+// A toggle is on when present without a value, so only an explicit off turns it
+// back off further down the cascade.
+function toggle(rPr: XmlElement, name: string): boolean | undefined {
+  const element = firstNamed(rPr, W_NS, name);
+  if (element === null) return undefined;
+  const value = attribute(element, W_NS, "val");
+  return value !== "0" && value !== "false" && value !== "off";
+}
 
 function readThemeFonts(pkg: DocxPackage): ReadonlyMap<string, string> {
   if (!pkg.parts.has(THEME_PART)) return new Map();
@@ -143,6 +163,8 @@ function readMark(
     fontName,
     fontSizeHalfPoints:
       halfPoints === undefined || !Number.isFinite(halfPoints) ? undefined : halfPoints,
+    bold: toggle(rPr, "b"),
+    italic: toggle(rPr, "i"),
   };
 }
 
@@ -208,6 +230,19 @@ function styleChain(table: StyleTable, styleId: string | undefined): readonly St
   return chain;
 }
 
+const markOf = (resolved: PartialMark): ParagraphMark => ({
+  font:
+    resolved.fontName === undefined
+      ? { kind: "unresolved" }
+      : { kind: "named", name: resolved.fontName },
+  fontSizePt:
+    resolved.fontSizeHalfPoints === undefined
+      ? WORD_DEFAULT_FONT_SIZE_PT
+      : resolved.fontSizeHalfPoints / 2,
+  bold: resolved.bold ?? false,
+  italic: resolved.italic ?? false,
+});
+
 export function resolveParagraphMark(paragraph: Paragraph, table: StyleTable): ParagraphMark {
   const pPr = firstNamed(paragraph.element, W_NS, "pPr");
   const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
@@ -218,16 +253,7 @@ export function resolveParagraphMark(paragraph: Paragraph, table: StyleTable): P
   for (const style of styleChain(table, styleId)) resolved = merge(resolved, style.mark);
   resolved = merge(resolved, readMark(pPr, table.themeFonts));
 
-  return {
-    font:
-      resolved.fontName === undefined
-        ? { kind: "unresolved" }
-        : { kind: "named", name: resolved.fontName },
-    fontSizePt:
-      resolved.fontSizeHalfPoints === undefined
-        ? WORD_DEFAULT_FONT_SIZE_PT
-        : resolved.fontSizeHalfPoints / 2,
-  };
+  return markOf(resolved);
 }
 
 function runStyleChain(table: StyleTable, run: XmlElement): readonly StyleDefinition[] {
@@ -246,21 +272,13 @@ export function resolveRunMarks(paragraph: Paragraph, table: StyleTable): readon
   let inherited = table.docDefaults;
   for (const style of styleChain(table, paragraphStyleId)) inherited = merge(inherited, style.mark);
 
-  return paragraphRuns(paragraph).map((run) => {
-    let resolved = inherited;
-    for (const style of runStyleChain(table, run)) resolved = merge(resolved, style.mark);
-    resolved = merge(resolved, readMark(run, table.themeFonts));
-    return {
-      font:
-        resolved.fontName === undefined
-          ? { kind: "unresolved" }
-          : { kind: "named", name: resolved.fontName },
-      fontSizePt:
-        resolved.fontSizeHalfPoints === undefined
-          ? WORD_DEFAULT_FONT_SIZE_PT
-          : resolved.fontSizeHalfPoints / 2,
-    };
-  });
+  return paragraphRuns(paragraph).map((run) => resolveRunMark(run, inherited, table));
+}
+
+function resolveRunMark(run: XmlElement, inherited: PartialMark, table: StyleTable): ParagraphMark {
+  let resolved = inherited;
+  for (const style of runStyleChain(table, run)) resolved = merge(resolved, style.mark);
+  return markOf(merge(resolved, readMark(run, table.themeFonts)));
 }
 
 export type ParagraphAlignment = "left" | "right" | "center" | "justify";

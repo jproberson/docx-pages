@@ -34,6 +34,8 @@ describe("resolveParagraphMark", () => {
     expect(markOf(`<w:p/>`, styles(NORMAL))).toStrictEqual({
       font: { kind: "named", name: "Arial" },
       fontSizePt: 11,
+      bold: false,
+      italic: false,
     });
   });
 
@@ -42,6 +44,8 @@ describe("resolveParagraphMark", () => {
     expect(markOf(body, styles(NORMAL))).toStrictEqual({
       font: { kind: "named", name: "Arial" },
       fontSizePt: 14,
+      bold: false,
+      italic: false,
     });
   });
 
@@ -62,6 +66,8 @@ describe("resolveParagraphMark", () => {
     expect(markOf(body, chain)).toStrictEqual({
       font: { kind: "named", name: "Arial" },
       fontSizePt: 20,
+      bold: false,
+      italic: false,
     });
   });
 
@@ -73,6 +79,8 @@ describe("resolveParagraphMark", () => {
     expect(markOf(`<w:p/>`, withDefaults)).toStrictEqual({
       font: { kind: "named", name: "Calibri" },
       fontSizePt: 10,
+      bold: false,
+      italic: false,
     });
   });
 
@@ -84,6 +92,8 @@ describe("resolveParagraphMark", () => {
     expect(markOf(`<w:p/>`, themed, theme("Georgia", "Aptos"))).toStrictEqual({
       font: { kind: "named", name: "Aptos" },
       fontSizePt: 12,
+      bold: false,
+      italic: false,
     });
   });
 
@@ -102,6 +112,8 @@ describe("resolveParagraphMark", () => {
     expect(markOf(`<w:p/>`, styles(""))).toStrictEqual({
       font: { kind: "unresolved" },
       fontSizePt: 10,
+      bold: false,
+      italic: false,
     });
   });
 

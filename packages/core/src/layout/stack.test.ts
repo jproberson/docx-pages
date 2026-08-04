@@ -20,7 +20,7 @@ const measure = (body: string, stylesXml: string = NORMAL) => {
   return measureStack({
     blocks: readBlocks(pkg),
     styles: readStyleTable(pkg),
-    metricsFor: (name) => lookupFontMetrics(name),
+    metricsFor: (request) => lookupFontMetrics(request),
     part: "word/document.xml",
     originPt: 36,
   });

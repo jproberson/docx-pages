@@ -7,8 +7,8 @@ import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/ca
 
 const layoutOf = (each: ReferenceCase) => {
   const supplied = suppliedFaces();
-  const result = layOutDocument(readReferenceDocument(each), (name) =>
-    lookupFontMetrics(name, supplied),
+  const result = layOutDocument(readReferenceDocument(each), (request) =>
+    lookupFontMetrics(request, supplied),
   );
   if (result.kind !== "laid-out") throw new Error(`blocked: ${result.blocker.kind}`);
   return result;

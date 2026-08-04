@@ -17,6 +17,7 @@ export {
 export type {
   AdvanceTable,
   AdvancesUnavailable,
+  FaceRequest,
   FontMetrics,
   GlyphAdvances,
   MetricsLookup,
@@ -52,7 +53,7 @@ export {
 } from "./docx/relationships.js";
 export type { Relationship } from "./docx/relationships.js";
 
-export { measureStack, WP_NS } from "./layout/stack.js";
+export { faceRequestFor, measureStack, WP_NS } from "./layout/stack.js";
 export type {
   LayoutBlocker,
   MeasureStackInput,

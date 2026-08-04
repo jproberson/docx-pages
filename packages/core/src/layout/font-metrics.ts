@@ -12,6 +12,7 @@ export type GlyphAdvances = (codePoint: number) => number | null;
 
 export type AdvancesUnavailable =
   | "unsupplied"
+  | "style-unsupplied"
   | "cmap-missing"
   | "cmap-unsupported"
   | "cmap-malformed"
@@ -26,7 +27,15 @@ export type AdvanceTable =
 // the advances too, and only a caller-supplied font file carries them.
 export const NO_ADVANCES: AdvanceTable = { kind: "unavailable", reason: "unsupplied" };
 
-export type SuppliedFace = {
+// Bold and italic are separate files with their own advances, so a face is asked
+// for by style as well as by name.
+export type FaceRequest = {
+  readonly name: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
+};
+
+export type SuppliedFace = FaceRequest & {
   readonly metrics: FontMetrics;
   readonly advances: AdvanceTable;
 };
@@ -64,16 +73,32 @@ const BUILTIN: ReadonlyMap<string, FontMetrics> = new Map([
 
 const normalise = (fontName: string): string => fontName.trim().toLowerCase();
 
-export function lookupFontMetrics(
-  fontName: string,
-  supplied?: ReadonlyMap<string, SuppliedFace>,
-): MetricsLookup {
-  const key = normalise(fontName);
+const sameStyle = (face: SuppliedFace, request: FaceRequest): boolean =>
+  face.bold === request.bold && face.italic === request.italic;
 
-  for (const [name, face] of supplied ?? []) {
-    if (normalise(name) === key) {
-      return { kind: "found", source: "supplied", metrics: face.metrics, advances: face.advances };
-    }
+export function lookupFontMetrics(
+  request: FaceRequest,
+  supplied: readonly SuppliedFace[] = [],
+): MetricsLookup {
+  const key = normalise(request.name);
+  const named = supplied.filter((face) => normalise(face.name) === key);
+  const exact = named.find((face) => sameStyle(face, request));
+
+  if (exact !== undefined) {
+    return { kind: "found", source: "supplied", metrics: exact.metrics, advances: exact.advances };
+  }
+
+  // A family's styles share their vertical metrics in practice, so a near miss
+  // still places paragraphs; it just cannot measure text, since the widths it
+  // would use are the wrong style's.
+  const nearest = named.find((face) => !face.bold && !face.italic) ?? named[0];
+  if (nearest !== undefined) {
+    return {
+      kind: "found",
+      source: "supplied",
+      metrics: nearest.metrics,
+      advances: { kind: "unavailable", reason: "style-unsupplied" },
+    };
   }
 
   const builtin = BUILTIN.get(key);
@@ -81,5 +106,5 @@ export function lookupFontMetrics(
     return { kind: "found", source: "builtin", metrics: builtin, advances: NO_ADVANCES };
   }
 
-  return { kind: "missing", fontName };
+  return { kind: "missing", fontName: request.name };
 }

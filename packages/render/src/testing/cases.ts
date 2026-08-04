@@ -20,6 +20,8 @@ const AT = "render/testing/cases.readManifest";
 
 export type ReferenceFont = {
   readonly name: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
   readonly filePath: string | null;
   readonly fileFormat: string | null;
   readonly metrics: FontMetrics;
@@ -121,6 +123,13 @@ function optionalText(source: Record<string, unknown>, key: string, where: strin
   return source[key] === undefined ? null : text(source, key, where);
 }
 
+function flag(source: Record<string, unknown>, key: string, where: string): boolean {
+  const value = source[key];
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") throw invalid("expected a boolean", `${where}.${key}`);
+  return value;
+}
+
 const readMetrics = (value: unknown, where: string): FontMetrics => {
   const source = record(value, where);
   return {
@@ -135,6 +144,8 @@ const readFont = (value: unknown, where: string): ReferenceFont => {
   const source = record(value, where);
   return {
     name: text(source, "name", where),
+    bold: flag(source, "bold", where),
+    italic: flag(source, "italic", where),
     filePath: optionalText(source, "filePath", where),
     fileFormat: optionalText(source, "fileFormat", where),
     metrics: readMetrics(source["metrics"], `${where}.metrics`),
@@ -250,12 +261,15 @@ export const referenceCases = (): readonly ReferenceCase[] =>
 // is read only for the advances, which no manifest could carry.
 function faceOf(font: ReferenceFont): SuppliedFace {
   const path = font.filePath;
-  if (path === null || !existsSync(path)) return { metrics: font.metrics, advances: NO_ADVANCES };
+  const style = { name: font.name, bold: font.bold, italic: font.italic };
+  if (path === null || !existsSync(path)) {
+    return { ...style, metrics: font.metrics, advances: NO_ADVANCES };
+  }
   return {
+    ...style,
     metrics: font.metrics,
     advances: readFontFile(new Uint8Array(readFileSync(path))).advances,
   };
 }
 
-export const suppliedFaces = (): ReadonlyMap<string, SuppliedFace> =>
-  new Map(referenceFonts().map((font) => [font.name, faceOf(font)]));
+export const suppliedFaces = (): readonly SuppliedFace[] => referenceFonts().map(faceOf);

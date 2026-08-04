@@ -12,7 +12,7 @@ const rendered = (
 ): { readonly html: string; readonly layout: LaidOutDocument } => {
   const pkg = readReferenceDocument(each);
   const supplied = suppliedFaces();
-  const layout = layOutDocument(pkg, (name) => lookupFontMetrics(name, supplied));
+  const layout = layOutDocument(pkg, (request) => lookupFontMetrics(request, supplied));
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
   return {
     layout,

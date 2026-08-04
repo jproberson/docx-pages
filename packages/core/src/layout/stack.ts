@@ -7,12 +7,12 @@ import {
   type StyleTable,
 } from "../docx/styles.js";
 import { attribute } from "../docx/xml.js";
-import { lineHeightPt, type MetricsLookup } from "./font-metrics.js";
+import { lineHeightPt, type FaceRequest, type MetricsLookup } from "./font-metrics.js";
 import { EMU_PER_POINT } from "./units.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
-export type MetricsResolver = (fontName: string) => MetricsLookup;
+export type MetricsResolver = (request: FaceRequest) => MetricsLookup;
 
 export type LayoutBlocker =
   | { readonly kind: "unresolved-font"; readonly part: string; readonly paragraphIndex: number }
@@ -158,10 +158,16 @@ function paragraphHeight(paragraph: Paragraph, context: Context): ParagraphHeigh
 
 function heightOf(mark: ParagraphMark, metricsFor: MetricsResolver): MarkHeight {
   if (mark.font.kind === "unresolved") return { kind: "blocked" };
-  const lookup = metricsFor(mark.font.name);
+  const lookup = metricsFor(faceRequestFor(mark));
   if (lookup.kind === "missing") return { kind: "blocked" };
   return { kind: "height", value: lineHeightPt(lookup.metrics, mark.fontSizePt) };
 }
+
+export const faceRequestFor = (mark: ParagraphMark): FaceRequest => ({
+  name: mark.font.kind === "named" ? mark.font.name : "",
+  bold: mark.bold,
+  italic: mark.italic,
+});
 
 function blockerFor(mark: ParagraphMark, part: string, paragraphIndex: number): LayoutBlocker {
   if (mark.font.kind === "unresolved") return { kind: "unresolved-font", part, paragraphIndex };
