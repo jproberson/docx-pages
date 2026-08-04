@@ -36,6 +36,15 @@ export type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from ".
 
 export { paragraphText, paragraphDescendants } from "./docx/paragraphs.js";
 
+export { readNumberingTable, numberingLevel, NUMBERING_PART } from "./docx/numbering.js";
+export type {
+  LevelRestart,
+  NumberFormat,
+  NumberingLevel,
+  NumberingTable,
+  NumberSuffix,
+} from "./docx/numbering.js";
+
 export { readRuns } from "./docx/runs.js";
 export type { RunPiece, TextRun } from "./docx/runs.js";
 
