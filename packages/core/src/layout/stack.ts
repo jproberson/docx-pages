@@ -476,8 +476,7 @@ function layOutParagraph(
       leftPt: lineStartPt(paragraphFrame, slot.leftPt, slot.rightPt, line.widthPt),
       topPt: slot.topPt,
       heightPt,
-      // Extra leading sits above the text, which is where Word puts it.
-      baselinePt: slot.topPt + (heightPt - naturalPt) + line.ascentPt,
+      baselinePt: slot.topPt + line.ascentPt,
     });
     top = slot.topPt + heightPt;
   });

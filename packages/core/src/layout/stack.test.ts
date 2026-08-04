@@ -199,9 +199,11 @@ describe("measureStack over text", () => {
     expect(box.heightPt).toBeCloseTo(ARIAL_12, 9);
   });
 
-  it("puts extra leading above the text, where Word puts it", () => {
+  // Word leaves the text at the top of the taller line and lets the leading fall
+  // below it, which is where the first line of a spaced-out paragraph sits.
+  it("puts extra leading below the text, where Word puts it", () => {
     const box = firstBox(paragraph(`<w:spacing w:line="480" w:lineRule="auto"/>`, "aaaa"));
-    expect(box.lines[0]?.baselinePt).toBeCloseTo(36 + ARIAL_12 + ARIAL_ASCENT_12, 9);
+    expect(box.lines[0]?.baselinePt).toBeCloseTo(36 + ARIAL_ASCENT_12, 9);
   });
 
   it("leaves the last line alone when the paragraph mark is bigger than its runs", () => {
