@@ -283,14 +283,24 @@ function measureParagraph(
   const paragraphFrame = resolveParagraphFrame(paragraph, context.styles);
   const runs = readRuns(paragraph, context.styles);
   const insets = insetsOf(paragraphFrame);
+  const number = context.numbers.get(paragraph.index);
+  const widthPt =
+    context.wraps === false
+      ? Number.POSITIVE_INFINITY
+      : frame.widthPt - insets.leftPt - insets.rightPt;
+
+  // A hanging indent leaves its first line wider than the rest, except where a
+  // number is what hangs there: then the text starts at the indent like the rest.
   const breaking = breakLines({
     runs,
-    widthPt:
-      context.wraps === false
-        ? Number.POSITIVE_INFINITY
-        : frame.widthPt - insets.leftPt - insets.rightPt,
+    widthPt,
+    firstLineWidthPt: number === undefined ? widthPt - insets.firstLinePt : widthPt,
     metricsFor: context.metricsFor,
-    tabs: { stopsPt: tabStopsPt(paragraphFrame), originPt: insets.leftPt },
+    tabs: {
+      stopsPt: tabStopsPt(paragraphFrame),
+      originPt: insets.leftPt,
+      firstLineOriginPt: number === undefined ? insets.leftPt + insets.firstLinePt : insets.leftPt,
+    },
   });
 
   if (breaking.kind === "unmeasurable") {
@@ -305,7 +315,6 @@ function measureParagraph(
     };
   }
 
-  const number = context.numbers.get(paragraph.index);
   const measured =
     number === undefined ? null : measureNumber(paragraph, number, context, frame, paragraphFrame);
   if (measured !== null && measured.kind === "blocked") return measured;

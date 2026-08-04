@@ -59,15 +59,21 @@ export type LineBreaking =
   | { readonly kind: "unmeasurable"; readonly failure: MeasureFailure };
 
 // Tab stops are measured from the left edge of the text area, so a line has to say
-// how far its own start sits from that edge for a tab to land on the right one.
+// how far its own start sits from that edge for a tab to land on the right one. A
+// hanging first line starts outside that edge, and a tab on it reaches the stop at
+// the indent that the lines below it start from.
 export type LineTabs = {
   readonly stopsPt: readonly number[];
   readonly originPt: number;
+  readonly firstLineOriginPt?: number;
 };
 
 export type BreakLinesInput = {
   readonly runs: readonly TextRun[];
   readonly widthPt: number;
+  // What the first line alone has room for, which a hanging indent makes wider
+  // than the lines under it and a first-line indent makes narrower.
+  readonly firstLineWidthPt?: number;
   readonly metricsFor: MetricsResolver;
   readonly tabs?: LineTabs;
 };
@@ -253,8 +259,13 @@ class Breaker {
 
   constructor(
     private readonly widthPt: number,
+    private readonly firstLineWidthPt: number,
     private readonly tabs: LineTabs,
   ) {}
+
+  private get room(): number {
+    return this.lines.length === 0 ? this.firstLineWidthPt : this.widthPt;
+  }
 
   private raise(heightPt: number, ascentPt: number): void {
     this.heightPt = Math.max(this.heightPt, heightPt);
@@ -315,13 +326,17 @@ class Breaker {
 
   tab(): void {
     if (this.empty && this.wrapped) return;
-    const { originPt, stopsPt } = this.tabs;
+    const { stopsPt } = this.tabs;
+    const originPt =
+      this.lines.length === 0
+        ? (this.tabs.firstLineOriginPt ?? this.tabs.originPt)
+        : this.tabs.originPt;
     this.pendingPt = nextTabStopPt(originPt + this.filled, stopsPt) - originPt - this.committedPt;
     this.tabbed = true;
   }
 
   drawing(widthPt: number, heightPt: number): void {
-    if (!this.empty && this.filled + widthPt > this.widthPt + EPSILON) this.wrap();
+    if (!this.empty && this.filled + widthPt > this.room + EPSILON) this.wrap();
     this.raise(heightPt, heightPt);
     this.commit([{ kind: "drawing", widthPt, heightPt, offsetPt: 0 }], widthPt);
   }
@@ -330,7 +345,7 @@ class Breaker {
     let rest = fragments;
     while (rest.length > 0) {
       const widthPt = widthOf(rest);
-      if (this.filled + widthPt <= this.widthPt + EPSILON) {
+      if (this.filled + widthPt <= this.room + EPSILON) {
         this.take(rest);
         return;
       }
@@ -338,7 +353,7 @@ class Breaker {
         this.wrap();
         continue;
       }
-      const [head, tail] = splitFragments(rest, this.widthPt - this.filled);
+      const [head, tail] = splitFragments(rest, this.room - this.filled);
       this.take(head);
       this.wrap();
       rest = tail;
@@ -473,7 +488,11 @@ export function breakLines(input: BreakLinesInput): LineBreaking {
     return { kind: "unmeasurable", failure: measurer.failure ?? { kind: "unresolved-font" } };
   }
 
-  const breaker = new Breaker(input.widthPt, input.tabs ?? NO_TABS);
+  const breaker = new Breaker(
+    input.widthPt,
+    input.firstLineWidthPt ?? input.widthPt,
+    input.tabs ?? NO_TABS,
+  );
   for (const unit of tokens.value) {
     switch (unit.kind) {
       case "word":

@@ -153,6 +153,32 @@ describe("breakLines", () => {
     expect(lines[0]?.ascentPt).toBeCloseTo(16, 9);
   });
 
+  it("gives a hanging first line the extra room it starts with", () => {
+    const result = breakLines({
+      runs: [runOf("aaa bbb")],
+      widthPt: 20,
+      firstLineWidthPt: 40,
+      metricsFor: metricsFor(),
+    });
+    if (result.kind !== "lines") throw new Error(result.failure.kind);
+
+    expect(result.lines.map(textOf)).toStrictEqual(["aaa bbb"]);
+  });
+
+  // The stops belong to the text area, but a hanging first line begins outside it,
+  // so a tab there reaches the stop the lines below it start from.
+  it("measures a tab on a hanging first line from where that line starts", () => {
+    const result = breakLines({
+      runs: [piecesRun([{ kind: "tab" }, { kind: "text", text: "ab" }])],
+      widthPt: 200,
+      metricsFor: metricsFor(),
+      tabs: { stopsPt: [10, 60], originPt: 0, firstLineOriginPt: -8 },
+    });
+    if (result.kind !== "lines") throw new Error(result.failure.kind);
+
+    expect(result.lines[0]?.widthPt).toBeCloseTo(18 + 10, 9);
+  });
+
   it("advances a tab to the next default stop", () => {
     const run = piecesRun([
       { kind: "text", text: "ab" },
