@@ -5,11 +5,32 @@ export type FontFixture = {
   readonly ascender: number;
   readonly descender: number;
   readonly lineGap: number;
-  readonly omit?: "head" | "hhea";
+  readonly advances?: Readonly<Record<string, number>>;
+  readonly cmapFormat?: 4 | 6 | 12;
+  readonly longMetrics?: number;
+  readonly omit?: "head" | "hhea" | "cmap" | "hmtx";
+};
+
+type Glyph = {
+  readonly codePoint: number;
+  readonly id: number;
+  readonly advance: number;
 };
 
 const HEAD_LENGTH = 54;
 const HHEA_LENGTH = 36;
+
+function glyphsOf(fixture: FontFixture): readonly Glyph[] {
+  return Object.entries(fixture.advances ?? {})
+    .map(([character, advance]) => ({ codePoint: character.codePointAt(0) ?? 0, advance }))
+    .sort((left, right) => left.codePoint - right.codePoint)
+    .map((entry, index) => ({ ...entry, id: index + 1 }));
+}
+
+// Glyph 0 is .notdef and carries no advance of its own, so it takes one slot ahead
+// of the fixture's glyphs.
+const longMetricCount = (fixture: FontFixture, glyphs: readonly Glyph[]): number =>
+  fixture.longMetrics ?? glyphs.length + 1;
 
 function headTable(fixture: FontFixture): Uint8Array {
   const table = new Uint8Array(HEAD_LENGTH);
@@ -20,20 +41,113 @@ function headTable(fixture: FontFixture): Uint8Array {
   return table;
 }
 
-function hheaTable(fixture: FontFixture): Uint8Array {
+function hheaTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
   const table = new Uint8Array(HHEA_LENGTH);
   const view = new DataView(table.buffer);
   view.setUint32(0, 0x00010000);
   view.setInt16(4, fixture.ascender);
   view.setInt16(6, fixture.descender);
   view.setInt16(8, fixture.lineGap);
+  view.setUint16(34, longMetricCount(fixture, glyphs));
   return table;
 }
 
-const tablesOf = (fixture: FontFixture): readonly (readonly [string, Uint8Array])[] =>
-  [["head", headTable(fixture)] as const, ["hhea", hheaTable(fixture)] as const].filter(
-    ([tag]) => tag !== fixture.omit,
-  );
+function hmtxTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const total = glyphs.length + 1;
+  const long = Math.min(longMetricCount(fixture, glyphs), total);
+  const table = new Uint8Array(long * 4 + (total - long) * 2);
+  const view = new DataView(table.buffer);
+  const advanceOf = (id: number): number => glyphs.find((glyph) => glyph.id === id)?.advance ?? 0;
+
+  for (let id = 0; id < long; id += 1) view.setUint16(id * 4, advanceOf(id));
+  return table;
+}
+
+function cmapFormat4(glyphs: readonly Glyph[]): Uint8Array {
+  const mapped = glyphs.filter((glyph) => glyph.codePoint <= 0xffff);
+  const segCount = mapped.length + 1;
+  const length = 16 + segCount * 8;
+  const table = new Uint8Array(length);
+  const view = new DataView(table.buffer);
+
+  const endAt = 14;
+  const startAt = endAt + segCount * 2 + 2;
+  const deltaAt = startAt + segCount * 2;
+  const rangeAt = deltaAt + segCount * 2;
+
+  view.setUint16(0, 4);
+  view.setUint16(2, length);
+  view.setUint16(6, segCount * 2);
+
+  mapped.forEach((glyph, index) => {
+    view.setUint16(endAt + index * 2, glyph.codePoint);
+    view.setUint16(startAt + index * 2, glyph.codePoint);
+    view.setUint16(deltaAt + index * 2, (glyph.id - glyph.codePoint) & 0xffff);
+    view.setUint16(rangeAt + index * 2, 0);
+  });
+
+  const last = mapped.length;
+  view.setUint16(endAt + last * 2, 0xffff);
+  view.setUint16(startAt + last * 2, 0xffff);
+  view.setUint16(deltaAt + last * 2, 1);
+  view.setUint16(rangeAt + last * 2, 0);
+
+  return table;
+}
+
+function cmapFormat12(glyphs: readonly Glyph[]): Uint8Array {
+  const length = 16 + glyphs.length * 12;
+  const table = new Uint8Array(length);
+  const view = new DataView(table.buffer);
+
+  view.setUint16(0, 12);
+  view.setUint32(4, length);
+  view.setUint32(12, glyphs.length);
+
+  glyphs.forEach((glyph, index) => {
+    const group = 16 + index * 12;
+    view.setUint32(group, glyph.codePoint);
+    view.setUint32(group + 4, glyph.codePoint);
+    view.setUint32(group + 8, glyph.id);
+  });
+
+  return table;
+}
+
+function cmapFormat6(): Uint8Array {
+  const table = new Uint8Array(10);
+  new DataView(table.buffer).setUint16(0, 6);
+  return table;
+}
+
+function cmapTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const format = fixture.cmapFormat ?? 4;
+  const subtable =
+    format === 12 ? cmapFormat12(glyphs) : format === 6 ? cmapFormat6() : cmapFormat4(glyphs);
+
+  const table = new Uint8Array(12 + subtable.length);
+  const view = new DataView(table.buffer);
+  view.setUint16(2, 1);
+  view.setUint16(4, 3);
+  view.setUint16(6, format === 12 ? 10 : 1);
+  view.setUint32(8, 12);
+  table.set(subtable, 12);
+  return table;
+}
+
+function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array])[] {
+  const glyphs = glyphsOf(fixture);
+  const tables: (readonly [string, Uint8Array])[] = [
+    ["head", headTable(fixture)],
+    ["hhea", hheaTable(fixture, glyphs)],
+  ];
+
+  if (fixture.advances !== undefined) {
+    tables.push(["cmap", cmapTable(fixture, glyphs)], ["hmtx", hmtxTable(fixture, glyphs)]);
+  }
+
+  return tables.filter(([tag]) => tag !== fixture.omit);
+}
 
 const tagBytes = (tag: string): Uint8Array =>
   Uint8Array.from([0, 1, 2, 3].map((index) => tag.charCodeAt(index)));

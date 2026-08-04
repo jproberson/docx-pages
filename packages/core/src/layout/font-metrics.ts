@@ -13,11 +13,26 @@ export type MetricsLookup =
     }
   | { readonly kind: "missing"; readonly fontName: string };
 
+// An advance is in font units, so it scales by the same unitsPerEm as the metrics
+// that came out of the same file. Unmapped characters read back as null rather
+// than as a guessed width.
+export type GlyphAdvances = (codePoint: number) => number | null;
+
+export type AdvancesUnavailable =
+  "cmap-missing" | "cmap-unsupported" | "cmap-malformed" | "hmtx-missing" | "hmtx-malformed";
+
+export type AdvanceTable =
+  | { readonly kind: "advances"; readonly advanceFor: GlyphAdvances }
+  | { readonly kind: "unavailable"; readonly reason: AdvancesUnavailable };
+
 export const lineHeightPt = (metrics: FontMetrics, fontSizePt: number): number =>
   (fontSizePt * (metrics.ascender - metrics.descender + metrics.lineGap)) / metrics.unitsPerEm;
 
 export const ascentPt = (metrics: FontMetrics, fontSizePt: number): number =>
   (fontSizePt * metrics.ascender) / metrics.unitsPerEm;
+
+export const advanceWidthPt = (advance: number, metrics: FontMetrics, fontSizePt: number): number =>
+  (fontSizePt * advance) / metrics.unitsPerEm;
 
 const BUILTIN: ReadonlyMap<string, FontMetrics> = new Map([
   ["arial", { unitsPerEm: 2048, ascender: 1854, descender: -434, lineGap: 67 }],

@@ -7,11 +7,26 @@ export type { DocxPackage } from "./docx/package.js";
 export { readSectionGeometry, W_NS } from "./docx/section.js";
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
 
-export { ascentPt, lineHeightPt, lookupFontMetrics } from "./layout/font-metrics.js";
-export type { FontMetrics, MetricsLookup } from "./layout/font-metrics.js";
+export {
+  advanceWidthPt,
+  ascentPt,
+  lineHeightPt,
+  lookupFontMetrics,
+} from "./layout/font-metrics.js";
+export type {
+  AdvanceTable,
+  AdvancesUnavailable,
+  FontMetrics,
+  GlyphAdvances,
+  MetricsLookup,
+} from "./layout/font-metrics.js";
 
-export { readFontMetrics } from "./layout/font-file.js";
-export type { FontFileFormat, ReadFontMetricsResult } from "./layout/font-file.js";
+export { readFontFile, readFontMetrics } from "./layout/font-file.js";
+export type {
+  FontFileFormat,
+  ReadFontFileResult,
+  ReadFontMetricsResult,
+} from "./layout/font-file.js";
 
 export { readBlocks, readParagraphs, blockParagraphs, MC_NS } from "./docx/blocks.js";
 export type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from "./docx/blocks.js";

@@ -1,13 +1,18 @@
 import { unzlibSync } from "fflate";
 
 import { OnePagerError } from "../errors.js";
-import type { FontMetrics } from "./font-metrics.js";
+import type { AdvanceTable, FontMetrics } from "./font-metrics.js";
+import { readAdvanceTable } from "./glyphs.js";
 
 export type FontFileFormat = "sfnt" | "woff";
 
 export type ReadFontMetricsResult = {
   readonly format: FontFileFormat;
   readonly metrics: FontMetrics;
+};
+
+export type ReadFontFileResult = ReadFontMetricsResult & {
+  readonly advances: AdvanceTable;
 };
 
 const AT = "core/layout/font-file.readFontMetrics";
@@ -99,7 +104,9 @@ function requireTable(
   return table;
 }
 
-export function readFontMetrics(bytes: Uint8Array): ReadFontMetricsResult {
+const HHEA_METRIC_COUNT_AT = 34;
+
+export function readFontFile(bytes: Uint8Array): ReadFontFileResult {
   if (bytes.byteLength < 12)
     throw unreadable("the file is too short to be a font", bytes.byteLength);
 
@@ -128,6 +135,9 @@ export function readFontMetrics(bytes: Uint8Array): ReadFontMetricsResult {
   const headView = viewOf(head);
   const hheaView = viewOf(hhea);
 
+  const metricCount =
+    hhea.byteLength >= HHEA_METRIC_COUNT_AT + 2 ? hheaView.getUint16(HHEA_METRIC_COUNT_AT) : 0;
+
   return {
     format,
     metrics: {
@@ -136,5 +146,11 @@ export function readFontMetrics(bytes: Uint8Array): ReadFontMetricsResult {
       descender: hheaView.getInt16(6),
       lineGap: hheaView.getInt16(8),
     },
+    advances: readAdvanceTable(tables, metricCount),
   };
+}
+
+export function readFontMetrics(bytes: Uint8Array): ReadFontMetricsResult {
+  const { format, metrics } = readFontFile(bytes);
+  return { format, metrics };
 }
