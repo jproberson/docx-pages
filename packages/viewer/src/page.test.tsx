@@ -21,6 +21,7 @@ const MARK: ParagraphMark = {
   fontSizePt: 12,
   bold: false,
   italic: false,
+  underline: false,
   raisePt: 0,
   color: null,
 };
@@ -274,6 +275,14 @@ describe("OnePagerPage drawing text", () => {
     expect(html).toContain('x="120"');
     expect(html).toContain('y="41"');
     expect(html).toContain("Hello");
+  });
+
+  it("underlines a run that asks for it, and leaves the rest alone", () => {
+    const linked: ParagraphMark = { ...MARK, underline: true };
+    expect(markup(layoutWith([], [paragraphOf("a link", linked)]))).toContain(
+      'text-decoration="underline"',
+    );
+    expect(markup(layoutWith([], [paragraphOf("plain")]))).not.toContain("text-decoration");
   });
 
   it("names the authored face first and lets the page fall back behind it", () => {

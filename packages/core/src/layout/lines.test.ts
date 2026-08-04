@@ -50,6 +50,7 @@ const mark = (fontSizePt = 10, name = "Even Sans"): ParagraphMark => ({
   fontSizePt,
   bold: false,
   italic: false,
+  underline: false,
   raisePt: 0,
   color: null,
 });
@@ -297,6 +298,7 @@ describe("breakLines", () => {
       fontSizePt: 10,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     };

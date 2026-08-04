@@ -104,6 +104,7 @@ describe("readRuns", () => {
       fontSizePt: 12,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });
@@ -112,6 +113,7 @@ describe("readRuns", () => {
       fontSizePt: 24,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });

@@ -162,6 +162,7 @@ function lineText(placed: PlacedLine, key: string, fallback: string): ReactEleme
             fontSize={segment.mark.fontSizePt}
             fontWeight={segment.mark.bold ? "bold" : undefined}
             fontStyle={segment.mark.italic ? "italic" : undefined}
+            textDecoration={segment.mark.underline ? "underline" : undefined}
             fill={segment.mark.color ?? undefined}
             textLength={segment.widthPt > 0 ? segment.widthPt : undefined}
             lengthAdjust="spacing"
@@ -194,6 +195,7 @@ function markerText(marker: ParagraphMarker, key: string, fallback: string): Rea
       fontSize={marker.mark.fontSizePt}
       fontWeight={marker.mark.bold ? "bold" : undefined}
       fontStyle={marker.mark.italic ? "italic" : undefined}
+      textDecoration={marker.mark.underline ? "underline" : undefined}
       fill={marker.mark.color ?? undefined}
       textLength={marker.widthPt > 0 ? marker.widthPt : undefined}
       lengthAdjust="spacing"

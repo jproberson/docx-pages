@@ -7,6 +7,7 @@ import {
   resolveParagraphFrame,
   resolveParagraphMark,
   resolveParagraphNumbering,
+  resolveRuns,
 } from "./styles.js";
 import { readParagraphs } from "./blocks.js";
 
@@ -44,6 +45,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 11,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });
@@ -56,6 +58,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 14,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });
@@ -80,6 +83,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 20,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });
@@ -95,6 +99,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 10,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });
@@ -110,6 +115,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 12,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });
@@ -155,6 +161,7 @@ describe("resolveParagraphMark", () => {
       fontSizePt: 10,
       bold: false,
       italic: false,
+      underline: false,
       raisePt: 0,
       color: null,
     });
@@ -287,5 +294,40 @@ describe("resolveParagraphFrame", () => {
 
   it("leaves an unnumbered paragraph on the margin", () => {
     expect(resolved(`<w:p/>`).frame.indentLeftTwips).toBe(0);
+  });
+});
+
+// A link takes its underline from the character style it is given, and the one
+// run that turns its own off is what the cascade has to let through.
+describe("the underline a run carries", () => {
+  const HYPERLINK = `<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/>
+    <w:rPr><w:u w:val="single"/></w:rPr></w:style>`;
+
+  const underlineOf = (rPr: string) => {
+    const body = `<w:p><w:r><w:rPr>${rPr}</w:rPr><w:t>a link</w:t></w:r></w:p>`;
+    const pkg = openDocx(
+      buildDocx({
+        "word/document.xml": wordDocument(body),
+        "word/styles.xml": styles(NORMAL + HYPERLINK),
+      }),
+    );
+    const paragraph = readParagraphs(pkg)[0];
+    if (paragraph === undefined) throw new Error("expected a paragraph");
+    return resolveRuns(paragraph, readStyleTable(pkg))[0]?.mark.underline;
+  };
+
+  it("draws no underline where none is asked for", () => {
+    expect(underlineOf(``)).toBe(false);
+  });
+
+  it("takes any named kind of underline as one to draw", () => {
+    expect(underlineOf(`<w:u w:val="single"/>`)).toBe(true);
+    expect(underlineOf(`<w:u w:val="dotted"/>`)).toBe(true);
+    expect(underlineOf(`<w:u/>`)).toBe(true);
+  });
+
+  it("reads a run that turns its underline off, which no toggle would", () => {
+    expect(underlineOf(`<w:rStyle w:val="Hyperlink"/>`)).toBe(true);
+    expect(underlineOf(`<w:rStyle w:val="Hyperlink"/><w:u w:val="none"/>`)).toBe(false);
   });
 });

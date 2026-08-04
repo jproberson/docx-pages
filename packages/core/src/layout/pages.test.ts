@@ -8,6 +8,7 @@ const MARK = {
   fontSizePt: 10,
   bold: false,
   italic: false,
+  underline: false,
   raisePt: 0,
   color: null,
 } as const;
