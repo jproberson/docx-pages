@@ -15,14 +15,23 @@ import { emuToPoints } from "./units.js";
 
 export type MetricsResolver = (request: FaceRequest) => MetricsLookup;
 
+// Where the run sits along its line, measured from the line's own start. A tab
+// opens a gap the runs after it never account for, so each one carries the place
+// it reached rather than leaving it to be added up.
 export type LineSegment =
   | {
       readonly kind: "text";
       readonly mark: ParagraphMark;
       readonly text: string;
       readonly widthPt: number;
+      readonly offsetPt: number;
     }
-  | { readonly kind: "drawing"; readonly widthPt: number; readonly heightPt: number };
+  | {
+      readonly kind: "drawing";
+      readonly widthPt: number;
+      readonly heightPt: number;
+      readonly offsetPt: number;
+    };
 
 export type TextLine = {
   readonly segments: readonly LineSegment[];
@@ -253,7 +262,12 @@ class Breaker {
   }
 
   private commit(segments: readonly LineSegment[], widthPt: number): void {
-    this.segments.push(...this.pending, ...segments);
+    let offsetPt = this.committedPt + this.pendingPt;
+    this.segments.push(...this.pending);
+    for (const segment of segments) {
+      this.segments.push(startingAt(segment, offsetPt));
+      offsetPt += segment.widthPt;
+    }
     this.committedPt += this.pendingPt + widthPt;
     this.pending = [];
     this.pendingPt = 0;
@@ -293,7 +307,7 @@ class Breaker {
   space(fragments: readonly Fragment[]): void {
     if (this.empty && this.wrapped) return;
     for (const fragment of fragments) {
-      this.pending.push(segmentOf(fragment));
+      this.pending.push(startingAt(segmentOf(fragment), this.committedPt + this.pendingPt));
       this.pendingPt += fragment.widthPt;
       this.raise(fragment.heightPt, fragment.ascentPt);
     }
@@ -309,7 +323,7 @@ class Breaker {
   drawing(widthPt: number, heightPt: number): void {
     if (!this.empty && this.filled + widthPt > this.widthPt + EPSILON) this.wrap();
     this.raise(heightPt, heightPt);
-    this.commit([{ kind: "drawing", widthPt, heightPt }], widthPt);
+    this.commit([{ kind: "drawing", widthPt, heightPt, offsetPt: 0 }], widthPt);
   }
 
   word(fragments: readonly Fragment[]): void {
@@ -352,7 +366,11 @@ const segmentOf = (fragment: Fragment): LineSegment => ({
   mark: fragment.mark,
   text: fragment.text,
   widthPt: fragment.widthPt,
+  offsetPt: 0,
 });
+
+const startingAt = (segment: LineSegment, offsetPt: number): LineSegment =>
+  segment.kind === "text" ? { ...segment, offsetPt } : { ...segment, offsetPt };
 
 // A word with no line of its own to fit on is cut at the character that overflows,
 // and never before the first one, so a narrow column still makes progress.

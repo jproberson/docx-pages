@@ -39,7 +39,7 @@ const textBox = (boxes: readonly ParagraphBox[] = []): PlacedContent => ({
 const paragraphOf = (
   text: string,
   mark: ParagraphMark = MARK,
-  options: { leftPt?: number; baselinePt?: number; widthPt?: number } = {},
+  options: { leftPt?: number; baselinePt?: number; widthPt?: number; offsetPt?: number } = {},
 ): ParagraphBox => ({
   index: 0,
   topPt: 0,
@@ -47,7 +47,15 @@ const paragraphOf = (
   lines: [
     {
       line: {
-        segments: [{ kind: "text", mark, text, widthPt: options.widthPt ?? 40 }],
+        segments: [
+          {
+            kind: "text",
+            mark,
+            text,
+            widthPt: options.widthPt ?? 40,
+            offsetPt: options.offsetPt ?? 0,
+          },
+        ],
         widthPt: options.widthPt ?? 40,
         heightPt: 14,
         ascentPt: 11,
@@ -225,6 +233,13 @@ describe("OnePagerPage drawing text", () => {
     const html = markup(layoutWith([], [paragraphOf("Hello", MARK, { widthPt: 40 })]));
     expect(html).toContain('textLength="40"');
     expect(html).toContain('lengthAdjust="spacing"');
+  });
+
+  // A tab leaves a gap no run after it can find by adding up widths, so each run
+  // is drawn at the place layout gave it rather than after the one before.
+  it("starts each run where layout put it, not after the run before it", () => {
+    const html = markup(layoutWith([], [paragraphOf("Hello", MARK, { offsetPt: 25 })]));
+    expect(html).toContain('x="145"');
   });
 
   it("carries a run's own weight, slant, size and colour onto the page", () => {

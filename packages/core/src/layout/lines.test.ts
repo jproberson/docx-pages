@@ -177,6 +177,26 @@ describe("breakLines", () => {
     expect(linesOf([run], 200)[0]?.widthPt).toBeCloseTo(36, 9);
   });
 
+  it("says where along the line each run starts", () => {
+    const lines = linesOf([runOf("ab"), runOf("cd", mark(20))], 200);
+    const offsets = (lines[0] ?? never()).segments.map((segment) => segment.offsetPt);
+
+    expect(offsets).toStrictEqual([0, 10]);
+  });
+
+  // Nothing else on the line can find the gap a tab opened by adding up widths,
+  // which is why every run carries its own place.
+  it("starts the run after a tab at the stop the tab reached", () => {
+    const run = piecesRun([
+      { kind: "text", text: "ab" },
+      { kind: "tab" },
+      { kind: "text", text: "cd" },
+    ]);
+    const segments = (linesOf([run], 200)[0] ?? never()).segments;
+
+    expect(segments.map((segment) => segment.offsetPt)).toStrictEqual([0, 36]);
+  });
+
   it("gives a drawing the width it takes on the line", () => {
     const run = piecesRun([{ kind: "drawing", widthEmu: 914400, heightEmu: 457200 }]);
     const lines = linesOf([run], 200);

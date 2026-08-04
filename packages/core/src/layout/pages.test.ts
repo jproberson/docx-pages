@@ -13,7 +13,7 @@ const MARK = {
 
 const line = (topPt: number, heightPt: number, text: string): PlacedLine => ({
   line: {
-    segments: [{ kind: "text", mark: MARK, text, widthPt: 20 }],
+    segments: [{ kind: "text", mark: MARK, text, widthPt: 20, offsetPt: 0 }],
     widthPt: 20,
     heightPt,
     ascentPt: heightPt * 0.8,

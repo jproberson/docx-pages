@@ -96,13 +96,15 @@ const familyOf = (mark: ParagraphMark, fallback: string): string =>
 
 // The line was measured with the authored face's own widths. Holding each run to
 // that width keeps the break points Word chose even when the page draws the text
-// in a substitute.
+// in a substitute, and starting each one where layout put it keeps a tab's gap
+// and an inline picture from carrying the rest of the line along with them.
 function lineText(placed: PlacedLine, key: string, fallback: string): ReactElement | null {
   const spans = placed.line.segments.flatMap((segment, at) =>
     segment.kind === "text"
       ? [
           <tspan
             key={at}
+            x={placed.leftPt + segment.offsetPt}
             xmlSpace="preserve"
             fontFamily={familyOf(segment.mark, fallback)}
             fontSize={segment.mark.fontSizePt}
