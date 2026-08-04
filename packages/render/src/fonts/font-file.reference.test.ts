@@ -34,7 +34,9 @@ describe.skipIf(SUBJECTS.length === 0)("readFontFile on a real font file", () =>
       expect(result.metrics).toStrictEqual(font.metrics);
     });
 
-    // Only relations are asserted; the faces' real widths stay out of the repo.
+    // Only relations are asserted; the faces' real widths stay out of the repo. A
+    // monospaced face and a symbol one both answer here, so the only relation every
+    // face holds to is that a wide glyph is no narrower than a narrow one.
     it(`reads plausible advances for font ${index}`, () => {
       const advances = readFontFile(bytesOf(font.filePath)).advances;
       if (advances.kind !== "advances") throw new Error(advances.reason);
@@ -47,8 +49,7 @@ describe.skipIf(SUBJECTS.length === 0)("readFontFile on a real font file", () =>
       expect(space).toBeGreaterThan(0);
       expect(narrow).toBeGreaterThan(0);
       expect(wide).toBeLessThanOrEqual(font.metrics.unitsPerEm * 2);
-      expect(wide).toBeGreaterThan(narrow ?? 0);
-      expect(wide).toBeGreaterThan(space ?? 0);
+      expect(wide).toBeGreaterThanOrEqual(narrow ?? 0);
       expect(advanceOf(advanceFor, "\u{10ffff}")).toBeNull();
     });
   }

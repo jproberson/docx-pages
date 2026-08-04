@@ -141,3 +141,35 @@ describe("readFontFile", () => {
     expect(readFontFile(buildSfnt(FACE)).metrics).toStrictEqual(METRICS);
   });
 });
+
+// A symbol face maps its glyphs in the F020 to F0FF page and offers no unicode
+// subtable at all, so it is unmeasurable unless that page is read.
+describe("a symbol cmap", () => {
+  const SYMBOL: FontFixture = {
+    ...FACE,
+    symbolCmap: true,
+    advances: { "\uF0A7": 480, "\uF041": 500 },
+  };
+
+  it("is read when the face offers nothing else", () => {
+    expect(advanceOf(advancesOf(SYMBOL), "\uF0A7")).toBe(480);
+  });
+
+  it("answers for a character written outside the page the face maps it in", () => {
+    expect(advanceOf(advancesOf(SYMBOL), "A")).toBe(500);
+  });
+
+  it("answers for a character the face maps in the low byte", () => {
+    const low: FontFixture = { ...FACE, symbolCmap: true, advances: { A: 500 } };
+    expect(advanceOf(advancesOf(low), "\uF041")).toBe(500);
+  });
+
+  it("still reports a character in neither page as unmapped", () => {
+    expect(advanceOf(advancesOf(SYMBOL), "•")).toBeNull();
+  });
+
+  it("is not how a unicode face is read, which maps only what it says it maps", () => {
+    const unicode: FontFixture = { ...FACE, advances: { A: 500 } };
+    expect(advanceOf(advancesOf(unicode), "\uF041")).toBeNull();
+  });
+});

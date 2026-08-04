@@ -10,6 +10,8 @@ export type FontFixture = {
   readonly lineGap: number;
   readonly advances?: Readonly<Record<string, number>>;
   readonly cmapFormat?: 4 | 6 | 12;
+  // A symbol face declares platform 3 encoding 0 and maps only its own page.
+  readonly symbolCmap?: boolean;
   readonly longMetrics?: number;
   readonly omit?: "head" | "hhea" | "cmap" | "hmtx";
 };
@@ -132,7 +134,7 @@ function cmapTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
   const view = new DataView(table.buffer);
   view.setUint16(2, 1);
   view.setUint16(4, 3);
-  view.setUint16(6, format === 12 ? 10 : 1);
+  view.setUint16(6, fixture.symbolCmap === true ? 0 : format === 12 ? 10 : 1);
   view.setUint32(8, 12);
   table.set(subtable, 12);
   return table;

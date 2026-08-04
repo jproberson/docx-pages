@@ -27,35 +27,59 @@ type Group = {
 const viewOf = (bytes: Uint8Array): DataView =>
   new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
+// A symbol face has no Unicode subtable at all; its glyphs are reachable only
+// through the private use page its own subtable maps.
+const SYMBOL_ENCODING = 0;
+
+type Subtable = {
+  readonly bytes: Uint8Array;
+  readonly symbol: boolean;
+};
+
 // Full-repertoire Unicode subtables first, so a face that maps beyond the basic
-// plane is read at its widest rather than through its legacy subtable.
+// plane is read at its widest rather than through its legacy subtable. The symbol
+// subtable comes last, since a face that has one usually has nothing else.
 function preferenceOf(platform: number, encoding: number): number {
-  if (platform === 3 && encoding === 10) return 4;
-  if (platform === 0 && encoding >= 4) return 3;
-  if (platform === 3 && encoding === 1) return 2;
-  if (platform === 0) return 1;
+  if (platform === 3 && encoding === 10) return 5;
+  if (platform === 0 && encoding >= 4) return 4;
+  if (platform === 3 && encoding === 1) return 3;
+  if (platform === 0) return 2;
+  if (platform === 3 && encoding === SYMBOL_ENCODING) return 1;
   return 0;
 }
 
-function selectSubtable(cmap: Uint8Array): Uint8Array | null {
+function selectSubtable(cmap: Uint8Array): Subtable | null {
   if (cmap.byteLength < 4) return null;
   const view = viewOf(cmap);
   const count = view.getUint16(2);
 
   let bestScore = 0;
   let bestOffset = 0;
+  let symbol = false;
   for (let index = 0; index < count; index += 1) {
     const record = 4 + index * 8;
     if (record + 8 > cmap.byteLength) break;
-    const score = preferenceOf(view.getUint16(record), view.getUint16(record + 2));
+    const platform = view.getUint16(record);
+    const encoding = view.getUint16(record + 2);
+    const score = preferenceOf(platform, encoding);
     const offset = view.getUint32(record + 4);
     if (score > bestScore && offset + 4 <= cmap.byteLength) {
       bestScore = score;
       bestOffset = offset;
+      symbol = platform === 3 && encoding === SYMBOL_ENCODING;
     }
   }
 
-  return bestScore === 0 ? null : cmap.subarray(bestOffset);
+  return bestScore === 0 ? null : { bytes: cmap.subarray(bestOffset), symbol };
+}
+
+// Word writes a symbol face's characters in the F020 to F0FF page, and a face may
+// map them either there or in the low byte they shadow. Each spelling stands for
+// the other glyph, so a miss is worth retrying at the one the face did not use.
+function symbolAlias(codePoint: number): number | null {
+  if (codePoint >= 0x20 && codePoint <= 0xff) return 0xf000 + codePoint;
+  if (codePoint >= 0xf020 && codePoint <= 0xf0ff) return codePoint - 0xf000;
+  return null;
 }
 
 function parseFormat4(table: Uint8Array): CharacterMap {
@@ -150,9 +174,10 @@ export function readAdvanceTable(
   const subtable = selectSubtable(cmap);
   if (subtable === null) return { kind: "unavailable", reason: "cmap-unsupported" };
 
-  const characters = parseSubtable(subtable);
-  if (characters.kind === "unsupported") return { kind: "unavailable", reason: "cmap-unsupported" };
-  if (characters.kind === "malformed") return { kind: "unavailable", reason: "cmap-malformed" };
+  const parsed = parseSubtable(subtable.bytes);
+  if (parsed.kind === "unsupported") return { kind: "unavailable", reason: "cmap-unsupported" };
+  if (parsed.kind === "malformed") return { kind: "unavailable", reason: "cmap-malformed" };
+  const glyphFor = subtable.symbol ? throughSymbolPage(parsed.glyphFor) : parsed.glyphFor;
 
   // Glyphs past the last long metric all repeat it, which is how a face gives its
   // monospaced tail a single advance.
@@ -163,8 +188,17 @@ export function readAdvanceTable(
   return {
     kind: "advances",
     advanceFor: (codePoint) => {
-      const glyph = characters.glyphFor(codePoint);
+      const glyph = glyphFor(codePoint);
       return glyph === 0 ? null : view.getUint16(Math.min(glyph, long - 1) * 4);
     },
+  };
+}
+
+function throughSymbolPage(glyphFor: CodeToGlyph): CodeToGlyph {
+  return (codePoint) => {
+    const direct = glyphFor(codePoint);
+    if (direct !== 0) return direct;
+    const alias = symbolAlias(codePoint);
+    return alias === null ? 0 : glyphFor(alias);
   };
 }
