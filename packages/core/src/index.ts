@@ -45,7 +45,7 @@ export type {
 } from "./layout/stack.js";
 
 export { layOutDocument } from "./layout/document.js";
-export type { DocumentLayout } from "./layout/document.js";
+export type { DocumentLayout, LaidOutDocument } from "./layout/document.js";
 
 export { readAnchors } from "./docx/anchors.js";
 export type { AnchorOrigin, AnchorPosition, FloatingAnchor, WrapMode } from "./docx/anchors.js";

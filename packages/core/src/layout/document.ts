@@ -15,21 +15,22 @@ import { placeFloat, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { twipsToPoints } from "./units.js";
 
+export type LaidOutDocument = {
+  readonly kind: "laid-out";
+  readonly page: SectionGeometry;
+  readonly headerTopPt: number;
+  readonly headerHeightPt: number;
+  readonly bodyTopPt: number;
+  readonly header: readonly ParagraphBox[];
+  readonly body: readonly ParagraphBox[];
+  readonly headerFloats: readonly PlacedFloat[];
+  readonly bodyFloats: readonly PlacedFloat[];
+  readonly headerInlines: readonly PlacedInline[];
+  readonly bodyInlines: readonly PlacedInline[];
+};
+
 export type DocumentLayout =
-  | {
-      readonly kind: "laid-out";
-      readonly page: SectionGeometry;
-      readonly headerTopPt: number;
-      readonly headerHeightPt: number;
-      readonly bodyTopPt: number;
-      readonly header: readonly ParagraphBox[];
-      readonly body: readonly ParagraphBox[];
-      readonly headerFloats: readonly PlacedFloat[];
-      readonly bodyFloats: readonly PlacedFloat[];
-      readonly headerInlines: readonly PlacedInline[];
-      readonly bodyInlines: readonly PlacedInline[];
-    }
-  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
+  LaidOutDocument | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
 export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): DocumentLayout {
   const page = readSectionGeometry(pkg);

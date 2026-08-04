@@ -20,13 +20,15 @@ export function wordDocument(bodyXml: string, prefix = "w"): string {
 </${prefix}:document>`;
 }
 
-export function buildDocx(parts: Readonly<Record<string, string>>): Uint8Array {
+export type DocxPart = string | Uint8Array;
+
+export function buildDocx(parts: Readonly<Record<string, DocxPart>>): Uint8Array {
   const entries: Record<string, Uint8Array> = {
     "[Content_Types].xml": strToU8(CONTENT_TYPES),
     "_rels/.rels": strToU8(ROOT_RELS),
   };
-  for (const [name, text] of Object.entries(parts)) {
-    entries[name] = strToU8(text);
+  for (const [name, content] of Object.entries(parts)) {
+    entries[name] = typeof content === "string" ? strToU8(content) : content;
   }
   return zipSync(entries);
 }
