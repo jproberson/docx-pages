@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { layOutDocument, lookupFontMetrics, type PlacedFloat } from "@onepager/core";
 
 import { readReferenceDocument } from "../testing/documents.js";
-import { referenceCases, suppliedMetrics, type ReferenceCase } from "../testing/cases.js";
+import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 
 const layoutOf = (each: ReferenceCase) => {
-  const supplied = suppliedMetrics();
+  const supplied = suppliedFaces();
   const result = layOutDocument(readReferenceDocument(each), (name) =>
     lookupFontMetrics(name, supplied),
   );

@@ -5,25 +5,40 @@ export type FontMetrics = {
   readonly lineGap: number;
 };
 
-export type MetricsLookup =
-  | {
-      readonly kind: "found";
-      readonly source: "builtin" | "supplied";
-      readonly metrics: FontMetrics;
-    }
-  | { readonly kind: "missing"; readonly fontName: string };
-
 // An advance is in font units, so it scales by the same unitsPerEm as the metrics
 // that came out of the same file. Unmapped characters read back as null rather
 // than as a guessed width.
 export type GlyphAdvances = (codePoint: number) => number | null;
 
 export type AdvancesUnavailable =
-  "cmap-missing" | "cmap-unsupported" | "cmap-malformed" | "hmtx-missing" | "hmtx-malformed";
+  | "unsupplied"
+  | "cmap-missing"
+  | "cmap-unsupported"
+  | "cmap-malformed"
+  | "hmtx-missing"
+  | "hmtx-malformed";
 
 export type AdvanceTable =
   | { readonly kind: "advances"; readonly advanceFor: GlyphAdvances }
   | { readonly kind: "unavailable"; readonly reason: AdvancesUnavailable };
+
+// Vertical metrics alone place empty paragraphs and floats; measuring text needs
+// the advances too, and only a caller-supplied font file carries them.
+export const NO_ADVANCES: AdvanceTable = { kind: "unavailable", reason: "unsupplied" };
+
+export type SuppliedFace = {
+  readonly metrics: FontMetrics;
+  readonly advances: AdvanceTable;
+};
+
+export type MetricsLookup =
+  | {
+      readonly kind: "found";
+      readonly source: "builtin" | "supplied";
+      readonly metrics: FontMetrics;
+      readonly advances: AdvanceTable;
+    }
+  | { readonly kind: "missing"; readonly fontName: string };
 
 export const lineHeightPt = (metrics: FontMetrics, fontSizePt: number): number =>
   (fontSizePt * (metrics.ascender - metrics.descender + metrics.lineGap)) / metrics.unitsPerEm;
@@ -51,16 +66,20 @@ const normalise = (fontName: string): string => fontName.trim().toLowerCase();
 
 export function lookupFontMetrics(
   fontName: string,
-  supplied?: ReadonlyMap<string, FontMetrics>,
+  supplied?: ReadonlyMap<string, SuppliedFace>,
 ): MetricsLookup {
   const key = normalise(fontName);
 
-  for (const [name, metrics] of supplied ?? []) {
-    if (normalise(name) === key) return { kind: "found", source: "supplied", metrics };
+  for (const [name, face] of supplied ?? []) {
+    if (normalise(name) === key) {
+      return { kind: "found", source: "supplied", metrics: face.metrics, advances: face.advances };
+    }
   }
 
   const builtin = BUILTIN.get(key);
-  if (builtin !== undefined) return { kind: "found", source: "builtin", metrics: builtin };
+  if (builtin !== undefined) {
+    return { kind: "found", source: "builtin", metrics: builtin, advances: NO_ADVANCES };
+  }
 
   return { kind: "missing", fontName };
 }

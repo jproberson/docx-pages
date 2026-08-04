@@ -1,7 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { OnePagerError, type FontMetrics } from "@onepager/core";
+import {
+  NO_ADVANCES,
+  OnePagerError,
+  readFontFile,
+  type FontMetrics,
+  type SuppliedFace,
+} from "@onepager/core";
 
 // The reference documents and the geometry Word produced from them stay outside
 // the repo. Point this at a manifest describing them; without one the reference
@@ -240,5 +246,16 @@ export const referenceFonts = (): readonly ReferenceFont[] => readReferenceManif
 export const referenceCases = (): readonly ReferenceCase[] =>
   readReferenceManifest().cases.filter((each) => existsSync(each.documentPath));
 
-export const suppliedMetrics = (): ReadonlyMap<string, FontMetrics> =>
-  new Map(referenceFonts().map((font) => [font.name, font.metrics]));
+// The manifest's metrics stay authoritative for vertical geometry; the font file
+// is read only for the advances, which no manifest could carry.
+function faceOf(font: ReferenceFont): SuppliedFace {
+  const path = font.filePath;
+  if (path === null || !existsSync(path)) return { metrics: font.metrics, advances: NO_ADVANCES };
+  return {
+    metrics: font.metrics,
+    advances: readFontFile(new Uint8Array(readFileSync(path))).advances,
+  };
+}
+
+export const suppliedFaces = (): ReadonlyMap<string, SuppliedFace> =>
+  new Map(referenceFonts().map((font) => [font.name, faceOf(font)]));

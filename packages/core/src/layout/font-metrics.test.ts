@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { ascentPt, lineHeightPt, lookupFontMetrics, type FontMetrics } from "./font-metrics.js";
+import {
+  advanceWidthPt,
+  ascentPt,
+  lineHeightPt,
+  lookupFontMetrics,
+  NO_ADVANCES,
+  type FontMetrics,
+  type SuppliedFace,
+} from "./font-metrics.js";
 
-const found = (name: string, supplied?: ReadonlyMap<string, FontMetrics>): FontMetrics => {
+const found = (name: string, supplied?: ReadonlyMap<string, SuppliedFace>): FontMetrics => {
   const lookup = lookupFontMetrics(name, supplied);
   if (lookup.kind !== "found") throw new Error(`expected metrics for ${name}`);
   return lookup.metrics;
 };
+
+const face = (metrics: FontMetrics): SuppliedFace => ({ metrics, advances: NO_ADVANCES });
 
 describe("lineHeightPt", () => {
   it("matches the line height Word produced for Arial", () => {
@@ -30,13 +40,27 @@ describe("ascentPt", () => {
   });
 });
 
+describe("advanceWidthPt", () => {
+  it("scales a font-unit advance by the size it is set at", () => {
+    expect(
+      advanceWidthPt(500, { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 }, 12),
+    ).toBeCloseTo(6, 10);
+  });
+});
+
 describe("lookupFontMetrics", () => {
   it("resolves a built-in font", () => {
     expect(lookupFontMetrics("Times New Roman")).toStrictEqual({
       kind: "found",
       source: "builtin",
       metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 },
+      advances: NO_ADVANCES,
     });
+  });
+
+  it("reports a built-in font as unmeasurable for text, since no file supplied its widths", () => {
+    const lookup = lookupFontMetrics("Arial");
+    expect(lookup.kind === "found" && lookup.advances).toStrictEqual(NO_ADVANCES);
   });
 
   it("ignores case and surrounding whitespace in the font name", () => {
@@ -52,16 +76,36 @@ describe("lookupFontMetrics", () => {
 
   it("takes supplied metrics for a font it does not know", () => {
     const metrics: FontMetrics = { unitsPerEm: 2048, ascender: 1944, descender: -546, lineGap: 0 };
+    const supplied = new Map([["Meridian Sans", face(metrics)]]);
 
-    expect(lookupFontMetrics("Meridian Sans", new Map([["Meridian Sans", metrics]]))).toStrictEqual(
-      { kind: "found", source: "supplied", metrics },
-    );
+    expect(lookupFontMetrics("Meridian Sans", supplied)).toStrictEqual({
+      kind: "found",
+      source: "supplied",
+      metrics,
+      advances: NO_ADVANCES,
+    });
   });
 
   it("lets supplied metrics override a built-in, so a substituted face keeps the original metrics", () => {
     const narrower: FontMetrics = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
-    const lookup = lookupFontMetrics("Arial", new Map([["Arial", narrower]]));
+    const lookup = lookupFontMetrics("Arial", new Map([["Arial", face(narrower)]]));
 
-    expect(lookup).toStrictEqual({ kind: "found", source: "supplied", metrics: narrower });
+    expect(lookup).toStrictEqual({
+      kind: "found",
+      source: "supplied",
+      metrics: narrower,
+      advances: NO_ADVANCES,
+    });
+  });
+
+  it("carries a supplied face's advances through to the caller", () => {
+    const metrics: FontMetrics = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
+    const advances: SuppliedFace["advances"] = { kind: "advances", advanceFor: () => 500 };
+    const lookup = lookupFontMetrics(
+      "Meridian Sans",
+      new Map([["Meridian Sans", { metrics, advances }]]),
+    );
+
+    expect(lookup.kind === "found" && lookup.advances).toBe(advances);
   });
 });

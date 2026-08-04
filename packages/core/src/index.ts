@@ -12,6 +12,7 @@ export {
   ascentPt,
   lineHeightPt,
   lookupFontMetrics,
+  NO_ADVANCES,
 } from "./layout/font-metrics.js";
 export type {
   AdvanceTable,
@@ -19,6 +20,7 @@ export type {
   FontMetrics,
   GlyphAdvances,
   MetricsLookup,
+  SuppliedFace,
 } from "./layout/font-metrics.js";
 
 export { readFontFile, readFontMetrics } from "./layout/font-file.js";

@@ -4,14 +4,14 @@ import { describe, expect, it } from "vitest";
 import { layOutDocument, lookupFontMetrics, type LaidOutDocument } from "@onepager/core";
 import { imageResolver, OnePagerPage } from "@onepager/viewer";
 
-import { referenceCases, suppliedMetrics, type ReferenceCase } from "../testing/cases.js";
+import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 import { readReferenceDocument } from "../testing/documents.js";
 
 const rendered = (
   each: ReferenceCase,
 ): { readonly html: string; readonly layout: LaidOutDocument } => {
   const pkg = readReferenceDocument(each);
-  const supplied = suppliedMetrics();
+  const supplied = suppliedFaces();
   const layout = layOutDocument(pkg, (name) => lookupFontMetrics(name, supplied));
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
   return {
