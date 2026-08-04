@@ -15,11 +15,16 @@ export type TextRun = {
   readonly pieces: readonly RunPiece[];
 };
 
+// The whitespace xml leaves insignificant, which is the only kind the edges of a
+// w:t lose. A no-break space is a character the text is made of rather than
+// whitespace around it, so it stays whether or not the run asks for it.
+const INSIGNIFICANT = /^[ \t\r\n]+|[ \t\r\n]+$/g;
+
 // Whitespace at the edges of a w:t is insignificant unless the run asks for it,
 // which is why Word writes xml:space wherever a space has to survive.
 function textOf(element: XmlElement): string {
   const preserved = attribute(element, "", "space") === "preserve";
-  return preserved ? element.text : element.text.trim();
+  return preserved ? element.text : element.text.replace(INSIGNIFICANT, "");
 }
 
 function extentOf(inline: XmlElement): RunPiece {

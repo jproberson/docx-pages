@@ -10,7 +10,8 @@ import { breakLines, type TextLine } from "./lines.js";
 // Every glyph is half an em wide, so a 10pt run measures exactly 5pt a character
 // and the expected break points can be counted rather than computed.
 const HALF_EM = 500;
-const CHARACTERS = "abcdefghijklmnopqrstuvwxyz -";
+const NO_BREAK_SPACE = "\u00a0";
+const CHARACTERS = `abcdefghijklmnopqrstuvwxyz -${NO_BREAK_SPACE}`;
 
 const FIXTURE = {
   unitsPerEm: 1000,
@@ -117,6 +118,20 @@ describe("breakLines", () => {
 
     expect(lines).toHaveLength(1);
     expect(lines[0]?.widthPt).toBeCloseTo(20, 9);
+  });
+
+  it("carries a word joined by a no-break space to the next line whole", () => {
+    // "abc ab" fills a 30pt line exactly, so a line breaking at the no-break space
+    // would end there and start the next one at "cd".
+    const lines = linesOf([runOf(`abc ab${NO_BREAK_SPACE}cd`)], 30);
+
+    expect(lines.map(textOf)).toStrictEqual(["abc", `ab${NO_BREAK_SPACE}cd`]);
+  });
+
+  it("counts a no-break space towards the width, being a character like any other", () => {
+    const lines = linesOf([runOf(`ab${NO_BREAK_SPACE}cd`)], 100);
+
+    expect(lines[0]?.widthPt).toBeCloseTo(25, 9);
   });
 
   it("breaks a word that cannot fit a line of its own at the character that overflows", () => {

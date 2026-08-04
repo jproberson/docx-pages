@@ -43,6 +43,15 @@ describe("readRuns", () => {
     expect(textOf(runsOf(`<w:p><w:r><w:t>  a  </w:t></w:r></w:p>`))).toBe("a");
   });
 
+  // A no-break space is significant wherever it sits, and Word leaves it to a run
+  // that never asks for it: the runs either side of an emphasised phrase carry the
+  // spaces around it that way.
+  it("keeps a no-break space at a run's edge, whatever the run asks for", () => {
+    const body = `<w:p><w:r><w:t>  \u00a0a\u00a0  </w:t></w:r></w:p>`;
+
+    expect(textOf(runsOf(body))).toBe("\u00a0a\u00a0");
+  });
+
   it("joins several text pieces inside one run", () => {
     const body = `<w:p><w:r><w:t xml:space="preserve">a </w:t><w:t>b</w:t></w:r></w:p>`;
     const runs = runsOf(body);

@@ -178,7 +178,11 @@ class Measurer {
   }
 }
 
-const IS_SPACE = /^\s+$/;
+// A no-break space is what its name says: text runs on through it, so it belongs
+// to the word around it rather than opening a place the line can break. Every
+// other run of whitespace is a gap between words.
+const GAP = /([^\S\u00a0]+)/;
+const IS_GAP = /^[^\S\u00a0]+$/;
 
 // Word lets a line end on a hyphen inside a word, so each one closes the word it
 // belongs to and the rest of it becomes a word of its own.
@@ -232,8 +236,8 @@ function addPiece(
     return true;
   }
 
-  for (const token of piece.text.split(/(\s+)/).filter((each) => each !== "")) {
-    const space = IS_SPACE.test(token);
+  for (const token of piece.text.split(GAP).filter((each) => each !== "")) {
+    const space = IS_GAP.test(token);
     for (const part of space ? [token] : token.split(AFTER_HYPHEN)) {
       const fragment = measurer.fragment(mark, part);
       if (fragment === null) return false;
