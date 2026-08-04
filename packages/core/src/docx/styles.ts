@@ -362,18 +362,25 @@ const markOf = (resolved: PartialMark): ParagraphMark => ({
   color: resolved.color ?? null,
 });
 
-export function resolveParagraphMark(paragraph: Paragraph, table: StyleTable): ParagraphMark {
+function paragraphMarkOf(paragraph: Paragraph, table: StyleTable): PartialMark {
   let resolved = table.docDefaults;
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = merge(resolved, style.mark);
   }
-  resolved = merge(
-    resolved,
-    readMark(firstNamed(paragraph.element, W_NS, "pPr"), table.themeFonts),
-  );
-
-  return markOf(resolved);
+  return merge(resolved, readMark(firstNamed(paragraph.element, W_NS, "pPr"), table.themeFonts));
 }
+
+export const resolveParagraphMark = (paragraph: Paragraph, table: StyleTable): ParagraphMark =>
+  markOf(paragraphMarkOf(paragraph, table));
+
+// The number is drawn in the paragraph's own mark except where its level says
+// otherwise, which is how a bullet ends up in a symbol face at the text's size.
+export const resolveNumberMark = (
+  paragraph: Paragraph,
+  table: StyleTable,
+  level: NumberingLevel,
+): ParagraphMark =>
+  markOf(merge(paragraphMarkOf(paragraph, table), readMark(level.properties, table.themeFonts)));
 
 function runStyleChain(table: StyleTable, run: XmlElement): readonly StyleDefinition[] {
   const rPr = firstNamed(run, W_NS, "rPr");

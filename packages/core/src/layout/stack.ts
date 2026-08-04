@@ -1,7 +1,10 @@
 import type { Block, CellVerticalAlign, Paragraph, TableCell, TableRow } from "../docx/blocks.js";
+import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js";
+import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns } from "../docx/runs.js";
 import { W_NS } from "../docx/section.js";
 import {
+  resolveNumberMark,
   resolveParagraphFrame,
   resolveParagraphMark,
   resolveRunMarks,
@@ -14,11 +17,12 @@ import { lineHeightPt } from "./font-metrics.js";
 import {
   breakLines,
   faceRequestFor,
+  measureText,
   type MeasureFailure,
   type MetricsResolver,
   type TextLine,
 } from "./lines.js";
-import { tabStopsPt } from "./tab-stops.js";
+import { nextTabStopPt, tabStopsPt } from "./tab-stops.js";
 import { twipsToPoints } from "./units.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
@@ -38,7 +42,24 @@ export type LayoutBlocker =
       readonly part: string;
       readonly paragraphIndex: number;
       readonly failure: MeasureFailure;
+    }
+  | {
+      readonly kind: "unsupported-number-format";
+      readonly part: string;
+      readonly paragraphIndex: number;
+      readonly numId: string;
+      readonly ilvl: number;
     };
+
+// The number a list puts in front of its paragraph, drawn out of the text flow at
+// the hanging position the level indents to.
+export type ParagraphMarker = {
+  readonly text: string;
+  readonly mark: ParagraphMark;
+  readonly widthPt: number;
+  readonly leftPt: number;
+  readonly baselinePt: number;
+};
 
 export type PlacedLine = {
   readonly line: TextLine;
@@ -52,6 +73,7 @@ export type ParagraphBox = {
   readonly topPt: number;
   readonly heightPt: number;
   readonly lines: readonly PlacedLine[];
+  readonly marker: ParagraphMarker | null;
 };
 
 export type StackMeasurement =
@@ -75,18 +97,37 @@ export type MeasureStackInput = {
   readonly wraps?: boolean;
 };
 
-type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "widthPt">;
+type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "widthPt"> & {
+  readonly numbers: ReadonlyMap<number, ParagraphNumber>;
+};
 
 type Frame = {
   readonly leftPt: number;
   readonly widthPt: number;
 };
 
-export const measureStack = (input: MeasureStackInput): StackMeasurement =>
-  measureBlocks(input.blocks, input, input.originPt, {
+// Numbering is counted over the whole part before anything is measured, since a
+// paragraph's number depends on every numbered paragraph ahead of it.
+export function measureStack(input: MeasureStackInput): StackMeasurement {
+  const numbered = numberParagraphs(input.blocks, input.styles);
+  if (numbered.kind === "unsupported") {
+    return {
+      kind: "blocked",
+      blocker: {
+        kind: "unsupported-number-format",
+        part: input.part,
+        paragraphIndex: numbered.paragraphIndex,
+        numId: numbered.numId,
+        ilvl: numbered.ilvl,
+      },
+    };
+  }
+
+  return measureBlocks(input.blocks, { ...input, numbers: numbered.numbers }, input.originPt, {
     leftPt: input.leftPt,
     widthPt: input.widthPt,
   });
+}
 
 function measureBlocks(
   blocks: readonly Block[],
@@ -169,6 +210,7 @@ const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
     topPt: line.topPt + byPt,
     baselinePt: line.baselinePt + byPt,
   })),
+  marker: box.marker === null ? null : { ...box.marker, baselinePt: box.marker.baselinePt + byPt },
 });
 
 function seatingOffset(
@@ -234,6 +276,11 @@ function measureParagraph(
     };
   }
 
+  const number = context.numbers.get(paragraph.index);
+  const measured =
+    number === undefined ? null : measureNumber(paragraph, number, context, frame, paragraphFrame);
+  if (measured !== null && measured.kind === "blocked") return measured;
+
   return {
     kind: "measured",
     box: layOutParagraph(paragraph.index, breaking.lines, {
@@ -241,8 +288,87 @@ function measureParagraph(
       markHeightPt: markHeight,
       frame,
       paragraphFrame,
+      number: measured === null ? null : measured.number,
     }),
   };
+}
+
+// A number sits at the hanging position and the text after it starts at whatever
+// the level's suffix moves on to, which for a hanging paragraph is the implicit
+// stop at its left indent.
+type MeasuredNumber = {
+  readonly text: string;
+  readonly mark: ParagraphMark;
+  readonly widthPt: number;
+  readonly ascentPt: number;
+  readonly leftPt: number;
+  readonly textStartPt: number;
+};
+
+type NumberMeasurement =
+  | { readonly kind: "measured"; readonly number: MeasuredNumber }
+  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
+
+function measureNumber(
+  paragraph: Paragraph,
+  number: ParagraphNumber,
+  context: Context,
+  frame: Frame,
+  paragraphFrame: ParagraphFrame,
+): NumberMeasurement {
+  const mark = resolveNumberMark(paragraph, context.styles, number.level);
+  const measured = measureText(number.text, mark, context.metricsFor);
+  if (measured.kind === "unmeasurable") {
+    return {
+      kind: "blocked",
+      blocker: {
+        kind: "unmeasurable-text",
+        part: context.part,
+        paragraphIndex: paragraph.index,
+        failure: measured.failure,
+      },
+    };
+  }
+
+  const insets = insetsOf(paragraphFrame);
+  const leftPt = frame.leftPt + insets.leftPt + insets.firstLinePt;
+  const endPt = leftPt + measured.widthPt;
+
+  return {
+    kind: "measured",
+    number: {
+      text: number.text,
+      mark,
+      widthPt: measured.widthPt,
+      ascentPt: measured.ascentPt,
+      leftPt,
+      textStartPt: startOfText(endPt, number.level.suffix, {
+        frame,
+        paragraphFrame,
+        spaceWidthPt: () => widthOfSpace(mark, context.metricsFor),
+      }),
+    },
+  };
+}
+
+type SuffixContext = {
+  readonly frame: Frame;
+  readonly paragraphFrame: ParagraphFrame;
+  readonly spaceWidthPt: () => number;
+};
+
+function startOfText(endPt: number, suffix: NumberSuffix, context: SuffixContext): number {
+  const { frame, paragraphFrame } = context;
+  if (suffix === "nothing") return endPt;
+  if (suffix === "space") return endPt + context.spaceWidthPt();
+  return frame.leftPt + nextTabStopPt(endPt - frame.leftPt, tabStopsPt(paragraphFrame));
+}
+
+// A face with no space of its own leaves the number against the text, which is
+// still nearer than pretending to a width it does not have.
+function widthOfSpace(mark: ParagraphMark, metricsFor: MetricsResolver): number {
+  const measured = measureText(" ", mark, metricsFor);
+  return measured.kind === "measured" ? measured.widthPt : 0;
 }
 
 type Insets = {
@@ -262,6 +388,7 @@ type LayOutParagraphInput = {
   readonly markHeightPt: number;
   readonly frame: Frame;
   readonly paragraphFrame: ParagraphFrame;
+  readonly number: MeasuredNumber | null;
 };
 
 // The paragraph mark sits at the end of the last line, so it raises that line's
@@ -271,7 +398,7 @@ function layOutParagraph(
   lines: readonly TextLine[],
   input: LayOutParagraphInput,
 ): ParagraphBox {
-  const { paragraphFrame, frame } = input;
+  const { paragraphFrame, frame, number } = input;
   const insets = insetsOf(paragraphFrame);
   const beforePt = twipsToPoints(paragraphFrame.spaceBeforeTwips);
   const afterPt = twipsToPoints(paragraphFrame.spaceAfterTwips);
@@ -282,6 +409,7 @@ function layOutParagraph(
       topPt: input.topPt,
       heightPt: beforePt + input.markHeightPt + afterPt,
       lines: [],
+      marker: markerAt(number, input.topPt + beforePt + (number?.ascentPt ?? 0)),
     };
   }
 
@@ -293,7 +421,10 @@ function layOutParagraph(
     const naturalPt = last ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
     const heightPt = spacedHeightPt(naturalPt, paragraphFrame);
     const firstLinePt = at === 0 ? insets.firstLinePt : 0;
-    const startPt = frame.leftPt + insets.leftPt + firstLinePt;
+    // The number takes the first line's own start, so the text after it begins
+    // wherever the number's suffix moved on to.
+    const startPt =
+      at === 0 && number !== null ? number.textStartPt : frame.leftPt + insets.leftPt + firstLinePt;
     const endPt = frame.leftPt + frame.widthPt - insets.rightPt;
 
     placed.push({
@@ -311,8 +442,20 @@ function layOutParagraph(
     topPt: input.topPt,
     heightPt: top + afterPt - input.topPt,
     lines: placed,
+    marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
   };
 }
+
+const markerAt = (number: MeasuredNumber | null, baselinePt: number): ParagraphMarker | null =>
+  number === null
+    ? null
+    : {
+        text: number.text,
+        mark: number.mark,
+        widthPt: number.widthPt,
+        leftPt: number.leftPt,
+        baselinePt,
+      };
 
 function spacedHeightPt(naturalPt: number, frame: ParagraphFrame): number {
   const { lineTwips, lineRule } = frame;

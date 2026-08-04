@@ -6,6 +6,7 @@ import {
   type LaidOutDocument,
   type ParagraphBox,
   type ParagraphMark,
+  type ParagraphMarker,
   type PlacedLine,
 } from "@onepager/core";
 
@@ -120,18 +121,47 @@ function lineText(placed: PlacedLine, key: string, fallback: string): ReactEleme
   );
 }
 
+// A list's number is drawn out of the text flow, at the position the level's
+// hanging indent pulls the first line back to.
+function markerText(marker: ParagraphMarker, key: string, fallback: string): ReactElement | null {
+  if (marker.text === "") return null;
+  return (
+    <text
+      key={key}
+      x={marker.leftPt}
+      y={marker.baselinePt}
+      xmlSpace="preserve"
+      fontFamily={familyOf(marker.mark, fallback)}
+      fontSize={marker.mark.fontSizePt}
+      fontWeight={marker.mark.bold ? "bold" : undefined}
+      fontStyle={marker.mark.italic ? "italic" : undefined}
+      fill={marker.mark.color ?? undefined}
+      textLength={marker.widthPt > 0 ? marker.widthPt : undefined}
+      lengthAdjust="spacing"
+    >
+      {marker.text}
+    </text>
+  );
+}
+
 function textLayer(
   drawable: Extract<Drawable, { kind: "text" }>,
   widthPt: number,
   heightPt: number,
   fallback: string,
 ): ReactElement {
-  const lines = drawable.boxes.flatMap((paragraph: ParagraphBox) =>
-    paragraph.lines.flatMap((placed, at) => {
-      const element = lineText(placed, `${String(paragraph.index)}-${String(at)}`, fallback);
-      return element === null ? [] : [element];
-    }),
-  );
+  const lines = drawable.boxes.flatMap((paragraph: ParagraphBox) => {
+    const key = String(paragraph.index);
+    const marker =
+      paragraph.marker === null ? null : markerText(paragraph.marker, `${key}-number`, fallback);
+    return [
+      ...(marker === null ? [] : [marker]),
+      ...paragraph.lines.flatMap((placed, at) => {
+        const element = lineText(placed, `${key}-${String(at)}`, fallback);
+        return element === null ? [] : [element];
+      }),
+    ];
+  });
 
   return (
     <svg

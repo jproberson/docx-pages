@@ -403,6 +403,34 @@ function splitFragment(
   ];
 }
 
+export type TextMeasurement =
+  | {
+      readonly kind: "measured";
+      readonly widthPt: number;
+      readonly heightPt: number;
+      readonly ascentPt: number;
+    }
+  | { readonly kind: "unmeasurable"; readonly failure: MeasureFailure };
+
+// A run of text that never breaks, which is what a list number is.
+export function measureText(
+  text: string,
+  mark: ParagraphMark,
+  metricsFor: MetricsResolver,
+): TextMeasurement {
+  const measurer = new Measurer(metricsFor);
+  const fragment = measurer.fragment(mark, text);
+  if (fragment === null) {
+    return { kind: "unmeasurable", failure: measurer.failure ?? { kind: "unresolved-font" } };
+  }
+  return {
+    kind: "measured",
+    widthPt: fragment.widthPt,
+    heightPt: fragment.heightPt,
+    ascentPt: fragment.ascentPt,
+  };
+}
+
 export function breakLines(input: BreakLinesInput): LineBreaking {
   const measurer = new Measurer(input.metricsFor);
   const tokens = tokenize(input.runs, measurer);

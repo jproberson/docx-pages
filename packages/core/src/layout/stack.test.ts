@@ -273,3 +273,135 @@ describe("measureStack over tables", () => {
     });
   });
 });
+
+const numbering = (levels: string) => `<?xml version="1.0"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="0">${levels}</w:abstractNum>
+  <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
+
+const decimalLevel = (extra = "") => `<w:lvl w:ilvl="0">
+  <w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>${extra}
+  <w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>`;
+
+const LISTS = numbering(decimalLevel());
+
+const numberedBoxes = (body: string, numberingXml = LISTS, widthPt = 468) => {
+  const pkg = openDocx(
+    buildDocx({
+      "word/document.xml": wordDocument(body),
+      "word/styles.xml": NORMAL,
+      "word/numbering.xml": numberingXml,
+    }),
+  );
+  const result = measureStack({
+    blocks: readBlocks(pkg),
+    styles: readStyleTable(pkg),
+    metricsFor: (request) => lookupFontMetrics(request, [ARIAL, SYMBOLS]),
+    part: "word/document.xml",
+    originPt: 36,
+    leftPt: 72,
+    widthPt,
+  });
+  if (result.kind !== "measured") throw new Error(result.blocker.kind);
+  return result.boxes;
+};
+
+const numberedFirst = (body: string, numberingXml = LISTS, widthPt = 468) => {
+  const box = numberedBoxes(body, numberingXml, widthPt)[0];
+  if (box === undefined) throw new Error("expected a paragraph");
+  return box;
+};
+
+const listItem = (text = "aaaa bbbb") =>
+  `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>
+     <w:r><w:t>${text}</w:t></w:r></w:p>`;
+
+// A second face, so a level that names its own font is measured in that font's
+// widths rather than the paragraph's.
+const SYMBOLS = buildFace({
+  name: "Symbols",
+  metrics: { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 },
+  advance: 250,
+  characters: "1.",
+});
+
+describe("measureStack over a numbered paragraph", () => {
+  it("draws the number at the position the hanging indent pulls back to", () => {
+    const marker = numberedFirst(listItem()).marker;
+    expect(marker?.text).toBe("1.");
+    expect(marker?.leftPt).toBeCloseTo(72 + 36 - 18, 9);
+    expect(marker?.widthPt).toBeCloseTo(PER_CHARACTER * 2, 9);
+  });
+
+  it("starts the first line at the stop the number tabs across to", () => {
+    expect(numberedFirst(listItem()).lines[0]?.leftPt).toBeCloseTo(72 + 36, 9);
+  });
+
+  it("leaves the lines after the first at the left indent", () => {
+    const box = numberedFirst(listItem(), LISTS, 36 + 30);
+    expect(box.lines.map((line) => line.leftPt)).toStrictEqual([108, 108]);
+  });
+
+  it("puts the number on the first line's baseline", () => {
+    const box = numberedFirst(listItem());
+    expect(box.marker?.baselinePt).toBe(box.lines[0]?.baselinePt);
+  });
+
+  it("still numbers a paragraph with nothing on its line", () => {
+    const body = `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:p>`;
+    expect(numberedFirst(body).marker?.text).toBe("1.");
+  });
+
+  it("counts on down the paragraphs of a list", () => {
+    const texts = numberedBoxes(listItem().repeat(3)).map((box) => box.marker?.text);
+    expect(texts).toStrictEqual(["1.", "2.", "3."]);
+  });
+
+  it("draws no number for a paragraph in no list", () => {
+    expect(numberedFirst(`<w:p><w:r><w:t>plain</w:t></w:r></w:p>`).marker).toBeNull();
+  });
+
+  it("measures the number in the face its level names", () => {
+    const lists = numbering(
+      decimalLevel(`<w:rPr><w:rFonts w:ascii="Symbols" w:hAnsi="Symbols"/></w:rPr>`),
+    );
+    const marker = numberedFirst(listItem(), lists).marker;
+    expect(marker?.mark.font).toStrictEqual({ kind: "named", name: "Symbols" });
+    expect(marker?.widthPt).toBeCloseTo((12 * 250 * 2) / 1000, 9);
+  });
+
+  it("leaves the text against the number when the level asks for no suffix", () => {
+    const lists = numbering(decimalLevel(`<w:suff w:val="nothing"/>`));
+    expect(numberedFirst(listItem(), lists).lines[0]?.leftPt).toBeCloseTo(90 + 12, 9);
+  });
+
+  it("blocks on a level it cannot count in rather than numbering it wrong", () => {
+    const lists = numbering(
+      `<w:lvl w:ilvl="0"><w:numFmt w:val="ideographDigital"/><w:lvlText w:val="%1"/></w:lvl>`,
+    );
+    const pkg = openDocx(
+      buildDocx({
+        "word/document.xml": wordDocument(listItem()),
+        "word/styles.xml": NORMAL,
+        "word/numbering.xml": lists,
+      }),
+    );
+    const result = measureStack({
+      blocks: readBlocks(pkg),
+      styles: readStyleTable(pkg),
+      metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+      part: "word/document.xml",
+      originPt: 36,
+      leftPt: 72,
+      widthPt: 468,
+    });
+    if (result.kind !== "blocked") throw new Error("expected to be blocked");
+    expect(result.blocker).toStrictEqual({
+      kind: "unsupported-number-format",
+      part: "word/document.xml",
+      paragraphIndex: 0,
+      numId: "1",
+      ilvl: 0,
+    });
+  });
+});

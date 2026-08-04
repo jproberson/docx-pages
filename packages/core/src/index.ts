@@ -87,6 +87,7 @@ export type {
   MeasureStackInput,
   MetricsResolver,
   ParagraphBox,
+  ParagraphMarker,
   PlacedLine,
   StackMeasurement,
 } from "./layout/stack.js";

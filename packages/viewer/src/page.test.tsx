@@ -55,6 +55,7 @@ const paragraphOf = (
       baselinePt: options.baselinePt ?? 41,
     },
   ],
+  marker: null,
 });
 
 const LETTER: SectionGeometry = {
@@ -257,5 +258,35 @@ describe("OnePagerPage drawing text", () => {
 
   it("draws no text layer for a document that has none", () => {
     expect(markup(layoutWith([]))).not.toContain('data-kind="text"');
+  });
+});
+
+const numbered = (text: string, markerText: string): ParagraphBox => ({
+  ...paragraphOf(text),
+  marker: {
+    text: markerText,
+    mark: { ...MARK, font: { kind: "named", name: "Wingdings" } },
+    widthPt: 8,
+    leftPt: 102,
+    baselinePt: 41,
+  },
+});
+
+describe("OnePagerPage drawing a list number", () => {
+  it("draws the number at the position layout gave it", () => {
+    const html = markup(layoutWith([], [numbered("Item", "1.")]));
+    expect(html).toContain('x="102" y="41"');
+    expect(html).toContain(">1.<");
+  });
+
+  it("draws the number in its own face, ahead of the line it belongs to", () => {
+    const html = markup(layoutWith([], [numbered("Item", "1.")]));
+    expect(html).toContain('font-family="&quot;Wingdings&quot;, sans-serif"');
+    expect(html.indexOf(">1.<")).toBeLessThan(html.indexOf(">Item<"));
+  });
+
+  it("draws nothing for a level that asks for no number at all", () => {
+    const html = markup(layoutWith([], [numbered("Item", "")]));
+    expect(html).not.toContain('x="102"');
   });
 });
