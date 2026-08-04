@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --build --force",
     "test": "vitest run",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "preview": "pnpm typecheck && node packages/render/dist/preview/write.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
