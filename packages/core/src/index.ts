@@ -84,6 +84,7 @@ export { nextTabStopPt, tabStopsPt, DEFAULT_TAB_STOP_PT } from "./layout/tab-sto
 
 export { measureStack, shiftBox, shiftBoxes, WP_NS } from "./layout/stack.js";
 export type {
+  BandResolver,
   LayoutBlocker,
   MeasureStackInput,
   MetricsResolver,

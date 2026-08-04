@@ -24,6 +24,7 @@ import {
 } from "./lines.js";
 import { nextTabStopPt, tabStopsPt } from "./tab-stops.js";
 import { twipsToPoints } from "./units.js";
+import { fitLine, type WrapBand } from "./wrapping.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
@@ -98,10 +99,19 @@ export type MeasureStackInput = {
   // A shape can refuse to wrap, in which case its text runs on past the frame
   // rather than breaking inside it.
   readonly wraps?: boolean;
+  // The objects a paragraph anchors, in page coordinates, asked for as the stack
+  // reaches that paragraph: every line from there on has to sit clear of them.
+  readonly bandsFor?: BandResolver;
 };
+
+export type BandResolver = (paragraph: Paragraph, topPt: number) => readonly WrapBand[];
+
+// The objects met so far, which grows as the stack walks forward.
+type Region = { readonly bands: WrapBand[] };
 
 type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "widthPt"> & {
   readonly numbers: ReadonlyMap<number, ParagraphNumber>;
+  readonly region: Region;
 };
 
 type Frame = {
@@ -126,7 +136,8 @@ export function measureStack(input: MeasureStackInput): StackMeasurement {
     };
   }
 
-  return measureBlocks(input.blocks, { ...input, numbers: numbered.numbers }, input.originPt, {
+  const context: Context = { ...input, numbers: numbered.numbers, region: { bands: [] } };
+  return measureBlocks(input.blocks, context, input.originPt, {
     leftPt: input.leftPt,
     widthPt: input.widthPt,
   });
@@ -179,9 +190,13 @@ function measureRow(
   let heightPt = 0;
   let leftPt = frame.leftPt;
 
+  // A cell is measured from its own origin and only then moved down to the row, so
+  // the page coordinates a wrapping object stands in cannot reach inside one.
+  const inCell: Context = { ...context, region: { bands: [] }, bandsFor: () => [] };
+
   for (const cell of row.cells) {
     const cellFrame = { leftPt, widthPt: cellWidthPt(cell) ?? frame.widthPt };
-    const of = measureBlocks(cell.blocks, context, 0, cellFrame);
+    const of = measureBlocks(cell.blocks, inCell, 0, cellFrame);
     if (of.kind === "blocked") return of;
     measured.push({ align: cell.verticalAlign, boxes: of.boxes, heightPt: of.heightPt });
     heightPt = Math.max(heightPt, of.heightPt);
@@ -259,6 +274,12 @@ function measureParagraph(
     markHeight = Math.max(markHeight, height.value);
   }
 
+  // An object is met where it is anchored, so a paragraph's own floats are already
+  // standing there when its first line looks for room.
+  if (context.bandsFor !== undefined) {
+    context.region.bands.push(...context.bandsFor(paragraph, topPt));
+  }
+
   const paragraphFrame = resolveParagraphFrame(paragraph, context.styles);
   const runs = readRuns(paragraph, context.styles);
   const insets = insetsOf(paragraphFrame);
@@ -297,6 +318,7 @@ function measureParagraph(
       frame,
       paragraphFrame,
       number: measured === null ? null : measured.number,
+      bands: context.region.bands,
     }),
   };
 }
@@ -397,6 +419,7 @@ type LayOutParagraphInput = {
   readonly frame: Frame;
   readonly paragraphFrame: ParagraphFrame;
   readonly number: MeasuredNumber | null;
+  readonly bands: readonly WrapBand[];
 };
 
 // A paragraph with text is as tall as the lines its runs measured to: Word does
@@ -435,15 +458,24 @@ function layOutParagraph(
       at === 0 && number !== null ? number.textStartPt : frame.leftPt + insets.leftPt + firstLinePt;
     const endPt = frame.leftPt + frame.widthPt - insets.rightPt;
 
-    placed.push({
-      line,
-      leftPt: lineStartPt(paragraphFrame, startPt, endPt, line.widthPt),
+    const slot = fitLine({
       topPt: top,
       heightPt,
-      // Extra leading sits above the text, which is where Word puts it.
-      baselinePt: top + (heightPt - naturalPt) + line.ascentPt,
+      leftPt: startPt,
+      rightPt: endPt,
+      widthPt: line.widthPt,
+      bands: input.bands,
     });
-    top += heightPt;
+
+    placed.push({
+      line,
+      leftPt: lineStartPt(paragraphFrame, slot.leftPt, slot.rightPt, line.widthPt),
+      topPt: slot.topPt,
+      heightPt,
+      // Extra leading sits above the text, which is where Word puts it.
+      baselinePt: slot.topPt + (heightPt - naturalPt) + line.ascentPt,
+    });
+    top = slot.topPt + heightPt;
   });
 
   return {

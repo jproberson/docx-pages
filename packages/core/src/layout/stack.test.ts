@@ -6,7 +6,8 @@ import { readStyleTable } from "../docx/styles.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { buildFace } from "../testing/build-font.js";
 import { lookupFontMetrics } from "./font-metrics.js";
-import { measureStack, type ParagraphBox } from "./stack.js";
+import { measureStack, type BandResolver, type ParagraphBox } from "./stack.js";
+import type { WrapBand } from "./wrapping.js";
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
@@ -403,5 +404,107 @@ describe("measureStack over a numbered paragraph", () => {
       numId: "1",
       ilvl: 0,
     });
+  });
+});
+
+// Every glyph is half an em, so a 12pt line of n characters is 6n wide; the frame
+// below runs from 72 to 540.
+const wrapped = (body: string, bandsFor: BandResolver) => {
+  const pkg = openDocx(
+    buildDocx({ "word/document.xml": wordDocument(body), "word/styles.xml": NORMAL }),
+  );
+  const result = measureStack({
+    blocks: readBlocks(pkg),
+    styles: readStyleTable(pkg),
+    metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+    part: "word/document.xml",
+    originPt: 36,
+    leftPt: 72,
+    widthPt: 468,
+    bandsFor,
+  });
+  if (result.kind !== "measured") throw new Error(result.blocker.kind);
+  return result.boxes;
+};
+
+const bandOn =
+  (index: number, band: WrapBand): BandResolver =>
+  (paragraph) =>
+    paragraph.index === index ? [band] : [];
+
+describe("measureStack around wrapping objects", () => {
+  it("moves a line's start past an object standing over the frame's left edge", () => {
+    const boxes = wrapped(
+      paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 0, rightPt: 120, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines[0]?.leftPt).toBe(120);
+    expect(boxes[0]?.lines[0]?.topPt).toBe(36);
+  });
+
+  it("drops a line below an object it is too wide to sit beside", () => {
+    const boxes = wrapped(
+      paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
+  it("keeps the paragraph's own top where the flow left it, so its floats stay put", () => {
+    const boxes = wrapped(
+      paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.topPt).toBe(36);
+    expect(boxes[0]?.heightPt).toBeCloseTo(100 - 36 + ARIAL_12, 9);
+  });
+
+  it("starts the next paragraph below the line that fell, not where it would have sat", () => {
+    const boxes = wrapped(
+      paragraph(``, "aaaa") + paragraph(``, "bbbb"),
+      bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[1]?.topPt).toBeCloseTo(100 + ARIAL_12, 9);
+  });
+
+  it("leaves a line the object no longer reaches alone", () => {
+    const boxes = wrapped(
+      paragraph(``, "aaaa") + paragraph(``, "bbbb"),
+      bandOn(0, { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 40 }),
+    );
+
+    expect(boxes[1]?.lines[0]?.leftPt).toBe(72);
+    expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(40 + ARIAL_12, 9);
+  });
+
+  it("keeps an object out of the paragraphs ahead of the one it is anchored to", () => {
+    const boxes = wrapped(
+      paragraph(``, "aaaa") + paragraph(``, "bbbb"),
+      bandOn(1, { leftPt: 0, rightPt: 120, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines[0]?.leftPt).toBe(72);
+    expect(boxes[1]?.lines[0]?.leftPt).toBe(120);
+  });
+
+  it("wraps every line of a paragraph, not only its first", () => {
+    const boxes = wrapped(
+      paragraph(``, `${"a".repeat(40)} ${"b".repeat(40)}`),
+      bandOn(0, { leftPt: 0, rightPt: 120, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines.map((line) => line.leftPt)).toStrictEqual([120, 120]);
+  });
+
+  it("leaves a cell's text alone, since a cell is measured from its own origin", () => {
+    const boxes = wrapped(table(cell(paragraph(``, "aaaa"))), () => [
+      { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 },
+    ]);
+
+    expect(boxes[0]?.lines[0]?.topPt).toBe(36);
   });
 });
