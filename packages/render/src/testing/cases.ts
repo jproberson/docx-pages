@@ -77,6 +77,11 @@ export type ReferenceCase = {
   // the whole of it; a run is pinned one face at a time inside that.
   readonly textRunsMatched: number | null;
   readonly textRunsPlaced: number | null;
+  // How many times a picture in a format no browser draws is met over the whole
+  // document, EMF and WMF being what Word writes when a chart is pasted in. One in
+  // a header is met once per page. They are marked rather than drawn, and counted
+  // here so a new one cannot slip in unnoticed.
+  readonly unrenderablePictures: number;
   // How many list numbers are expected to be identified against Word's own output
   // and to sit where Word drew them.
   readonly numbersMatched: number | null;
@@ -261,6 +266,7 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
     textRunsMatched: optionalNumber(source, "textRunsMatched", where),
     textRunsPlaced: optionalNumber(source, "textRunsPlaced", where),
+    unrenderablePictures: optionalNumber(source, "unrenderablePictures", where) ?? 0,
     numbersMatched: optionalNumber(source, "numbersMatched", where),
     numbersPlaced: optionalNumber(source, "numbersPlaced", where),
     textTolerancePt: optionalNumber(source, "textTolerancePt", where) ?? 1,

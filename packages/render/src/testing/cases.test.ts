@@ -58,6 +58,7 @@ describe("readReferenceManifest", () => {
       textLinesPlaced: null,
       textRunsMatched: null,
       textRunsPlaced: null,
+      unrenderablePictures: 0,
       numbersMatched: null,
       numbersPlaced: null,
       textTolerancePt: 1,

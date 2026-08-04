@@ -28,8 +28,9 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
   for (const each of CASES) {
     describe(each.id, () => {
       // The header and the footer are drawn again on every page, so what they hold
-      // counts once per page.
-      it("draws every picture the layout resolved", () => {
+      // counts once per page. A picture in a format no browser takes cannot be
+      // drawn at all, and is marked in its place rather than quietly dropped.
+      it("draws every picture the layout resolved, or marks the ones it cannot", () => {
         const { html, layout } = rendered(each);
         const surrounding = [
           ...layout.headerFloats,
@@ -44,8 +45,10 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
         ]);
         const pictures = drawn.filter((placed) => placed.content.kind === "picture");
 
+        const undrawable = each.unrenderablePictures;
         expect(pictures.length).toBeGreaterThan(0);
-        expect(html.split('data-kind="picture"')).toHaveLength(pictures.length + 1);
+        expect(html.split('data-kind="picture"')).toHaveLength(pictures.length - undrawable + 1);
+        expect(html.split('data-kind="unresolved-picture"')).toHaveLength(undrawable + 1);
       });
 
       it("leaves nothing unresolved or unrecognised", () => {

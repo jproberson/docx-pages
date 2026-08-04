@@ -13,7 +13,8 @@
     "typecheck": "tsc --build --force",
     "test": "vitest run",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
-    "preview": "pnpm typecheck && node packages/render/dist/preview/write.js"
+    "preview": "pnpm typecheck && node packages/render/dist/preview/write.js",
+    "fonts": "pnpm typecheck && node packages/render/dist/fonts/report.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
