@@ -20,6 +20,9 @@ const ARIAL = buildFace({
 
 const ARIAL_12 = 13.798828125;
 
+// Every glyph in the test face is half an em, so 12pt text is 6pt a character.
+const PER_CHARACTER = 6;
+
 const RECT: TextBoxRect = { leftPt: 100, topPt: 200, widthPt: 180, heightPt: 90 };
 
 const NO_INSETS = { leftEmu: 0, topEmu: 0, rightEmu: 0, bottomEmu: 0 };
@@ -91,6 +94,11 @@ describe("layOutTextBox", () => {
       ARIAL_12 * 2,
       9,
     );
+  });
+
+  it("reports how far the widest line reached, for a box that fits itself to it", () => {
+    const text = place(`${paragraph("aa")}${paragraph("bbbb")}`);
+    expect(text.contentWidthPt).toBeCloseTo(4 * PER_CHARACTER, 9);
   });
 
   it("centres the text in a box taller than it when the shape asks", () => {

@@ -1,4 +1,4 @@
-import { readAnchors } from "../docx/anchors.js";
+import { readAnchors, type FloatingAnchor } from "../docx/anchors.js";
 import { readInlines } from "../docx/inlines.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx/relationships.js";
@@ -14,7 +14,7 @@ import {
   type ParagraphBox,
 } from "./stack.js";
 import { breakStack, type PageStack } from "./pages.js";
-import { placeFloat, type PlacedFloat } from "./floats.js";
+import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
@@ -91,7 +91,7 @@ function fillTextBoxes(
   return { kind: "filled", floats: filled };
 }
 
-type BandFrame = {
+type FloatFrame = {
   readonly page: SectionGeometry;
   readonly styles: StyleTable;
   readonly metricsFor: MetricsResolver;
@@ -101,28 +101,56 @@ type BandFrame = {
   readonly columnTopPt: number;
 };
 
-// A box that fits itself to its text is as tall as the text plus its insets,
-// whatever height the file stored for it.
-function wrappingHeightPt(float: PlacedFloat, frame: BandFrame): number {
-  const { content } = float;
-  if (content.kind !== "text-box" || !content.body.fitsText) return float.heightPt;
+// "Resize shape to fit text": the box is as tall as its text, and as wide as it
+// too when the text does not wrap inside it. A box holding no text has nothing to
+// fit itself to, so it keeps the size the file stored for it.
+function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
+  const stored = {
+    widthPt: emuToPoints(anchor.widthEmu),
+    heightPt: emuToPoints(anchor.heightEmu),
+  };
+  const { content } = anchor;
+  if (content.kind !== "text-box" || !content.body.fitsText) return stored;
 
   const laid = layOutTextBox({
     body: content.body,
-    rect: float,
+    rect: { leftPt: 0, topPt: 0, ...stored },
     styles: frame.styles,
     metricsFor: frame.metricsFor,
     part: frame.part,
   });
-  if (laid.kind === "blocked") return float.heightPt;
+  if (laid.kind === "blocked" || laid.text.boxes.every((box) => box.lines.length === 0)) {
+    return stored;
+  }
 
-  const insets = content.body.insets;
-  return laid.text.contentHeightPt + emuToPoints(insets.topEmu) + emuToPoints(insets.bottomEmu);
+  const { insets, wraps } = content.body;
+  return {
+    widthPt: wraps
+      ? stored.widthPt
+      : laid.text.contentWidthPt + emuToPoints(insets.leftEmu) + emuToPoints(insets.rightEmu),
+    heightPt:
+      laid.text.contentHeightPt + emuToPoints(insets.topEmu) + emuToPoints(insets.bottomEmu),
+  };
 }
+
+const placeFloatIn = (
+  anchor: FloatingAnchor,
+  paragraphTopPt: number,
+  frame: FloatFrame,
+  resolvePart: PartResolver,
+): PlacedFloat =>
+  placeFloat({
+    anchor,
+    page: frame.page,
+    paragraphTopPt,
+    bodyTopPt: frame.columnTopPt,
+    resolvePart,
+    sizePt: fittedSizePt(anchor, frame),
+  });
 
 // Text stays off an object by the distances its anchor asks for; an object wrapped
 // top and bottom takes the whole width of the page with it.
-function bandFor(float: PlacedFloat, frame: BandFrame): WrapBand {
+function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
   const { distances, wrap } = float.anchor;
   const spansPage = wrap === "topAndBottom";
   return {
@@ -131,25 +159,19 @@ function bandFor(float: PlacedFloat, frame: BandFrame): WrapBand {
       ? twipsToPoints(frame.page.widthTwips)
       : float.leftPt + float.widthPt + emuToPoints(distances.rightEmu),
     topPt: float.topPt - emuToPoints(distances.topEmu),
-    bottomPt: float.topPt + wrappingHeightPt(float, frame) + emuToPoints(distances.bottomEmu),
+    bottomPt: float.topPt + float.heightPt + emuToPoints(distances.bottomEmu),
   };
 }
 
 // Only geometry matters here, so a picture's part is left unresolved.
 const bandsIn =
-  (frame: BandFrame): BandResolver =>
+  (frame: FloatFrame): BandResolver =>
   (paragraph, topPt) =>
     readAnchors(paragraph)
       .filter((anchor) => anchor.wrap !== "none")
       .map((anchor) =>
         bandFor(
-          placeFloat({
-            anchor,
-            page: frame.page,
-            paragraphTopPt: topPt,
-            bodyTopPt: frame.columnTopPt,
-            resolvePart: () => null,
-          }),
+          placeFloatIn(anchor, topPt, frame, () => null),
           frame,
         ),
       );
@@ -197,7 +219,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const widthPt = twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
   const frame: StoryFrame = { styles, metricsFor, leftPt, widthPt };
 
-  const bandFrame = (part: string | null, columnTopPt: number): BandFrame => ({
+  const floatFrame = (part: string | null, columnTopPt: number): FloatFrame => ({
     page,
     styles,
     metricsFor,
@@ -211,7 +233,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     headerPart,
     frame,
     headerTopPt,
-    bandsIn(bandFrame(headerPart, headerTopPt)),
+    bandsIn(floatFrame(headerPart, headerTopPt)),
   );
   if (header.kind === "blocked") return header;
 
@@ -221,7 +243,13 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   // The footer hangs from the bottom edge, so it is measured at the origin and then
   // dropped to the height it turned out to need.
   const footerPart = defaultFooterPart(pkg);
-  const measuredFooter = measureStory(pkg, footerPart, frame, 0, bandsIn(bandFrame(footerPart, 0)));
+  const measuredFooter = measureStory(
+    pkg,
+    footerPart,
+    frame,
+    0,
+    bandsIn(floatFrame(footerPart, 0)),
+  );
   if (measuredFooter.kind === "blocked") return measuredFooter;
   const footerTopPt =
     pageHeightPt - twipsToPoints(page.margin.footerTwips) - measuredFooter.heightPt;
@@ -240,7 +268,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     blocks: bodyBlocks,
     part: MAIN_DOCUMENT_PART,
     originPt: bodyTopPt,
-    bandsFor: bandsIn(bandFrame(MAIN_DOCUMENT_PART, bodyTopPt)),
+    bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt)),
   });
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
@@ -250,8 +278,9 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const drawingsFor = (
     blocks: readonly Block[],
     topOf: ReadonlyMap<number, number>,
-    part: string,
+    floats: FloatFrame,
   ): { readonly floats: readonly PlacedFloat[]; readonly inlines: readonly PlacedInline[] } => {
+    const part = floats.part;
     const relationships = readRelationships(pkg, part);
     const resolvePart = (relationshipId: string): string | null => {
       const target = relationships.get(relationshipId)?.part;
@@ -266,7 +295,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     return {
       floats: anchored.flatMap(({ paragraph, paragraphTopPt }) =>
         readAnchors(paragraph).map((anchor) =>
-          placeFloat({ anchor, page, paragraphTopPt, bodyTopPt, resolvePart }),
+          placeFloatIn(anchor, paragraphTopPt, floats, resolvePart),
         ),
       ),
       inlines: anchored.flatMap(({ paragraph, paragraphTopPt }) =>
@@ -281,16 +310,16 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     };
   };
 
-  const drawingsIn = (story: Story) =>
+  const drawingsIn = (story: Story, columnTopPt: number) =>
     story.part === null
       ? { floats: [], inlines: [] }
-      : drawingsFor(story.blocks, topsOf(story.boxes), story.part);
+      : drawingsFor(story.blocks, topsOf(story.boxes), floatFrame(story.part, columnTopPt));
 
-  const headerDrawings = drawingsIn(header);
-  const footerDrawings = drawingsIn(footer);
+  const headerDrawings = drawingsIn(header, headerTopPt);
+  const footerDrawings = drawingsIn(footer, footerTopPt);
   const broken = breakStack({ boxes: bodyStack.boxes, topPt: bodyTopPt, bottomPt: bodyBottomPt });
   const bodyDrawings = pageTops(broken).map((topOf) =>
-    drawingsFor(bodyBlocks, topOf, MAIN_DOCUMENT_PART),
+    drawingsFor(bodyBlocks, topOf, floatFrame(MAIN_DOCUMENT_PART, bodyTopPt)),
   );
 
   const filled = fillTextBoxes(

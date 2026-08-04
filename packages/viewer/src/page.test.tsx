@@ -33,7 +33,7 @@ const EMPTY_BODY: TextBoxBody = {
 const textBox = (boxes: readonly ParagraphBox[] = []): PlacedContent => ({
   kind: "text-box",
   body: EMPTY_BODY,
-  text: boxes.length === 0 ? null : { boxes, contentHeightPt: 0 },
+  text: boxes.length === 0 ? null : { boxes, contentHeightPt: 0, contentWidthPt: 0 },
 });
 
 const paragraphOf = (

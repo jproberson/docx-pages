@@ -22,12 +22,20 @@ export type PlacedFloat = {
 
 export type PartResolver = (relationshipId: string) => string | null;
 
+export type FloatSize = {
+  readonly widthPt: number;
+  readonly heightPt: number;
+};
+
 export type PlaceFloatInput = {
   readonly anchor: FloatingAnchor;
   readonly page: SectionGeometry;
   readonly paragraphTopPt: number;
   readonly bodyTopPt: number;
   readonly resolvePart: PartResolver;
+  // What the object turned out to be, for one that sizes itself to its content.
+  // An aligned object lands on its own size, so this decides where it goes.
+  readonly sizePt?: FloatSize;
 };
 
 type Band = { readonly startPt: number; readonly extentPt: number };
@@ -95,8 +103,8 @@ export function resolveContent(content: DrawingContent, resolvePart: PartResolve
 
 export function placeFloat(input: PlaceFloatInput): PlacedFloat {
   const { anchor } = input;
-  const widthPt = emuToPoints(anchor.widthEmu);
-  const heightPt = emuToPoints(anchor.heightEmu);
+  const widthPt = input.sizePt?.widthPt ?? emuToPoints(anchor.widthEmu);
+  const heightPt = input.sizePt?.heightPt ?? emuToPoints(anchor.heightEmu);
 
   return {
     anchor,

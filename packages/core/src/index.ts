@@ -121,7 +121,13 @@ export type {
 } from "./docx/anchors.js";
 
 export { placeFloat } from "./layout/floats.js";
-export type { PartResolver, PlacedContent, PlacedFloat, PlaceFloatInput } from "./layout/floats.js";
+export type {
+  FloatSize,
+  PartResolver,
+  PlacedContent,
+  PlacedFloat,
+  PlaceFloatInput,
+} from "./layout/floats.js";
 
 export { readInlines } from "./docx/inlines.js";
 export type { InlineDrawing } from "./docx/inlines.js";

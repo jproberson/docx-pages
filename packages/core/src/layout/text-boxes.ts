@@ -19,6 +19,9 @@ export type TextBoxRect = {
 export type PlacedTextBox = {
   readonly boxes: readonly ParagraphBox[];
   readonly contentHeightPt: number;
+  // How far the widest line reaches past the box's own left inset, which is what
+  // a box that fits itself to its text is as wide as.
+  readonly contentWidthPt: number;
 };
 
 export type LayOutTextBoxInput = {
@@ -61,9 +64,15 @@ export function layOutTextBox(input: LayOutTextBoxInput): TextBoxLayout {
     text: {
       boxes: shiftBoxes(measured.boxes, offsetPt),
       contentHeightPt: measured.heightPt,
+      contentWidthPt: widestLinePt(measured.boxes, leftPt),
     },
   };
 }
+
+const widestLinePt = (boxes: readonly ParagraphBox[], leftPt: number): number =>
+  boxes
+    .flatMap((box) => box.lines)
+    .reduce((widest, line) => Math.max(widest, line.leftPt + line.line.widthPt - leftPt), 0);
 
 // Word lets text overflow a box it does not fit, so a negative slack still seats
 // the text where the anchor asks rather than clamping it back inside.

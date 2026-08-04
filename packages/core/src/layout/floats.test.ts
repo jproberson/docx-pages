@@ -145,6 +145,21 @@ describe("placeFloat", () => {
     expect(placed.leftPt).toBeCloseTo(36 + (540 - 180) / 2, 6);
   });
 
+  it("lands an aligned object on the size it turned out to be, not its stored one", () => {
+    const placed = placeFloat({
+      anchor: firstAnchor(anchorXml({ h: alignH("right"), v: offsetV(0) })),
+      page: LETTER,
+      paragraphTopPt: 100,
+      bodyTopPt: 36,
+      resolvePart: () => null,
+      sizePt: { widthPt: 44.5, heightPt: 27.2 },
+    });
+
+    expect(placed.leftPt).toBeCloseTo(612 - 36 - 44.5, 6);
+    expect(placed.widthPt).toBeCloseTo(44.5, 6);
+    expect(placed.heightPt).toBeCloseTo(27.2, 6);
+  });
+
   it("converts the extent into points", () => {
     const placed = place(anchorXml({ h: offsetH(0), v: offsetV(0) }), 100);
     expect(placed.widthPt).toBeCloseTo(180, 6);
