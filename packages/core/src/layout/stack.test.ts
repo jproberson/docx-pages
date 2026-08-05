@@ -731,8 +731,10 @@ describe("measureStack where a paragraph asks for contextual spacing", () => {
       paragraph(SPACED, "aaaa") + paragraph(`<w:pStyle w:val="Other"/>${SPACED}`, "bbbb");
     const boxes = boxesOf(body, OTHER_STYLE);
 
+    // The room between the two is kept rather than dropped, and it is the larger
+    // of what either asks for rather than both of them.
     expect(boxes[0]?.heightPt).toBeCloseTo(12 + ARIAL_12 + 12, 9);
-    expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(36 + 12 + ARIAL_12 + 12 + 12, 9);
+    expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(36 + 12 + ARIAL_12 + 12, 9);
   });
 
   it("keeps the space where the paragraph beside it is in another cell", () => {

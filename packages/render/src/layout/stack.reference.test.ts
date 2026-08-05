@@ -62,10 +62,14 @@ describe.skipIf(CASES.length === 0)("paragraph stack against Word", () => {
         );
       });
 
-      it("starts the body below the header rather than at the top margin", () => {
+      it("starts the body under the header, or at the top margin where there is none", () => {
         const { bodyTopPt, headerTopPt, headerHeightPt, page } = layoutOf(each);
-        expect(bodyTopPt).toBeGreaterThan(page.margin.topTwips / 20);
-        expect(bodyTopPt).toBeCloseTo(headerTopPt + headerHeightPt, 9);
+        // A header pushes the body down past the margin; a document without one
+        // starts at the margin itself, which is where a header of no height sits.
+        const marginPt = page.margin.topTwips / 20;
+        expect(bodyTopPt).toBeGreaterThanOrEqual(marginPt);
+        if (headerHeightPt > 0) expect(bodyTopPt).toBeGreaterThan(marginPt);
+        expect(bodyTopPt).toBeCloseTo(Math.max(marginPt, headerTopPt + headerHeightPt), 9);
       });
     });
   }

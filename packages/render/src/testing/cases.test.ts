@@ -60,6 +60,7 @@ describe("readReferenceManifest", () => {
       textRunsMatched: null,
       textRunsPlaced: null,
       unrenderablePictures: 0,
+      unknownDrawings: 0,
       metafileFills: null,
       metafileRuns: null,
       numbersMatched: null,

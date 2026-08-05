@@ -1802,19 +1802,19 @@
         {
           "index": 17,
           "page": 1,
-          "topPt": 437,
+          "topPt": 425,
           "leftPt": 0
         },
         {
           "index": 18,
           "page": 1,
-          "topPt": 451,
+          "topPt": 463,
           "leftPt": 0
         },
         {
           "index": 19,
           "page": 1,
-          "topPt": 466,
+          "topPt": 478,
           "leftPt": 0
         },
         {
@@ -1826,7 +1826,49 @@
         {
           "index": 21,
           "page": 1,
-          "topPt": 507,
+          "topPt": 531,
+          "leftPt": 0
+        },
+        {
+          "index": 22,
+          "page": 1,
+          "topPt": 546,
+          "leftPt": 0
+        },
+        {
+          "index": 23,
+          "page": 1,
+          "topPt": 560,
+          "leftPt": 0
+        },
+        {
+          "index": 24,
+          "page": 1,
+          "topPt": 587,
+          "leftPt": 0
+        },
+        {
+          "index": 25,
+          "page": 1,
+          "topPt": 602,
+          "leftPt": 0
+        },
+        {
+          "index": 26,
+          "page": 1,
+          "topPt": 616,
+          "leftPt": 0
+        },
+        {
+          "index": 27,
+          "page": 1,
+          "topPt": 643,
+          "leftPt": 0
+        },
+        {
+          "index": 28,
+          "page": 1,
+          "topPt": 658,
           "leftPt": 0
         }
       ],

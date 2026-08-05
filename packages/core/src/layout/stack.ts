@@ -449,7 +449,23 @@ type Spacing = {
   readonly afterPt: number;
 };
 
+// Where one paragraph's room below meets the next one's room above, Word keeps the
+// larger of the two rather than both: a paragraph asking for 11.25pt under it
+// followed by one asking for 12pt over it leaves 12pt between them, not 23.25.
+// The room below belongs to the paragraph above, so this is taken off the room
+// above rather than added anywhere.
 function spacingPt(
+  paragraph: Paragraph,
+  paragraphFrame: ParagraphFrame,
+  context: Context,
+  neighbours: Neighbours,
+): Spacing {
+  const own = ownSpacingPt(paragraph, paragraphFrame, context, neighbours);
+  const abovePt = roomBelowPt(neighbours.above, paragraph, context);
+  return { ...own, beforePt: Math.max(0, own.beforePt - abovePt) };
+}
+
+function ownSpacingPt(
   paragraph: Paragraph,
   paragraphFrame: ParagraphFrame,
   context: Context,
@@ -467,6 +483,14 @@ function spacingPt(
     beforePt: sameStyle(neighbours.above) ? 0 : beforePt,
     afterPt: sameStyle(neighbours.below) ? 0 : afterPt,
   };
+}
+
+// How much room the paragraph above keeps under itself, which is the whole of
+// what it already put between the two.
+function roomBelowPt(above: Paragraph | null, below: Paragraph, context: Context): number {
+  if (above === null) return 0;
+  const frame = resolveParagraphFrame(above, context.styles);
+  return ownSpacingPt(above, frame, context, { above: null, below }).afterPt;
 }
 
 // A number sits at the hanging position and the text after it starts at whatever

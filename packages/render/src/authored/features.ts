@@ -176,6 +176,19 @@ export function spacingDocument(): string {
     paragraph(spacing(`w:line="480" w:lineRule="atLeast"`), ""),
     paragraph(spacing(`w:line="480" w:lineRule="exact"`), ""),
 
+    // What happens where one paragraph's room below it meets the next one's room
+    // above. Both pairs ask for the same two amounts the other way round, so the
+    // four answers worth telling apart all read differently: adding them gives 36
+    // to both, taking the larger gives 24 to both, and letting either side win
+    // outright gives 12 to one and 24 to the other.
+    paragraph("", run("pairs")),
+    paragraph(spacing(`w:after="480"`), run("wide after")),
+    paragraph(spacing(`w:before="240"`), run("narrow before")),
+    paragraph("", run("between pairs")),
+    paragraph(spacing(`w:after="240"`), run("narrow after")),
+    paragraph(spacing(`w:before="480"`), run("wide before")),
+    paragraph("", run("after pairs")),
+
     // Three of a kind that keep no room between themselves but still stand off
     // whatever is either side of the run.
     paragraph("", run("before the run")),

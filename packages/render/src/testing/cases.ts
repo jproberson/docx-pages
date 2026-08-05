@@ -83,6 +83,10 @@ export type ReferenceCase = {
   // a header is met once per page. They are marked rather than drawn, and counted
   // here so a new one cannot slip in unnoticed.
   readonly unrenderablePictures: number;
+  // How many drawings the document holds of a kind this project does not draw at
+  // all, a chart being the one met so far. They are marked as unknown rather than
+  // drawn, and counted here so a new one cannot slip in unnoticed.
+  readonly unknownDrawings: number;
   // How many blocks of colour and runs of text the metafiles in the document are
   // expected to draw, every one of them where Word drew the same shape from the
   // same recording. Left out, the document has no metafile worth playing.
@@ -294,6 +298,7 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     textRunsMatched: optionalNumber(source, "textRunsMatched", where),
     textRunsPlaced: optionalNumber(source, "textRunsPlaced", where),
     unrenderablePictures: optionalNumber(source, "unrenderablePictures", where) ?? 0,
+    unknownDrawings: optionalNumber(source, "unknownDrawings", where) ?? 0,
     metafileFills: optionalNumber(source, "metafileFills", where),
     metafileRuns: optionalNumber(source, "metafileRuns", where),
     numbersMatched: optionalNumber(source, "numbersMatched", where),

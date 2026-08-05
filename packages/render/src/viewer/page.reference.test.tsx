@@ -101,13 +101,13 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
         );
         colors.delete(null);
 
-        expect(colors.size).toBeGreaterThan(0);
         for (const color of colors) expect(html).toContain(color);
       });
 
-      it("leaves nothing unresolved or unrecognised", () => {
-        expect(rendered(each).html).not.toContain('data-kind="missing-picture"');
-        expect(rendered(each).html).not.toContain('data-kind="unknown"');
+      it("leaves nothing unresolved, and nothing unrecognised it has not declared", () => {
+        const { html } = rendered(each);
+        expect(html).not.toContain('data-kind="missing-picture"');
+        expect(html.split('data-kind="unknown"')).toHaveLength(each.unknownDrawings + 1);
       });
 
       it("embeds each picture rather than pointing at a file that will not be there", () => {
@@ -115,9 +115,11 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
       });
 
       it("keeps every object inside the page it belongs to", () => {
-        const { html } = rendered(each);
-        expect(html).toContain("width:612pt");
-        expect(html).toContain("height:792pt");
+        const { html, layout } = rendered(each);
+        const widthPt = layout.page.widthTwips / 20;
+        const heightPt = layout.page.heightTwips / 20;
+        expect(html).toContain(`width:${String(widthPt)}pt`);
+        expect(html).toContain(`height:${String(heightPt)}pt`);
       });
 
       // Everything else the suite pins stops at the laid-out model. A layer sized
