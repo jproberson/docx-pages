@@ -8,15 +8,32 @@ import { authoredPath } from "./write.js";
 // built for the seven real ones works on them too: the preview beside Word's own
 // pdf, the text comparison, the fills and the pictures.
 //
-// They carry no expectations of their own here. What each one is worth is pinned
-// in `layout.reference.test.ts` against Word's answers about the document rather
-// than against its rendering, and this is for looking at: a number that is out and
-// a page that looks wrong are the same fault seen twice, and seeing it is what says
-// which one to believe.
+// Where every line of one landed is pinned here, against Word's own rendering of
+// it. That is not what `layout.reference.test.ts` asks, which is where Word says
+// it put each paragraph: a table is the plainest case of the difference, since
+// Word will only answer for the row and its pdf draws every cell.
 
 const renderedPath = (id: string): string | null => {
   const path = authoredPath(id).replace(/\.docx$/, ".pdf");
   return existsSync(path) ? path : null;
+};
+
+// How much of each document Word's pdf agrees with: every line of it, every run
+// of every line, and every number in front of one. A document left out of this
+// draws the same text over and over in boxes standing on each other, and which
+// line of it a run of items in the pdf belongs to is then anyone's guess.
+type Drawn = {
+  readonly lines: number;
+  readonly runs: number;
+  readonly numbers: number;
+};
+
+const DRAWN: Readonly<Record<string, Drawn>> = {
+  tabs: { lines: 13, runs: 37, numbers: 0 },
+  tables: { lines: 27, runs: 27, numbers: 0 },
+  spacing: { lines: 19, runs: 19, numbers: 0 },
+  wrapping: { lines: 7, runs: 7, numbers: 0 },
+  numbering: { lines: 10, runs: 10, numbers: 7 },
 };
 
 const EMPTY = {
@@ -30,16 +47,42 @@ const EMPTY = {
   disjointFloatPairs: [],
   renderedImagesPt: [],
   renderedPageIndexes: [],
-  textLinesMatched: null,
-  textLinesPlaced: null,
-  textRunsMatched: null,
-  textRunsPlaced: null,
   unrenderablePictures: 0,
   metafileFills: null,
   metafileRuns: null,
-  numbersMatched: null,
-  numbersPlaced: null,
 } as const;
+
+const drawnBy = (
+  id: string,
+): Pick<
+  ReferenceCase,
+  | "textLinesMatched"
+  | "textLinesPlaced"
+  | "textRunsMatched"
+  | "textRunsPlaced"
+  | "numbersMatched"
+  | "numbersPlaced"
+> => {
+  const drawn = DRAWN[id];
+  if (drawn === undefined) {
+    return {
+      textLinesMatched: null,
+      textLinesPlaced: null,
+      textRunsMatched: null,
+      textRunsPlaced: null,
+      numbersMatched: null,
+      numbersPlaced: null,
+    };
+  }
+  return {
+    textLinesMatched: drawn.lines,
+    textLinesPlaced: drawn.lines,
+    textRunsMatched: drawn.runs,
+    textRunsPlaced: drawn.runs,
+    numbersMatched: drawn.numbers,
+    numbersPlaced: drawn.numbers,
+  };
+};
 
 export function authoredCases(): readonly ReferenceCase[] {
   return authoredDocuments().flatMap((each) => {
@@ -48,6 +91,7 @@ export function authoredCases(): readonly ReferenceCase[] {
     return [
       {
         ...EMPTY,
+        ...drawnBy(each.id),
         id: `authored-${each.id}`,
         documentPath,
         renderedPath: renderedPath(each.id),

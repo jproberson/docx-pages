@@ -329,6 +329,46 @@ describe("measureStack over tables", () => {
     expect(boxesOf(body)[0]?.lines[0]?.leftPt).toBeCloseTo(72 - 5, 9);
   });
 
+  it("holds every cell of a row off the top wall by the largest margin any of them asks for", () => {
+    const held = `<w:tcMar><w:top w:w="288" w:type="dxa"/></w:tcMar>`;
+    const result = measure(table(cell(`<w:p/>`), cell(`<w:p/>`, held)));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes.map((box) => box.topPt)).toStrictEqual([36 + 14.4, 36 + 14.4]);
+  });
+
+  it("adds the largest bottom margin in a row to the row without moving its text", () => {
+    const held = `<w:tcMar><w:bottom w:w="288" w:type="dxa"/></w:tcMar>`;
+    const result = measure(table(cell(`<w:p/>`, held), cell(`<w:p/>`)));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes[0]?.topPt).toBe(36);
+    expect(result.heightPt).toBeCloseTo(ARIAL_12 + 14.4, 9);
+  });
+
+  it("holds a cell's text off the side by its own margin, leaving its neighbour the table's", () => {
+    const held = `<w:tcMar><w:left w:w="288" w:type="dxa"/></w:tcMar>`;
+    const boxes = boxesOf(
+      table(cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`, held), cell(`<w:p/>`)),
+    );
+    expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 14.4, 9);
+  });
+
+  it("takes a stated row height as a floor under the row", () => {
+    const asked = `<w:trPr><w:trHeight w:val="1440"/></w:trPr>`;
+    const body = `<w:tbl><w:tr>${asked}${cell(`<w:p/>`)}</w:tr></w:tbl>`;
+    const result = measure(body);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes[0]?.topPt).toBe(36);
+    expect(result.heightPt).toBeCloseTo(72, 9);
+  });
+
+  it("takes an exact row height as the whole of the row, whatever its cells hold", () => {
+    const asked = `<w:trPr><w:trHeight w:val="288" w:hRule="exact"/></w:trPr>`;
+    const body = `<w:tbl><w:tr>${asked}${cell(`<w:p/><w:p/>`)}</w:tr></w:tbl>`;
+    const result = measure(body);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.heightPt).toBeCloseTo(14.4, 9);
+  });
+
   it("reports the cell paragraph that blocks measurement", () => {
     const styles = NORMAL.replace('w:ascii="Arial"', 'w:ascii="Meridian Sans"');
     const result = measure(table(cell(`<w:p/>`)), styles);

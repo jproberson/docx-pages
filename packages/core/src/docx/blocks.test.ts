@@ -76,7 +76,43 @@ describe("readBlocks", () => {
       `</w:tblPr>`;
     const [block] = blocksOf(`<w:tbl>${properties}${row(cell(para("in")))}</w:tbl>`);
     if (block?.kind !== "table") throw new Error("expected a table");
-    expect(block.insets).toStrictEqual({ indentTwips: -5, leftTwips: 72, rightTwips: 0 });
+    expect(block.insets).toStrictEqual({
+      indentTwips: -5,
+      leftTwips: 72,
+      rightTwips: 0,
+      topTwips: 0,
+      bottomTwips: 0,
+    });
+  });
+
+  it("reads the margins a cell asks for itself, and nothing for the sides it leaves out", () => {
+    const own = `<w:tcMar><w:top w:w="288" w:type="dxa"/><w:left w:w="0" w:type="dxa"/></w:tcMar>`;
+    const [block] = blocksOf(table(row(cell(para("in"), own))));
+    if (block?.kind !== "table") throw new Error("expected a table");
+    expect(block.rows[0]?.cells[0]?.margins).toStrictEqual({
+      topTwips: 288,
+      leftTwips: 0,
+      bottomTwips: null,
+      rightTwips: null,
+    });
+  });
+
+  it("reads the height a row asks for, and whether it is a floor or the whole of it", () => {
+    const asked = (properties: string) =>
+      blocksOf(table(`<w:tr><w:trPr>${properties}</w:trPr>${cell(para("in"))}</w:tr>`))[0];
+
+    const floor = asked(`<w:trHeight w:val="1440"/>`);
+    const exact = asked(`<w:trHeight w:val="1440" w:hRule="exact"/>`);
+    if (floor?.kind !== "table" || exact?.kind !== "table") throw new Error("expected tables");
+
+    expect(floor.rows[0]?.height).toStrictEqual({ twips: 1440, exact: false });
+    expect(exact.rows[0]?.height).toStrictEqual({ twips: 1440, exact: true });
+  });
+
+  it("leaves a row that asks for no height of its own without one", () => {
+    const [block] = blocksOf(table(row(cell(para("in")))));
+    if (block?.kind !== "table") throw new Error("expected a table");
+    expect(block.rows[0]?.height).toBeNull();
   });
 
   it("keeps Word's margin for a side the table leaves out", () => {

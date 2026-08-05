@@ -10,6 +10,10 @@ import { resolve } from "node:path";
 export const PARAGRAPH_TOLERANCE_PT = 0.5;
 export const SHAPE_TOLERANCE_PT = 0.06;
 
+// A paragraph inside a table is the one exception to reading these as the
+// paragraph's own place: Word answers there for the row that holds it, and its
+// horizontal answer, measured from the cell rather than from the text column, is
+// nought whatever the cell holds. `answers.ts` says which is which.
 export type MeasuredParagraph = {
   // Word numbers paragraphs from one; ours from zero.
   readonly index: number;

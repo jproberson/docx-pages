@@ -213,12 +213,6 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "tables",
       title: "Tables",
       asks: "how tall a row is and how far a cell holds its text off its own walls",
-      // Word answers for a paragraph inside a cell from that cell's own boundary
-      // rather than the page's, and it counts cell paragraphs this project does not
-      // lay out as boxes of their own. Until the two are lined up the comparison
-      // says almost nothing; what is worth having already is Word's answers, which
-      // no other document in the suite records for a table.
-      paragraphsPlaced: 1,
       bytes: buildAuthoredDocx({ body: tableDocument() }),
     },
     {

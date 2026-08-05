@@ -7,6 +7,14 @@
 -- makes every later `open file name` fail, which reads like a broken script and is
 -- not, so the close is tried and the whole run quits Word behind itself.
 --
+-- A paragraph inside a table answers for the row that holds it rather than for
+-- itself, so the vertical below is the row's and the horizontal, measured from
+-- the cell's own boundary, is nought whatever the cell holds. Word will give a
+-- position relative to the page instead, which does tell the cells of a row
+-- apart, but it reports one for a numbered paragraph that is neither where the
+-- number was drawn nor where the text after it starts. Word's own pdf is the
+-- oracle for where a cell put its text.
+--
 -- Each argument is a path with a letter in front of it saying how much to measure:
 -- `P` for paragraphs and shapes, `C` for those and every character's place along
 -- its line. Characters cost a round trip each, so only the documents that ask a

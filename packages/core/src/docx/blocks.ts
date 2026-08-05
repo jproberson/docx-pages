@@ -11,14 +11,33 @@ export type Paragraph = {
 
 export type CellVerticalAlign = "top" | "center" | "bottom";
 
+// What a cell asks to hold its own content off its walls by, each side left out
+// where it asks for nothing and the table's own margin stands.
+export type CellMargins = {
+  readonly leftTwips: number | null;
+  readonly rightTwips: number | null;
+  readonly topTwips: number | null;
+  readonly bottomTwips: number | null;
+};
+
 export type TableCell = {
   readonly element: XmlElement;
   readonly blocks: readonly Block[];
   readonly verticalAlign: CellVerticalAlign;
+  readonly margins: CellMargins;
+};
+
+// How tall a row asks to be. A stated height is a floor under the row unless the
+// row says it is exact, in which case it is the whole of the row whatever its
+// cells hold.
+export type RowHeight = {
+  readonly twips: number;
+  readonly exact: boolean;
 };
 
 export type TableRow = {
   readonly cells: readonly TableCell[];
+  readonly height: RowHeight | null;
 };
 
 // How far a table sits from the edge of the text it is laid out in, and how far
@@ -27,15 +46,19 @@ export type TableInsets = {
   readonly indentTwips: number;
   readonly leftTwips: number;
   readonly rightTwips: number;
+  readonly topTwips: number;
+  readonly bottomTwips: number;
 };
 
 // What Word leaves at each side of a cell when the table asks for nothing: an
-// eighth of an inch, which is the whole of the offset a bulleted list inside a
-// table starts at.
+// eighth of an inch either side, which is the whole of the offset a bulleted list
+// inside a table starts at, and nothing above or below.
 export const DEFAULT_TABLE_INSETS: TableInsets = {
   indentTwips: 0,
   leftTwips: 108,
   rightTwips: 108,
+  topTwips: 0,
+  bottomTwips: 0,
 };
 
 export type Block =
@@ -74,11 +97,41 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
       if (tc.namespace !== W_NS || tc.name !== "tc") continue;
       const blocks: Block[] = [];
       collect(tc, blocks, nextIndex);
-      cells.push({ element: tc, blocks, verticalAlign: verticalAlignOf(tc) });
+      cells.push({
+        element: tc,
+        blocks,
+        verticalAlign: verticalAlignOf(tc),
+        margins: cellMargins(tc),
+      });
     }
-    rows.push({ cells });
+    rows.push({ cells, height: rowHeight(tr) });
   }
   return { kind: "table", rows, insets: tableInsets(element) };
+}
+
+// A height with no rule under it is a floor, which is what Word makes of one.
+function rowHeight(row: XmlElement): RowHeight | null {
+  const properties = firstNamed(row, W_NS, "trPr");
+  const height = properties === null ? null : firstNamed(properties, W_NS, "trHeight");
+  if (height === null) return null;
+
+  const twips = Number(attribute(height, W_NS, "val") ?? Number.NaN);
+  if (!Number.isFinite(twips)) return null;
+  return { twips, exact: attribute(height, W_NS, "hRule") === "exact" };
+}
+
+function cellMargins(cell: XmlElement): CellMargins {
+  const properties = firstNamed(cell, W_NS, "tcPr");
+  const margins = properties === null ? null : firstNamed(properties, W_NS, "tcMar");
+  const side = (name: string): number | null =>
+    margins === null ? null : twipsIn(firstNamed(margins, W_NS, name));
+
+  return {
+    leftTwips: side("left"),
+    rightTwips: side("right"),
+    topTwips: side("top"),
+    bottomTwips: side("bottom"),
+  };
 }
 
 // A width in a table is written as a value and the units it is given in, and only
@@ -105,6 +158,8 @@ function tableInsets(element: XmlElement): TableInsets {
       twipsIn(firstNamed(properties, W_NS, "tblInd")) ?? DEFAULT_TABLE_INSETS.indentTwips,
     leftTwips: margin("left") ?? DEFAULT_TABLE_INSETS.leftTwips,
     rightTwips: margin("right") ?? DEFAULT_TABLE_INSETS.rightTwips,
+    topTwips: margin("top") ?? DEFAULT_TABLE_INSETS.topTwips,
+    bottomTwips: margin("bottom") ?? DEFAULT_TABLE_INSETS.bottomTwips,
   };
 }
 

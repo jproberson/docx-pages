@@ -116,5 +116,6 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
     markTopPt: to === box.lines.length ? box.markTopPt - shiftPt : bottomPt,
     widowControl: box.widowControl,
     contentWidthPt: box.contentWidthPt,
+    clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt - shiftPt },
   };
 }

@@ -22,7 +22,14 @@ const FLOW =
 const SHORT = "quadrature windbreak";
 
 // How tall a row is, how far a cell holds its text off its own walls, and where
-// the text inside one starts. A cell's own margins override the table's.
+// the text inside one starts. A cell's own margins stand instead of the table's.
+//
+// Every cell says which one it is, since Word's own answer about a paragraph
+// inside a table is the row's origin rather than the paragraph's: only its pdf
+// says where the second cell of a row put its text, and only text that names its
+// cell can be told apart there. Every margin asked about is different at the top
+// from the bottom, so that text seated in the middle of the room a margin opens
+// cannot be mistaken for text held off the top wall by it.
 export function tableDocument(): string {
   const grid = `<w:tblGrid><w:gridCol w:w="2700"/><w:gridCol w:w="2700"/></w:tblGrid>`;
 
@@ -41,38 +48,89 @@ export function tableDocument(): string {
       <w:bottom w:w="${String(bottom)}" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
     </w:tblCellMar>`;
 
+  const own = (sides: Readonly<Record<string, number>>): string =>
+    `<w:tcMar>${Object.entries(sides)
+      .map(([side, twips]) => `<w:${side} w:w="${String(twips)}" w:type="dxa"/>`)
+      .join("")}</w:tcMar>`;
+
   const pair = (left: string, right: string): string =>
     cell("", paragraph("", run(left))) + cell("", paragraph("", run(right)));
 
   return [
     paragraph("", run("above")),
 
+    // A row is as tall as the most its cells hold, which the second cell here holds
+    // two lines of.
+    table(
+      margins(0, 0),
+      row(
+        "",
+        cell("", paragraph("", run("a one"))) +
+          cell("", paragraph("", run("a two")) + paragraph("", run("a three"))),
+      ),
+    ),
+    paragraph("", run("between")),
+
     // A table whose cells hold their text off the top and bottom walls, which this
     // project has been ignoring.
-    table(margins(0, 0), row("", pair("no margin", "no margin"))),
-    paragraph("", run("between")),
-    table(margins(288, 288), row("", pair("wide margin", "wide margin"))),
+    table(margins(288, 576), row("", pair("b one", "b two"))),
     paragraph("", run("between")),
 
     // A row asking to be at least as tall as a number of twips, and one asking to
     // be exactly that tall whatever its text needs.
     table(
       margins(0, 0),
-      row(`<w:trHeight w:val="1440"/>`, pair("at least", "at least")) +
-        row(`<w:trHeight w:val="288" w:hRule="exact"/>`, pair("exactly", "exactly")) +
-        row(`<w:trHeight w:val="1440" w:hRule="exact"/>`, pair("exactly tall", "exactly tall")),
+      row(`<w:trHeight w:val="1440"/>`, pair("c one", "c two")) +
+        row(`<w:trHeight w:val="288" w:hRule="exact"/>`, pair("c three", "c four")) +
+        row(`<w:trHeight w:val="1440" w:hRule="exact"/>`, pair("c five", "c six")),
     ),
     paragraph("", run("between")),
 
-    // A cell with margins of its own, which stand instead of the table's.
+    // A cell with margins of its own, which stand instead of the table's. Whether
+    // the cell beside it, which has none, is held off the top wall as well is what
+    // says if a margin belongs to its cell or to the whole row.
     table(
       margins(0, 0),
       row(
         "",
-        cell(
-          `<w:tcMar><w:top w:w="432" w:type="dxa"/><w:left w:w="432" w:type="dxa"/><w:bottom w:w="432" w:type="dxa"/><w:right w:w="432" w:type="dxa"/></w:tcMar>`,
-          paragraph("", run("own margin")),
-        ) + cell("", paragraph("", run("table margin"))),
+        cell(own({ top: 432, left: 432, bottom: 0, right: 108 }), paragraph("", run("d one"))) +
+          cell("", paragraph("", run("d two"))),
+      ),
+    ),
+    paragraph("", run("between")),
+
+    // The same question of the second cell, which is the one Word will not answer
+    // for: a margin only the second cell asks for either lifts the row or does not.
+    table(
+      margins(0, 0),
+      row(
+        "",
+        cell("", paragraph("", run("e one"))) +
+          cell(own({ top: 432, bottom: 0 }), paragraph("", run("e two"))),
+      ),
+    ),
+    paragraph("", run("between")),
+
+    // A cell holding its text off the bottom wall alone, which grows the row
+    // without moving the text down unless the room is shared out around it.
+    table(
+      margins(144, 144),
+      row(
+        "",
+        cell(own({ bottom: 432 }), paragraph("", run("f one"))) +
+          cell("", paragraph("", run("f two"))),
+      ),
+    ),
+    paragraph("", run("between")),
+
+    // A row told exactly how tall to be, with less room in it than its own margin
+    // asks to hold the text off the wall by.
+    table(
+      margins(0, 0),
+      row(
+        `<w:trHeight w:val="288" w:hRule="exact"/>`,
+        cell(own({ top: 432 }), paragraph("", run("g one"))) +
+          cell("", paragraph("", run("g two"))),
       ),
     ),
     paragraph("", run("below")),

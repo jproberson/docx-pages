@@ -108,6 +108,7 @@ export {
 export { measureStack, shiftBox, shiftBoxes, WP_NS } from "./layout/stack.js";
 export type {
   BandResolver,
+  ClipRect,
   LayoutBlocker,
   MeasureStackInput,
   MetricsResolver,

@@ -96,15 +96,30 @@ function stacked(floats: readonly PlacedFloat[], prefix: string): readonly Drawa
     .flatMap(({ float, key }) => [fromFloat(float, key), ...textOf(float, key)]);
 }
 
+// The text a story flowed down the page, which nothing cuts off.
+function flowedText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
+  const uncut = boxes.filter((box) => box.clipTo === null);
+  return hasText(uncut) ? [{ kind: "text", key: "flowed-text", boxes: uncut, clipTo: null }] : [];
+}
+
+// A paragraph in a row told exactly how tall to be is drawn in a layer that is
+// the row, so that what the row has no room for is not drawn at all. Each one
+// keeps its own layer: cells of one row are cut off at different places along it.
+function cutText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
+  return boxes.flatMap((box, at) => {
+    const clipTo = box.clipTo;
+    if (clipTo === null || !hasText([box])) return [];
+    return [{ kind: "text" as const, key: `cut-text-${String(at)}`, boxes: [box], clipTo }];
+  });
+}
+
 export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonly Drawable[] {
   const inlines = [...layout.headerInlines, ...page.inlines, ...layout.footerInlines].map(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
   );
 
   const flowed = [...layout.header, ...page.body, ...layout.footer];
-  const text: readonly Drawable[] = hasText(flowed)
-    ? [{ kind: "text", key: "flowed-text", boxes: flowed, clipTo: null }]
-    : [];
+  const text = [...flowedText(flowed), ...cutText(flowed)];
 
   return [
     ...stacked([...layout.headerFloats, ...layout.footerFloats], "story"),

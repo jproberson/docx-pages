@@ -85,6 +85,17 @@ export type PlacedLine = {
   readonly baselinePt: number;
 };
 
+// The rectangle a paragraph's text is cut to. A row told exactly how tall to be
+// gives one to every cell in it, since Word draws what does not fit and then cuts
+// it off at the row: text seated below an exact row's foot is written into the
+// pdf and painted nowhere.
+export type ClipRect = {
+  readonly leftPt: number;
+  readonly topPt: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+};
+
 export type ParagraphBox = {
   readonly index: number;
   readonly topPt: number;
@@ -104,6 +115,9 @@ export type ParagraphBox = {
   // What the paragraph asks of a page break running through it, which only the
   // break itself can act on.
   readonly widowControl: boolean;
+  // What the paragraph's text is cut off at, which is the row when a row was told
+  // exactly how tall to be and nothing anywhere else.
+  readonly clipTo: ClipRect | null;
 };
 
 export type StackMeasurement =
@@ -212,12 +226,19 @@ type MeasuredCell = {
   readonly align: CellVerticalAlign;
   readonly boxes: readonly ParagraphBox[];
   readonly heightPt: number;
+  readonly leftPt: number;
+  readonly widthPt: number;
 };
 
 // A row is as tall as its tallest cell, and every cell starts at the row's top;
-// cells sit beside each other, so their heights never add up. A cell holds its
-// own content off its edges by the table's margins, which is what a paragraph
-// inside one is indented from.
+// cells sit beside each other, so their heights never add up.
+//
+// How far a cell holds its content off its walls is not asked the same way at
+// every side. Left and right are the cell's own business: a cell states its
+// margins and its neighbour, which states none, keeps the table's. Above and
+// below they are the row's: the largest top margin any cell in the row asks for
+// holds every cell in it off the top wall, and the largest bottom margin adds to
+// the row under all of them.
 function measureRow(
   row: TableRow,
   context: Context,
@@ -226,9 +247,9 @@ function measureRow(
   insets: TableInsets,
 ): StackMeasurement {
   const measured: MeasuredCell[] = [];
-  const leftMarginPt = twipsToPoints(insets.leftTwips);
-  const rightMarginPt = twipsToPoints(insets.rightTwips);
-  let heightPt = 0;
+  const topMarginPt = rowMarginPt(row, insets, "topTwips");
+  const bottomMarginPt = rowMarginPt(row, insets, "bottomTwips");
+  let contentHeightPt = 0;
   let leftPt = frame.leftPt + twipsToPoints(insets.indentTwips);
 
   // A cell is measured from its own origin and only then moved down to the row, so
@@ -237,24 +258,58 @@ function measureRow(
 
   for (const cell of row.cells) {
     const widthPt = cellWidthPt(cell) ?? frame.widthPt;
+    const leftMarginPt = twipsToPoints(cell.margins.leftTwips ?? insets.leftTwips);
+    const rightMarginPt = twipsToPoints(cell.margins.rightTwips ?? insets.rightTwips);
     const cellFrame = {
       leftPt: leftPt + leftMarginPt,
       widthPt: Math.max(0, widthPt - leftMarginPt - rightMarginPt),
     };
     const of = measureBlocks(cell.blocks, inCell, 0, cellFrame);
     if (of.kind === "blocked") return of;
-    measured.push({ align: cell.verticalAlign, boxes: of.boxes, heightPt: of.heightPt });
-    heightPt = Math.max(heightPt, of.heightPt);
+    measured.push({
+      align: cell.verticalAlign,
+      boxes: of.boxes,
+      heightPt: of.heightPt,
+      leftPt,
+      widthPt,
+    });
+    contentHeightPt = Math.max(contentHeightPt, of.heightPt);
     leftPt += widthPt;
   }
 
+  const heightPt = rowHeightPt(row, topMarginPt + contentHeightPt + bottomMarginPt);
+  // A row told exactly how tall to be leaves its cells whatever room is left over
+  // once it has held them off its walls, and Word draws what does not fit anyway.
+  const roomPt = Math.max(0, heightPt - topMarginPt - bottomMarginPt);
+
   const boxes: ParagraphBox[] = [];
   for (const cell of measured) {
-    const offset = topPt + seatingOffset(cell.align, heightPt, cell.heightPt);
-    for (const box of cell.boxes) boxes.push(shiftBox(box, offset));
+    const offset = topPt + topMarginPt + seatingOffset(cell.align, roomPt, cell.heightPt);
+    // Only a row given a height of its own can be shorter than what it holds, so
+    // only that row has anything to cut its cells off at.
+    const clipTo =
+      row.height?.exact === true
+        ? { leftPt: cell.leftPt, topPt, widthPt: cell.widthPt, heightPt }
+        : null;
+    for (const box of cell.boxes) boxes.push({ ...shiftBox(box, offset), clipTo });
   }
 
   return { kind: "measured", boxes, heightPt };
+}
+
+// The largest margin any cell in the row asks for at that side, which is what
+// every cell in it is held off the wall by.
+function rowMarginPt(row: TableRow, insets: TableInsets, side: "topTwips" | "bottomTwips"): number {
+  const twips = row.cells.map((cell) => cell.margins[side] ?? insets[side]);
+  return twipsToPoints(Math.max(insets[side], ...twips));
+}
+
+// A stated height is a floor under the row until the row says it is exact, and
+// then it is the whole of the row however much its cells hold.
+function rowHeightPt(row: TableRow, heldPt: number): number {
+  if (row.height === null) return heldPt;
+  const askedPt = twipsToPoints(row.height.twips);
+  return row.height.exact ? askedPt : Math.max(heldPt, askedPt);
 }
 
 function cellWidthPt(cell: TableCell): number | null {
@@ -269,6 +324,7 @@ export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   ...box,
   topPt: box.topPt + byPt,
   markTopPt: box.markTopPt + byPt,
+  clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt + byPt },
   lines: box.lines.map((line) => ({
     ...line,
     topPt: line.topPt + byPt,
@@ -282,12 +338,8 @@ export const shiftBoxes = (
   byPt: number,
 ): readonly ParagraphBox[] => (byPt === 0 ? boxes : boxes.map((box) => shiftBox(box, byPt)));
 
-function seatingOffset(
-  align: CellVerticalAlign,
-  rowHeightPt: number,
-  cellHeightPt: number,
-): number {
-  const slack = rowHeightPt - cellHeightPt;
+function seatingOffset(align: CellVerticalAlign, roomPt: number, cellHeightPt: number): number {
+  const slack = Math.max(0, roomPt - cellHeightPt);
   if (align === "center") return slack / 2;
   if (align === "bottom") return slack;
   return 0;
@@ -570,6 +622,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       markTopPt: slot.topPt + height.seatPt,
       widowControl: paragraphFrame.widowControl,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
+      clipTo: null,
     };
   }
 
@@ -607,6 +660,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       (widest, line) => Math.max(widest, line.leftPt - frame.leftPt + line.line.widthPt),
       0,
     ),
+    clipTo: null,
   };
 }
 

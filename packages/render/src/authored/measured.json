@@ -1502,121 +1502,199 @@
         {
           "index": 5,
           "page": 1,
-          "topPt": 65,
+          "topPt": 51,
           "leftPt": 0
         },
         {
           "index": 6,
           "page": 1,
-          "topPt": 94,
+          "topPt": 80,
           "leftPt": 0
         },
         {
           "index": 7,
           "page": 1,
-          "topPt": 94,
+          "topPt": 109,
           "leftPt": 0
         },
         {
           "index": 8,
           "page": 1,
-          "topPt": 94,
+          "topPt": 109,
           "leftPt": 0
         },
         {
           "index": 9,
           "page": 1,
-          "topPt": 123,
+          "topPt": 109,
           "leftPt": 0
         },
         {
           "index": 10,
           "page": 1,
-          "topPt": 138,
+          "topPt": 152,
           "leftPt": 0
         },
         {
           "index": 11,
           "page": 1,
-          "topPt": 138,
+          "topPt": 167,
           "leftPt": 0
         },
         {
           "index": 12,
           "page": 1,
-          "topPt": 138,
+          "topPt": 167,
           "leftPt": 0
         },
         {
           "index": 13,
           "page": 1,
-          "topPt": 210,
+          "topPt": 167,
           "leftPt": 0
         },
         {
           "index": 14,
           "page": 1,
-          "topPt": 210,
+          "topPt": 239,
           "leftPt": 0
         },
         {
           "index": 15,
           "page": 1,
-          "topPt": 210,
+          "topPt": 239,
           "leftPt": 0
         },
         {
           "index": 16,
           "page": 1,
-          "topPt": 224,
+          "topPt": 239,
           "leftPt": 0
         },
         {
           "index": 17,
           "page": 1,
-          "topPt": 224,
+          "topPt": 253,
           "leftPt": 0
         },
         {
           "index": 18,
           "page": 1,
-          "topPt": 224,
+          "topPt": 253,
           "leftPt": 0
         },
         {
           "index": 19,
           "page": 1,
-          "topPt": 296,
+          "topPt": 253,
           "leftPt": 0
         },
         {
           "index": 20,
           "page": 1,
-          "topPt": 333,
+          "topPt": 325,
           "leftPt": 0
         },
         {
           "index": 21,
           "page": 1,
-          "topPt": 333,
+          "topPt": 362,
           "leftPt": 0
         },
         {
           "index": 22,
           "page": 1,
-          "topPt": 333,
+          "topPt": 362,
           "leftPt": 0
         },
         {
           "index": 23,
           "page": 1,
-          "topPt": 369,
+          "topPt": 362,
           "leftPt": 0
         },
         {
           "index": 24,
           "page": 1,
-          "topPt": 384,
+          "topPt": 376,
+          "leftPt": 0
+        },
+        {
+          "index": 25,
+          "page": 1,
+          "topPt": 413,
+          "leftPt": 0
+        },
+        {
+          "index": 26,
+          "page": 1,
+          "topPt": 413,
+          "leftPt": 0
+        },
+        {
+          "index": 27,
+          "page": 1,
+          "topPt": 413,
+          "leftPt": 0
+        },
+        {
+          "index": 28,
+          "page": 1,
+          "topPt": 427,
+          "leftPt": 0
+        },
+        {
+          "index": 29,
+          "page": 1,
+          "topPt": 449,
+          "leftPt": 0
+        },
+        {
+          "index": 30,
+          "page": 1,
+          "topPt": 449,
+          "leftPt": 0
+        },
+        {
+          "index": 31,
+          "page": 1,
+          "topPt": 449,
+          "leftPt": 0
+        },
+        {
+          "index": 32,
+          "page": 1,
+          "topPt": 485,
+          "leftPt": 0
+        },
+        {
+          "index": 33,
+          "page": 1,
+          "topPt": 522,
+          "leftPt": 0
+        },
+        {
+          "index": 34,
+          "page": 1,
+          "topPt": 522,
+          "leftPt": 0
+        },
+        {
+          "index": 35,
+          "page": 1,
+          "topPt": 522,
+          "leftPt": 0
+        },
+        {
+          "index": 36,
+          "page": 1,
+          "topPt": 514,
+          "leftPt": 0
+        },
+        {
+          "index": 37,
+          "page": 1,
+          "topPt": 529,
           "leftPt": 0
         }
       ],

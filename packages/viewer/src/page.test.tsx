@@ -78,6 +78,7 @@ const paragraphOf = (
   markTopPt: 30,
   widowControl: true,
   contentWidthPt: options.widthPt ?? 40,
+  clipTo: null,
 });
 
 const LETTER: SectionGeometry = {

@@ -14,6 +14,7 @@ import {
   type ParagraphBox,
 } from "@onepager/core";
 
+import { answeringParagraphs } from "./answers.js";
 import { characterPlacements } from "./characters.js";
 import { authoredDocuments } from "./documents.js";
 import { authoredFace } from "./faces.js";
@@ -46,7 +47,9 @@ const layoutOf = (bytes: Uint8Array): LaidOutDocument => {
 };
 
 // Where every character of every paragraph sits along its line, which is what says
-// where a tab landed.
+// where a tab landed. Word numbers paragraphs as this project does wherever there
+// is no table in the way, and a character inside a table is not worth asking about
+// anyway, since Word answers there for the row rather than for the character.
 function charactersOf(bytes: Uint8Array): ReadonlyMap<string, number> {
   const pkg = openDocx(bytes);
   const styles = readStyleTable(pkg);
@@ -75,6 +78,8 @@ function placedBoxes(layout: LaidOutDocument): ReadonlyMap<number, ParagraphBox>
 // top: one whose line fell past an object reports where the line landed, and one
 // whose line rule opened room above its text reports the text under that room. An
 // empty paragraph draws no line, and answers from wherever its mark came to rest.
+// A paragraph inside a table answers for its row instead, which `answers.ts`
+// lines up.
 type Placed = { readonly page: number; readonly topPt: number; readonly leftPt: number };
 
 function placedParagraphs(layout: LaidOutDocument): ReadonlyMap<number, Placed> {
@@ -139,19 +144,22 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
     describe(`${each.id}: ${each.asks}`, () => {
       it("puts every paragraph where Word put it, on the page Word put it on", () => {
         const placed = placedParagraphs(layoutOf(each.bytes));
+        const answers = answeringParagraphs(readBlocks(openDocx(each.bytes)));
         const off: string[] = [];
         let agreed = 0;
 
         for (const expected of each.measured.paragraphs) {
-          const ours = placed.get(expected.index - 1);
-          if (ours === undefined) {
+          const answer = answers[expected.index - 1];
+          const ours = placed.get(answer?.paragraph ?? -1);
+          if (answer === undefined || ours === undefined) {
             off.push(`paragraph ${String(expected.index)} was not laid out`);
             continue;
           }
           if (
             ours.page === expected.page &&
             Math.abs(ours.topPt - expected.topPt) <= PARAGRAPH_TOLERANCE_PT &&
-            Math.abs(ours.leftPt - expected.leftPt) <= PARAGRAPH_TOLERANCE_PT
+            (!answer.comparesLeft ||
+              Math.abs(ours.leftPt - expected.leftPt) <= PARAGRAPH_TOLERANCE_PT)
           ) {
             agreed += 1;
             continue;

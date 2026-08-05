@@ -8,15 +8,29 @@ import {
   type LaidOutPage,
   type ParagraphBox,
   type PlacedLine,
+  type SuppliedFace,
 } from "@onepager/core";
 
+import { authoredCases } from "../authored/cases.js";
+import { authoredFace } from "../authored/faces.js";
 import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 
-const CASES = referenceCases().filter(
-  (each) => each.renderedPath !== null && each.textLinesMatched !== null,
-);
+// A document is laid out in the faces it was measured in: the manifest's for the
+// seven reference documents, and for the authored ones the single face they are
+// all written in, which the manifest knows nothing about.
+type Compared = {
+  readonly each: ReferenceCase;
+  readonly facesFor: () => readonly SuppliedFace[];
+};
+
+const FACE = authoredFace();
+
+const CASES: readonly Compared[] = [
+  ...referenceCases().map((each) => ({ each, facesFor: suppliedFaces })),
+  ...(FACE === null ? [] : authoredCases().map((each) => ({ each, facesFor: () => [FACE] }))),
+].filter(({ each }) => each.renderedPath !== null && each.textLinesMatched !== null);
 
 const textOf = (placed: PlacedLine): string =>
   placed.line.segments.map((segment) => (segment.kind === "text" ? segment.text : "")).join("");
@@ -113,12 +127,12 @@ const runsOf = (placed: PlacedLine): readonly Run[] =>
       : [],
   );
 
-async function laidOut(each: ReferenceCase): Promise<{
+async function laidOut({ each, facesFor }: Compared): Promise<{
   readonly layout: LaidOutDocument;
   readonly drawn: readonly TextPlacement[];
 }> {
   const layout = layOutDocument(readReferenceDocument(each), (request) =>
-    lookupFontMetrics(request, suppliedFaces()),
+    lookupFontMetrics(request, facesFor()),
   );
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
 
@@ -133,8 +147,9 @@ async function laidOut(each: ReferenceCase): Promise<{
 // every run of every line sat. Breaking is asked of the whole document and
 // placement of the page: a line counts as placed only when the run of items Word
 // drew with that text on that same page starts where ours does.
-async function compare(each: ReferenceCase): Promise<Comparison> {
-  const { layout, drawn } = await laidOut(each);
+async function compare(compared: Compared): Promise<Comparison> {
+  const { each } = compared;
+  const { layout, drawn } = await laidOut(compared);
 
   const taken = new Set<TextPlacement>();
   const elsewhere: string[] = [];
@@ -240,12 +255,12 @@ function compareNumbers(
 // on. Each case is compared once and the answer handed round.
 const comparisons = new Map<string, Promise<Comparison>>();
 
-function comparisonOf(each: ReferenceCase): Promise<Comparison> {
-  const found = comparisons.get(each.id);
+function comparisonOf(compared: Compared): Promise<Comparison> {
+  const found = comparisons.get(compared.each.id);
   if (found !== undefined) return found;
 
-  const made = compare(each);
-  comparisons.set(each.id, made);
+  const made = compare(compared);
+  comparisons.set(compared.each.id, made);
   return made;
 }
 
@@ -258,26 +273,27 @@ describe.skipIf(CASES.length === 0)(
   "text lines against Word",
   { timeout: COMPARISON_TIMEOUT_MS },
   () => {
-    for (const each of CASES) {
+    for (const compared of CASES) {
+      const each = compared.each;
       describe(each.id, () => {
         it("breaks paragraphs into the lines Word broke them into", async () => {
-          const { matched } = await comparisonOf(each);
+          const { matched } = await comparisonOf(compared);
           expect(matched).toBeGreaterThanOrEqual(each.textLinesMatched ?? 0);
         });
 
         it("puts those lines where Word put them, on the page Word put them on", async () => {
-          const { placed } = await comparisonOf(each);
+          const { placed } = await comparisonOf(compared);
           expect(placed).toBeGreaterThanOrEqual(each.textLinesPlaced ?? 0);
         });
 
         it("starts each of a line's runs where Word started it", async () => {
-          const { runsMatched, runsPlaced } = await comparisonOf(each);
+          const { runsMatched, runsPlaced } = await comparisonOf(compared);
           expect(runsMatched).toBeGreaterThanOrEqual(each.textRunsMatched ?? 0);
           expect(runsPlaced).toBeGreaterThanOrEqual(each.textRunsPlaced ?? 0);
         });
 
         it("puts a list's number where Word put it", async () => {
-          const { numbersMatched, numbersPlaced } = await comparisonOf(each);
+          const { numbersMatched, numbersPlaced } = await comparisonOf(compared);
           expect(numbersMatched).toBeGreaterThanOrEqual(each.numbersMatched ?? 0);
           expect(numbersPlaced).toBeGreaterThanOrEqual(each.numbersPlaced ?? 0);
         });

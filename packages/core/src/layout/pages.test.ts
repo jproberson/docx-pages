@@ -61,6 +61,7 @@ function stack(
       markTopPt: lines[lines.length - 1]?.topPt ?? top,
       widowControl,
       contentWidthPt: 0,
+      clipTo: null,
     });
     top = lineTop;
   });
@@ -189,6 +190,7 @@ describe("breakStack", () => {
         markTopPt: 100,
         widowControl: false,
         contentWidthPt: 0,
+        clipTo: null,
       },
       {
         index: 1,
@@ -199,6 +201,7 @@ describe("breakStack", () => {
         markTopPt: 120,
         widowControl: false,
         contentWidthPt: 0,
+        clipTo: null,
       },
     ];
     const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
