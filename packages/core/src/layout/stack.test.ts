@@ -273,10 +273,6 @@ describe("measureStack over text", () => {
   });
 });
 
-const cell = (inner: string, properties = "") =>
-  `<w:tc><w:tcPr>${properties}</w:tcPr>${inner}</w:tc>`;
-const table = (...cells: readonly string[]) => `<w:tbl><w:tr>${cells.join("")}</w:tr></w:tbl>`;
-
 describe("measureStack over tables", () => {
   it("gives a row the height of its tallest cell, not the sum of them", () => {
     const result = measure(table(cell(`<w:p/>`), cell(`<w:p/><w:p/><w:p/>`)));
@@ -635,3 +631,45 @@ describe("measureStack around wrapping objects", () => {
     expect(boxes[0]?.lines[0]?.topPt).toBe(36);
   });
 });
+
+const SPACED = `<w:spacing w:before="240" w:after="240"/><w:contextualSpacing/>`;
+
+const OTHER_STYLE = NORMAL.replace(
+  "</w:styles>",
+  `<w:style w:type="paragraph" w:styleId="Other">
+     <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr></w:style></w:styles>`,
+);
+
+describe("measureStack where a paragraph asks for contextual spacing", () => {
+  it("drops the space between two paragraphs of the same style", () => {
+    const boxes = boxesOf(paragraph(SPACED, "aaaa") + paragraph(SPACED, "bbbb"));
+
+    expect(boxes[0]?.heightPt).toBeCloseTo(12 + ARIAL_12, 9);
+    expect(boxes[1]?.topPt).toBeCloseTo(36 + 12 + ARIAL_12, 9);
+    expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(36 + 12 + ARIAL_12, 9);
+    expect(boxes[1]?.heightPt).toBeCloseTo(ARIAL_12 + 12, 9);
+  });
+
+  it("keeps the space against a paragraph set in another style", () => {
+    const body =
+      paragraph(SPACED, "aaaa") + paragraph(`<w:pStyle w:val="Other"/>${SPACED}`, "bbbb");
+    const boxes = boxesOf(body, OTHER_STYLE);
+
+    expect(boxes[0]?.heightPt).toBeCloseTo(12 + ARIAL_12 + 12, 9);
+    expect(boxes[1]?.lines[0]?.topPt).toBeCloseTo(36 + 12 + ARIAL_12 + 12 + 12, 9);
+  });
+
+  it("keeps the space where the paragraph beside it is in another cell", () => {
+    const spaced = paragraph(SPACED, "aaaa");
+    const boxes = boxesOf(
+      `<w:tbl><w:tr>${cell(spaced)}</w:tr><w:tr>${cell(spaced)}</w:tr></w:tbl>`,
+    );
+
+    expect(boxes[0]?.heightPt).toBeCloseTo(12 + ARIAL_12 + 12, 9);
+    expect(boxes[1]?.heightPt).toBeCloseTo(12 + ARIAL_12 + 12, 9);
+  });
+});
+
+const cell = (inner: string, properties = "") =>
+  `<w:tc><w:tcPr>${properties}</w:tcPr>${inner}</w:tc>`;
+const table = (...cells: readonly string[]) => `<w:tbl><w:tr>${cells.join("")}</w:tr></w:tbl>`;

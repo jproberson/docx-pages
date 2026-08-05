@@ -15,6 +15,7 @@ import {
   resolveParagraphFrame,
   resolveParagraphMark,
   resolveRunMarks,
+  styleIdOf,
   type ParagraphFrame,
   type ParagraphMark,
   type StyleTable,
@@ -163,9 +164,12 @@ function measureBlocks(
   const boxes: ParagraphBox[] = [];
   let top = originPt;
 
-  for (const block of blocks) {
+  for (const [at, block] of blocks.entries()) {
     if (block.kind === "paragraph") {
-      const measured = measureParagraph(block.paragraph, context, top, frame);
+      const measured = measureParagraph(block.paragraph, context, top, frame, {
+        above: paragraphAt(blocks, at - 1),
+        below: paragraphAt(blocks, at + 1),
+      });
       if (measured.kind === "blocked") return measured;
       boxes.push(measured.box);
       top += measured.box.heightPt;
@@ -181,6 +185,13 @@ function measureBlocks(
   }
 
   return { kind: "measured", boxes, heightPt: top - originPt };
+}
+
+// A paragraph in the next cell or on the other side of a table is not a
+// neighbour: only what stands beside it in its own run of blocks is.
+function paragraphAt(blocks: readonly Block[], at: number): Paragraph | null {
+  const block = blocks[at];
+  return block !== undefined && block.kind === "paragraph" ? block.paragraph : null;
 }
 
 type MeasuredCell = {
@@ -271,11 +282,19 @@ type ParagraphMeasurement =
   | { readonly kind: "measured"; readonly box: ParagraphBox }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
+// What stands either side of the paragraph in the same run of blocks, which is
+// all "don't add space between paragraphs of the same style" asks about.
+type Neighbours = {
+  readonly above: Paragraph | null;
+  readonly below: Paragraph | null;
+};
+
 function measureParagraph(
   paragraph: Paragraph,
   context: Context,
   topPt: number,
   frame: Frame,
+  neighbours: Neighbours,
 ): ParagraphMeasurement {
   const marks: readonly ParagraphMark[] = [
     resolveParagraphMark(paragraph, context.styles),
@@ -346,9 +365,38 @@ function measureParagraph(
       markHeightPt: markHeight,
       frame,
       paragraphFrame,
+      spacing: spacingPt(paragraph, paragraphFrame, context, neighbours),
       number: measured === null ? null : measured.number,
       bands: context.region.bands,
     }),
+  };
+}
+
+// The room a paragraph keeps above and below itself. `w:contextualSpacing` drops
+// whichever of the two faces a paragraph of the same style, which is how a list
+// closes up into one block while still standing off the text around it.
+type Spacing = {
+  readonly beforePt: number;
+  readonly afterPt: number;
+};
+
+function spacingPt(
+  paragraph: Paragraph,
+  paragraphFrame: ParagraphFrame,
+  context: Context,
+  neighbours: Neighbours,
+): Spacing {
+  const beforePt = twipsToPoints(paragraphFrame.spaceBeforeTwips);
+  const afterPt = twipsToPoints(paragraphFrame.spaceAfterTwips);
+  if (!paragraphFrame.contextualSpacing) return { beforePt, afterPt };
+
+  const own = styleIdOf(paragraph, context.styles);
+  const sameStyle = (other: Paragraph | null): boolean =>
+    other !== null && styleIdOf(other, context.styles) === own;
+
+  return {
+    beforePt: sameStyle(neighbours.above) ? 0 : beforePt,
+    afterPt: sameStyle(neighbours.below) ? 0 : afterPt,
   };
 }
 
@@ -447,6 +495,7 @@ type LayOutParagraphInput = {
   readonly markHeightPt: number;
   readonly frame: Frame;
   readonly paragraphFrame: ParagraphFrame;
+  readonly spacing: Spacing;
   readonly number: MeasuredNumber | null;
   readonly bands: readonly WrapBand[];
 };
@@ -461,8 +510,7 @@ function layOutParagraph(
 ): ParagraphBox {
   const { paragraphFrame, frame, number } = input;
   const insets = insetsOf(paragraphFrame);
-  const beforePt = twipsToPoints(paragraphFrame.spaceBeforeTwips);
-  const afterPt = twipsToPoints(paragraphFrame.spaceAfterTwips);
+  const { beforePt, afterPt } = input.spacing;
 
   // An empty paragraph is a line like any other as far as objects are concerned:
   // Word moves it out of their way even though it draws nothing there.

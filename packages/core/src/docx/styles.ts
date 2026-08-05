@@ -63,6 +63,7 @@ type PartialFrame = {
   readonly lineTwips: number | undefined;
   readonly lineRule: LineRule | undefined;
   readonly widowControl: boolean | undefined;
+  readonly contextualSpacing: boolean | undefined;
   readonly tabStops: readonly TabStopEntry[] | undefined;
 };
 
@@ -110,6 +111,7 @@ const EMPTY_FRAME: PartialFrame = {
   lineTwips: undefined,
   lineRule: undefined,
   widowControl: undefined,
+  contextualSpacing: undefined,
   tabStops: undefined,
 };
 
@@ -130,6 +132,7 @@ const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   lineTwips: over.lineTwips ?? base.lineTwips,
   lineRule: over.lineRule ?? base.lineRule,
   widowControl: over.widowControl ?? base.widowControl,
+  contextualSpacing: over.contextualSpacing ?? base.contextualSpacing,
   // Tab stops add to the ones already inherited rather than replacing them, which
   // is why a clear has to travel with them.
   tabStops:
@@ -181,6 +184,7 @@ function readFrame(container: XmlElement | null): PartialFrame {
     lineTwips: twipsAttribute(spacing, "line"),
     lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
     widowControl: onOff(pPr, "widowControl"),
+    contextualSpacing: onOff(pPr, "contextualSpacing"),
     tabStops: readTabStops(pPr),
   };
 }
@@ -489,6 +493,9 @@ export type ParagraphFrame = {
   // Whether Word holds the paragraph's first line off the foot of a page and its
   // last line off the top of the next one. On unless the cascade says otherwise.
   readonly widowControl: boolean;
+  // Whether the space the paragraph asks for above and below it is dropped where
+  // the paragraph on that side is of the same style.
+  readonly contextualSpacing: boolean;
   // In ascending order, measured from the left edge of the text area rather than
   // from the paragraph's own indent.
   readonly tabStopsTwips: readonly number[];
@@ -522,7 +529,9 @@ export function resolveParagraphNumbering(
   return level === null ? null : { numId, ilvl, level };
 }
 
-function styleIdOf(paragraph: Paragraph, table: StyleTable): string | undefined {
+// Which style the paragraph is set in, which is what "the same style" means to
+// the properties that ask about their neighbours.
+export function styleIdOf(paragraph: Paragraph, table: StyleTable): string | undefined {
   const pPr = firstNamed(paragraph.element, W_NS, "pPr");
   const pStyle = pPr === null ? null : firstNamed(pPr, W_NS, "pStyle");
   const named = pStyle === null ? undefined : attribute(pStyle, W_NS, "val");
@@ -553,6 +562,7 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     lineTwips: resolved.lineTwips ?? null,
     lineRule: resolved.lineRule ?? "auto",
     widowControl: resolved.widowControl ?? true,
+    contextualSpacing: resolved.contextualSpacing ?? false,
     tabStopsTwips: settledStops(resolved.tabStops),
   };
 }
