@@ -8,5 +8,10 @@ coverage/
 # Reference one-pagers. Labelled internal collateral, never committed.
 samples/
 
+# A corpus of real documents to sweep, and whatever a sweep writes about one.
+# Other people's work: it is found through DOCX_PAGES_CORPUS and lives outside
+# the repository, and this is here in case anyone puts one inside it.
+corpus/
+
 # Working notes, not part of the library.
 BRIEF.md
