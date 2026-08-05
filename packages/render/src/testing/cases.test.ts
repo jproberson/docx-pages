@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { isOnePagerError } from "@onepager/core";
+import { isDocxPagesError } from "@docx-pages/core";
 
 import { readReferenceManifest } from "./cases.js";
 
-const directory = mkdtempSync(resolve(tmpdir(), "onepager-cases-"));
+const directory = mkdtempSync(resolve(tmpdir(), "docx-pages-cases-"));
 let written = 0;
 
 const manifestOf = (json: string): string => {
@@ -20,7 +20,7 @@ const codeOf = (run: () => unknown): string => {
   try {
     run();
   } catch (error: unknown) {
-    if (isOnePagerError(error)) return error.code;
+    if (isDocxPagesError(error)) return error.code;
     throw error;
   }
   throw new Error("expected a failure");
@@ -125,7 +125,7 @@ describe("readReferenceManifest", () => {
     try {
       readReferenceManifest(path);
     } catch (error: unknown) {
-      if (!isOnePagerError(error)) throw error;
+      if (!isDocxPagesError(error)) throw error;
       expect(error.context["where"]).toBe(`${path}#cases[0].bodyTopsPt[0].topPt`);
       return;
     }

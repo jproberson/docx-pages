@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { openDocx, type DocxPackage } from "@onepager/core";
+import { openDocx, type DocxPackage } from "@docx-pages/core";
 
 import type { ReferenceCase } from "./cases.js";
 

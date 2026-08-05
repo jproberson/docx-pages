@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isOnePagerError, type OnePagerError } from "../errors.js";
+import { isDocxPagesError, type DocxPagesError } from "../errors.js";
 import { buildSfnt, buildWoff, buildWoff2, type FontFixture } from "../testing/build-font.js";
 import { readFontFile, readFontMetrics } from "./font-file.js";
 import { lineHeightPt, type GlyphAdvances } from "./font-metrics.js";
@@ -16,14 +16,14 @@ const METRICS = {
 
 const WIDTHS = { A: 660, B: 640, " ": 260 };
 
-const caught = (run: () => unknown): OnePagerError => {
+const caught = (run: () => unknown): DocxPagesError => {
   try {
     run();
   } catch (error: unknown) {
-    if (isOnePagerError(error)) return error;
+    if (isDocxPagesError(error)) return error;
     throw error;
   }
-  throw new Error("expected a OnePagerError");
+  throw new Error("expected a DocxPagesError");
 };
 
 function advancesOf(fixture: FontFixture): GlyphAdvances {

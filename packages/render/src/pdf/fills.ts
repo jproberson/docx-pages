@@ -1,4 +1,4 @@
-import { OnePagerError } from "@onepager/core";
+import { DocxPagesError } from "@docx-pages/core";
 
 // A filled path, reported by the rectangle it covers on the page. Only the bounds
 // are read: what a diagram draws is blocks and rules, and where a block lies is
@@ -96,7 +96,7 @@ export async function readFillPlacements(bytes: Uint8Array): Promise<readonly Fi
   try {
     document = await pdfjs.getDocument({ data: bytes, useSystemFonts: false }).promise;
   } catch (error: unknown) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "pdf-unreadable",
       message: "the bytes are not a readable pdf",
       at: "render/pdf/fills.readFillPlacements",

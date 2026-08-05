@@ -7,8 +7,8 @@ import {
   type FaceRequest,
   type LaidOutDocument,
   type MetricsLookup,
-} from "@onepager/core";
-import { drawablesOf, imageResolver, OnePagerDocument } from "@onepager/viewer";
+} from "@docx-pages/core";
+import { drawablesOf, imageResolver, DocxDocument } from "@docx-pages/viewer";
 
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 import { readReferenceDocument } from "../testing/documents.js";
@@ -24,11 +24,7 @@ const rendered = (
   return {
     layout,
     html: renderToStaticMarkup(
-      <OnePagerDocument
-        layout={layout}
-        imageUrl={imageResolver(pkg, metricsFor)}
-        frames="outlined"
-      />,
+      <DocxDocument layout={layout} imageUrl={imageResolver(pkg, metricsFor)} frames="outlined" />,
     ),
   };
 };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { layOutDocument, lookupFontMetrics } from "@onepager/core";
+import { layOutDocument, lookupFontMetrics } from "@docx-pages/core";
 
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";

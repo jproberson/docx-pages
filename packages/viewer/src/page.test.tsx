@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { NO_PAINT, UNPAINTED, WHOLE_FRAME } from "@onepager/core";
+import { NO_PAINT, UNPAINTED, WHOLE_FRAME } from "@docx-pages/core";
 import type {
   CropInsets,
   LaidOutDocument,
@@ -13,10 +13,10 @@ import type {
   PlacedPaint,
   SectionGeometry,
   TextBoxBody,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 import type { DrawableImage } from "./images.js";
-import { OnePagerPage } from "./page.js";
+import { DocxPage } from "./page.js";
 
 const MARK: ParagraphMark = {
   font: { kind: "named", name: "Meridian Sans" },
@@ -177,10 +177,10 @@ const firstPage = (layout: LaidOutDocument): LaidOutPage => {
 
 const markup = (
   layout: LaidOutDocument,
-  options: Partial<Parameters<typeof OnePagerPage>[0]> | null = null,
+  options: Partial<Parameters<typeof DocxPage>[0]> | null = null,
 ) =>
   renderToStaticMarkup(
-    <OnePagerPage
+    <DocxPage
       layout={layout}
       page={firstPage(layout)}
       imageUrl={(part) => DRAWABLE.get(part)}
@@ -188,7 +188,7 @@ const markup = (
     />,
   );
 
-describe("OnePagerPage", () => {
+describe("DocxPage", () => {
   it("sizes the page in points so everything below stays in Word's coordinates", () => {
     const html = markup(layoutWith([]));
     expect(html).toContain("width:612pt");
@@ -349,7 +349,7 @@ describe("OnePagerPage", () => {
   });
 });
 
-describe("OnePagerPage drawing text", () => {
+describe("DocxPage drawing text", () => {
   it("draws each line at the baseline layout gave it", () => {
     const html = markup(layoutWith([], [paragraphOf("Hello")]));
 
@@ -435,7 +435,7 @@ const numbered = (text: string, markerText: string): ParagraphBox => ({
   },
 });
 
-describe("OnePagerPage drawing a list number", () => {
+describe("DocxPage drawing a list number", () => {
   it("draws the number at the position layout gave it", () => {
     const html = markup(layoutWith([], [numbered("Item", "1.")]));
     expect(html).toContain('x="102" y="41"');

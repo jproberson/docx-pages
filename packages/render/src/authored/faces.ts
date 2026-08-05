@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
-import { readFontFile, type SuppliedFace } from "@onepager/core";
+import { readFontFile, type SuppliedFace } from "@docx-pages/core";
 
 import { FACE } from "./package.js";
 

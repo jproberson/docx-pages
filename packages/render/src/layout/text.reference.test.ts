@@ -9,7 +9,7 @@ import {
   type ParagraphBox,
   type PlacedLine,
   type SuppliedFace,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 import { authoredCases } from "../authored/cases.js";
 import { authoredFace } from "../authored/faces.js";

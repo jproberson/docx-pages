@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { facesUsed, lookupFontMetrics, openDocx, type UsedFace } from "@onepager/core";
+import { facesUsed, lookupFontMetrics, openDocx, type UsedFace } from "@docx-pages/core";
 
 import { suppliedFaces } from "../testing/cases.js";
 

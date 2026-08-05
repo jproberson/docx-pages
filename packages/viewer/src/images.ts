@@ -3,7 +3,7 @@ import {
   type DocxPackage,
   type MetafilePicture,
   type MetricsResolver,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 const MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
   ["png", "image/png"],

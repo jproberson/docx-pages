@@ -1,4 +1,4 @@
-import type { Block } from "@onepager/core";
+import type { Block } from "@docx-pages/core";
 
 // Which paragraph of ours each of Word's answers is about.
 //

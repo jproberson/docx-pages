@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { OnePagerError, isOnePagerError } from "./errors.js";
+import { DocxPagesError, isDocxPagesError } from "./errors.js";
 
-describe("OnePagerError", () => {
+describe("DocxPagesError", () => {
   it("carries the location and context on the instance", () => {
-    const error = new OnePagerError({
+    const error = new DocxPagesError({
       code: "backend-unavailable",
       message: "Microsoft Word is not installed",
       at: "render/backend/word-desktop.locateWord",
@@ -20,11 +20,11 @@ describe("OnePagerError", () => {
   });
 
   it("puts the location in the message so a bare stack trace is still diagnosable", () => {
-    const error = new OnePagerError({
+    const error = new DocxPagesError({
       code: "manifest-invalid",
       message: "pages must not be empty",
       at: "core/manifest.parseManifest",
-      context: { sourceFileName: "one-pager.docx" },
+      context: { sourceFileName: "sample.docx" },
     });
 
     expect(error.message).toBe("[core/manifest.parseManifest] pages must not be empty");
@@ -32,7 +32,7 @@ describe("OnePagerError", () => {
 
   it("preserves the underlying cause", () => {
     const cause = new Error("ENOENT");
-    const error = new OnePagerError({
+    const error = new DocxPagesError({
       code: "render-failed",
       message: "could not read the converted PDF",
       at: "render/pipeline.readOutput",
@@ -44,21 +44,21 @@ describe("OnePagerError", () => {
   });
 
   it("is recognisable across module boundaries without instanceof", () => {
-    const error = new OnePagerError({
+    const error = new DocxPagesError({
       code: "render-failed",
       message: "boom",
       at: "render/pipeline.run",
       context: {},
     });
 
-    expect(isOnePagerError(error)).toBe(true);
-    expect(isOnePagerError(new Error("boom"))).toBe(false);
-    expect(isOnePagerError(null)).toBe(false);
-    expect(isOnePagerError({ code: "render-failed" })).toBe(false);
+    expect(isDocxPagesError(error)).toBe(true);
+    expect(isDocxPagesError(new Error("boom"))).toBe(false);
+    expect(isDocxPagesError(null)).toBe(false);
+    expect(isDocxPagesError({ code: "render-failed" })).toBe(false);
   });
 
   it("narrows to the specific code it was constructed with", () => {
-    const error = new OnePagerError({
+    const error = new DocxPagesError({
       code: "backend-unavailable",
       message: "no Word",
       at: "render/backend.select",

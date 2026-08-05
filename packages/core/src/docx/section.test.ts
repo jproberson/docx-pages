@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isOnePagerError, OnePagerError } from "../errors.js";
+import { isDocxPagesError, DocxPagesError } from "../errors.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { openDocx } from "./package.js";
 import { readSectionGeometry } from "./section.js";
@@ -56,8 +56,8 @@ describe("readSectionGeometry", () => {
       thrown = error;
     }
 
-    expect(isOnePagerError(thrown)).toBe(true);
-    if (!(thrown instanceof OnePagerError)) throw new Error("expected a OnePagerError");
+    expect(isDocxPagesError(thrown)).toBe(true);
+    if (!(thrown instanceof DocxPagesError)) throw new Error("expected a DocxPagesError");
     expect(thrown.code).toBe("docx-malformed");
     expect(thrown.at).toBe("core/docx/section.readSectionGeometry");
     expect(thrown.context["part"]).toBe("word/document.xml");
@@ -72,7 +72,7 @@ describe("readSectionGeometry", () => {
       thrown = error;
     }
 
-    if (!(thrown instanceof OnePagerError)) throw new Error("expected a OnePagerError");
+    if (!(thrown instanceof DocxPagesError)) throw new Error("expected a DocxPagesError");
     expect(thrown.code).toBe("docx-malformed");
     expect(thrown.context["attribute"]).toBe("w");
     expect(thrown.context["value"]).toBe("wide");
@@ -88,7 +88,7 @@ describe("openDocx", () => {
       thrown = error;
     }
 
-    if (!(thrown instanceof OnePagerError)) throw new Error("expected a OnePagerError");
+    if (!(thrown instanceof DocxPagesError)) throw new Error("expected a DocxPagesError");
     expect(thrown.code).toBe("docx-malformed");
     expect(thrown.context["part"]).toBe("word/document.xml");
   });
@@ -101,7 +101,7 @@ describe("openDocx", () => {
       thrown = error;
     }
 
-    if (!(thrown instanceof OnePagerError)) throw new Error("expected a OnePagerError");
+    if (!(thrown instanceof DocxPagesError)) throw new Error("expected a DocxPagesError");
     expect(thrown.code).toBe("docx-unreadable");
   });
 });

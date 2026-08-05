@@ -59,7 +59,7 @@ export default tseslint.config(
         {
           paths: NODE_BUILTINS.map((name) => ({
             name,
-            message: "@onepager/viewer runs in the browser and cannot import Node built-ins.",
+            message: "@docx-pages/viewer runs in the browser and cannot import Node built-ins.",
           })),
         },
       ],

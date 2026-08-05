@@ -1,6 +1,6 @@
 import { strFromU8, unzipSync } from "fflate";
 
-import { OnePagerError } from "../errors.js";
+import { DocxPagesError } from "../errors.js";
 import { parseXml, type XmlElement } from "./xml.js";
 
 export const MAIN_DOCUMENT_PART = "word/document.xml";
@@ -14,7 +14,7 @@ export function openDocx(bytes: Uint8Array): DocxPackage {
   try {
     entries = unzipSync(bytes);
   } catch (error: unknown) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "docx-unreadable",
       message: "the bytes are not a readable zip archive",
       at: "core/docx/package.openDocx",
@@ -25,7 +25,7 @@ export function openDocx(bytes: Uint8Array): DocxPackage {
 
   const parts = new Map(Object.entries(entries));
   if (!parts.has(MAIN_DOCUMENT_PART)) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "docx-malformed",
       message: "the archive has no main document part",
       at: "core/docx/package.openDocx",
@@ -39,7 +39,7 @@ export function openDocx(bytes: Uint8Array): DocxPackage {
 export function partText(pkg: DocxPackage, part: string): string {
   const bytes = pkg.parts.get(part);
   if (bytes === undefined) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "docx-malformed",
       message: "the archive has no such part",
       at: "core/docx/package.partText",
@@ -52,7 +52,7 @@ export function partText(pkg: DocxPackage, part: string): string {
 export function partXml(pkg: DocxPackage, part: string): XmlElement {
   const root = parseXml(partText(pkg, part));
   if (root === null) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "docx-malformed",
       message: "the part has no root element",
       at: "core/docx/package.partXml",

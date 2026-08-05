@@ -1,5 +1,5 @@
 {
-  "name": "@onepager/viewer",
+  "name": "@docx-pages/viewer",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@onepager/core": "workspace:*"
+    "@docx-pages/core": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",

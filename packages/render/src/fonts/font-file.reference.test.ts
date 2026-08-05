@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { readFontFile, type FontMetrics, type GlyphAdvances } from "@onepager/core";
+import { readFontFile, type FontMetrics, type GlyphAdvances } from "@docx-pages/core";
 
 import { referenceFontFiles, referenceFonts } from "../testing/cases.js";
 

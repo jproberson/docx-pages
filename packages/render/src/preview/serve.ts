@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 
 const ROOT = resolve("samples");
-const PORT = Number(process.env["ONEPAGER_PREVIEW_PORT"] ?? 8787);
+const PORT = Number(process.env["DOCX_PAGES_PREVIEW_PORT"] ?? 8787);
 const START = "/preview/index.html";
 
 const TYPES: Readonly<Record<string, string>> = {

@@ -7,8 +7,8 @@ import {
   type MetafilePicture,
   type MetafileShape,
   type MetricsLookup,
-} from "@onepager/core";
-import { imageResolver } from "@onepager/viewer";
+} from "@docx-pages/core";
+import { imageResolver } from "@docx-pages/viewer";
 
 import { readFillPlacements, type FillPlacement } from "../pdf/fills.js";
 import { readTextPlacements, type TextPlacement } from "../pdf/text.js";

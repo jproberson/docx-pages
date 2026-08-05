@@ -1,4 +1,4 @@
-import { OnePagerError } from "@onepager/core";
+import { DocxPagesError } from "@docx-pages/core";
 
 export type TextPlacement = {
   readonly kind: "text";
@@ -46,7 +46,7 @@ export async function readTextPlacements(bytes: Uint8Array): Promise<readonly Te
   try {
     document = await pdfjs.getDocument({ data: bytes, useSystemFonts: false }).promise;
   } catch (error: unknown) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "pdf-unreadable",
       message: "the bytes are not a readable pdf",
       at: "render/pdf/text.readTextPlacements",

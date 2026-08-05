@@ -1,6 +1,6 @@
 import { unzlibSync } from "fflate";
 
-import { OnePagerError } from "../errors.js";
+import { DocxPagesError } from "../errors.js";
 import type { AdvanceTable, FontMetrics } from "./font-metrics.js";
 import { readAdvanceTable } from "./glyphs.js";
 
@@ -26,8 +26,8 @@ const tagAt = (bytes: Uint8Array, offset: number): string =>
 const viewOf = (bytes: Uint8Array): DataView =>
   new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
-const unreadable = (reason: string, byteLength: number): OnePagerError =>
-  new OnePagerError({
+const unreadable = (reason: string, byteLength: number): DocxPagesError =>
+  new DocxPagesError({
     code: "font-unreadable",
     message: reason,
     at: AT,
@@ -75,7 +75,7 @@ function readWoffTables(bytes: Uint8Array): ReadonlyMap<string, Uint8Array> {
     try {
       tables.set(tag, unzlibSync(stored));
     } catch (error: unknown) {
-      throw new OnePagerError({
+      throw new DocxPagesError({
         code: "font-unreadable",
         message: `the ${tag} table could not be inflated`,
         at: AT,
@@ -94,7 +94,7 @@ function requireTable(
 ): Uint8Array {
   const table = tables.get(tag);
   if (table === undefined || table.byteLength < minimumLength) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "font-table-missing",
       message: `the font has no usable ${tag} table`,
       at: AT,
@@ -112,7 +112,7 @@ export function readFontFile(bytes: Uint8Array): ReadFontFileResult {
 
   const signature = tagAt(bytes, 0);
   if (signature === "wOF2") {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "font-format-unsupported",
       message: "woff2 needs brotli, which is not available in every runtime; supply woff or otf",
       at: AT,

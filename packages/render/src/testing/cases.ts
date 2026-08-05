@@ -3,18 +3,18 @@ import { resolve } from "node:path";
 
 import {
   NO_ADVANCES,
-  OnePagerError,
+  DocxPagesError,
   readFontFile,
   type FaceRequest,
   type FontMetrics,
   type SuppliedFace,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 // The reference documents and the geometry Word produced from them stay outside
 // the repo. Point this at a manifest describing them; without one the reference
 // suites report nothing to run.
 const MANIFEST_PATH = resolve(
-  process.env["ONEPAGER_REFERENCE_MANIFEST"] ?? "samples/reference-cases.json",
+  process.env["DOCX_PAGES_REFERENCE_MANIFEST"] ?? "samples/reference-cases.json",
 );
 
 const AT = "render/testing/cases.readManifest";
@@ -123,8 +123,8 @@ export type ReferenceManifest = {
 const EMPTY: ReferenceManifest = { fonts: [], authoredFonts: [], fontFiles: [], cases: [] };
 
 // `where` carries the manifest path as its root, so it locates the fault on its own.
-const invalid = (message: string, where: string): OnePagerError =>
-  new OnePagerError({ code: "reference-manifest-invalid", message, at: AT, context: { where } });
+const invalid = (message: string, where: string): DocxPagesError =>
+  new DocxPagesError({ code: "reference-manifest-invalid", message, at: AT, context: { where } });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -309,7 +309,7 @@ export function readReferenceManifest(path: string = MANIFEST_PATH): ReferenceMa
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch (error: unknown) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "reference-manifest-unreadable",
       message: "the reference manifest is not readable json",
       at: AT,

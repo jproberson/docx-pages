@@ -13,14 +13,14 @@ import {
   type ParagraphMarker,
   type PlacedLine,
   type PlacedPaint,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 import { drawablesOf, type Drawable } from "./drawables.js";
 import type { ImageResolver } from "./images.js";
 
 export type FrameStyle = "hidden" | "outlined";
 
-export type OnePagerDocumentProps = {
+export type DocxDocumentProps = {
   readonly layout: LaidOutDocument;
   readonly imageUrl: ImageResolver;
   readonly scale?: number;
@@ -29,7 +29,7 @@ export type OnePagerDocumentProps = {
   readonly className?: string;
 };
 
-export type OnePagerPageProps = OnePagerDocumentProps & {
+export type DocxPageProps = DocxDocumentProps & {
   readonly page: LaidOutPage;
 };
 
@@ -439,7 +439,7 @@ function renderObject(
   }
 }
 
-export function OnePagerPage(props: OnePagerPageProps): ReactElement {
+export function DocxPage(props: DocxPageProps): ReactElement {
   const {
     layout,
     page,
@@ -455,7 +455,7 @@ export function OnePagerPage(props: OnePagerPageProps): ReactElement {
   return (
     <div
       className={className}
-      data-onepager-page={page.index}
+      data-docx-page={page.index}
       style={{
         position: "relative",
         width: pt(widthPt),
@@ -476,11 +476,11 @@ export function OnePagerPage(props: OnePagerPageProps): ReactElement {
 
 // Every page the body broke onto, in order, each drawn in the page's own
 // coordinates.
-export function OnePagerDocument(props: OnePagerDocumentProps): ReactElement {
+export function DocxDocument(props: DocxDocumentProps): ReactElement {
   return (
     <>
       {props.layout.pages.map((page) => (
-        <OnePagerPage key={page.index} {...props} page={page} />
+        <DocxPage key={page.index} {...props} page={page} />
       ))}
     </>
   );

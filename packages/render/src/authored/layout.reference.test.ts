@@ -12,7 +12,7 @@ import {
   type MetricsLookup,
   type MetricsResolver,
   type ParagraphBox,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 import { answeringParagraphs } from "./answers.js";
 import { characterPlacements } from "./characters.js";

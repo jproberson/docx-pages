@@ -5,7 +5,7 @@ import {
   type Paragraph,
   type ParagraphBox,
   type StyleTable,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 // Where every character of a paragraph sits along its line, which is the only way
 // to say where a tab landed: the line's own start says nothing about what happened

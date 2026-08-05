@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { lookupFontMetrics, openDocx, type FaceRequest } from "@onepager/core";
+import { lookupFontMetrics, openDocx, type FaceRequest } from "@docx-pages/core";
 import {
   buildDocx,
   buildMetafile,
   metafileHeader,
   metafileRecord,
   wordDocument,
-} from "@onepager/core/testing";
+} from "@docx-pages/core/testing";
 
 import { imageDataUrl, imageResolver } from "./images.js";
 

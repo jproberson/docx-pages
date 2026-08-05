@@ -9,10 +9,13 @@ export const config = defineConfig({
     // Tests run against source, so `pnpm test` never depends on a prior build.
     // Anchored patterns keep the bare package name from swallowing its subpaths.
     alias: [
-      { find: /^@onepager\/core\/testing$/, replacement: resolveSrc("core/src/testing/index.ts") },
-      { find: /^@onepager\/core$/, replacement: resolveSrc("core/src/index.ts") },
-      { find: /^@onepager\/render$/, replacement: resolveSrc("render/src/index.ts") },
-      { find: /^@onepager\/viewer$/, replacement: resolveSrc("viewer/src/index.ts") },
+      {
+        find: /^@docx-pages\/core\/testing$/,
+        replacement: resolveSrc("core/src/testing/index.ts"),
+      },
+      { find: /^@docx-pages\/core$/, replacement: resolveSrc("core/src/index.ts") },
+      { find: /^@docx-pages\/render$/, replacement: resolveSrc("render/src/index.ts") },
+      { find: /^@docx-pages\/viewer$/, replacement: resolveSrc("viewer/src/index.ts") },
     ],
   },
   test: {

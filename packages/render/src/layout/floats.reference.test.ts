@@ -5,7 +5,7 @@ import {
   lookupFontMetrics,
   type PlacedFloat,
   type PlacedInline,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";

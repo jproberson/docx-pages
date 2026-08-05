@@ -8,8 +8,8 @@ import {
   type FaceRequest,
   type MetricsLookup,
   type SuppliedFace,
-} from "@onepager/core";
-import { imageResolver, OnePagerDocument, type FrameStyle } from "@onepager/viewer";
+} from "@docx-pages/core";
+import { imageResolver, DocxDocument, type FrameStyle } from "@docx-pages/viewer";
 
 import { authoredCases } from "../authored/cases.js";
 import {
@@ -114,14 +114,14 @@ const document = (title: string, stylesheet: string, body: string): string =>
     <link rel="stylesheet" href="${stylesheet}" />
     <style>
       body { margin: 0; padding: 24px; background: #6b6b6b; }
-      [data-onepager-page] { background: #fff; box-shadow: 0 2px 16px rgb(0 0 0 / 40%); margin: 0 auto 24px; }
+      [data-docx-page] { background: #fff; box-shadow: 0 2px 16px rgb(0 0 0 / 40%); margin: 0 auto 24px; }
     </style>
   </head>
   <body>${body}
     <script>
       // Word's own pdf is shown fitted to the width it is given, so a page beside
       // it has to be fitted the same way for the two to be worth comparing.
-      const first = document.querySelector("[data-onepager-page]");
+      const first = document.querySelector("[data-docx-page]");
       const pageWidth = first.offsetWidth;
       const fit = () => {
         document.body.style.zoom = (document.documentElement.clientWidth - 48) / pageWidth;
@@ -147,7 +147,7 @@ export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameSty
   }
 
   const body = renderToStaticMarkup(
-    <OnePagerDocument
+    <DocxDocument
       layout={layout}
       imageUrl={imageResolver(pkg, metricsFor)}
       frames={frames}
@@ -157,7 +157,7 @@ export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameSty
 
   const path = resolve(OUTPUT_DIRECTORY, pageName(each.id, set, frames));
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, document(`One-pager ${each.id}`, stylesheetOf(set), body));
+  writeFileSync(path, document(`Preview ${each.id}`, stylesheetOf(set), body));
   return path;
 }
 
@@ -246,7 +246,7 @@ const browser = (body: string): string =>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>One-pagers</title>
+    <title>Previews</title>
     <style>
       html, body { height: 100%; margin: 0; }
       body { display: flex; flex-direction: column; font: 14px system-ui, sans-serif; }
@@ -269,7 +269,7 @@ function main(): void {
   const cases = [...referenceCases(), ...authoredCases()];
 
   if (cases.length === 0) {
-    process.stdout.write("no reference cases; point ONEPAGER_REFERENCE_MANIFEST at a manifest\n");
+    process.stdout.write("no reference cases; point DOCX_PAGES_REFERENCE_MANIFEST at a manifest\n");
     return;
   }
 

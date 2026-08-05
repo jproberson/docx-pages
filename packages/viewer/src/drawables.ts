@@ -5,7 +5,7 @@ import type {
   PlacedContent,
   PlacedFloat,
   PlacedInline,
-} from "@onepager/core";
+} from "@docx-pages/core";
 
 export type Drawable =
   | {

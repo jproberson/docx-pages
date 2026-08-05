@@ -1,4 +1,4 @@
-import { OnePagerError } from "../errors.js";
+import { DocxPagesError } from "../errors.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { attribute, descendantsNamed, firstNamed, type XmlElement } from "./xml.js";
 
@@ -27,7 +27,7 @@ function twips(element: XmlElement | null, name: string, fallback: number): numb
   if (raw === undefined) return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value)) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "docx-malformed",
       message: "section dimension is not a number",
       at: AT,
@@ -43,7 +43,7 @@ export function readSectionGeometry(pkg: DocxPackage): SectionGeometry {
   const sections = body === null ? [] : descendantsNamed(body, W_NS, "sectPr");
   const section = sections.at(-1);
   if (section === undefined) {
-    throw new OnePagerError({
+    throw new DocxPagesError({
       code: "docx-malformed",
       message: "the body has no section properties",
       at: AT,

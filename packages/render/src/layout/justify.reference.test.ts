@@ -7,8 +7,8 @@ import {
   type LaidOutDocument,
   type LineSegment,
   type SuppliedFace,
-} from "@onepager/core";
-import { buildDocx } from "@onepager/core/testing";
+} from "@docx-pages/core";
+import { buildDocx } from "@docx-pages/core/testing";
 
 import { suppliedFaces } from "../testing/cases.js";
 
