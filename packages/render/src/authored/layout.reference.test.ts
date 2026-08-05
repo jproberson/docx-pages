@@ -118,12 +118,28 @@ function fittedShapes(
   return found;
 }
 
+// A document agrees with Word about so many of the places it reported. Whatever it
+// does not agree about is named in full when the count itself is wrong, so a
+// failure reads as the rule that is out rather than as a number that moved.
+function agreeing(
+  agreed: number,
+  total: number,
+  wanted: number | undefined,
+  off: readonly string[],
+): void {
+  if (agreed !== (wanted ?? total)) expect(off).toStrictEqual([]);
+  expect(`${String(agreed)} of ${String(total)}`).toBe(
+    `${String(wanted ?? total)} of ${String(total)}`,
+  );
+}
+
 describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against Word", () => {
   for (const each of CASES) {
     describe(`${each.id}: ${each.asks}`, () => {
-      it("puts every paragraph on the page Word did, at the height Word did", () => {
+      it("puts every paragraph where Word put it, on the page Word put it on", () => {
         const placed = placedParagraphs(layoutOf(each.bytes));
         const off: string[] = [];
+        let agreed = 0;
 
         for (const expected of each.measured.paragraphs) {
           const ours = placed.get(expected.index - 1);
@@ -131,36 +147,20 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
             off.push(`paragraph ${String(expected.index)} was not laid out`);
             continue;
           }
-          if (ours.page !== expected.page) {
-            off.push(
-              `paragraph ${String(expected.index)} on page ${String(ours.page)}, Word says ${String(expected.page)}`,
-            );
+          if (
+            ours.page === expected.page &&
+            Math.abs(ours.topPt - expected.topPt) <= PARAGRAPH_TOLERANCE_PT &&
+            Math.abs(ours.leftPt - expected.leftPt) <= PARAGRAPH_TOLERANCE_PT
+          ) {
+            agreed += 1;
+            continue;
           }
-          if (Math.abs(ours.topPt - expected.topPt) > PARAGRAPH_TOLERANCE_PT) {
-            off.push(
-              `paragraph ${String(expected.index)} at ${ours.topPt.toFixed(2)}, Word says ${String(expected.topPt)}`,
-            );
-          }
+          off.push(
+            `paragraph ${String(expected.index)} at ${ours.topPt.toFixed(2)},${ours.leftPt.toFixed(2)} on page ${String(ours.page)}; Word says ${String(expected.topPt)},${String(expected.leftPt)} on page ${String(expected.page)}`,
+          );
         }
 
-        expect(off).toStrictEqual([]);
-      });
-
-      it("starts every paragraph across the page where Word started it", () => {
-        const placed = placedParagraphs(layoutOf(each.bytes));
-        const off: string[] = [];
-
-        for (const expected of each.measured.paragraphs) {
-          const ours = placed.get(expected.index - 1);
-          if (ours === undefined) continue;
-          if (Math.abs(ours.leftPt - expected.leftPt) > PARAGRAPH_TOLERANCE_PT) {
-            off.push(
-              `paragraph ${String(expected.index)} starts at ${ours.leftPt.toFixed(2)}, Word says ${String(expected.leftPt)}`,
-            );
-          }
-        }
-
-        expect(off).toStrictEqual([]);
+        agreeing(agreed, each.measured.paragraphs.length, each.paragraphsPlaced, off);
       });
 
       it.runIf(each.measured.characters.length > 0)(
@@ -186,12 +186,7 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
             );
           }
 
-          const total = each.measured.characters.length;
-          const wanted = each.charactersPlaced ?? total;
-          if (placed !== wanted) expect(off).toStrictEqual([]);
-          expect(`${String(placed)} of ${String(total)}`).toBe(
-            `${String(wanted)} of ${String(total)}`,
-          );
+          agreeing(placed, each.measured.characters.length, each.charactersPlaced, off);
         },
       );
 

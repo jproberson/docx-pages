@@ -86,6 +86,7 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </w:pPr></w:pPrDefault>
   </w:docDefaults>
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+  <!--EXTRA-->
 </w:styles>`;
 
 const NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -94,7 +95,9 @@ const NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 export type AuthoredParts = {
   // Everything between <w:body> and its section properties.
   readonly body: string;
-  readonly styles?: string;
+  // Styles of the document's own, which stand beside the defaults every authored
+  // document shares rather than replacing them.
+  readonly extraStyles?: string;
   readonly settings?: string;
   readonly numbering?: string;
 };
@@ -110,7 +113,7 @@ export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
     "_rels/.rels": strToU8(ROOT_RELS),
     "word/_rels/document.xml.rels": strToU8(DOCUMENT_RELS),
     "word/document.xml": strToU8(document),
-    "word/styles.xml": strToU8(parts.styles ?? STYLES),
+    "word/styles.xml": strToU8(STYLES.replace("<!--EXTRA-->", parts.extraStyles ?? "")),
     "word/settings.xml": strToU8(parts.settings ?? SETTINGS),
     "word/numbering.xml": strToU8(parts.numbering ?? NUMBERING),
   });

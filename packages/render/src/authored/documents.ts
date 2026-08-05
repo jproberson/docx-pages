@@ -1,3 +1,11 @@
+import {
+  numberingDocument,
+  spacingDocument,
+  tableDocument,
+  wrappingDocument,
+  NUMBERING,
+  SPACING_STYLES,
+} from "./features.js";
 import { buildAuthoredDocx, FACE } from "./package.js";
 
 // Documents written here rather than found in the wild, so that Word's own answers
@@ -17,9 +25,11 @@ export type AuthoredDocument = {
   // Whether the question needs to know where a character sits along its line
   // rather than only where the line starts. Each one costs a round trip to Word.
   readonly measuresCharacters?: boolean;
-  // How many of the characters Word placed are expected to land where Word put
-  // them. Short of all of them names a gap this suite has measured and the layout
-  // does not yet answer, which is a number that cannot quietly grow.
+  // How many of the places Word reported are expected to be the places this
+  // project puts them. Short of all of them names a gap the suite has measured and
+  // the layout does not yet answer, which is then a number that cannot quietly
+  // grow. Left out, every one of them has to agree.
+  readonly paragraphsPlaced?: number;
   readonly charactersPlaced?: number;
   readonly bytes: Uint8Array;
 };
@@ -180,6 +190,48 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // starts it there. The four paragraphs that ask are the last four.
       charactersPlaced: 51,
       bytes: buildAuthoredDocx({ body: tabDocument() }),
+    },
+    {
+      id: "tables",
+      title: "Tables",
+      asks: "how tall a row is and how far a cell holds its text off its own walls",
+      // Word answers for a paragraph inside a cell from that cell's own boundary
+      // rather than the page's, and it counts cell paragraphs this project does not
+      // lay out as boxes of their own. Until the two are lined up the comparison
+      // says almost nothing; what is worth having already is Word's answers, which
+      // no other document in the suite records for a table.
+      paragraphsPlaced: 1,
+      bytes: buildAuthoredDocx({ body: tableDocument() }),
+    },
+    {
+      id: "spacing",
+      title: "Spacing between and within paragraphs",
+      asks: "where a line sits under each line rule, and what contextual spacing closes up",
+      // One line rule is not yet answered.
+      paragraphsPlaced: 13,
+      bytes: buildAuthoredDocx({ body: spacingDocument(), extraStyles: SPACING_STYLES }),
+    },
+    {
+      id: "wrapping",
+      title: "Text wrapping beside an object",
+      asks: "where a line starts and ends beside a wrapping object, and where it breaks",
+      measuresCharacters: true,
+      // A line narrowed by an object beside it is not broken again at the narrower
+      // width, so the text after the first break runs on differently from Word's.
+      paragraphsPlaced: 2,
+      charactersPlaced: 225,
+      bytes: buildAuthoredDocx({ body: wrappingDocument() }),
+    },
+    {
+      id: "numbering",
+      title: "Numbered lists",
+      asks: "where a number sits, and where the text after one starts when the number is wide",
+      measuresCharacters: true,
+      bytes: buildAuthoredDocx({
+        body: numberingDocument(),
+        extraStyles: SPACING_STYLES,
+        numbering: NUMBERING,
+      }),
     },
   ];
 }
