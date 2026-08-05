@@ -87,10 +87,11 @@ export {
 } from "./docx/relationships.js";
 export type { Relationship } from "./docx/relationships.js";
 
-export { breakLines, faceRequestFor } from "./layout/lines.js";
+export { breakLines, faceRequestFor, measureText } from "./layout/lines.js";
 export type {
   BreakLinesInput,
   LineBreaking,
+  TextMeasurement,
   LineSegment,
   LineTabs,
   MeasureFailure,

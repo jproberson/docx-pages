@@ -1,0 +1,224 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  blockParagraphs,
+  layOutDocument,
+  lookupFontMetrics,
+  openDocx,
+  readBlocks,
+  readStyleTable,
+  type FaceRequest,
+  type LaidOutDocument,
+  type MetricsLookup,
+  type MetricsResolver,
+  type ParagraphBox,
+} from "@onepager/core";
+
+import { characterPlacements } from "./characters.js";
+import { authoredDocuments } from "./documents.js";
+import { authoredFace } from "./faces.js";
+import { LEFT_PT } from "./package.js";
+import {
+  readMeasured,
+  PARAGRAPH_TOLERANCE_PT,
+  SHAPE_TOLERANCE_PT,
+  type MeasuredDocument,
+} from "./measured.js";
+
+// Documents written for this suite, and Word's own answers about them. Unlike the
+// seven reference documents these are committed, so a machine with Word's Calibri
+// on it can check every rule here without a manifest.
+const FACE = authoredFace();
+const MEASURED = readMeasured();
+
+const CASES = authoredDocuments().flatMap((each) => {
+  const measured: MeasuredDocument | undefined = MEASURED.documents[each.id];
+  return measured === undefined ? [] : [{ ...each, measured }];
+});
+
+const metricsFor: MetricsResolver = (request: FaceRequest): MetricsLookup =>
+  lookupFontMetrics(request, FACE === null ? [] : [FACE]);
+
+const layoutOf = (bytes: Uint8Array): LaidOutDocument => {
+  const laid = layOutDocument(openDocx(bytes), metricsFor);
+  if (laid.kind !== "laid-out") throw new Error(`blocked: ${JSON.stringify(laid.blocker)}`);
+  return laid;
+};
+
+// Where every character of every paragraph sits along its line, which is what says
+// where a tab landed.
+function charactersOf(bytes: Uint8Array): ReadonlyMap<string, number> {
+  const pkg = openDocx(bytes);
+  const styles = readStyleTable(pkg);
+  const boxes = placedBoxes(layoutOf(bytes));
+
+  const found = new Map<string, number>();
+  for (const paragraph of blockParagraphs(readBlocks(pkg))) {
+    const box = boxes.get(paragraph.index);
+    if (box === undefined) continue;
+    for (const placed of characterPlacements(paragraph, box, styles, metricsFor, LEFT_PT)) {
+      found.set(`${String(paragraph.index + 1)}:${String(placed.index)}`, placed.leftPt);
+    }
+  }
+  return found;
+}
+
+function placedBoxes(layout: LaidOutDocument): ReadonlyMap<number, ParagraphBox> {
+  const found = new Map<number, ParagraphBox>();
+  for (const page of layout.pages) {
+    for (const box of page.body) if (!found.has(box.index)) found.set(box.index, box);
+  }
+  return found;
+}
+
+// Word answers for a paragraph's line rather than for the paragraph's own top: one
+// whose line fell past an object reports where the line landed. An empty paragraph
+// has no line to report, so it answers from its own top.
+type Placed = { readonly page: number; readonly topPt: number; readonly leftPt: number };
+
+function placedParagraphs(layout: LaidOutDocument): ReadonlyMap<number, Placed> {
+  const found = new Map<number, Placed>();
+
+  for (const page of layout.pages) {
+    for (const box of page.body) {
+      if (found.has(box.index)) continue;
+      found.set(box.index, placedAt(box, page.index));
+    }
+  }
+  return found;
+}
+
+function placedAt(box: ParagraphBox, pageIndex: number): Placed {
+  const line = box.lines[0];
+  return {
+    page: pageIndex + 1,
+    topPt: line?.topPt ?? box.topPt,
+    leftPt: (line?.leftPt ?? LEFT_PT) - LEFT_PT,
+  };
+}
+
+// Every shape the document holds, by the name it was authored under, so a failure
+// says which box is out rather than which index.
+function fittedShapes(
+  layout: LaidOutDocument,
+): ReadonlyMap<string, Placed & { readonly widthPt: number; readonly heightPt: number }> {
+  const found = new Map<string, Placed & { readonly widthPt: number; readonly heightPt: number }>();
+  for (const page of layout.pages) {
+    for (const float of page.floats) {
+      if (found.has(float.anchor.name)) continue;
+      found.set(float.anchor.name, {
+        page: page.index + 1,
+        topPt: float.topPt,
+        leftPt: float.leftPt,
+        widthPt: float.widthPt,
+        heightPt: float.heightPt,
+      });
+    }
+  }
+  return found;
+}
+
+describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against Word", () => {
+  for (const each of CASES) {
+    describe(`${each.id}: ${each.asks}`, () => {
+      it("puts every paragraph on the page Word did, at the height Word did", () => {
+        const placed = placedParagraphs(layoutOf(each.bytes));
+        const off: string[] = [];
+
+        for (const expected of each.measured.paragraphs) {
+          const ours = placed.get(expected.index - 1);
+          if (ours === undefined) {
+            off.push(`paragraph ${String(expected.index)} was not laid out`);
+            continue;
+          }
+          if (ours.page !== expected.page) {
+            off.push(
+              `paragraph ${String(expected.index)} on page ${String(ours.page)}, Word says ${String(expected.page)}`,
+            );
+          }
+          if (Math.abs(ours.topPt - expected.topPt) > PARAGRAPH_TOLERANCE_PT) {
+            off.push(
+              `paragraph ${String(expected.index)} at ${ours.topPt.toFixed(2)}, Word says ${String(expected.topPt)}`,
+            );
+          }
+        }
+
+        expect(off).toStrictEqual([]);
+      });
+
+      it("starts every paragraph across the page where Word started it", () => {
+        const placed = placedParagraphs(layoutOf(each.bytes));
+        const off: string[] = [];
+
+        for (const expected of each.measured.paragraphs) {
+          const ours = placed.get(expected.index - 1);
+          if (ours === undefined) continue;
+          if (Math.abs(ours.leftPt - expected.leftPt) > PARAGRAPH_TOLERANCE_PT) {
+            off.push(
+              `paragraph ${String(expected.index)} starts at ${ours.leftPt.toFixed(2)}, Word says ${String(expected.leftPt)}`,
+            );
+          }
+        }
+
+        expect(off).toStrictEqual([]);
+      });
+
+      it.runIf(each.measured.characters.length > 0)(
+        "lands every character along its line where Word landed it",
+        () => {
+          const ours = charactersOf(each.bytes);
+          const off: string[] = [];
+          let placed = 0;
+
+          for (const expected of each.measured.characters) {
+            const key = `${String(expected.paragraph)}:${String(expected.index)}`;
+            const mine = ours.get(key);
+            if (mine === undefined) {
+              off.push(`character ${key} was not laid out`);
+              continue;
+            }
+            if (Math.abs(mine - expected.leftPt) <= PARAGRAPH_TOLERANCE_PT) {
+              placed += 1;
+              continue;
+            }
+            off.push(
+              `character ${key} at ${mine.toFixed(2)}, Word says ${String(expected.leftPt)}`,
+            );
+          }
+
+          const total = each.measured.characters.length;
+          const wanted = each.charactersPlaced ?? total;
+          if (placed !== wanted) expect(off).toStrictEqual([]);
+          expect(`${String(placed)} of ${String(total)}`).toBe(
+            `${String(wanted)} of ${String(total)}`,
+          );
+        },
+      );
+
+      it.runIf(each.measured.shapes.length > 0)("sizes every shape the way Word sized it", () => {
+        const shapes = fittedShapes(layoutOf(each.bytes));
+        const off: string[] = [];
+
+        for (const expected of each.measured.shapes) {
+          const ours = shapes.get(expected.name);
+          if (ours === undefined) {
+            off.push(`${expected.name} was not laid out`);
+            continue;
+          }
+          if (Math.abs(ours.widthPt - expected.widthPt) > SHAPE_TOLERANCE_PT) {
+            off.push(
+              `${expected.name} is ${ours.widthPt.toFixed(3)} wide, Word says ${String(expected.widthPt)}`,
+            );
+          }
+          if (Math.abs(ours.heightPt - expected.heightPt) > SHAPE_TOLERANCE_PT) {
+            off.push(
+              `${expected.name} is ${ours.heightPt.toFixed(3)} tall, Word says ${String(expected.heightPt)}`,
+            );
+          }
+        }
+
+        expect(off).toStrictEqual([]);
+      });
+    });
+  }
+});

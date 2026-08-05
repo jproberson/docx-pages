@@ -1,0 +1,744 @@
+{
+  "documents": {
+    "fitting": {
+      "paragraphs": [
+        {
+          "index": 1,
+          "page": 1,
+          "topPt": 36,
+          "leftPt": 0
+        },
+        {
+          "index": 2,
+          "page": 1,
+          "topPt": 51,
+          "leftPt": 0
+        },
+        {
+          "index": 3,
+          "page": 1,
+          "topPt": 65,
+          "leftPt": 0
+        },
+        {
+          "index": 4,
+          "page": 1,
+          "topPt": 80,
+          "leftPt": 0
+        },
+        {
+          "index": 5,
+          "page": 1,
+          "topPt": 95,
+          "leftPt": 0
+        },
+        {
+          "index": 6,
+          "page": 1,
+          "topPt": 109,
+          "leftPt": 0
+        },
+        {
+          "index": 7,
+          "page": 1,
+          "topPt": 124,
+          "leftPt": 0
+        },
+        {
+          "index": 8,
+          "page": 1,
+          "topPt": 139,
+          "leftPt": 0
+        },
+        {
+          "index": 9,
+          "page": 1,
+          "topPt": 153,
+          "leftPt": 0
+        },
+        {
+          "index": 10,
+          "page": 1,
+          "topPt": 168,
+          "leftPt": 0
+        },
+        {
+          "index": 11,
+          "page": 1,
+          "topPt": 182,
+          "leftPt": 0
+        },
+        {
+          "index": 12,
+          "page": 1,
+          "topPt": 197,
+          "leftPt": 0
+        },
+        {
+          "index": 13,
+          "page": 1,
+          "topPt": 212,
+          "leftPt": 0
+        },
+        {
+          "index": 14,
+          "page": 1,
+          "topPt": 226,
+          "leftPt": 0
+        },
+        {
+          "index": 15,
+          "page": 1,
+          "topPt": 241,
+          "leftPt": 0
+        },
+        {
+          "index": 16,
+          "page": 1,
+          "topPt": 256,
+          "leftPt": 0
+        },
+        {
+          "index": 17,
+          "page": 1,
+          "topPt": 270,
+          "leftPt": 0
+        }
+      ],
+      "characters": [],
+      "shapes": [
+        {
+          "name": "fit-none-unstated",
+          "widthPt": 185.449996948242,
+          "heightPt": 14.64999961853
+        },
+        {
+          "name": "fit-none-none",
+          "widthPt": 185.449996948242,
+          "heightPt": 14.64999961853
+        },
+        {
+          "name": "fit-none-0.75pt",
+          "widthPt": 186.149993896484,
+          "heightPt": 15.35000038147
+        },
+        {
+          "name": "fit-none-1.5pt",
+          "widthPt": 186.949996948242,
+          "heightPt": 16.14999961853
+        },
+        {
+          "name": "fit-none-3pt",
+          "widthPt": 188.449996948242,
+          "heightPt": 17.64999961853
+        },
+        {
+          "name": "fit-none-6pt",
+          "widthPt": 191.449996948242,
+          "heightPt": 20.64999961853
+        },
+        {
+          "name": "empty-none",
+          "widthPt": 7.050000190735,
+          "heightPt": 14.64999961853
+        },
+        {
+          "name": "inset-none",
+          "widthPt": 199.850006103516,
+          "heightPt": 29.049999237061
+        },
+        {
+          "name": "fit-square-unstated",
+          "widthPt": 180,
+          "heightPt": 29.299999237061
+        },
+        {
+          "name": "fit-square-none",
+          "widthPt": 180,
+          "heightPt": 29.299999237061
+        },
+        {
+          "name": "fit-square-0.75pt",
+          "widthPt": 180,
+          "heightPt": 30
+        },
+        {
+          "name": "fit-square-1.5pt",
+          "widthPt": 180,
+          "heightPt": 30.799999237061
+        },
+        {
+          "name": "fit-square-3pt",
+          "widthPt": 180,
+          "heightPt": 32.299999237061
+        },
+        {
+          "name": "fit-square-6pt",
+          "widthPt": 180,
+          "heightPt": 35.299999237061
+        },
+        {
+          "name": "empty-square",
+          "widthPt": 180,
+          "heightPt": 14.64999961853
+        },
+        {
+          "name": "inset-square",
+          "widthPt": 180,
+          "heightPt": 43.700000762939
+        }
+      ]
+    },
+    "tabs": {
+      "paragraphs": [
+        {
+          "index": 1,
+          "page": 1,
+          "topPt": 36,
+          "leftPt": 0
+        },
+        {
+          "index": 2,
+          "page": 1,
+          "topPt": 51,
+          "leftPt": 0
+        },
+        {
+          "index": 3,
+          "page": 1,
+          "topPt": 65,
+          "leftPt": 0
+        },
+        {
+          "index": 4,
+          "page": 1,
+          "topPt": 80,
+          "leftPt": 0
+        },
+        {
+          "index": 5,
+          "page": 1,
+          "topPt": 95,
+          "leftPt": 0
+        },
+        {
+          "index": 6,
+          "page": 1,
+          "topPt": 109,
+          "leftPt": 0
+        },
+        {
+          "index": 7,
+          "page": 1,
+          "topPt": 124,
+          "leftPt": 0
+        },
+        {
+          "index": 8,
+          "page": 1,
+          "topPt": 139,
+          "leftPt": 0
+        },
+        {
+          "index": 9,
+          "page": 1,
+          "topPt": 153,
+          "leftPt": 0
+        }
+      ],
+      "characters": [
+        {
+          "paragraph": 1,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 1,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 1,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 1,
+          "index": 4,
+          "leftPt": 36
+        },
+        {
+          "paragraph": 1,
+          "index": 5,
+          "leftPt": 41
+        },
+        {
+          "paragraph": 1,
+          "index": 6,
+          "leftPt": 47
+        },
+        {
+          "paragraph": 1,
+          "index": 7,
+          "leftPt": 72
+        },
+        {
+          "paragraph": 1,
+          "index": 8,
+          "leftPt": 78
+        },
+        {
+          "paragraph": 1,
+          "index": 9,
+          "leftPt": 82
+        },
+        {
+          "paragraph": 2,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 2,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 2,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 2,
+          "index": 4,
+          "leftPt": 72
+        },
+        {
+          "paragraph": 2,
+          "index": 5,
+          "leftPt": 77
+        },
+        {
+          "paragraph": 2,
+          "index": 6,
+          "leftPt": 83
+        },
+        {
+          "paragraph": 2,
+          "index": 7,
+          "leftPt": 108
+        },
+        {
+          "paragraph": 2,
+          "index": 8,
+          "leftPt": 114
+        },
+        {
+          "paragraph": 2,
+          "index": 9,
+          "leftPt": 118
+        },
+        {
+          "paragraph": 3,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 3,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 3,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 3,
+          "index": 4,
+          "leftPt": 144
+        },
+        {
+          "paragraph": 3,
+          "index": 5,
+          "leftPt": 150
+        },
+        {
+          "paragraph": 3,
+          "index": 6,
+          "leftPt": 156
+        },
+        {
+          "paragraph": 3,
+          "index": 7,
+          "leftPt": 162
+        },
+        {
+          "paragraph": 3,
+          "index": 8,
+          "leftPt": 168
+        },
+        {
+          "paragraph": 3,
+          "index": 9,
+          "leftPt": 171
+        },
+        {
+          "paragraph": 3,
+          "index": 10,
+          "leftPt": 177
+        },
+        {
+          "paragraph": 3,
+          "index": 11,
+          "leftPt": 184
+        },
+        {
+          "paragraph": 3,
+          "index": 12,
+          "leftPt": 216
+        },
+        {
+          "paragraph": 3,
+          "index": 13,
+          "leftPt": 221
+        },
+        {
+          "paragraph": 3,
+          "index": 14,
+          "leftPt": 227
+        },
+        {
+          "paragraph": 4,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 4,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 4,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 4,
+          "index": 4,
+          "leftPt": 124
+        },
+        {
+          "paragraph": 4,
+          "index": 5,
+          "leftPt": 130
+        },
+        {
+          "paragraph": 4,
+          "index": 6,
+          "leftPt": 136
+        },
+        {
+          "paragraph": 4,
+          "index": 7,
+          "leftPt": 142
+        },
+        {
+          "paragraph": 4,
+          "index": 8,
+          "leftPt": 149
+        },
+        {
+          "paragraph": 4,
+          "index": 9,
+          "leftPt": 152
+        },
+        {
+          "paragraph": 4,
+          "index": 10,
+          "leftPt": 158
+        },
+        {
+          "paragraph": 4,
+          "index": 11,
+          "leftPt": 164
+        },
+        {
+          "paragraph": 4,
+          "index": 12,
+          "leftPt": 180
+        },
+        {
+          "paragraph": 4,
+          "index": 13,
+          "leftPt": 185
+        },
+        {
+          "paragraph": 4,
+          "index": 14,
+          "leftPt": 191
+        },
+        {
+          "paragraph": 5,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 5,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 5,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 5,
+          "index": 4,
+          "leftPt": 104
+        },
+        {
+          "paragraph": 5,
+          "index": 5,
+          "leftPt": 111
+        },
+        {
+          "paragraph": 5,
+          "index": 6,
+          "leftPt": 117
+        },
+        {
+          "paragraph": 5,
+          "index": 7,
+          "leftPt": 123
+        },
+        {
+          "paragraph": 5,
+          "index": 8,
+          "leftPt": 129
+        },
+        {
+          "paragraph": 5,
+          "index": 9,
+          "leftPt": 132
+        },
+        {
+          "paragraph": 5,
+          "index": 10,
+          "leftPt": 138
+        },
+        {
+          "paragraph": 5,
+          "index": 11,
+          "leftPt": 144
+        },
+        {
+          "paragraph": 5,
+          "index": 12,
+          "leftPt": 180
+        },
+        {
+          "paragraph": 5,
+          "index": 13,
+          "leftPt": 185
+        },
+        {
+          "paragraph": 5,
+          "index": 14,
+          "leftPt": 191
+        },
+        {
+          "paragraph": 6,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 6,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 6,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 6,
+          "index": 4,
+          "leftPt": 120
+        },
+        {
+          "paragraph": 6,
+          "index": 5,
+          "leftPt": 126
+        },
+        {
+          "paragraph": 6,
+          "index": 6,
+          "leftPt": 132
+        },
+        {
+          "paragraph": 6,
+          "index": 7,
+          "leftPt": 138
+        },
+        {
+          "paragraph": 6,
+          "index": 8,
+          "leftPt": 144
+        },
+        {
+          "paragraph": 6,
+          "index": 9,
+          "leftPt": 147
+        },
+        {
+          "paragraph": 6,
+          "index": 10,
+          "leftPt": 153
+        },
+        {
+          "paragraph": 6,
+          "index": 11,
+          "leftPt": 159
+        },
+        {
+          "paragraph": 6,
+          "index": 12,
+          "leftPt": 180
+        },
+        {
+          "paragraph": 6,
+          "index": 13,
+          "leftPt": 185
+        },
+        {
+          "paragraph": 6,
+          "index": 14,
+          "leftPt": 191
+        },
+        {
+          "paragraph": 7,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 7,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 7,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 7,
+          "index": 4,
+          "leftPt": 36
+        },
+        {
+          "paragraph": 7,
+          "index": 5,
+          "leftPt": 42
+        },
+        {
+          "paragraph": 7,
+          "index": 6,
+          "leftPt": 48
+        },
+        {
+          "paragraph": 7,
+          "index": 7,
+          "leftPt": 54
+        },
+        {
+          "paragraph": 7,
+          "index": 8,
+          "leftPt": 60
+        },
+        {
+          "paragraph": 7,
+          "index": 9,
+          "leftPt": 63
+        },
+        {
+          "paragraph": 7,
+          "index": 10,
+          "leftPt": 69
+        },
+        {
+          "paragraph": 7,
+          "index": 11,
+          "leftPt": 76
+        },
+        {
+          "paragraph": 7,
+          "index": 12,
+          "leftPt": 108
+        },
+        {
+          "paragraph": 7,
+          "index": 13,
+          "leftPt": 113
+        },
+        {
+          "paragraph": 7,
+          "index": 14,
+          "leftPt": 119
+        },
+        {
+          "paragraph": 8,
+          "index": 1,
+          "leftPt": 0
+        },
+        {
+          "paragraph": 8,
+          "index": 2,
+          "leftPt": 6
+        },
+        {
+          "paragraph": 8,
+          "index": 3,
+          "leftPt": 12
+        },
+        {
+          "paragraph": 8,
+          "index": 4,
+          "leftPt": 72
+        },
+        {
+          "paragraph": 8,
+          "index": 5,
+          "leftPt": 77
+        },
+        {
+          "paragraph": 8,
+          "index": 6,
+          "leftPt": 83
+        },
+        {
+          "paragraph": 8,
+          "index": 7,
+          "leftPt": 278
+        },
+        {
+          "paragraph": 8,
+          "index": 8,
+          "leftPt": 284
+        },
+        {
+          "paragraph": 8,
+          "index": 9,
+          "leftPt": 288
+        },
+        {
+          "paragraph": 9,
+          "index": 1,
+          "leftPt": 0
+        }
+      ],
+      "shapes": []
+    }
+  }
+}

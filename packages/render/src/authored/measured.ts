@@ -1,0 +1,118 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// What Word said about each authored document. These are Word's own answers,
+// committed because the documents they describe were written here rather than
+// found: nothing in either is anyone's collateral.
+//
+// Word rounds a paragraph's position to whole points and a shape's size to a
+// twentieth of one, so pin against them no finer than that.
+export const PARAGRAPH_TOLERANCE_PT = 0.5;
+export const SHAPE_TOLERANCE_PT = 0.06;
+
+export type MeasuredParagraph = {
+  // Word numbers paragraphs from one; ours from zero.
+  readonly index: number;
+  readonly page: number;
+  readonly topPt: number;
+  // Where the paragraph's own content starts, measured from the left of the text
+  // column rather than of the page.
+  readonly leftPt: number;
+};
+
+// Where a character sits along its line, from the left of the text column. This is
+// what says where a tab landed: the line's own start cannot.
+export type MeasuredCharacter = {
+  readonly paragraph: number;
+  readonly index: number;
+  readonly leftPt: number;
+};
+
+export type MeasuredShape = {
+  readonly name: string;
+  readonly widthPt: number;
+  readonly heightPt: number;
+};
+
+export type MeasuredDocument = {
+  readonly paragraphs: readonly MeasuredParagraph[];
+  readonly characters: readonly MeasuredCharacter[];
+  readonly shapes: readonly MeasuredShape[];
+};
+
+export type Measured = {
+  readonly documents: Readonly<Record<string, MeasuredDocument>>;
+};
+
+export const MEASURED_PATH = resolve("packages/render/src/authored/measured.json");
+
+const EMPTY: Measured = { documents: {} };
+
+// The file is written by the script beside it, so it is read for what it should
+// hold rather than guarded against every shape it could: a field that is not a
+// number is a measurement that never happened, and reading it as one would pin the
+// layout against nothing.
+const fields = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null ? { ...value } : {};
+
+const number = (value: unknown, where: string): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${MEASURED_PATH}: expected a number at ${where}`);
+  }
+  return value;
+};
+
+const list = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+
+const readParagraph = (value: unknown, where: string): MeasuredParagraph => {
+  const each = fields(value);
+  return {
+    index: number(each["index"], `${where}.index`),
+    page: number(each["page"], `${where}.page`),
+    topPt: number(each["topPt"], `${where}.topPt`),
+    leftPt: number(each["leftPt"], `${where}.leftPt`),
+  };
+};
+
+const readCharacter = (value: unknown, where: string): MeasuredCharacter => {
+  const each = fields(value);
+  return {
+    paragraph: number(each["paragraph"], `${where}.paragraph`),
+    index: number(each["index"], `${where}.index`),
+    leftPt: number(each["leftPt"], `${where}.leftPt`),
+  };
+};
+
+const readShape = (value: unknown, where: string): MeasuredShape => {
+  const each = fields(value);
+  const name = each["name"];
+  return {
+    name: typeof name === "string" ? name : "",
+    widthPt: number(each["widthPt"], `${where}.widthPt`),
+    heightPt: number(each["heightPt"], `${where}.heightPt`),
+  };
+};
+
+function readDocument(value: unknown, where: string): MeasuredDocument {
+  const each = fields(value);
+  return {
+    paragraphs: list(each["paragraphs"]).map((one, at) =>
+      readParagraph(one, `${where}.paragraphs[${String(at)}]`),
+    ),
+    characters: list(each["characters"]).map((one, at) =>
+      readCharacter(one, `${where}.characters[${String(at)}]`),
+    ),
+    shapes: list(each["shapes"]).map((one, at) => readShape(one, `${where}.shapes[${String(at)}]`)),
+  };
+}
+
+export function readMeasured(path: string = MEASURED_PATH): Measured {
+  if (!existsSync(path)) return EMPTY;
+
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  const documents: Record<string, MeasuredDocument> = {};
+  for (const [id, each] of Object.entries(fields(fields(parsed)["documents"]))) {
+    documents[id] = readDocument(each, `documents.${id}`);
+  }
+  return { documents };
+}

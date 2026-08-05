@@ -14,6 +14,13 @@ export type AuthoredDocument = {
   readonly title: string;
   // What the document is asking Word, so a failure says which rule is out.
   readonly asks: string;
+  // Whether the question needs to know where a character sits along its line
+  // rather than only where the line starts. Each one costs a round trip to Word.
+  readonly measuresCharacters?: boolean;
+  // How many of the characters Word placed are expected to land where Word put
+  // them. Short of all of them names a gap this suite has measured and the layout
+  // does not yet answer, which is a number that cannot quietly grow.
+  readonly charactersPlaced?: number;
   readonly bytes: Uint8Array;
 };
 
@@ -167,6 +174,11 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "tabs",
       title: "Tab stops",
       asks: "where a tab lands at each alignment, and where the default stops fall",
+      measuresCharacters: true,
+      // A stop that is not left-aligned is not honoured yet: Word centres, ends or
+      // aligns the decimal point of the text after the tab on the stop, and this
+      // starts it there. The four paragraphs that ask are the last four.
+      charactersPlaced: 51,
       bytes: buildAuthoredDocx({ body: tabDocument() }),
     },
   ];
