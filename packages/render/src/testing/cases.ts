@@ -83,6 +83,11 @@ export type ReferenceCase = {
   // a header is met once per page. They are marked rather than drawn, and counted
   // here so a new one cannot slip in unnoticed.
   readonly unrenderablePictures: number;
+  // How many blocks of colour and runs of text the metafiles in the document are
+  // expected to draw, every one of them where Word drew the same shape from the
+  // same recording. Left out, the document has no metafile worth playing.
+  readonly metafileFills: number | null;
+  readonly metafileRuns: number | null;
   // How many list numbers are expected to be identified against Word's own output
   // and to sit where Word drew them.
   readonly numbersMatched: number | null;
@@ -289,6 +294,8 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     textRunsMatched: optionalNumber(source, "textRunsMatched", where),
     textRunsPlaced: optionalNumber(source, "textRunsPlaced", where),
     unrenderablePictures: optionalNumber(source, "unrenderablePictures", where) ?? 0,
+    metafileFills: optionalNumber(source, "metafileFills", where),
+    metafileRuns: optionalNumber(source, "metafileRuns", where),
     numbersMatched: optionalNumber(source, "numbersMatched", where),
     numbersPlaced: optionalNumber(source, "numbersPlaced", where),
     textTolerancePt: optionalNumber(source, "textTolerancePt", where) ?? 1,

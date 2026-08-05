@@ -5,6 +5,9 @@ import {
   type CropInsets,
   type LaidOutDocument,
   type LaidOutPage,
+  type MetafilePicture,
+  type MetafileRect,
+  type MetafileShape,
   type ParagraphBox,
   type ParagraphMark,
   type ParagraphMarker,
@@ -67,6 +70,131 @@ function croppedImage(drawable: ObjectDrawable, url: string, crop: CropInsets): 
       />
     </div>
   );
+}
+
+// A metafile records the drawing rather than a picture of it, so its shapes are
+// drawn straight into the frame the document gave it. The frame decides the scale
+// on its own, whatever the recording's own proportions were, and a source rectangle
+// is a narrower window onto the same coordinates rather than a larger picture
+// behind a smaller frame.
+function metafileImage(
+  drawable: ObjectDrawable,
+  picture: MetafilePicture,
+  crop: CropInsets,
+  fallback: string,
+): ReactElement {
+  const { widthUnits, heightUnits } = picture;
+  const window = [
+    crop.left * widthUnits,
+    crop.top * heightUnits,
+    widthUnits * (1 - crop.left - crop.right),
+    heightUnits * (1 - crop.top - crop.bottom),
+  ];
+
+  const clips = clipPathsOf(picture.shapes, drawable.key);
+  return (
+    <svg
+      key={drawable.key}
+      style={box(drawable)}
+      viewBox={window.map(String).join(" ")}
+      preserveAspectRatio="none"
+      data-kind="picture"
+    >
+      {clips.size === 0 ? null : (
+        <defs>
+          {[...clips].map(([rect, id]) => (
+            <clipPath key={id} id={id}>
+              <rect
+                x={rect.leftUnits}
+                y={rect.topUnits}
+                width={rect.widthUnits}
+                height={rect.heightUnits}
+              />
+            </clipPath>
+          ))}
+        </defs>
+      )}
+      {picture.shapes.map((shape, at) => {
+        const drawn = metafileShape(shape, String(at), fallback);
+        const id = shape.clipTo === null ? undefined : clips.get(shape.clipTo);
+        return id === undefined ? (
+          drawn
+        ) : (
+          <g key={at} clipPath={`url(#${id})`}>
+            {drawn}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// One clip path per rectangle the shapes are cut to, named against the object so
+// that two metafiles on a page cannot claim the same name.
+function clipPathsOf(
+  shapes: readonly MetafileShape[],
+  key: string,
+): ReadonlyMap<MetafileRect, string> {
+  const byRect = new Map<MetafileRect, string>();
+  const byShape = new Map<string, string>();
+  for (const shape of shapes) {
+    if (shape.clipTo === null) continue;
+    const { leftUnits, topUnits, widthUnits, heightUnits } = shape.clipTo;
+    const shapeOf = [leftUnits, topUnits, widthUnits, heightUnits].map(String).join(" ");
+    const id = byShape.get(shapeOf) ?? `${key}-clip-${String(byShape.size)}`;
+    byShape.set(shapeOf, id);
+    byRect.set(shape.clipTo, id);
+  }
+  return byRect;
+}
+
+// A metafile's pen hangs its line off the cell whose corner the line runs through,
+// where a stroke is centred on the line it follows, so the line moves half a unit
+// down and right to cover the same cells.
+const PEN_OFFSET = 0.5;
+
+function metafileShape(shape: MetafileShape, key: string, fallback: string): ReactElement {
+  switch (shape.kind) {
+    case "fill":
+      return (
+        <rect
+          key={key}
+          x={shape.rect.leftUnits}
+          y={shape.rect.topUnits}
+          width={shape.rect.widthUnits}
+          height={shape.rect.heightUnits}
+          fill={shape.color}
+        />
+      );
+    case "stroke":
+      return (
+        <line
+          key={key}
+          x1={shape.fromXUnits + PEN_OFFSET}
+          y1={shape.fromYUnits + PEN_OFFSET}
+          x2={shape.toXUnits + PEN_OFFSET}
+          y2={shape.toYUnits + PEN_OFFSET}
+          stroke={shape.color}
+          strokeWidth={shape.widthUnits}
+        />
+      );
+    case "text":
+      return (
+        <text
+          key={key}
+          x={shape.xUnits.map(String).join(" ")}
+          y={shape.baselineUnits}
+          xmlSpace="preserve"
+          fontFamily={`"${shape.face.name}", ${fallback}`}
+          fontSize={shape.emUnits}
+          fontWeight={shape.face.bold ? "bold" : undefined}
+          fontStyle={shape.face.italic ? "italic" : undefined}
+          fill={shape.color}
+        >
+          {shape.text}
+        </text>
+      );
+  }
 }
 
 // A shape's own paint. Word centres an outline on the edge it runs along, which
@@ -279,6 +407,7 @@ function renderObject(
   drawable: ObjectDrawable,
   imageUrl: ImageResolver,
   frames: FrameStyle,
+  fallback: string,
 ): readonly ReactElement[] {
   const { content } = drawable;
   const shown = (kind: string): readonly ReactElement[] => kept(frame(drawable, kind, frames));
@@ -289,10 +418,15 @@ function renderObject(
 
   switch (content.kind) {
     case "picture": {
-      const url = imageUrl(content.part);
-      return url === undefined
-        ? shown("unresolved-picture")
-        : renderPicture(drawable, content.paint, croppedImage(drawable, url, content.crop));
+      const image = imageUrl(content.part);
+      if (image === undefined) return shown("unresolved-picture");
+      return renderPicture(
+        drawable,
+        content.paint,
+        image.kind === "bitmap"
+          ? croppedImage(drawable, image.url, content.crop)
+          : metafileImage(drawable, image.picture, content.crop, fallback),
+      );
     }
     case "missing-picture":
       return shown("missing-picture");
@@ -334,7 +468,7 @@ export function OnePagerPage(props: OnePagerPageProps): ReactElement {
       {drawablesOf(layout, page).flatMap((drawable) =>
         drawable.kind === "text"
           ? [textLayer(drawable, widthPt, heightPt, fallbackFonts)]
-          : renderObject(drawable, imageUrl, frames),
+          : renderObject(drawable, imageUrl, frames, fallbackFonts),
       )}
     </div>
   );

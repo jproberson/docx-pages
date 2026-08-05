@@ -2,7 +2,13 @@ import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { layOutDocument, lookupFontMetrics, type SuppliedFace } from "@onepager/core";
+import {
+  layOutDocument,
+  lookupFontMetrics,
+  type FaceRequest,
+  type MetricsLookup,
+  type SuppliedFace,
+} from "@onepager/core";
 import { imageResolver, OnePagerDocument, type FrameStyle } from "@onepager/viewer";
 
 import {
@@ -133,7 +139,8 @@ const pageName = (id: string, set: FaceSet, frames: FrameStyle): string =>
 
 export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameStyle): string {
   const pkg = readReferenceDocument(each);
-  const layout = layOutDocument(pkg, (request) => lookupFontMetrics(request, set.faces));
+  const metricsFor = (request: FaceRequest): MetricsLookup => lookupFontMetrics(request, set.faces);
+  const layout = layOutDocument(pkg, metricsFor);
   if (layout.kind !== "laid-out") {
     throw new Error(`case ${each.id} is blocked: ${JSON.stringify(layout.blocker)}`);
   }
@@ -141,7 +148,7 @@ export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameSty
   const body = renderToStaticMarkup(
     <OnePagerDocument
       layout={layout}
-      imageUrl={imageResolver(pkg)}
+      imageUrl={imageResolver(pkg, metricsFor)}
       frames={frames}
       fallbackFonts={FALLBACK_FONTS}
     />,

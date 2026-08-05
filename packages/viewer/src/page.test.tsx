@@ -6,6 +6,7 @@ import type {
   CropInsets,
   LaidOutDocument,
   LaidOutPage,
+  MetafilePicture,
   ParagraphBox,
   ParagraphMark,
   PlacedContent,
@@ -14,6 +15,7 @@ import type {
   TextBoxBody,
 } from "@onepager/core";
 
+import type { DrawableImage } from "./images.js";
 import { OnePagerPage } from "./page.js";
 
 const MARK: ParagraphMark = {
@@ -133,6 +135,36 @@ const layoutWith = (
   pages: [{ index: 0, body, floats, inlines: [] }],
 });
 
+// A block of colour cut to a rectangle, a rule and a run of text, which is what a
+// diagram recorded as a metafile is made of.
+const PICTURE: MetafilePicture = {
+  widthUnits: 40,
+  heightUnits: 20,
+  shapes: [
+    {
+      kind: "fill",
+      rect: { leftUnits: 2, topUnits: 3, widthUnits: 10, heightUnits: 4 },
+      color: "#92d050",
+      clipTo: { leftUnits: 0, topUnits: 0, widthUnits: 30, heightUnits: 15 },
+    },
+    {
+      kind: "text",
+      text: "ab",
+      xUnits: [5, 16],
+      baselineUnits: 17,
+      emUnits: 8,
+      color: "#000000",
+      face: { name: "Meridian Sans", bold: false, italic: false },
+      clipTo: null,
+    },
+  ],
+};
+
+const DRAWABLE: ReadonlyMap<string, DrawableImage> = new Map([
+  ["word/media/image1.png", { kind: "bitmap", url: "data:image/png;base64,AA" }],
+  ["word/media/image2.emf", { kind: "metafile", picture: PICTURE }],
+]);
+
 const firstPage = (layout: LaidOutDocument): LaidOutPage => {
   const [page] = layout.pages;
   if (page === undefined) throw new Error("the layout has no pages");
@@ -147,9 +179,7 @@ const markup = (
     <OnePagerPage
       layout={layout}
       page={firstPage(layout)}
-      imageUrl={(part) =>
-        part === "word/media/image1.png" ? "data:image/png;base64,AA" : undefined
-      }
+      imageUrl={(part) => DRAWABLE.get(part)}
       {...(options === null ? {} : options)}
     />,
   );
@@ -197,6 +227,44 @@ describe("OnePagerPage", () => {
     expect(html).toContain("width:180pt;height:90pt;overflow:hidden");
     expect(html).toMatch(/width:254\.596\d*pt/);
     expect(html).toMatch(/top:-7\.058\d*pt/);
+  });
+
+  // A metafile is a recording of the drawing, so its shapes go straight into the
+  // frame the document gave it and the frame decides the scale on its own.
+  it("draws a metafile's own shapes in the frame the document gave it", () => {
+    const html = markup(
+      layoutWith([
+        float({ kind: "picture", part: "word/media/image2.emf", crop: NO_CROP, paint: UNPAINTED }),
+      ]),
+    );
+    expect(html).toContain('viewBox="0 0 40 20" preserveAspectRatio="none"');
+    expect(html).toContain("width:180pt;height:90pt");
+    expect(html).toContain('<rect x="2" y="3" width="10" height="4" fill="#92d050"');
+    expect(html).toContain('<text x="5 16" y="17"');
+    expect(html).toContain('font-size="8"');
+  });
+
+  it("cuts a metafile's shape to the rectangle the recording clipped it to", () => {
+    const html = markup(
+      layoutWith([
+        float({ kind: "picture", part: "word/media/image2.emf", crop: NO_CROP, paint: UNPAINTED }),
+      ]),
+    );
+    expect(html).toContain('<clipPath id="float-0-clip-0">');
+    expect(html).toContain('clip-path="url(#float-0-clip-0)"');
+  });
+
+  // A source rectangle hides a fraction of each edge, which for a recording is a
+  // narrower window onto the same coordinates rather than a larger picture behind
+  // a smaller frame.
+  it("narrows the window onto a metafile when srcRect crops it", () => {
+    const crop: CropInsets = { left: 0.25, top: 0, right: 0, bottom: 0.5 };
+    const html = markup(
+      layoutWith([
+        float({ kind: "picture", part: "word/media/image2.emf", crop, paint: UNPAINTED }),
+      ]),
+    );
+    expect(html).toContain('viewBox="10 0 30 10"');
   });
 
   it("shows nothing for a text box holding no text", () => {

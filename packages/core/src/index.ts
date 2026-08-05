@@ -182,3 +182,6 @@ export { readColorReference, readTheme, themeColor, NO_THEME, THEME_PART } from 
 export type { ColorReference, Theme } from "./docx/theme.js";
 
 export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";
+
+export { readMetafilePicture } from "./metafile/picture.js";
+export type { MetafilePicture, MetafileRect, MetafileShape } from "./metafile/picture.js";

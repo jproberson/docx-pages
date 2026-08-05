@@ -1,7 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { layOutDocument, lookupFontMetrics, type LaidOutDocument } from "@onepager/core";
+import {
+  layOutDocument,
+  lookupFontMetrics,
+  type FaceRequest,
+  type LaidOutDocument,
+  type MetricsLookup,
+} from "@onepager/core";
 import { drawablesOf, imageResolver, OnePagerDocument } from "@onepager/viewer";
 
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
@@ -12,12 +18,17 @@ const rendered = (
 ): { readonly html: string; readonly layout: LaidOutDocument } => {
   const pkg = readReferenceDocument(each);
   const supplied = suppliedFaces();
-  const layout = layOutDocument(pkg, (request) => lookupFontMetrics(request, supplied));
+  const metricsFor = (request: FaceRequest): MetricsLookup => lookupFontMetrics(request, supplied);
+  const layout = layOutDocument(pkg, metricsFor);
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
   return {
     layout,
     html: renderToStaticMarkup(
-      <OnePagerDocument layout={layout} imageUrl={imageResolver(pkg)} frames="outlined" />,
+      <OnePagerDocument
+        layout={layout}
+        imageUrl={imageResolver(pkg, metricsFor)}
+        frames="outlined"
+      />,
     ),
   };
 };

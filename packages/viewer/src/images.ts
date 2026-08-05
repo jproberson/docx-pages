@@ -1,4 +1,9 @@
-import type { DocxPackage } from "@onepager/core";
+import {
+  readMetafilePicture,
+  type DocxPackage,
+  type MetafilePicture,
+  type MetricsResolver,
+} from "@onepager/core";
 
 const MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
   ["png", "image/png"],
@@ -12,9 +17,14 @@ const MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
   ["webp", "image/webp"],
 ]);
 
-const mediaTypeOf = (part: string): string | undefined => {
+// What a browser has no decoder for and this reads itself instead. A metafile is
+// a recording of the drawing rather than a picture of it, so it is played into
+// shapes and drawn beside the rest of the page.
+const METAFILE = "emf";
+
+const extensionOf = (part: string): string => {
   const dot = part.lastIndexOf(".");
-  return dot === -1 ? undefined : MEDIA_TYPES.get(part.slice(dot + 1).toLowerCase());
+  return dot === -1 ? "" : part.slice(dot + 1).toLowerCase();
 };
 
 // btoa takes a binary string, and spreading a whole image at once overflows the
@@ -31,19 +41,39 @@ function toBase64(bytes: Uint8Array): string {
 
 export function imageDataUrl(pkg: DocxPackage, part: string): string | undefined {
   const bytes = pkg.parts.get(part);
-  const mediaType = mediaTypeOf(part);
+  const mediaType = MEDIA_TYPES.get(extensionOf(part));
   if (bytes === undefined || mediaType === undefined) return undefined;
   return `data:${mediaType};base64,${toBase64(bytes)}`;
 }
 
-export type ImageResolver = (part: string) => string | undefined;
+export type DrawableImage =
+  | { readonly kind: "bitmap"; readonly url: string }
+  | { readonly kind: "metafile"; readonly picture: MetafilePicture };
 
-// Encoding the same picture once per render would be wasteful; a document's
-// images do not change once it is open.
-export function imageResolver(pkg: DocxPackage): ImageResolver {
-  const cache = new Map<string, string | undefined>();
+export type ImageResolver = (part: string) => DrawableImage | undefined;
+
+function drawableImage(
+  pkg: DocxPackage,
+  part: string,
+  metricsFor: MetricsResolver,
+): DrawableImage | undefined {
+  if (extensionOf(part) === METAFILE) {
+    const bytes = pkg.parts.get(part);
+    const picture = bytes === undefined ? null : readMetafilePicture(bytes, metricsFor);
+    return picture === null ? undefined : { kind: "metafile", picture };
+  }
+
+  const url = imageDataUrl(pkg, part);
+  return url === undefined ? undefined : { kind: "bitmap", url };
+}
+
+// Encoding the same picture once per render would be wasteful, and playing the
+// same metafile once per render more so; a document's images do not change once it
+// is open.
+export function imageResolver(pkg: DocxPackage, metricsFor: MetricsResolver): ImageResolver {
+  const cache = new Map<string, DrawableImage | undefined>();
   return (part) => {
-    if (!cache.has(part)) cache.set(part, imageDataUrl(pkg, part));
+    if (!cache.has(part)) cache.set(part, drawableImage(pkg, part, metricsFor));
     return cache.get(part);
   };
 }
