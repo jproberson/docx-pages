@@ -62,10 +62,21 @@ describe("readUnhonoured", () => {
     ]);
   });
 
-  it("counts a second section and leaves a document with one alone", () => {
-    const two = `<w:p><w:pPr>${SECTION}</w:pPr></w:p>`;
-    expect(kinds(reportOf(two))).toStrictEqual(["more-than-one-section"]);
+  // What a second section costs is a second page, not the break itself: one that
+  // changes only a header or a column count leaves the geometry alone and reading
+  // the last section loses nothing.
+  it("counts a second section only where it makes a different page", () => {
+    const wide = `<w:sectPr><w:pgSz w:w="15840" w:h="12240"/></w:sectPr>`;
+    const same = `<w:p><w:pPr>${SECTION}</w:pPr></w:p>`;
+    const differing = `<w:p><w:pPr>${wide}</w:pPr></w:p>`;
+    expect(kinds(reportOf(differing))).toStrictEqual(["more-than-one-section"]);
+    expect(reportOf(same)).toStrictEqual([]);
     expect(reportOf(`<w:p/>`)).toStrictEqual([]);
+  });
+
+  it("says nothing about a break that changes only the columns", () => {
+    const columns = `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="1"/></w:sectPr>`;
+    expect(reportOf(`<w:p><w:pPr>${columns}</w:pPr></w:p>`)).toStrictEqual([]);
   });
 
   it("names columns only where the section asks for more than one", () => {

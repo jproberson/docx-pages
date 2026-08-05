@@ -9,7 +9,7 @@ export type { DocxPackage } from "./docx/package.js";
 export { attribute, childrenNamed, firstNamed } from "./docx/xml.js";
 export type { XmlElement } from "./docx/xml.js";
 
-export { readSectionGeometry, W_NS } from "./docx/section.js";
+export { pageGeometrySignature, readSectionGeometry, W_NS } from "./docx/section.js";
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
 export { readUnhonoured, withSubstitutedFaces } from "./docx/fidelity.js";
 export type {

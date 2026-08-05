@@ -5,7 +5,7 @@ import { WP_NS } from "./inlines.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { drawablePicture } from "./pictures.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "./relationships.js";
-import { W_NS } from "./section.js";
+import { pageGeometrySignature, W_NS } from "./section.js";
 import { SETTINGS_PART } from "./settings.js";
 import { attribute, type XmlElement } from "./xml.js";
 
@@ -296,11 +296,15 @@ function walk(node: XmlElement, paragraphIndex: number | null, reading: Reading)
 }
 
 // Word lays a document out under the section its text ends in, and this project
-// reads the last one alone. One section is the ordinary document; a second is a
-// page whose geometry nothing here has answered for.
+// reads the last one alone. What that costs is not the second section but a second
+// *page*: a break that changes only a header or a column count leaves the geometry
+// alone, and reading the last section then loses nothing at all. Measured over a
+// corpus of real documents, a section break that changes the page is far and away
+// the common case, but the ones that do not are numerous enough to be worth not
+// crying wolf over.
 function countSections(root: XmlElement, part: string, found: Found[]): void {
-  const sections = allNamed(root, "sectPr");
-  for (let at = 1; at < sections.length; at += 1) {
+  const pages = new Set(allNamed(root, "sectPr").map(pageGeometrySignature));
+  for (let at = 1; at < pages.size; at += 1) {
     found.push({ kind: "more-than-one-section", place: { part, paragraphIndex: null } });
   }
 }

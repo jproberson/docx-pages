@@ -37,6 +37,25 @@ function twips(element: XmlElement | null, name: string, fallback: number): numb
   return value;
 }
 
+// The page one section makes, as everything here reads it: the sheet, the margins
+// round the text and the room kept for a header and a footer. Two sections whose
+// signatures match lay their pages out identically, whatever else they differ in,
+// so reading the last of them loses nothing.
+//
+// A section break far more often changes a header or a column count than the page
+// itself, and this is what tells those apart.
+export function pageGeometrySignature(section: XmlElement): string {
+  const size = firstNamed(section, W_NS, "pgSz");
+  const margin = firstNamed(section, W_NS, "pgMar");
+  const of = (element: XmlElement | null, names: readonly string[]): string =>
+    names.map((name) => (element === null ? "" : (attribute(element, W_NS, name) ?? ""))).join(",");
+
+  return [
+    of(size, ["w", "h", "orient"]),
+    of(margin, ["top", "right", "bottom", "left", "header", "footer", "gutter"]),
+  ].join("|");
+}
+
 export function readSectionGeometry(pkg: DocxPackage): SectionGeometry {
   const root = partXml(pkg, MAIN_DOCUMENT_PART);
   const body = firstNamed(root, W_NS, "body");
