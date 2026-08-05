@@ -1,5 +1,5 @@
-export { DocxDocument, DocxPage } from "./page.js";
-export type { FrameStyle, DocxDocumentProps, DocxPageProps } from "./page.js";
+export { Document, Page } from "./page.js";
+export type { FrameStyle, DocumentProps, PageProps } from "./page.js";
 
 export { imageDataUrl, imageResolver } from "./images.js";
 export type { DrawableImage, ImageResolver } from "./images.js";

@@ -9,7 +9,7 @@ import {
   type MetricsLookup,
   type SuppliedFace,
 } from "@docx-pages/core";
-import { imageResolver, DocxDocument, type FrameStyle } from "@docx-pages/viewer";
+import { imageResolver, Document, type FrameStyle } from "@docx-pages/viewer";
 
 import { authoredCases } from "../authored/cases.js";
 import {
@@ -105,7 +105,7 @@ function writeFonts(set: FaceSet): string {
   return path;
 }
 
-const document = (title: string, stylesheet: string, body: string): string =>
+const htmlDocument = (title: string, stylesheet: string, body: string): string =>
   `<!doctype html>
 <html lang="en">
   <head>
@@ -147,7 +147,7 @@ export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameSty
   }
 
   const body = renderToStaticMarkup(
-    <DocxDocument
+    <Document
       layout={layout}
       imageUrl={imageResolver(pkg, metricsFor)}
       frames={frames}
@@ -157,7 +157,7 @@ export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameSty
 
   const path = resolve(OUTPUT_DIRECTORY, pageName(each.id, set, frames));
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, document(`Preview ${each.id}`, stylesheetOf(set), body));
+  writeFileSync(path, htmlDocument(`Preview ${each.id}`, stylesheetOf(set), body));
   return path;
 }
 

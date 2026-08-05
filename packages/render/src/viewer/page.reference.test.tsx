@@ -8,7 +8,7 @@ import {
   type LaidOutDocument,
   type MetricsLookup,
 } from "@docx-pages/core";
-import { drawablesOf, imageResolver, DocxDocument } from "@docx-pages/viewer";
+import { drawablesOf, imageResolver, Document } from "@docx-pages/viewer";
 
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 import { readReferenceDocument } from "../testing/documents.js";
@@ -24,7 +24,7 @@ const rendered = (
   return {
     layout,
     html: renderToStaticMarkup(
-      <DocxDocument layout={layout} imageUrl={imageResolver(pkg, metricsFor)} frames="outlined" />,
+      <Document layout={layout} imageUrl={imageResolver(pkg, metricsFor)} frames="outlined" />,
     ),
   };
 };

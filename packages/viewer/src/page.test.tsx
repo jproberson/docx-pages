@@ -16,7 +16,7 @@ import type {
 } from "@docx-pages/core";
 
 import type { DrawableImage } from "./images.js";
-import { DocxPage } from "./page.js";
+import { Page } from "./page.js";
 
 const MARK: ParagraphMark = {
   font: { kind: "named", name: "Meridian Sans" },
@@ -177,10 +177,10 @@ const firstPage = (layout: LaidOutDocument): LaidOutPage => {
 
 const markup = (
   layout: LaidOutDocument,
-  options: Partial<Parameters<typeof DocxPage>[0]> | null = null,
+  options: Partial<Parameters<typeof Page>[0]> | null = null,
 ) =>
   renderToStaticMarkup(
-    <DocxPage
+    <Page
       layout={layout}
       page={firstPage(layout)}
       imageUrl={(part) => DRAWABLE.get(part)}
@@ -188,7 +188,7 @@ const markup = (
     />,
   );
 
-describe("DocxPage", () => {
+describe("Page", () => {
   it("sizes the page in points so everything below stays in Word's coordinates", () => {
     const html = markup(layoutWith([]));
     expect(html).toContain("width:612pt");
@@ -349,7 +349,7 @@ describe("DocxPage", () => {
   });
 });
 
-describe("DocxPage drawing text", () => {
+describe("Page drawing text", () => {
   it("draws each line at the baseline layout gave it", () => {
     const html = markup(layoutWith([], [paragraphOf("Hello")]));
 
@@ -435,7 +435,7 @@ const numbered = (text: string, markerText: string): ParagraphBox => ({
   },
 });
 
-describe("DocxPage drawing a list number", () => {
+describe("Page drawing a list number", () => {
   it("draws the number at the position layout gave it", () => {
     const html = markup(layoutWith([], [numbered("Item", "1.")]));
     expect(html).toContain('x="102" y="41"');

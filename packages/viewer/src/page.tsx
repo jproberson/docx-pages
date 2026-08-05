@@ -20,7 +20,7 @@ import type { ImageResolver } from "./images.js";
 
 export type FrameStyle = "hidden" | "outlined";
 
-export type DocxDocumentProps = {
+export type DocumentProps = {
   readonly layout: LaidOutDocument;
   readonly imageUrl: ImageResolver;
   readonly scale?: number;
@@ -29,7 +29,7 @@ export type DocxDocumentProps = {
   readonly className?: string;
 };
 
-export type DocxPageProps = DocxDocumentProps & {
+export type PageProps = DocumentProps & {
   readonly page: LaidOutPage;
 };
 
@@ -439,7 +439,7 @@ function renderObject(
   }
 }
 
-export function DocxPage(props: DocxPageProps): ReactElement {
+export function Page(props: PageProps): ReactElement {
   const {
     layout,
     page,
@@ -476,11 +476,11 @@ export function DocxPage(props: DocxPageProps): ReactElement {
 
 // Every page the body broke onto, in order, each drawn in the page's own
 // coordinates.
-export function DocxDocument(props: DocxDocumentProps): ReactElement {
+export function Document(props: DocumentProps): ReactElement {
   return (
     <>
       {props.layout.pages.map((page) => (
-        <DocxPage key={page.index} {...props} page={page} />
+        <Page key={page.index} {...props} page={page} />
       ))}
     </>
   );
