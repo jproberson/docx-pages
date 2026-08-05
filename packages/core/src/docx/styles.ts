@@ -62,6 +62,7 @@ type PartialFrame = {
   readonly spaceAfterTwips: number | undefined;
   readonly lineTwips: number | undefined;
   readonly lineRule: LineRule | undefined;
+  readonly widowControl: boolean | undefined;
   readonly tabStops: readonly TabStopEntry[] | undefined;
 };
 
@@ -108,6 +109,7 @@ const EMPTY_FRAME: PartialFrame = {
   spaceAfterTwips: undefined,
   lineTwips: undefined,
   lineRule: undefined,
+  widowControl: undefined,
   tabStops: undefined,
 };
 
@@ -127,6 +129,7 @@ const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   spaceAfterTwips: over.spaceAfterTwips ?? base.spaceAfterTwips,
   lineTwips: over.lineTwips ?? base.lineTwips,
   lineRule: over.lineRule ?? base.lineRule,
+  widowControl: over.widowControl ?? base.widowControl,
   // Tab stops add to the ones already inherited rather than replacing them, which
   // is why a clear has to travel with them.
   tabStops:
@@ -177,6 +180,7 @@ function readFrame(container: XmlElement | null): PartialFrame {
     spaceAfterTwips: twipsAttribute(spacing, "after"),
     lineTwips: twipsAttribute(spacing, "line"),
     lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
+    widowControl: onOff(pPr, "widowControl"),
     tabStops: readTabStops(pPr),
   };
 }
@@ -224,10 +228,10 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   color: over.color ?? base.color,
 });
 
-// A toggle is on when present without a value, so only an explicit off turns it
-// back off further down the cascade.
-function toggle(rPr: XmlElement, name: string): boolean | undefined {
-  const element = firstNamed(rPr, W_NS, name);
+// An on/off property is on when it is there without a value, so only an explicit
+// off turns it back off further down the cascade.
+function onOff(container: XmlElement, name: string): boolean | undefined {
+  const element = firstNamed(container, W_NS, name);
   if (element === null) return undefined;
   const value = attribute(element, W_NS, "val");
   return value !== "0" && value !== "false" && value !== "off";
@@ -282,8 +286,8 @@ function readMark(
     fontName,
     fontSizeHalfPoints:
       halfPoints === undefined || !Number.isFinite(halfPoints) ? undefined : halfPoints,
-    bold: toggle(rPr, "b"),
-    italic: toggle(rPr, "i"),
+    bold: onOff(rPr, "b"),
+    italic: onOff(rPr, "i"),
     underline: underlineOf(rPr),
     verticalAlign: verticalAlignOf(rPr),
     color: colorOf(rPr),
@@ -482,6 +486,9 @@ export type ParagraphFrame = {
   readonly spaceAfterTwips: number;
   readonly lineTwips: number | null;
   readonly lineRule: LineRule;
+  // Whether Word holds the paragraph's first line off the foot of a page and its
+  // last line off the top of the next one. On unless the cascade says otherwise.
+  readonly widowControl: boolean;
   // In ascending order, measured from the left edge of the text area rather than
   // from the paragraph's own indent.
   readonly tabStopsTwips: readonly number[];
@@ -545,6 +552,7 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     spaceAfterTwips: resolved.spaceAfterTwips ?? 0,
     lineTwips: resolved.lineTwips ?? null,
     lineRule: resolved.lineRule ?? "auto",
+    widowControl: resolved.widowControl ?? true,
     tabStopsTwips: settledStops(resolved.tabStops),
   };
 }

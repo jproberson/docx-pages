@@ -34,8 +34,13 @@ const MARKER: ParagraphMarker = {
   baselinePt: 0,
 };
 
-// Paragraphs are laid down one after another, each as tall as the lines it holds.
-function stack(shape: readonly (readonly number[])[], topPt = 100): readonly ParagraphBox[] {
+// Paragraphs are laid down one after another, each as tall as the lines it holds,
+// and each willing to be broken through unless the test says otherwise.
+function stack(
+  shape: readonly (readonly number[])[],
+  topPt = 100,
+  widowControl = false,
+): readonly ParagraphBox[] {
   const boxes: ParagraphBox[] = [];
   let top = topPt;
 
@@ -46,12 +51,16 @@ function stack(shape: readonly (readonly number[])[], topPt = 100): readonly Par
       lines.push(line(lineTop, heightPt, `p${String(index)}l${String(lines.length)}`));
       lineTop += heightPt;
     }
-    boxes.push({ index, topPt: top, heightPt: lineTop - top, lines, marker: null });
+    boxes.push({ index, topPt: top, heightPt: lineTop - top, lines, marker: null, widowControl });
     top = lineTop;
   });
 
   return boxes;
 }
+
+const linesOn = (
+  page: { readonly boxes: readonly ParagraphBox[] } | undefined,
+): readonly number[] => (page?.boxes ?? []).map((box) => box.lines.length);
 
 const indexesOn = (page: { readonly boxes: readonly ParagraphBox[] }): readonly number[] =>
   page.boxes.map((box) => box.index);
@@ -122,10 +131,47 @@ describe("breakStack", () => {
     expect(pages[0]?.boxes[0]?.lines).toHaveLength(1);
   });
 
+  it("takes a paragraph over whole rather than leaving its first line at the foot", () => {
+    const boxes = stack([[10], [10, 10]], 100, true);
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 125 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
+    expect(pages.map(linesOn)).toStrictEqual([[1], [2]]);
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
+  it("moves the line above the break down with it rather than leaving the last line alone", () => {
+    const boxes = stack([[10], [10, 10, 10, 10]], 100, true);
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 145 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0, 1], [1]]);
+    expect(pages.map(linesOn)).toStrictEqual([[1, 2], [2]]);
+  });
+
+  it("leaves the break where it fell when neither end of the paragraph is left alone", () => {
+    const boxes = stack([[10], [10, 10, 10, 10, 10]], 100, true);
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 135 });
+
+    expect(pages.map(linesOn)).toStrictEqual([[1, 2], [3]]);
+  });
+
+  it("breaks a paragraph that starts at the top of its page, having nowhere to move it", () => {
+    const pages = breakStack({ boxes: stack([[10, 10]], 100, true), topPt: 100, bottomPt: 115 });
+
+    expect(pages.map(linesOn)).toStrictEqual([[1], [1]]);
+  });
+
+  it("splits a paragraph whose file asks for no widow control", () => {
+    const boxes = stack([[10], [10, 10]], 100, false);
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 125 });
+
+    expect(pages.map(linesOn)).toStrictEqual([[1, 1], [1]]);
+  });
+
   it("counts an empty paragraph's own height against the page", () => {
     const boxes: readonly ParagraphBox[] = [
-      { index: 0, topPt: 100, heightPt: 20, lines: [], marker: null },
-      { index: 1, topPt: 120, heightPt: 20, lines: [], marker: null },
+      { index: 0, topPt: 100, heightPt: 20, lines: [], marker: null, widowControl: false },
+      { index: 1, topPt: 120, heightPt: 20, lines: [], marker: null, widowControl: false },
     ];
     const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
 

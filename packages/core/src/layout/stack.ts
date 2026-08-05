@@ -86,6 +86,9 @@ export type ParagraphBox = {
   readonly heightPt: number;
   readonly lines: readonly PlacedLine[];
   readonly marker: ParagraphMarker | null;
+  // What the paragraph asks of a page break running through it, which only the
+  // break itself can act on.
+  readonly widowControl: boolean;
 };
 
 export type StackMeasurement =
@@ -479,6 +482,7 @@ function layOutParagraph(
       heightPt: slot.topPt + input.markHeightPt + afterPt - input.topPt,
       lines: [],
       marker: markerAt(number, slot.topPt + (number?.ascentPt ?? 0)),
+      widowControl: paragraphFrame.widowControl,
     };
   }
 
@@ -533,6 +537,7 @@ function layOutParagraph(
     heightPt: top + afterPt - input.topPt,
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
+    widowControl: paragraphFrame.widowControl,
   };
 }
 

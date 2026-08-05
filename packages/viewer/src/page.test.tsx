@@ -72,6 +72,7 @@ const paragraphOf = (
     },
   ],
   marker: null,
+  widowControl: true,
 });
 
 const LETTER: SectionGeometry = {
