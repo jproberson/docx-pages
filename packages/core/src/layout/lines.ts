@@ -574,7 +574,13 @@ function buildLine(
 }
 
 const flowFrom = (units: readonly Unit[], tabs: LineTabs, cursor: Cursor): LineFlow => ({
-  next: (roomPt) => buildLine(units, tabs, cursor, roomPt),
+  // Room below nothing is the same as none. A paragraph can ask for indents wider
+  // than the frame it stands in, which a real document does inside a narrow cell,
+  // and the width left over is then negative. Given that, the builder took nothing
+  // and the cursor never moved, so `buildLine` asked again for ever: a document out
+  // of the wild hung the layout outright. Nothing here decides what such a
+  // paragraph should look like, only that it is measured at all.
+  next: (roomPt) => buildLine(units, tabs, cursor, Math.max(0, roomPt)),
   leastPt: leastRoomPt(units, tabs, cursor),
   startsPage: cursor.startsPage,
 });

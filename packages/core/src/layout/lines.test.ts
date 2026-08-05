@@ -100,6 +100,26 @@ const sizesOf = (line: TextLine): readonly number[] =>
   line.segments.flatMap((segment) => (segment.kind === "text" ? [segment.mark.fontSizePt] : []));
 
 describe("breakLines", () => {
+  // A paragraph can ask for indents wider than the frame it stands in, which is
+  // what a real document did inside a narrow cell: 2457 twips either side of a cell
+  // a fraction of that wide. The width left over is then negative, and the line
+  // breaker took nothing, moved nothing on and asked again for ever. It laid out no
+  // page and never returned, so the whole document hung.
+  it("breaks a paragraph given less room than none rather than never finishing", () => {
+    for (const roomPt of [-1, -50, -245]) {
+      const lines = linesOf([runOf("abc def")], roomPt);
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.map(textOf).join("")).toBe("abcdef");
+    }
+  });
+
+  // Room below nothing is the same as none, so the two answer alike.
+  it("gives a line with no room at all what a line with less than none gets", () => {
+    expect(linesOf([runOf("abc def")], -20).map(textOf)).toStrictEqual(
+      linesOf([runOf("abc def")], 0).map(textOf),
+    );
+  });
+
   it("keeps a line that fits as one line", () => {
     const lines = linesOf([runOf("abc def")], 100);
 
