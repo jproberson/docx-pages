@@ -34,6 +34,7 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   spacing: { lines: 19, runs: 19, numbers: 0 },
   wrapping: { lines: 7, runs: 7, numbers: 0 },
   numbering: { lines: 10, runs: 10, numbers: 7 },
+  pages: { lines: 24, runs: 24, numbers: 0 },
 };
 
 const EMPTY = {

@@ -27,6 +27,7 @@ const line = (topPt: number, heightPt: number, text: string): PlacedLine => ({
   heightPt,
   seatPt: 0,
   baselinePt: topPt + heightPt * 0.8,
+  startsPage: false,
 });
 
 const MARKER: ParagraphMarker = {
@@ -63,6 +64,8 @@ function stack(
       markTopPt: lines[lines.length - 1]?.topPt ?? top,
       contentBottomPt: lineTop,
       widowControl,
+      startsPage: false,
+      endsPage: false,
       contentWidthPt: 0,
       clipTo: null,
     });
@@ -193,6 +196,8 @@ describe("breakStack", () => {
     markTopPt: topPt,
     contentBottomPt: topPt + markPt,
     widowControl: false,
+    startsPage: false,
+    endsPage: false,
     contentWidthPt: 0,
     clipTo: null,
   });
@@ -210,5 +215,67 @@ describe("breakStack", () => {
     const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0, 1]]);
+  });
+
+  // What a document asking for its own page breaks hands the stack: a paragraph
+  // that asked to start a page, one whose text ran on past a break of its own, and
+  // one that ended on a break with nothing after it to carry over.
+  const asking = (
+    boxes: readonly ParagraphBox[],
+    at: number,
+    asks: { readonly startsPage?: boolean; readonly endsPage?: boolean; readonly line?: number },
+  ): readonly ParagraphBox[] =>
+    boxes.map((box, index) =>
+      index !== at
+        ? box
+        : {
+            ...box,
+            startsPage: asks.startsPage ?? box.startsPage,
+            endsPage: asks.endsPage ?? box.endsPage,
+            lines: box.lines.map((each, line) =>
+              line === asks.line ? { ...each, startsPage: true } : each,
+            ),
+          },
+    );
+
+  it("gives a paragraph that asked for a page of its own one, with room to spare", () => {
+    const boxes = asking(stack([[10], [10], [10]]), 1, { startsPage: true });
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
+  it("makes no page for a paragraph that asked for one and already stands at a top", () => {
+    const boxes = asking(stack([[10], [10]]), 0, { startsPage: true });
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0, 1]]);
+  });
+
+  it("breaks a paragraph at a line of its own that asked to start a page", () => {
+    const boxes = asking(stack([[10, 10, 10]]), 0, { line: 1 });
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(linesOn)).toStrictEqual([[1], [2]]);
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
+  // A break the paragraph ends on draws no line of its own, so there is nothing in
+  // the stack to be seen at: the paragraph after it is what carries the page over.
+  it("puts what follows a paragraph that ended on a break on a page of its own", () => {
+    const boxes = asking(stack([[10], [10], [10]]), 0, { endsPage: true });
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
+  });
+
+  // Widow control moves a break it would otherwise strand a line with; a break the
+  // document asked for is not one of those.
+  it("holds a line asked onto a page there whatever widow control would say", () => {
+    const boxes = asking(stack([[10, 10, 10, 10]], 100, true), 0, { line: 3 });
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(linesOn)).toStrictEqual([[3], [1]]);
   });
 });

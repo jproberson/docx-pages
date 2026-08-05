@@ -5,7 +5,7 @@ import type { RunPiece, TextRun } from "../docx/runs.js";
 import { buildSfnt } from "../testing/build-font.js";
 import { readFontFile } from "./font-file.js";
 import { NO_ADVANCES, type MetricsLookup, type SuppliedFace } from "./font-metrics.js";
-import { breakLines, justifyLine, type TextLine } from "./lines.js";
+import { beginLines, breakLines, justifyLine, type TextLine } from "./lines.js";
 import type { TabStopPt } from "./tab-stops.js";
 
 // Every glyph is half an em wide, so a 10pt run measures exactly 5pt a character
@@ -163,10 +163,68 @@ describe("breakLines", () => {
     expect(linesOf([runOf("ab")], 1).map(textOf)).toStrictEqual(["a", "b"]);
   });
 
+  // Which of a paragraph's lines a page break put at the head of a page, and
+  // whether the paragraph ran out on one. The lines alone cannot say: a break the
+  // paragraph ends on draws nothing, so what it asks of the page is on the flow.
+  function pagesOf(pieces: readonly RunPiece[]): {
+    readonly texts: readonly string[];
+    readonly starts: readonly boolean[];
+    readonly endsPage: boolean;
+  } {
+    const started = beginLines({ runs: [piecesRun(pieces)], metricsFor: metricsFor() });
+    if (started.kind !== "flow") throw new Error(started.failure.kind);
+
+    const texts: string[] = [];
+    const starts: boolean[] = [];
+    let flow = started.flow;
+    for (;;) {
+      const taken = flow.next(100);
+      if (taken === null) return { texts, starts, endsPage: flow.startsPage };
+      texts.push(textOf(taken.line));
+      starts.push(flow.startsPage);
+      flow = taken.rest;
+    }
+  }
+
+  const PAGE: RunPiece = { kind: "break", endsPage: true };
+  const NEW_LINE: RunPiece = { kind: "break", endsPage: false };
+
+  it("carries the text after a page break onto a page of its own", () => {
+    expect(
+      pagesOf([{ kind: "text", text: "ab" }, PAGE, { kind: "text", text: "cd" }]),
+    ).toStrictEqual({ texts: ["ab", "cd"], starts: [false, true], endsPage: false });
+  });
+
+  it("keeps the line a page break ends even where nothing stood on it", () => {
+    expect(pagesOf([PAGE])).toStrictEqual({ texts: [""], starts: [false], endsPage: true });
+  });
+
+  it("steps over the line a line break ends with nothing on it, as ever", () => {
+    expect(pagesOf([NEW_LINE])).toStrictEqual({ texts: [], starts: [], endsPage: false });
+  });
+
+  // Nothing follows the break to be put on the next page, so the paragraph itself
+  // is what has to carry the ask.
+  it("says the paragraph ended on a page break when nothing came after it", () => {
+    expect(pagesOf([{ kind: "text", text: "ab" }, PAGE])).toStrictEqual({
+      texts: ["ab"],
+      starts: [false],
+      endsPage: true,
+    });
+  });
+
+  it("leaves a page with nothing on it between two breaks together", () => {
+    expect(pagesOf([PAGE, PAGE])).toStrictEqual({
+      texts: ["", ""],
+      starts: [false, true],
+      endsPage: true,
+    });
+  });
+
   it("ends a line where the run asks for a break", () => {
     const run = piecesRun([
       { kind: "text", text: "ab" },
-      { kind: "break" },
+      { kind: "break", endsPage: false },
       { kind: "text", text: "cd" },
     ]);
 

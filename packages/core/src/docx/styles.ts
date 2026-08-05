@@ -75,6 +75,7 @@ type PartialFrame = {
   readonly lineTwips: number | undefined;
   readonly lineRule: LineRule | undefined;
   readonly widowControl: boolean | undefined;
+  readonly pageBreakBefore: boolean | undefined;
   readonly contextualSpacing: boolean | undefined;
   readonly tabStops: readonly TabStopEntry[] | undefined;
 };
@@ -123,6 +124,7 @@ const EMPTY_FRAME: PartialFrame = {
   lineTwips: undefined,
   lineRule: undefined,
   widowControl: undefined,
+  pageBreakBefore: undefined,
   contextualSpacing: undefined,
   tabStops: undefined,
 };
@@ -144,6 +146,7 @@ const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   lineTwips: over.lineTwips ?? base.lineTwips,
   lineRule: over.lineRule ?? base.lineRule,
   widowControl: over.widowControl ?? base.widowControl,
+  pageBreakBefore: over.pageBreakBefore ?? base.pageBreakBefore,
   contextualSpacing: over.contextualSpacing ?? base.contextualSpacing,
   // Tab stops add to the ones already inherited rather than replacing them, which
   // is why a clear has to travel with them.
@@ -196,6 +199,7 @@ function readFrame(container: XmlElement | null): PartialFrame {
     lineTwips: twipsAttribute(spacing, "line"),
     lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
     widowControl: onOff(pPr, "widowControl"),
+    pageBreakBefore: onOff(pPr, "pageBreakBefore"),
     contextualSpacing: onOff(pPr, "contextualSpacing"),
     tabStops: readTabStops(pPr),
   };
@@ -514,6 +518,9 @@ export type ParagraphFrame = {
   // Whether Word holds the paragraph's first line off the foot of a page and its
   // last line off the top of the next one. On unless the cascade says otherwise.
   readonly widowControl: boolean;
+  // Whether the paragraph starts a page of its own. A paragraph already standing
+  // at the top of one makes no empty page to get there.
+  readonly pageBreakBefore: boolean;
   // Whether the space the paragraph asks for above and below it is dropped where
   // the paragraph on that side is of the same style.
   readonly contextualSpacing: boolean;
@@ -583,6 +590,7 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     lineTwips: resolved.lineTwips ?? null,
     lineRule: resolved.lineRule ?? "auto",
     widowControl: resolved.widowControl ?? true,
+    pageBreakBefore: resolved.pageBreakBefore ?? false,
     contextualSpacing: resolved.contextualSpacing ?? false,
     tabStops: settledStops(resolved.tabStops),
   };

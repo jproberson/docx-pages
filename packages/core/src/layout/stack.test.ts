@@ -271,6 +271,36 @@ describe("measureStack over text", () => {
   it("keeps an empty paragraph at its mark's height", () => {
     expect(firstBox(`<w:p/>`).lines).toStrictEqual([]);
   });
+
+  // What the break itself acts on: the line a break of the paragraph's own put at
+  // the head of a page, the ask a paragraph carries, and the break it ended on.
+  it("carries a page break through to the line it starts", () => {
+    const body = `<w:p><w:r><w:t>aa</w:t><w:br w:type="page"/><w:t>bb</w:t></w:r></w:p>`;
+    expect(firstBox(body).lines.map((line) => line.startsPage)).toStrictEqual([false, true]);
+  });
+
+  it("carries a paragraph's ask for a page of its own", () => {
+    const body = `<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>aa</w:t></w:r></w:p>`;
+    expect(firstBox(body).startsPage).toBe(true);
+  });
+
+  it("says a paragraph ended on a page break, which draws no line to say it", () => {
+    const body = `<w:p><w:r><w:t>aa</w:t><w:br w:type="page"/></w:r></w:p>`;
+    const box = firstBox(body);
+
+    expect(box.lines).toHaveLength(1);
+    expect(box.endsPage).toBe(true);
+  });
+
+  // A break with nothing on the line it ended still holds the room that line takes
+  // on the page it is leaving, which is the mark's own height.
+  it("gives the line a page break ends on its own the height of the mark", () => {
+    const body = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+    const box = firstBox(body);
+
+    expect(box.lines).toHaveLength(1);
+    expect(box.heightPt).toBeCloseTo(ARIAL_12, 9);
+  });
 });
 
 describe("measureStack over tables", () => {
@@ -367,6 +397,21 @@ describe("measureStack over tables", () => {
     const result = measure(body);
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
     expect(result.heightPt).toBeCloseTo(14.4, 9);
+  });
+
+  // Word ignores a break inside a cell outright: not a page, and not even the line
+  // an ordinary break would have ended.
+  it("passes over a page break inside a cell", () => {
+    const broken = `<w:p><w:r><w:t>aa</w:t><w:br w:type="page"/><w:t>bb</w:t></w:r></w:p>`;
+    const boxes = boxesOf(table(cell(broken)));
+
+    expect(boxes[0]?.lines).toHaveLength(1);
+    expect(boxes[0]?.endsPage).toBe(false);
+  });
+
+  it("leaves a paragraph in a cell no page of its own to ask for", () => {
+    const asking = `<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>aa</w:t></w:r></w:p>`;
+    expect(boxesOf(table(cell(asking)))[0]?.startsPage).toBe(false);
   });
 
   it("reports the cell paragraph that blocks measurement", () => {

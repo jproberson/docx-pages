@@ -27,7 +27,25 @@ export function breakStack(input: BreakStackInput): readonly PageStack[] {
   const overflows = (topPt: number, heightPt: number): boolean =>
     topPt - shiftPt + heightPt > input.bottomPt && topPt - shiftPt > input.topPt;
 
+  // The page is left where the break asked, so what comes after it starts again at
+  // the body's top. A break with nothing left to move makes no page: a paragraph
+  // asking for one of its own while already standing at the top of one stays where
+  // it is, which is what keeps the first paragraph of a document off page two.
+  const leave = (topPt: number): boolean => {
+    if (topPt - shiftPt <= input.topPt) return false;
+    shiftPt = topPt - input.topPt;
+    pages.push([]);
+    return true;
+  };
+
+  // Whether the paragraph before this one ended on a page break, which draws no
+  // line of its own and so has nothing here to be seen at.
+  let broken = false;
+
   for (const box of input.boxes) {
+    if (broken || box.startsPage) leave(box.lines[0]?.topPt ?? box.topPt);
+    broken = box.endsPage;
+
     // A paragraph with nothing in it is judged by the room its mark stands in, as
     // one with lines is judged by its lines: the room it keeps below itself hangs
     // past the foot of the page rather than moving it on.
@@ -44,14 +62,22 @@ export function breakStack(input: BreakStackInput): readonly PageStack[] {
     let at = 0;
     while (at < box.lines.length) {
       const line = box.lines[at];
-      if (line === undefined || !overflows(line.topPt, line.heightPt)) {
+      if (line === undefined) {
+        at += 1;
+        continue;
+      }
+      // A line a break of the paragraph's own put at the head of a page goes there
+      // whatever room was left below, and widow control has no say in where a break
+      // the document asked for falls.
+      const asked = line.startsPage;
+      if (!asked && !overflows(line.topPt, line.heightPt)) {
         at += 1;
         continue;
       }
 
       // The lines between the cut and the line that overflowed are on the next
       // page now, so they are looked at again from there.
-      const cut = cutFor(box, { from, at, shiftPt, topPt: input.topPt });
+      const cut = asked ? at : cutFor(box, { from, at, shiftPt, topPt: input.topPt });
       if (cut > from) put(partOf(box, from, cut, shiftPt));
       shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - input.topPt;
       pages.push([]);
@@ -122,6 +148,10 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
         ? box.contentBottomPt - shiftPt
         : last.topPt + last.heightPt - shiftPt,
     widowControl: box.widowControl,
+    // What the paragraph asked of the pages either side of it belongs to the part
+    // of it that stands there.
+    startsPage: from === 0 && box.startsPage,
+    endsPage: to === box.lines.length && box.endsPage,
     contentWidthPt: box.contentWidthPt,
     clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt - shiftPt },
   };

@@ -2,6 +2,7 @@ import {
   breakingDocument,
   drawingDocument,
   numberingDocument,
+  pageDocument,
   spacingDocument,
   tableDocument,
   wrappingDocument,
@@ -249,6 +250,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Page breaks through a paragraph's spacing",
       asks: "whether the room a paragraph asks for either side of itself holds it back at the foot of a page",
       bytes: buildAuthoredDocx({ body: breakingDocument() }),
+    },
+    {
+      id: "pages",
+      title: "Explicit page breaks",
+      asks: "where the text goes when the document breaks its own pages",
+      bytes: buildAuthoredDocx({ body: pageDocument() }),
     },
     {
       id: "numbering",

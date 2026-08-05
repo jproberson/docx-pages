@@ -102,6 +102,12 @@ function placedBoxes(layout: LaidOutDocument): ReadonlyMap<number, ParagraphBox>
 // empty paragraph draws no line, and answers from wherever its mark came to rest.
 // A paragraph inside a table answers for its row instead, which `answers.ts`
 // lines up.
+//
+// The two halves of the answer are not about the same end of the paragraph. The
+// position is where the paragraph starts; the page is the one its **active end**
+// landed on, which a page break through the paragraph's own text makes a different
+// page. So a paragraph is looked for from the top of the document and its page
+// taken from the last part of it.
 type Placed = { readonly page: number; readonly topPt: number; readonly leftPt: number };
 
 function placedParagraphs(layout: LaidOutDocument): ReadonlyMap<number, Placed> {
@@ -109,8 +115,11 @@ function placedParagraphs(layout: LaidOutDocument): ReadonlyMap<number, Placed> 
 
   for (const page of layout.pages) {
     for (const box of page.body) {
-      if (found.has(box.index)) continue;
-      found.set(box.index, placedAt(box, page.index));
+      const already = found.get(box.index);
+      found.set(
+        box.index,
+        already === undefined ? placedAt(box, page.index) : { ...already, page: page.index + 1 },
+      );
     }
   }
   return found;

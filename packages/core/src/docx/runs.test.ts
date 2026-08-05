@@ -70,6 +70,17 @@ describe("readRuns", () => {
     expect(runs[0]?.pieces.map((piece) => piece.kind)).toStrictEqual(["text", "break", "text"]);
   });
 
+  // A break says which of the two it is, and everything but a page break ends the
+  // line without ending the page.
+  it("tells a break that ends the page from one that ends the line", () => {
+    const breaks = `<w:br/><w:br w:type="textWrapping"/><w:br w:type="page"/><w:br w:type="column"/>`;
+    const runs = runsOf(`<w:p><w:r>${breaks}</w:r></w:p>`);
+
+    expect(
+      runs[0]?.pieces.map((piece) => (piece.kind === "break" ? piece.endsPage : piece.kind)),
+    ).toStrictEqual([false, false, true, false]);
+  });
+
   // A run of its own is where Word puts a break the author typed between two runs
   // of text, and a run carrying nothing else still ends the line it sits on.
   it("keeps a break that is a run of its own", () => {

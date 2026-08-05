@@ -8,7 +8,7 @@ import type {
 } from "../docx/blocks.js";
 import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js";
 import type { NumberSuffix } from "../docx/numbering.js";
-import { readRuns } from "../docx/runs.js";
+import { readRuns, type TextRun } from "../docx/runs.js";
 import { W_NS } from "../docx/section.js";
 import {
   resolveNumberMark,
@@ -83,6 +83,9 @@ export type PlacedLine = {
   // a rule opens room above it. Word answers for a paragraph from here.
   readonly seatPt: number;
   readonly baselinePt: number;
+  // Whether a page break in the paragraph's own text put this line at the head of
+  // a page. Only the break itself can act on it.
+  readonly startsPage: boolean;
 };
 
 // The rectangle a paragraph's text is cut to. A row told exactly how tall to be
@@ -120,6 +123,10 @@ export type ParagraphBox = {
   // What the paragraph asks of a page break running through it, which only the
   // break itself can act on.
   readonly widowControl: boolean;
+  // Whether the paragraph asked for a page of its own, and whether it ended on a
+  // break that puts whatever follows it on one.
+  readonly startsPage: boolean;
+  readonly endsPage: boolean;
   // What the paragraph's text is cut off at, which is the row when a row was told
   // exactly how tall to be and nothing anywhere else.
   readonly clipTo: ClipRect | null;
@@ -157,6 +164,9 @@ type Region = { readonly bands: WrapBand[] };
 type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "widthPt"> & {
   readonly numbers: ReadonlyMap<number, ParagraphNumber>;
   readonly region: Region;
+  // A page break inside a cell is no break at all, and a cell is the only place
+  // that has to know it.
+  readonly inCell: boolean;
 };
 
 type Frame = {
@@ -181,7 +191,12 @@ export function measureStack(input: MeasureStackInput): StackMeasurement {
     };
   }
 
-  const context: Context = { ...input, numbers: numbered.numbers, region: { bands: [] } };
+  const context: Context = {
+    ...input,
+    numbers: numbered.numbers,
+    region: { bands: [] },
+    inCell: false,
+  };
   return measureBlocks(input.blocks, context, input.originPt, {
     leftPt: input.leftPt,
     widthPt: input.widthPt,
@@ -259,7 +274,7 @@ function measureRow(
 
   // A cell is measured from its own origin and only then moved down to the row, so
   // the page coordinates a wrapping object stands in cannot reach inside one.
-  const inCell: Context = { ...context, region: { bands: [] }, bandsFor: () => [] };
+  const inCell: Context = { ...context, region: { bands: [] }, bandsFor: () => [], inCell: true };
 
   for (const cell of row.cells) {
     const widthPt = cellWidthPt(cell) ?? frame.widthPt;
@@ -394,7 +409,7 @@ function measureParagraph(
   }
 
   const paragraphFrame = resolveParagraphFrame(paragraph, context.styles);
-  const runs = readRuns(paragraph, context.styles);
+  const runs = flowing(readRuns(paragraph, context.styles), context.inCell);
   const insets = insetsOf(paragraphFrame);
   const number = context.numbers.get(paragraph.index);
   const widthPt =
@@ -437,6 +452,7 @@ function measureParagraph(
       frame,
       paragraphFrame,
       spacing: spacingPt(paragraph, paragraphFrame, context, neighbours),
+      startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
       number: measured === null ? null : measured.number,
       bands: context.region.bands,
       roomPt: widthPt,
@@ -445,6 +461,17 @@ function measureParagraph(
       firstLineRoomPt: number === undefined ? widthPt - insets.firstLinePt : widthPt,
     }),
   };
+}
+
+// Word ignores a page break inside a cell outright: the text either side of one
+// comes out on the same line and the row stands where it always did. Dropping the
+// piece is what says so, since a break left in place would still end its line.
+function flowing(runs: readonly TextRun[], inCell: boolean): readonly TextRun[] {
+  if (!inCell) return runs;
+  return runs.map((run) => ({
+    ...run,
+    pieces: run.pieces.filter((piece) => piece.kind !== "break" || !piece.endsPage),
+  }));
 }
 
 // The room a paragraph keeps above and below itself. `w:contextualSpacing` drops
@@ -612,6 +639,8 @@ type LayOutParagraphInput = {
   readonly paragraphFrame: ParagraphFrame;
   readonly spacing: Spacing;
   readonly number: MeasuredNumber | null;
+  // Whether the paragraph asked for a page of its own.
+  readonly startsPage: boolean;
   readonly bands: readonly WrapBand[];
   // What a line has room for where nothing stands beside it, which a shape that
   // refuses to wrap leaves unbounded.
@@ -626,7 +655,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
   const { paragraphFrame, frame, number } = input;
   const insets = insetsOf(paragraphFrame);
   const { beforePt, afterPt } = input.spacing;
-  const laid = layOutLines(flow, input);
+  const { lines: laid, endsPage } = layOutLines(flow, input);
 
   // An empty paragraph is a line like any other as far as objects are concerned:
   // Word moves it out of their way even though it draws nothing there.
@@ -660,6 +689,8 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       markTopPt: slot.topPt + height.seatPt,
       contentBottomPt: slot.topPt + height.heightPt,
       widowControl: paragraphFrame.widowControl,
+      startsPage: input.startsPage,
+      endsPage,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
       clipTo: null,
     };
@@ -681,6 +712,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       heightPt: each.height.heightPt,
       seatPt: each.height.seatPt,
       baselinePt: each.slot.topPt + each.height.baseFromTopPt,
+      startsPage: each.startsPage,
     };
   });
 
@@ -696,6 +728,8 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
     contentBottomPt: bottomPt,
     widowControl: paragraphFrame.widowControl,
+    startsPage: input.startsPage,
+    endsPage,
     contentWidthPt: placed.reduce(
       (widest, line) => Math.max(widest, line.leftPt - frame.leftPt + line.line.widthPt),
       0,
@@ -710,6 +744,14 @@ type LaidLine = {
   readonly line: TextLine;
   readonly slot: LineSlot;
   readonly height: LineHeight;
+  readonly startsPage: boolean;
+};
+
+// The paragraph's lines, and whether it ended on a page break: a break with
+// nothing after it draws no line of its own, so what it has to say is said here.
+type LaidLines = {
+  readonly lines: readonly LaidLine[];
+  readonly endsPage: boolean;
 };
 
 // How many goes a line gets at settling on a height. A line broken again at a
@@ -722,7 +764,7 @@ const SETTLING_ROUNDS = 3;
 // stands beside it, and, where that left it narrower than the frame, broken again
 // at the width it was left. Word breaks at the narrower width, so a paragraph
 // beside an object runs on in shorter lines rather than dropping past it whole.
-function layOutLines(flow: LineFlow, input: LayOutParagraphInput): readonly LaidLine[] {
+function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
   const { paragraphFrame, frame, number } = input;
   const insets = insetsOf(paragraphFrame);
   const laid: LaidLine[] = [];
@@ -740,8 +782,9 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): readonly Laid
     const endPt = frame.leftPt + frame.widthPt - insets.rightPt;
 
     const leastPt = rest.leastPt;
+    const startsPage = rest.startsPage;
     let taken = rest.next(roomPt);
-    if (taken === null) return laid;
+    if (taken === null) return { lines: laid, endsPage: startsPage };
 
     let height = heightOfLine(taken.line, at, input);
     let slot = slotFor(top, height.heightPt, leastPt, startPt, endPt, input.bands);
@@ -763,7 +806,7 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): readonly Laid
       slot = slotFor(top, height.heightPt, leastPt, startPt, endPt, input.bands);
     }
 
-    laid.push({ line: taken.line, slot, height });
+    laid.push({ line: taken.line, slot, height, startsPage });
     rest = taken.rest;
     top = slot.topPt + height.heightPt;
   }

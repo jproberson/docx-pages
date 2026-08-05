@@ -430,6 +430,103 @@ export function breakingDocument(): string {
   ].join("");
 }
 
+// Where the text goes when a document breaks its own pages.
+//
+// Every paragraph here is told exactly how tall to be, so where one landed is
+// arithmetic: the body of an authored page starts 36pt down and is 720pt tall, and
+// a paragraph at the top of a page reports 36. Each case is followed by a marker
+// naming it, and it is the marker that answers: 36 says the page opened with the
+// text after the break, 60 says the break left a line of its own above it, and the
+// page it landed on says whether a break with nothing to carry over made a page
+// with nothing on it.
+export function pageDocument(): string {
+  const BREAK = `<w:r><w:br w:type="page"/></w:r>`;
+  // A paragraph asking to start a page of its own. It stands before the spacing in
+  // w:pPr, which Word requires in that order.
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+
+  const LINE_PT = 24;
+  const ROOM_TWIPS = 360;
+
+  const room = (twips: number): string => `w:before="${String(twips)}" `;
+
+  const line = (content: string, properties = "", spacing = ""): string =>
+    paragraph(
+      `${properties}<w:spacing ${spacing}w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`,
+      content,
+    );
+
+  const marker = (name: string): string => line(run(name));
+
+  const cell = (content: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="2700" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+
+  return [
+    // A break asked for by the first paragraph of the document, which has no page
+    // in front of it to leave: either it opens on page two or the ask is spent.
+    line(run("first"), OWN_PAGE),
+    marker("after first"),
+
+    // A break in the middle of a paragraph's own text, which carries the rest of
+    // the paragraph to the next page.
+    line(run("split") + BREAK + run("resumed")),
+    marker("after split"),
+
+    // A break with nothing after it but the paragraph's own mark, which either
+    // stands at the top of the next page or goes with the break.
+    line(run("trailing") + BREAK),
+    marker("after trailing"),
+
+    // A paragraph holding the break and nothing else.
+    line(BREAK),
+    marker("after lone"),
+
+    // Two breaks together, which either leave a page with nothing on it or not.
+    line(BREAK + BREAK),
+    marker("after double"),
+
+    // A paragraph asking for a page of its own in the middle of one.
+    line(run("asked"), OWN_PAGE),
+    marker("after asked"),
+
+    // The same ask of a paragraph already standing at the top of a page, since the
+    // one in front of it ended with a break: either it is already where it asked to
+    // be or it makes an empty page to get there.
+    line(run("ends") + BREAK),
+    line(run("at the top"), OWN_PAGE),
+    marker("after at the top"),
+
+    // The room a paragraph keeps above itself where a break has just put it at the
+    // top of a page: either the page opens with the room or the break swallowed it.
+    line(run("ends again") + BREAK),
+    line(run("room above"), "", room(ROOM_TWIPS)),
+    marker("after room above"),
+
+    // The room the paragraph in front of a break keeps below itself, which has
+    // nowhere on that page to go.
+    line(run("room below") + BREAK, "", `w:after="${String(ROOM_TWIPS)}" `),
+    marker("after room below"),
+
+    // And the room a paragraph asking for a page of its own keeps above itself.
+    line(run("asked with room"), OWN_PAGE, room(ROOM_TWIPS)),
+    marker("after asked with room"),
+
+    // A break inside a cell, which has a wall round it that the flow of the page
+    // does not. The margins are stated because nothing else here states them: an
+    // authored document declares no table style, and a table that asks for none of
+    // its own is held off its walls by nothing at all.
+    `<w:tbl><w:tblPr><w:tblW w:w="5400" w:type="dxa"/><w:tblCellMar>
+        <w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>
+        <w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
+      </w:tblCellMar></w:tblPr>
+      <w:tblGrid><w:gridCol w:w="2700"/><w:gridCol w:w="2700"/></w:tblGrid>
+      <w:tr>${cell(line(run("in a cell") + BREAK + run("still in it")))}${cell(line(run("beside it")))}</w:tr>
+    </w:tbl>`,
+    marker("after the table"),
+    EMPTY,
+  ].join("");
+}
+
 // A list numbered in the body and the same list inside a text box, which is what
 // says whether a box starts the counting again.
 export function numberingDocument(): string {

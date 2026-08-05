@@ -80,6 +80,11 @@ export type LineFlow = {
   // before it can be drawn at all: a run of space narrower than this holds no
   // line, however the rest of the paragraph is broken.
   readonly leastPt: number;
+  // Whether a page break stands in front of whatever this flow has left, so the
+  // line it hands back begins a page. Asked of the flow rather than of the line,
+  // since a flow with nothing left still has to answer: a break the paragraph ends
+  // on is what puts the paragraph after it on a page of its own.
+  readonly startsPage: boolean;
 };
 
 export type FlowedLine = {
@@ -146,7 +151,7 @@ type Fragment = {
 type Unit =
   | { readonly kind: "word" | "space"; readonly fragments: readonly Fragment[] }
   | { readonly kind: "tab" }
-  | { readonly kind: "break" }
+  | { readonly kind: "break"; readonly endsPage: boolean }
   | {
       readonly kind: "drawing";
       readonly widthPt: number;
@@ -295,7 +300,7 @@ function addPiece(
     return true;
   }
   if (piece.kind === "break") {
-    units.push({ kind: "break" });
+    units.push({ kind: "break", endsPage: piece.endsPage });
     return true;
   }
   if (piece.kind === "drawing") {
@@ -515,19 +520,34 @@ class LineBuilder {
 }
 
 // How far a paragraph has been broken: which unit is next, what is left of a word
-// the line above cut in two, and whether that line ended by filling up.
+// the line above cut in two, whether that line ended by filling up, and whether it
+// ended at a page break.
 type Cursor = {
   readonly at: number;
   readonly rest: readonly Fragment[] | null;
   readonly wrapped: boolean;
   readonly index: number;
+  readonly startsPage: boolean;
 };
 
-const START: Cursor = { at: 0, rest: null, wrapped: false, index: 0 };
+const START: Cursor = { at: 0, rest: null, wrapped: false, index: 0, startsPage: false };
+
+// The line a page break leaves behind it where nothing stood on it. A break holds
+// the room its line takes on the page it is leaving, which an ordinary line break
+// does not, so this one is handed back rather than stepped over. It is measured
+// from the paragraph's own mark, as any other line with nothing on it is.
+const EMPTY_LINE: TextLine = {
+  segments: [],
+  widthPt: 0,
+  heightPt: 0,
+  ascentPt: 0,
+  seatPt: 0,
+  fontHeightPt: 0,
+};
 
 // One line's worth of units, or nothing left to draw one from. A line held open by
-// nothing but a break carries no text and takes no room, so the flow steps over it
-// and keeps looking rather than handing back a line that is not there.
+// nothing but a line break carries no text and takes no room, so the flow steps
+// over it and keeps looking rather than handing back a line that is not there.
 function buildLine(
   units: readonly Unit[],
   tabs: LineTabs,
@@ -553,6 +573,7 @@ function buildLine(
 const flowFrom = (units: readonly Unit[], tabs: LineTabs, cursor: Cursor): LineFlow => ({
   next: (roomPt) => buildLine(units, tabs, cursor, roomPt),
   leastPt: leastRoomPt(units, tabs, cursor),
+  startsPage: cursor.startsPage,
 });
 
 // The line the paragraph makes when it is given no room at all and is not allowed
@@ -578,7 +599,7 @@ function fillLine(
   if (cursor.rest !== null) {
     const took = builder.word(cursor.rest, cutting);
     if (took.kind === "full") {
-      return filledAt(builder, { ...cursor, rest: took.rest, wrapped: true });
+      return filledAt(builder, { ...cursor, rest: took.rest, wrapped: true, startsPage: false });
     }
   }
 
@@ -590,9 +611,16 @@ function fillLine(
     // A break ends the line it is on wherever it stands, and the line under it
     // starts with whatever gap follows rather than losing it.
     if (unit.kind === "break") {
+      const line = builder.finish();
       return {
-        line: builder.finish(),
-        cursor: { at, rest: null, wrapped: false, index: cursor.index },
+        line: line ?? (unit.endsPage ? EMPTY_LINE : null),
+        cursor: {
+          at,
+          rest: null,
+          wrapped: false,
+          index: cursor.index,
+          startsPage: unit.endsPage,
+        },
       };
     }
 
@@ -606,6 +634,7 @@ function fillLine(
         rest,
         wrapped: true,
         index: cursor.index,
+        startsPage: false,
       });
     }
   }
@@ -613,7 +642,7 @@ function fillLine(
   const line = builder.finish();
   return line === null
     ? null
-    : { line, cursor: { at, rest: null, wrapped: false, index: cursor.index } };
+    : { line, cursor: { at, rest: null, wrapped: false, index: cursor.index, startsPage: false } };
 }
 
 const filledAt = (builder: LineBuilder, cursor: Cursor): Filled => ({
