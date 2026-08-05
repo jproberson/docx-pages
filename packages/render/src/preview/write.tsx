@@ -11,6 +11,7 @@ import {
 } from "@onepager/core";
 import { imageResolver, OnePagerDocument, type FrameStyle } from "@onepager/viewer";
 
+import { authoredCases } from "../authored/cases.js";
 import {
   authoredFaces,
   authoredFonts,
@@ -263,7 +264,9 @@ const browser = (body: string): string =>
 `;
 
 function main(): void {
-  const cases = referenceCases();
+  // The documents written for the suite are previewed beside the real ones, so a
+  // gap the numbers name can be looked at as well as counted.
+  const cases = [...referenceCases(), ...authoredCases()];
 
   if (cases.length === 0) {
     process.stdout.write("no reference cases; point ONEPAGER_REFERENCE_MANIFEST at a manifest\n");
