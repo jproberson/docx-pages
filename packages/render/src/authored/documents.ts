@@ -154,6 +154,27 @@ function tabDocument(): string {
     paragraph(`<w:tabs>${stop}</w:tabs>`, run("ab") + TAB + run("1234.56") + TAB + run("cd")),
   );
 
+  // What a stop that is not left-aligned reaches over, once there is no tab after
+  // it to end at, and what it makes of text that has no decimal point in it, has
+  // two, or is wider than the room in front of the stop.
+  const reach = (title: string, stop: string, content: string): string =>
+    paragraph(`<w:tabs><w:tab w:val="${title}" w:pos="${stop}"/></w:tabs>`, content);
+
+  const ends = [
+    reach("right", "2880", run("ab") + TAB + run("cd ef")),
+    reach("center", "2880", run("ab") + TAB + run("cd ef")),
+    // A space at the end of what the stop reaches over, which is either part of
+    // what is being lined up or is not.
+    reach("right", "2880", run("ab") + TAB + run("cd ") + TAB + run("ef")),
+    reach("decimal", "2880", run("ab") + TAB + run("123456") + TAB + run("cd")),
+    reach("decimal", "2880", run("ab") + TAB + run("1.2.3") + TAB + run("cd")),
+    reach("decimal", "2880", run("ab") + TAB + run("no point here") + TAB + run("cd")),
+    // More text than there is room for in front of the stop, which cannot be lined
+    // up on it without running back over what is already on the line.
+    reach("right", "720", run("ab") + TAB + run("antidisestablishmentarian") + TAB + run("cd")),
+    reach("center", "720", run("ab") + TAB + run("antidisestablishmentarian") + TAB + run("cd")),
+  ];
+
   return [
     // No stop of its own, so every tab runs to the default every 720 twips.
     paragraph("", run("ab") + TAB + run("cd") + TAB + run("ef")),
@@ -168,6 +189,7 @@ function tabDocument(): string {
       `<w:tabs><w:tab w:val="left" w:pos="1440"/><w:tab w:val="right" w:pos="5760"/></w:tabs>`,
       run("ab") + TAB + run("cd") + TAB + run("ef"),
     ),
+    ...ends,
     EMPTY,
   ].join("");
 }
@@ -185,10 +207,6 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Tab stops",
       asks: "where a tab lands at each alignment, and where the default stops fall",
       measuresCharacters: true,
-      // A stop that is not left-aligned is not honoured yet: Word centres, ends or
-      // aligns the decimal point of the text after the tab on the stop, and this
-      // starts it there. The four paragraphs that ask are the last four.
-      charactersPlaced: 51,
       bytes: buildAuthoredDocx({ body: tabDocument() }),
     },
     {

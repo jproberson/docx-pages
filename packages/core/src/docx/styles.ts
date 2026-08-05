@@ -46,11 +46,23 @@ type PartialMark = {
   readonly color: string | undefined;
 };
 
+// What a stop does with the text that follows a tab reaching it: a left stop
+// starts it there, the next three line it up on the stop, and a bar is not a place
+// a tab lands at all but a line drawn down the page.
+export type TabAlignment = "left" | "center" | "right" | "decimal" | "bar";
+
 // A stop is either declared at a position or clears one the cascade already put
 // there, so the two arrive in the same list and are resolved in order.
 type TabStopEntry = {
   readonly positionTwips: number;
+  readonly alignment: TabAlignment;
   readonly kind: "stop" | "clear";
+};
+
+// A stop the cascade settled on.
+export type TabStop = {
+  readonly positionTwips: number;
+  readonly alignment: TabAlignment;
 };
 
 type PartialFrame = {
@@ -189,8 +201,6 @@ function readFrame(container: XmlElement | null): PartialFrame {
   };
 }
 
-// A stop's alignment is not honoured yet: text still starts at the stop, which is
-// where a left stop puts it and is the only kind the reference documents use.
 function readTabStops(pPr: XmlElement): readonly TabStopEntry[] | undefined {
   const tabs = firstNamed(pPr, W_NS, "tabs");
   if (tabs === null) return undefined;
@@ -199,12 +209,23 @@ function readTabStops(pPr: XmlElement): readonly TabStopEntry[] | undefined {
   for (const tab of childrenNamed(tabs, W_NS, "tab")) {
     const positionTwips = twipsAttribute(tab, "pos");
     if (positionTwips === undefined) continue;
+    const value = attribute(tab, W_NS, "val");
     entries.push({
       positionTwips,
-      kind: attribute(tab, W_NS, "val") === "clear" ? "clear" : "stop",
+      alignment: toTabAlignment(value),
+      kind: value === "clear" ? "clear" : "stop",
     });
   }
   return entries;
+}
+
+function toTabAlignment(value: string | undefined): TabAlignment {
+  if (value === "center" || value === "right" || value === "decimal" || value === "bar") {
+    return value;
+  }
+  // `num` lines a number up the way `left` does, and `start` and `end` are the
+  // names the same two stops go under in a document written left to right.
+  return value === "end" ? "right" : "left";
 }
 
 function readNumbering(container: XmlElement | null): PartialNumbering {
@@ -498,7 +519,7 @@ export type ParagraphFrame = {
   readonly contextualSpacing: boolean;
   // In ascending order, measured from the left edge of the text area rather than
   // from the paragraph's own indent.
-  readonly tabStopsTwips: readonly number[];
+  readonly tabStops: readonly TabStop[];
 };
 
 export type ParagraphNumbering = {
@@ -563,15 +584,19 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     lineRule: resolved.lineRule ?? "auto",
     widowControl: resolved.widowControl ?? true,
     contextualSpacing: resolved.contextualSpacing ?? false,
-    tabStopsTwips: settledStops(resolved.tabStops),
+    tabStops: settledStops(resolved.tabStops),
   };
 }
 
-function settledStops(entries: readonly TabStopEntry[] | undefined): readonly number[] {
-  const positions = new Set<number>();
+function settledStops(entries: readonly TabStopEntry[] | undefined): readonly TabStop[] {
+  const stops = new Map<number, TabStop>();
   for (const entry of entries ?? []) {
-    if (entry.kind === "clear") positions.delete(entry.positionTwips);
-    else positions.add(entry.positionTwips);
+    if (entry.kind === "clear") stops.delete(entry.positionTwips);
+    else
+      stops.set(entry.positionTwips, {
+        positionTwips: entry.positionTwips,
+        alignment: entry.alignment,
+      });
   }
-  return [...positions].sort((left, right) => left - right);
+  return [...stops.values()].sort((left, right) => left.positionTwips - right.positionTwips);
 }

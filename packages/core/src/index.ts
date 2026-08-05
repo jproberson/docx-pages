@@ -98,7 +98,12 @@ export type {
   TextLine,
 } from "./layout/lines.js";
 
-export { nextTabStopPt, tabStopsPt, DEFAULT_TAB_STOP_PT } from "./layout/tab-stops.js";
+export {
+  nextTabStop,
+  tabStopsPt,
+  DEFAULT_TAB_STOP_PT,
+  type TabStopPt,
+} from "./layout/tab-stops.js";
 
 export { measureStack, shiftBox, shiftBoxes, WP_NS } from "./layout/stack.js";
 export type {

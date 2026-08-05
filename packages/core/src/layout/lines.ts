@@ -10,7 +10,7 @@ import {
   type GlyphAdvances,
   type MetricsLookup,
 } from "./font-metrics.js";
-import { nextTabStopPt } from "./tab-stops.js";
+import { nextTabStop, type TabStopPt } from "./tab-stops.js";
 import { emuToPoints } from "./units.js";
 
 export type MetricsResolver = (request: FaceRequest) => MetricsLookup;
@@ -85,7 +85,7 @@ export type LineFlowStart =
 // hanging first line starts outside that edge, and a tab on it reaches the stop at
 // the indent that the lines below it start from.
 export type LineTabs = {
-  readonly stopsPt: readonly number[];
+  readonly stopsPt: readonly TabStopPt[];
   readonly originPt: number;
   readonly firstLineOriginPt?: number;
 };
@@ -124,6 +124,10 @@ type Fragment = {
   readonly mark: ParagraphMark;
   readonly text: string;
   readonly widthPt: number;
+  // How far into the fragment its first decimal point stands, or null where it
+  // holds none. A decimal stop lines its text up on that point, and the width is
+  // free while the characters are being added up anyway.
+  readonly beforePointPt: number | null;
   readonly heightPt: number;
   readonly ascentPt: number;
 };
@@ -179,7 +183,9 @@ class Measurer {
     if (face === null) return null;
 
     let widthPt = 0;
+    let beforePointPt: number | null = null;
     for (const character of text) {
+      if (beforePointPt === null && character === DECIMAL_POINT) beforePointPt = widthPt;
       const codePoint = character.codePointAt(0) ?? 0;
       const advance = face.advanceFor(codePoint);
       if (advance === null) {
@@ -197,11 +203,17 @@ class Measurer {
       mark,
       text,
       widthPt,
+      beforePointPt,
       heightPt: lineHeightPt(face.metrics, mark.fontSizePt),
       ascentPt: ascentPt(face.metrics, mark.fontSizePt),
     };
   }
 }
+
+// The character a decimal stop lines its text up on. Word takes it from the
+// system's own number format; these documents are all written in one where it is
+// the full stop.
+const DECIMAL_POINT = ".";
 
 // A no-break space is what its name says: text runs on through it, so it belongs
 // to the word around it rather than opening a place the line can break. Every
@@ -270,6 +282,54 @@ function addPiece(
     }
   }
   return true;
+}
+
+// What a stop that lines its text up reaches over: everything from the tab to the
+// next tab, the next break, or the end of the paragraph, and how far into that its
+// first decimal point stands. A tab's width can only be settled once this is
+// known, which is why the line has to look ahead of itself to open one.
+type TabbedSpan = {
+  readonly widthPt: number;
+  readonly toPointPt: number | null;
+};
+
+function spanAfterTab(units: readonly Unit[], from: number): TabbedSpan {
+  let widthPt = 0;
+  // A space the span ends on hangs past the stop rather than being lined up with
+  // it, the way a space a line ends on hangs past the margin.
+  let trailingSpacePt = 0;
+  let toPointPt: number | null = null;
+
+  for (let at = from; at < units.length; at += 1) {
+    const unit = units[at];
+    if (unit === undefined || unit.kind === "tab" || unit.kind === "break") break;
+
+    if (unit.kind === "drawing") {
+      widthPt += unit.widthPt;
+      trailingSpacePt = 0;
+      continue;
+    }
+
+    for (const fragment of unit.fragments) {
+      if (toPointPt === null && fragment.beforePointPt !== null) {
+        toPointPt = widthPt + fragment.beforePointPt;
+      }
+      widthPt += fragment.widthPt;
+    }
+    trailingSpacePt = unit.kind === "space" ? trailingSpacePt + widthOf(unit.fragments) : 0;
+  }
+
+  return { widthPt: widthPt - trailingSpacePt, toPointPt };
+}
+
+// How far in front of the stop the text it lines up begins. A decimal stop puts
+// the first point of that text on itself, and text with no point in it ends there,
+// as a right stop's does.
+function leadOf(stop: TabStopPt, span: TabbedSpan): number {
+  if (stop.alignment === "center") return span.widthPt / 2;
+  if (stop.alignment === "right") return span.widthPt;
+  if (stop.alignment === "decimal") return span.toPointPt ?? span.widthPt;
+  return 0;
 }
 
 // What became of a unit offered to a line: either the line took it, or the line is
@@ -350,12 +410,17 @@ class LineBuilder {
     return TAKEN;
   }
 
-  tab(): Taken {
+  tab(span: TabbedSpan): Taken {
     if (this.empty && this.wrapped) return TAKEN;
     const { stopsPt } = this.tabs;
     const originPt =
       this.index === 0 ? (this.tabs.firstLineOriginPt ?? this.tabs.originPt) : this.tabs.originPt;
-    this.pendingPt = nextTabStopPt(originPt + this.filled, stopsPt) - originPt - this.committedPt;
+    const stop = nextTabStop(originPt + this.filled, stopsPt);
+    // A stop that lines its text up never pulls it back over what the line already
+    // holds: where there is not room for the text in front of the stop, the tab
+    // opens none at all and the text carries on from where it was.
+    const startPt = Math.max(this.filled, stop.positionPt - originPt - leadOf(stop, span));
+    this.pendingPt = startPt - this.committedPt;
     this.tabbed = true;
     return TAKEN;
   }
@@ -476,7 +541,7 @@ function fillLine(
       };
     }
 
-    const took = tookOf(builder, unit, cutting);
+    const took = tookOf(builder, unit, cutting, () => spanAfterTab(units, at));
     if (took.kind === "full") {
       // A unit the line could not take at all waits where it is; one it cut in two
       // hands the rest of itself to the line below.
@@ -501,14 +566,19 @@ const filledAt = (builder: LineBuilder, cursor: Cursor): Filled => ({
   cursor,
 });
 
-function tookOf(builder: LineBuilder, unit: Unit, cutting: boolean): Taken {
+function tookOf(
+  builder: LineBuilder,
+  unit: Unit,
+  cutting: boolean,
+  spanAfter: () => TabbedSpan,
+): Taken {
   switch (unit.kind) {
     case "word":
       return builder.word(unit.fragments, cutting);
     case "space":
       return builder.space(unit.fragments);
     case "tab":
-      return builder.tab();
+      return builder.tab(spanAfter());
     case "drawing":
       return builder.drawing(unit.widthPt, unit.heightPt);
     case "break":

@@ -32,7 +32,7 @@ import {
   type MetricsResolver,
   type TextLine,
 } from "./lines.js";
-import { nextTabStopPt, tabStopsPt } from "./tab-stops.js";
+import { nextTabStop, tabStopsPt } from "./tab-stops.js";
 import { twipsToPoints } from "./units.js";
 import { fitLine, type LineSlot, type WrapBand } from "./wrapping.js";
 
@@ -485,7 +485,9 @@ function startOfText(endPt: number, suffix: NumberSuffix, context: SuffixContext
   const { frame, paragraphFrame } = context;
   if (suffix === "nothing") return endPt;
   if (suffix === "space") return endPt + context.spaceWidthPt();
-  return frame.leftPt + nextTabStopPt(endPt - frame.leftPt, tabStopsPt(paragraphFrame));
+  // The number's own tab starts the text at the stop whatever that stop lines
+  // other text up on: it is the number that is being placed, not what follows.
+  return frame.leftPt + nextTabStop(endPt - frame.leftPt, tabStopsPt(paragraphFrame)).positionPt;
 }
 
 // A face with no space of its own leaves the number against the text, which is

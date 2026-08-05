@@ -6,12 +6,13 @@ import { buildSfnt } from "../testing/build-font.js";
 import { readFontFile } from "./font-file.js";
 import { NO_ADVANCES, type MetricsLookup, type SuppliedFace } from "./font-metrics.js";
 import { breakLines, justifyLine, type TextLine } from "./lines.js";
+import type { TabStopPt } from "./tab-stops.js";
 
 // Every glyph is half an em wide, so a 10pt run measures exactly 5pt a character
 // and the expected break points can be counted rather than computed.
 const HALF_EM = 500;
 const NO_BREAK_SPACE = "\u00a0";
-const CHARACTERS = `abcdefghijklmnopqrstuvwxyz -${NO_BREAK_SPACE}`;
+const CHARACTERS = `abcdefghijklmnopqrstuvwxyz0123456789. -${NO_BREAK_SPACE}`;
 
 const FIXTURE = {
   unitsPerEm: 1000,
@@ -73,6 +74,23 @@ function linesOf(
   const result = breakLines({ runs, widthPt, metricsFor: metricsFor(faces) });
   if (result.kind !== "lines") throw new Error(result.failure.kind);
   return result.lines;
+}
+
+const leftStops = (...positionsPt: readonly number[]): readonly TabStopPt[] =>
+  positionsPt.map((positionPt) => ({ positionPt, alignment: "left" as const }));
+
+// Where the text after a tab starts, which is the whole question a stop that lines
+// its text up answers.
+function afterTabPt(pieces: readonly RunPiece[], stop: TabStopPt): number {
+  const result = breakLines({
+    runs: [piecesRun(pieces)],
+    widthPt: 500,
+    metricsFor: metricsFor(),
+    tabs: { stopsPt: [stop], originPt: 0 },
+  });
+  if (result.kind !== "lines") throw new Error(result.failure.kind);
+  const line = result.lines[0] ?? never();
+  return line.segments[1]?.offsetPt ?? Number.NaN;
 }
 
 const textOf = (line: TextLine): string =>
@@ -188,7 +206,7 @@ describe("breakLines", () => {
       runs: [piecesRun([{ kind: "tab" }, { kind: "text", text: "ab" }])],
       widthPt: 200,
       metricsFor: metricsFor(),
-      tabs: { stopsPt: [10, 60], originPt: 0, firstLineOriginPt: -8 },
+      tabs: { stopsPt: leftStops(10, 60), originPt: 0, firstLineOriginPt: -8 },
     });
     if (result.kind !== "lines") throw new Error(result.failure.kind);
 
@@ -204,6 +222,71 @@ describe("breakLines", () => {
     const lines = linesOf([run], 200);
 
     expect(lines[0]?.widthPt).toBeCloseTo(36 + 10, 9);
+  });
+
+  // Measured against Word: against a stop at 144pt with 39.5pt of text after it,
+  // Word starts that text at 124 for a centre stop, 104 for a right one and 120
+  // for a decimal one, which puts the point itself on 144.
+  it("centres the text after a tab on a stop that asks for it", () => {
+    const pieces: readonly RunPiece[] = [
+      { kind: "text", text: "ab" },
+      { kind: "tab" },
+      { kind: "text", text: "cdef" },
+    ];
+
+    expect(afterTabPt(pieces, { positionPt: 100, alignment: "center" })).toBeCloseTo(90, 9);
+  });
+
+  it("ends the text after a tab on a right stop", () => {
+    const pieces: readonly RunPiece[] = [
+      { kind: "text", text: "ab" },
+      { kind: "tab" },
+      { kind: "text", text: "cdef" },
+    ];
+
+    expect(afterTabPt(pieces, { positionPt: 100, alignment: "right" })).toBeCloseTo(80, 9);
+  });
+
+  it("puts the first decimal point of the text on a decimal stop", () => {
+    const pieces: readonly RunPiece[] = [
+      { kind: "text", text: "ab" },
+      { kind: "tab" },
+      { kind: "text", text: "12.3.4" },
+    ];
+
+    expect(afterTabPt(pieces, { positionPt: 100, alignment: "decimal" })).toBeCloseTo(90, 9);
+  });
+
+  it("ends text with no decimal point in it on a decimal stop, as a right one would", () => {
+    const pieces: readonly RunPiece[] = [
+      { kind: "text", text: "ab" },
+      { kind: "tab" },
+      { kind: "text", text: "cdef" },
+    ];
+
+    expect(afterTabPt(pieces, { positionPt: 100, alignment: "decimal" })).toBeCloseTo(80, 9);
+  });
+
+  it("reaches only as far as the tab after it, and leaves the space it ends on out", () => {
+    const pieces: readonly RunPiece[] = [
+      { kind: "text", text: "ab" },
+      { kind: "tab" },
+      { kind: "text", text: "cd " },
+      { kind: "tab" },
+      { kind: "text", text: "ef" },
+    ];
+
+    expect(afterTabPt(pieces, { positionPt: 100, alignment: "right" })).toBeCloseTo(90, 9);
+  });
+
+  it("opens no room at all where the text it lines up will not fit in front of the stop", () => {
+    const pieces: readonly RunPiece[] = [
+      { kind: "text", text: "ab" },
+      { kind: "tab" },
+      { kind: "text", text: "cdefghijkl" },
+    ];
+
+    expect(afterTabPt(pieces, { positionPt: 20, alignment: "right" })).toBeCloseTo(10, 9);
   });
 
   it("holds a line open as far as a trailing tab reached, though it draws nothing", () => {
