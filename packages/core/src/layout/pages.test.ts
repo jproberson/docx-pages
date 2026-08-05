@@ -51,7 +51,15 @@ function stack(
       lines.push(line(lineTop, heightPt, `p${String(index)}l${String(lines.length)}`));
       lineTop += heightPt;
     }
-    boxes.push({ index, topPt: top, heightPt: lineTop - top, lines, marker: null, widowControl });
+    boxes.push({
+      index,
+      topPt: top,
+      heightPt: lineTop - top,
+      lines,
+      marker: null,
+      widowControl,
+      contentWidthPt: 0,
+    });
     top = lineTop;
   });
 
@@ -170,8 +178,24 @@ describe("breakStack", () => {
 
   it("counts an empty paragraph's own height against the page", () => {
     const boxes: readonly ParagraphBox[] = [
-      { index: 0, topPt: 100, heightPt: 20, lines: [], marker: null, widowControl: false },
-      { index: 1, topPt: 120, heightPt: 20, lines: [], marker: null, widowControl: false },
+      {
+        index: 0,
+        topPt: 100,
+        heightPt: 20,
+        lines: [],
+        marker: null,
+        widowControl: false,
+        contentWidthPt: 0,
+      },
+      {
+        index: 1,
+        topPt: 120,
+        heightPt: 20,
+        lines: [],
+        marker: null,
+        widowControl: false,
+        contentWidthPt: 0,
+      },
     ];
     const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
 

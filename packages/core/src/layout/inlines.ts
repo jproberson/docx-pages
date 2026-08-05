@@ -1,9 +1,7 @@
 import type { InlineDrawing } from "../docx/inlines.js";
-import type { SectionGeometry } from "../docx/section.js";
-import type { ParagraphFrame } from "../docx/styles.js";
-import type { Theme } from "../docx/theme.js";
 import { resolveContent, type PartResolver, type PlacedContent } from "./floats.js";
-import { emuToPoints, twipsToPoints } from "./units.js";
+import type { ParagraphBox } from "./stack.js";
+import type { Theme } from "../docx/theme.js";
 
 export type PlacedInline = {
   readonly drawing: InlineDrawing;
@@ -16,49 +14,41 @@ export type PlacedInline = {
 
 export type PlaceInlinesInput = {
   readonly drawings: readonly InlineDrawing[];
-  readonly page: SectionGeometry;
-  readonly frame: ParagraphFrame;
-  readonly paragraphTopPt: number;
+  // The paragraph as it was laid out, whose lines already hold each drawing.
+  readonly box: ParagraphBox;
   readonly resolvePart: PartResolver;
   readonly theme: Theme;
 };
 
-// Inline drawings sit in the paragraph's own line, so they run along it in order
-// from wherever the paragraph's alignment starts the line.
+/**
+ * An inline drawing is part of its line rather than something placed beside one,
+ * so it lands wherever breaking the line put it: within the paragraph's own
+ * indents, at its alignment, past whatever tabs opened ahead of it, and inside
+ * the room an object wrapping beside the line left. It stands on the baseline, as
+ * a letter does.
+ *
+ * A paragraph the page break ran through keeps its drawings on the page it starts
+ * on, so a drawing whose line fell to the next page is not placed at all; no
+ * reference document breaks a page through a paragraph holding one.
+ */
 export function placeInlines(input: PlaceInlinesInput): readonly PlacedInline[] {
-  const { page, frame } = input;
-  const startPt = twipsToPoints(page.margin.leftTwips + frame.indentLeftTwips);
-  const endPt = twipsToPoints(page.widthTwips - page.margin.rightTwips - frame.indentRightTwips);
-
-  const widths = input.drawings.map((drawing) => emuToPoints(drawing.widthEmu));
-  const total = widths.reduce((sum, width) => sum + width, 0);
-
-  let left = lineStart(frame, startPt, endPt, total);
   const placed: PlacedInline[] = [];
 
-  input.drawings.forEach((drawing, at) => {
-    const widthPt = widths[at] ?? 0;
-    placed.push({
-      drawing,
-      content: resolveContent(drawing.content, input.resolvePart, input.theme),
-      leftPt: left,
-      topPt: input.paragraphTopPt,
-      widthPt,
-      heightPt: emuToPoints(drawing.heightEmu),
-    });
-    left += widthPt;
-  });
+  for (const line of input.box.lines) {
+    for (const segment of line.line.segments) {
+      if (segment.kind !== "drawing") continue;
+      const drawing = input.drawings[placed.length];
+      if (drawing === undefined) return placed;
+      placed.push({
+        drawing,
+        content: resolveContent(drawing.content, input.resolvePart, input.theme),
+        leftPt: line.leftPt + segment.offsetPt,
+        topPt: line.baselinePt - segment.heightPt,
+        widthPt: segment.widthPt,
+        heightPt: segment.heightPt,
+      });
+    }
+  }
 
   return placed;
-}
-
-function lineStart(
-  frame: ParagraphFrame,
-  startPt: number,
-  endPt: number,
-  contentPt: number,
-): number {
-  if (frame.alignment === "right") return endPt - contentPt;
-  if (frame.alignment === "center") return startPt + (endPt - startPt - contentPt) / 2;
-  return startPt;
 }

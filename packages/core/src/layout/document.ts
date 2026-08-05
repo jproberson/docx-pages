@@ -4,7 +4,7 @@ import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
-import { readStyleTable, resolveParagraphFrame, type StyleTable } from "../docx/styles.js";
+import { readStyleTable, type StyleTable } from "../docx/styles.js";
 import { readTheme, type Theme } from "../docx/theme.js";
 import {
   measureStack,
@@ -105,8 +105,11 @@ type FloatFrame = {
 };
 
 // "Resize shape to fit text": the box is as tall as its text, and as wide as it
-// too when the text does not wrap inside it. A box holding no text has nothing to
-// fit itself to, so it keeps the size the file stored for it.
+// too when the text does not wrap inside it. A box holding no text still fits
+// itself to the paragraph mark standing in it, which Word makes one pilcrow wide
+// and one line tall: measured against Word, a 270 x 0.05pt box holding one empty
+// 10pt paragraph came back 5.9 x 22.2pt, and the band it wraps text out of moved
+// with it.
 function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
   const stored = {
     widthPt: emuToPoints(anchor.widthEmu),
@@ -122,9 +125,7 @@ function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
     metricsFor: frame.metricsFor,
     part: frame.part,
   });
-  if (laid.kind === "blocked" || laid.text.boxes.every((box) => box.lines.length === 0)) {
-    return stored;
-  }
+  if (laid.kind === "blocked") return stored;
 
   // The box is as tall as its text, its insets, and the outline that runs round
   // the whole of it: an outline is centred on the edge, so it takes half its width
@@ -333,7 +334,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   // against the top that paragraph has there.
   const drawingsFor = (
     blocks: readonly Block[],
-    topOf: ReadonlyMap<number, number>,
+    boxOf: ReadonlyMap<number, ParagraphBox>,
     floats: FloatFrame,
   ): { readonly floats: readonly PlacedFloat[]; readonly inlines: readonly PlacedInline[] } => {
     const part = floats.part;
@@ -344,22 +345,20 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     };
 
     const anchored = blockParagraphs(blocks).flatMap((paragraph) => {
-      const paragraphTopPt = topOf.get(paragraph.index);
-      return paragraphTopPt === undefined ? [] : [{ paragraph, paragraphTopPt }];
+      const box = boxOf.get(paragraph.index);
+      return box === undefined ? [] : [{ paragraph, box }];
     });
 
     return {
-      floats: anchored.flatMap(({ paragraph, paragraphTopPt }) =>
+      floats: anchored.flatMap(({ paragraph, box }) =>
         readAnchors(paragraph).map((anchor) =>
-          placeFloatIn(anchor, paragraphTopPt, floats, resolvePart),
+          placeFloatIn(anchor, box.topPt, floats, resolvePart),
         ),
       ),
-      inlines: anchored.flatMap(({ paragraph, paragraphTopPt }) =>
+      inlines: anchored.flatMap(({ paragraph, box }) =>
         placeInlines({
           drawings: readInlines(paragraph),
-          page,
-          frame: resolveParagraphFrame(paragraph, styles),
-          paragraphTopPt,
+          box,
           resolvePart,
           theme: floats.theme,
         }),
@@ -372,15 +371,15 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
       ? { floats: [], inlines: [] }
       : drawingsFor(
           story.blocks,
-          topsOf(story.boxes),
+          boxesOf(story.boxes),
           floatFrame(story.part, columnTopPt, bodyTopPt),
         );
 
   const headerDrawings = drawingsIn(header, headerTopPt);
   const footerDrawings = drawingsIn(footer, footerTopPt);
   const broken = breakStack({ boxes: bodyStack.boxes, topPt: bodyTopPt, bottomPt: bodyBottomPt });
-  const bodyDrawings = pageTops(broken).map((topOf) =>
-    drawingsFor(bodyBlocks, topOf, floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
+  const bodyDrawings = pageBoxes(broken).map((boxOf) =>
+    drawingsFor(bodyBlocks, boxOf, floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
   );
 
   const filled = fillTextBoxes(
@@ -418,20 +417,20 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   };
 }
 
-const topsOf = (boxes: readonly ParagraphBox[]): ReadonlyMap<number, number> =>
-  new Map(boxes.map((box) => [box.index, box.topPt]));
+const boxesOf = (boxes: readonly ParagraphBox[]): ReadonlyMap<number, ParagraphBox> =>
+  new Map(boxes.map((box) => [box.index, box]));
 
 // A paragraph the break ran through is on two pages; its drawings belong to the
 // first of them, where the paragraph starts.
-function pageTops(pages: readonly PageStack[]): readonly ReadonlyMap<number, number>[] {
+function pageBoxes(pages: readonly PageStack[]): readonly ReadonlyMap<number, ParagraphBox>[] {
   const seen = new Set<number>();
   return pages.map((page) => {
-    const tops = new Map<number, number>();
+    const boxes = new Map<number, ParagraphBox>();
     for (const box of page.boxes) {
       if (seen.has(box.index)) continue;
       seen.add(box.index);
-      tops.set(box.index, box.topPt);
+      boxes.set(box.index, box);
     }
-    return tops;
+    return boxes;
   });
 }

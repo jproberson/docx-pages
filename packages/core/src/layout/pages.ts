@@ -112,5 +112,6 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
         ? null
         : { ...box.marker, baselinePt: box.marker.baselinePt - shiftPt },
     widowControl: box.widowControl,
+    contentWidthPt: box.contentWidthPt,
   };
 }

@@ -87,6 +87,11 @@ export type ParagraphBox = {
   readonly heightPt: number;
   readonly lines: readonly PlacedLine[];
   readonly marker: ParagraphMarker | null;
+  // How far the paragraph reaches across the frame it was laid out in, measured
+  // from that frame's own left. A box fitting itself to its text is as wide as the
+  // widest paragraph in it, and an empty paragraph still reaches as far as its own
+  // mark.
+  readonly contentWidthPt: number;
   // What the paragraph asks of a page break running through it, which only the
   // break itself can act on.
   readonly widowControl: boolean;
@@ -296,8 +301,9 @@ function measureParagraph(
   frame: Frame,
   neighbours: Neighbours,
 ): ParagraphMeasurement {
+  const paragraphMark = resolveParagraphMark(paragraph, context.styles);
   const marks: readonly ParagraphMark[] = [
-    resolveParagraphMark(paragraph, context.styles),
+    paragraphMark,
     ...resolveRunMarks(paragraph, context.styles),
   ];
 
@@ -363,6 +369,7 @@ function measureParagraph(
     box: layOutParagraph(paragraph.index, breaking.lines, {
       topPt,
       markHeightPt: markHeight,
+      markWidthPt: widthOfMark(paragraphMark, context.metricsFor),
       frame,
       paragraphFrame,
       spacing: spacingPt(paragraph, paragraphFrame, context, neighbours),
@@ -478,6 +485,19 @@ function widthOfSpace(mark: ParagraphMark, metricsFor: MetricsResolver): number 
   return measured.kind === "measured" ? measured.widthPt : 0;
 }
 
+// The mark itself, which is the only thing an empty paragraph holds. Measured
+// against Word by shrinking a box that fits itself to an empty paragraph: it came
+// out one pilcrow wide in every one of Calibri, Arial, Impact, Times New Roman,
+// Verdana and Courier New, each within the twentieth of a point Word rounds its
+// answers to. A face that cannot measure the character leaves the paragraph no
+// width, which is what a box with nothing in it was given before.
+const PILCROW = "¶";
+
+function widthOfMark(mark: ParagraphMark, metricsFor: MetricsResolver): number {
+  const measured = measureText(PILCROW, mark, metricsFor);
+  return measured.kind === "measured" ? measured.widthPt : 0;
+}
+
 type Insets = {
   readonly leftPt: number;
   readonly rightPt: number;
@@ -493,6 +513,7 @@ const insetsOf = (frame: ParagraphFrame): Insets => ({
 type LayOutParagraphInput = {
   readonly topPt: number;
   readonly markHeightPt: number;
+  readonly markWidthPt: number;
   readonly frame: Frame;
   readonly paragraphFrame: ParagraphFrame;
   readonly spacing: Spacing;
@@ -531,6 +552,7 @@ function layOutParagraph(
       lines: [],
       marker: markerAt(number, slot.topPt + (number?.ascentPt ?? 0)),
       widowControl: paragraphFrame.widowControl,
+      contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
     };
   }
 
@@ -586,6 +608,10 @@ function layOutParagraph(
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
     widowControl: paragraphFrame.widowControl,
+    contentWidthPt: placed.reduce(
+      (widest, line) => Math.max(widest, line.leftPt - frame.leftPt + line.line.widthPt),
+      0,
+    ),
   };
 }
 
