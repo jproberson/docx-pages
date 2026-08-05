@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument, WORDPROCESSING_NS } from "../testing/build-docx.js";
-import { readUnhonoured, type Unhonoured } from "./fidelity.js";
+import { readUnhonoured, unhonouredFaces, type Unhonoured } from "./fidelity.js";
 import { openDocx } from "./package.js";
 
 const SECTION = `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`;
@@ -114,3 +114,18 @@ describe("readUnhonoured", () => {
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+
+// The one entry that is not in the document's own words: a face is only known to
+// have been stood in for once the layout has asked for it.
+describe("unhonouredFaces", () => {
+  it("says nothing where every face the document asked for answered", () => {
+    expect(unhonouredFaces([])).toStrictEqual([]);
+  });
+
+  it("puts a face that was stood in for in the same list as everything else", () => {
+    const [entry] = unhonouredFaces([{ requested: { name: "Meridian Sans" } }]);
+    expect(entry?.kind).toBe("substituted-face");
+    expect(entry?.effect).toBe("moves-text");
+    expect(entry?.places).toHaveLength(1);
+  });
+});

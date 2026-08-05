@@ -1,4 +1,5 @@
 import { blockParagraphs, blocksIn } from "./blocks.js";
+import { drawnAsStated } from "./borders.js";
 import { readDrawingContent } from "./drawing.js";
 import { WP_NS } from "./inlines.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
@@ -60,6 +61,8 @@ export type UnhonouredKind =
   | "highlighting"
   | "page-background"
   | "unknown-drawing"
+  | "wrap-side"
+  | "approximated-border"
   | "alternate-first-or-even-page"
   | "substituted-face";
 
@@ -93,6 +96,10 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A drawing that is neither a picture nor a shape, a chart being the one met so
   // far: its room is held and nothing is drawn in it.
   "unknown-drawing": "changes-paint",
+  // Which side of an object text may sit on. Word takes the side the anchor names;
+  // this project takes whichever free space it meets first, which is the left.
+  "wrap-side": "moves-text",
+  "approximated-border": "changes-paint",
   // Only one header and one footer are drawn, on every page alike, so a document
   // that asks for another on its first page or on its even ones draws the wrong
   // one there.
@@ -122,6 +129,10 @@ function unhonouredBy(element: XmlElement, parent: XmlElement | null): Unhonoure
   // that cannot make a picture or a shape of is drawn nowhere.
   if (element.namespace === WP_NS && (element.name === "anchor" || element.name === "inline")) {
     return readDrawingContent(element).kind === "unknown" ? "unknown-drawing" : null;
+  }
+  if (element.namespace === WP_NS && WRAPS.has(element.name)) {
+    const side = attribute(element, "", "wrapText");
+    return side === undefined || side === "bothSides" ? null : "wrap-side";
   }
   if (element.namespace !== W_NS) return null;
 
@@ -164,6 +175,17 @@ function unhonouredBy(element: XmlElement, parent: XmlElement | null): Unhonoure
       return attribute(element, W_NS, "val") === "bar" ? "bar-tab-stop" : null;
     case "highlight":
       return "highlighting";
+    // Every side of every border is written the same way, so one case answers for
+    // a table's, a cell's and a paragraph's alike.
+    case "top":
+    case "bottom":
+    case "left":
+    case "right":
+    case "insideH":
+    case "insideV":
+    case "start":
+    case "end":
+      return borderPattern(element, parent);
     case "background":
       return "page-background";
     case "titlePg":
@@ -176,6 +198,23 @@ function unhonouredBy(element: XmlElement, parent: XmlElement | null): Unhonoure
     default:
       return null;
   }
+}
+
+// The wraps that take a side. An object wrapped top and bottom, or not at all,
+// leaves nothing beside it to choose between.
+const WRAPS = new Set(["wrapSquare", "wrapTight", "wrapThrough"]);
+
+// A border names its pattern in `w:val`, and only inside one of the elements that
+// hold borders: `w:top` means something else entirely in a cell's margins.
+function borderPattern(element: XmlElement, parent: XmlElement | null): UnhonouredKind | null {
+  if (
+    parent === null ||
+    (parent.name !== "pBdr" && parent.name !== "tblBorders" && parent.name !== "tcBorders")
+  ) {
+    return null;
+  }
+  const value = attribute(element, W_NS, "val");
+  return value === undefined || drawnAsStated(value) ? null : "approximated-border";
 }
 
 type Found = { readonly kind: UnhonouredKind; readonly place: UnhonouredPlace };

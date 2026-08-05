@@ -59,6 +59,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
 const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
   // A bar stop draws a line down the page, which nothing here draws.
   tabs: ["bar-tab-stop"],
+  // The wave borders, which are drawn as plain lines of the stated width.
+  borders: ["approximated-border"],
+  // Both hold an object wrapped on its largest side, which nothing here reads.
+  "legacy-wrapping": ["wrap-side"],
+  "modern-wrapping": ["wrap-side"],
 };
 
 const EMPTY = {

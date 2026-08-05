@@ -74,6 +74,12 @@ const NOTHING = new Set(["none", "nil"]);
 
 const EIGHTHS_PER_POINT = 8;
 
+// Whether the pattern a border names is one of the four that are drawn. Every
+// other name comes out as a plain line of the stated width, which is near enough
+// to look right and is not what Word draws.
+export const drawnAsStated = (value: string): boolean =>
+  value === "single" || value === "thick" || NOTHING.has(value) || STYLES[value] !== undefined;
+
 export function readBorder(element: XmlElement | null): Border | null {
   if (element === null) return null;
 
