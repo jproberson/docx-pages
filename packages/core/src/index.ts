@@ -4,6 +4,11 @@ export type { ContextValue, ErrorContext, DocxPagesErrorInit } from "./errors.js
 export { openDocx, partText, partXml, MAIN_DOCUMENT_PART } from "./docx/package.js";
 export type { DocxPackage } from "./docx/package.js";
 
+// `partXml` answers with one of these, so anything walking a part needs to be able
+// to name it and to read an attribute off it.
+export { attribute, childrenNamed, firstNamed } from "./docx/xml.js";
+export type { XmlElement } from "./docx/xml.js";
+
 export { readSectionGeometry, W_NS } from "./docx/section.js";
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
 export { readUnhonoured, withSubstitutedFaces } from "./docx/fidelity.js";
