@@ -3,10 +3,11 @@ import { readInlines } from "../docx/inlines.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
-import { readUnhonoured, type Unhonoured } from "../docx/fidelity.js";
+import { readUnhonoured, withSubstitutedFaces, type Unhonoured } from "../docx/fidelity.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
 import { readDocumentSettings, type DocumentSettings } from "../docx/settings.js";
 import { readStyleTable, type StyleTable } from "../docx/styles.js";
+import type { SubstitutingMetrics } from "./substitution.js";
 import { readTheme, type Theme } from "../docx/theme.js";
 import {
   measureStack,
@@ -286,7 +287,22 @@ function measureStory(
   };
 }
 
-export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): DocumentLayout {
+/**
+ * Lays a whole document out, and says what it met in the document that it could
+ * not honour.
+ *
+ * Faces are the one thing that list cannot be read out of the package: whether a
+ * face was stood in for is only known once the layout has asked for it. So a
+ * resolver that stands them in is taken whole rather than as its function, and
+ * what it stood in for goes into the same list as everything else. A plain
+ * resolver stands in for nothing and reports nothing.
+ */
+export function layOutDocument(
+  pkg: DocxPackage,
+  metrics: MetricsResolver | SubstitutingMetrics,
+): DocumentLayout {
+  const faces = typeof metrics === "function" ? null : metrics;
+  const metricsFor = typeof metrics === "function" ? metrics : metrics.metricsFor;
   const page = readSectionGeometry(pkg);
   const styles = readStyleTable(pkg);
   const theme = readTheme(pkg);
@@ -445,7 +461,10 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   return {
     kind: "laid-out",
     page,
-    unhonoured: readUnhonoured(pkg),
+    unhonoured: withSubstitutedFaces(
+      readUnhonoured(pkg),
+      faces === null ? [] : faces.substitutions(),
+    ),
     headerFloats,
     footerFloats,
     headerInlines: headerDrawings.inlines,

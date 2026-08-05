@@ -3,7 +3,8 @@ import { drawnAsStated } from "./borders.js";
 import { readDrawingContent } from "./drawing.js";
 import { WP_NS } from "./inlines.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
-import { defaultFooterPart, defaultHeaderPart } from "./relationships.js";
+import { drawablePicture } from "./pictures.js";
+import { defaultFooterPart, defaultHeaderPart, readRelationships } from "./relationships.js";
 import { W_NS } from "./section.js";
 import { SETTINGS_PART } from "./settings.js";
 import { attribute, type XmlElement } from "./xml.js";
@@ -61,6 +62,7 @@ export type UnhonouredKind =
   | "highlighting"
   | "page-background"
   | "unknown-drawing"
+  | "undrawable-picture"
   | "wrap-side"
   | "approximated-border"
   | "alternate-first-or-even-page"
@@ -96,6 +98,10 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A drawing that is neither a picture nor a shape, a chart being the one met so
   // far: its room is held and nothing is drawn in it.
   "unknown-drawing": "changes-paint",
+  // A picture in a format nothing here decodes, WMF being what Word writes beside
+  // the metafile this project plays: its room is held and it is marked rather than
+  // drawn.
+  "undrawable-picture": "changes-paint",
   // Which side of an object text may sit on. Word takes the side the anchor names;
   // this project takes whichever free space it meets first, which is the left.
   "wrap-side": "moves-text",
@@ -121,14 +127,28 @@ const numbered = (element: XmlElement): number => {
   return Number.isFinite(value) ? value : 0;
 };
 
+// Which part a drawing's picture is held in, or null where the document names
+// none. Reading a part it does not carry is a broken package rather than a feature
+// passed over, so nothing is said about one.
+type PartResolver = (relationshipId: string) => string | null;
+
 // What an element says about itself, where what it says is something this project
 // passes over. A name alone is not enough: `w:caps` is written both ways round,
 // and a document that turns a feature off is asking for what it already gets.
-function unhonouredBy(element: XmlElement, parent: XmlElement | null): UnhonouredKind | null {
+function unhonouredBy(
+  element: XmlElement,
+  parent: XmlElement | null,
+  resolvePart: PartResolver,
+): UnhonouredKind | null {
   // A drawing answers for itself, by the same reader the layout uses: whatever
-  // that cannot make a picture or a shape of is drawn nowhere.
+  // that cannot make a picture or a shape of is drawn nowhere, and a picture is
+  // drawn only where something here decodes the format it is held in.
   if (element.namespace === WP_NS && (element.name === "anchor" || element.name === "inline")) {
-    return readDrawingContent(element).kind === "unknown" ? "unknown-drawing" : null;
+    const content = readDrawingContent(element);
+    if (content.kind === "unknown") return "unknown-drawing";
+    if (content.kind !== "picture") return null;
+    const held = resolvePart(content.relationshipId);
+    return held === null || drawablePicture(held) ? null : "undrawable-picture";
   }
   if (element.namespace === WP_NS && WRAPS.has(element.name)) {
     const side = attribute(element, "", "wrapText");
@@ -232,14 +252,26 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
       // same object the layout will lay out rather than a second reading of it.
       blockParagraphs(blocksIn(root)).map((each) => [each.element, each.index]),
     );
-    walk(root, part, null, paragraphs, found);
+    const relationships = readRelationships(pkg, part);
+    walk(root, null, {
+      part,
+      paragraphs,
+      found,
+      resolvePart: (relationshipId) => relationships.get(relationshipId)?.part ?? null,
+    });
     countSections(root, part, found);
   }
 
   // A style's conditional formats and the settings' own switches belong to no part
   // of the flow, so they are read where they are written.
   for (const part of [STYLES_PART, SETTINGS_PART]) {
-    if (pkg.parts.has(part)) walk(partXml(pkg, part), part, null, new Map(), found);
+    if (!pkg.parts.has(part)) continue;
+    walk(partXml(pkg, part), null, {
+      part,
+      paragraphs: new Map(),
+      found,
+      resolvePart: () => null,
+    });
   }
 
   return gathered(found);
@@ -249,24 +281,29 @@ const STYLES_PART = "word/styles.xml";
 
 const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
+// What one part of the package answers with: where a paragraph met in it is
+// numbered, where a drawing's picture is held, and what has been met so far.
+type Reading = {
+  readonly part: string;
+  readonly paragraphs: ReadonlyMap<XmlElement, number>;
+  readonly resolvePart: PartResolver;
+  readonly found: Found[];
+};
+
 // A text box's own content is laid out from its frame rather than from the part's
 // flow, and its paragraphs are numbered inside it, so what is met in one answers
 // for the paragraph that anchors it.
-function walk(
-  node: XmlElement,
-  part: string,
-  paragraphIndex: number | null,
-  paragraphs: ReadonlyMap<XmlElement, number>,
-  found: Found[],
-): void {
+function walk(node: XmlElement, paragraphIndex: number | null, reading: Reading): void {
   for (const child of node.children) {
-    const kind = unhonouredBy(child, node);
-    const index = paragraphs.get(child) ?? paragraphIndex;
-    if (kind !== null) found.push({ kind, place: { part, paragraphIndex: index } });
+    const kind = unhonouredBy(child, node, reading.resolvePart);
+    const index = reading.paragraphs.get(child) ?? paragraphIndex;
+    if (kind !== null) {
+      reading.found.push({ kind, place: { part: reading.part, paragraphIndex: index } });
+    }
     // A text box's own content is laid out and counts; the fallback beside a
     // drawing is the copy Word itself ignores, and is passed over here too.
     if (child.namespace === MC_NS && child.name === "Fallback") continue;
-    walk(child, part, index, paragraphs, found);
+    walk(child, index, reading);
   }
 }
 
@@ -307,16 +344,22 @@ function gathered(found: readonly Found[]): readonly Unhonoured[] {
 
 // A face stood in for is not in the document's own words, so it is not read out of
 // the package: the layout is what finds one. `substitutingMetrics` collects them,
-// and this puts them in the same list as everything else.
-export const unhonouredFaces = (
+// and this puts them in the list the document itself reported, in the place the
+// order of kinds gives them.
+//
+// One place a face, naming the document's own part: the layout knows which faces
+// it stood in for but not which paragraph asked for each of them.
+export function withSubstitutedFaces(
+  unhonoured: readonly Unhonoured[],
   substitutions: readonly { readonly requested: { readonly name: string } }[],
-): readonly Unhonoured[] =>
-  substitutions.length === 0
-    ? []
-    : [
-        {
-          kind: "substituted-face" as const,
-          effect: EFFECTS["substituted-face"],
-          places: substitutions.map(() => ({ part: MAIN_DOCUMENT_PART, paragraphIndex: null })),
-        },
-      ];
+): readonly Unhonoured[] {
+  if (substitutions.length === 0) return unhonoured;
+  return [
+    ...unhonoured,
+    {
+      kind: "substituted-face" as const,
+      effect: EFFECTS["substituted-face"],
+      places: substitutions.map(() => ({ part: MAIN_DOCUMENT_PART, paragraphIndex: null })),
+    },
+  ].sort((one, other) => one.kind.localeCompare(other.kind));
+}

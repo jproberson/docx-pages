@@ -1,31 +1,12 @@
 import {
+  pictureExtension,
   readMetafilePicture,
+  METAFILE_EXTENSION,
+  PICTURE_MEDIA_TYPES,
   type DocxPackage,
   type MetafilePicture,
   type MetricsResolver,
 } from "@docx-pages/core";
-
-const MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
-  ["png", "image/png"],
-  ["jpg", "image/jpeg"],
-  ["jpeg", "image/jpeg"],
-  ["gif", "image/gif"],
-  ["bmp", "image/bmp"],
-  ["tif", "image/tiff"],
-  ["tiff", "image/tiff"],
-  ["svg", "image/svg+xml"],
-  ["webp", "image/webp"],
-]);
-
-// What a browser has no decoder for and this reads itself instead. A metafile is
-// a recording of the drawing rather than a picture of it, so it is played into
-// shapes and drawn beside the rest of the page.
-const METAFILE = "emf";
-
-const extensionOf = (part: string): string => {
-  const dot = part.lastIndexOf(".");
-  return dot === -1 ? "" : part.slice(dot + 1).toLowerCase();
-};
 
 // btoa takes a binary string, and spreading a whole image at once overflows the
 // argument limit, so the bytes go across in chunks.
@@ -41,7 +22,7 @@ function toBase64(bytes: Uint8Array): string {
 
 export function imageDataUrl(pkg: DocxPackage, part: string): string | undefined {
   const bytes = pkg.parts.get(part);
-  const mediaType = MEDIA_TYPES.get(extensionOf(part));
+  const mediaType = PICTURE_MEDIA_TYPES.get(pictureExtension(part));
   if (bytes === undefined || mediaType === undefined) return undefined;
   return `data:${mediaType};base64,${toBase64(bytes)}`;
 }
@@ -57,7 +38,7 @@ function drawableImage(
   part: string,
   metricsFor: MetricsResolver,
 ): DrawableImage | undefined {
-  if (extensionOf(part) === METAFILE) {
+  if (pictureExtension(part) === METAFILE_EXTENSION) {
     const bytes = pkg.parts.get(part);
     const picture = bytes === undefined ? null : readMetafilePicture(bytes, metricsFor);
     return picture === null ? undefined : { kind: "metafile", picture };

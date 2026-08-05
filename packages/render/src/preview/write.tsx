@@ -146,7 +146,7 @@ export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameSty
   // the back of one is no longer the page Word would draw.
   const faces = substitutingMetrics([...set.faces, ...fallbackFaces()], WORD_FALLBACK_FACES);
   const metricsFor = faces.metricsFor;
-  const layout = layOutDocument(pkg, metricsFor);
+  const layout = layOutDocument(pkg, faces);
   if (layout.kind !== "laid-out") {
     throw new Error(`case ${each.id} is blocked: ${JSON.stringify(layout.blocker)}`);
   }

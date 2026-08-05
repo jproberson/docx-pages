@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument, WORDPROCESSING_NS } from "../testing/build-docx.js";
-import { readUnhonoured, unhonouredFaces, type Unhonoured } from "./fidelity.js";
+import { readUnhonoured, withSubstitutedFaces, type Unhonoured } from "./fidelity.js";
 import { openDocx } from "./package.js";
 
 const SECTION = `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`;
+
+const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
 const reportOf = (body: string, parts: Readonly<Record<string, string>> = {}) =>
   readUnhonoured(
@@ -92,6 +97,24 @@ describe("readUnhonoured", () => {
     expect(kinds(reportOf(drawing))).toStrictEqual(["unknown-drawing"]);
   });
 
+  it("names a picture held in a format nothing here decodes, and not one it draws", () => {
+    const picture = (target: string) => {
+      const rels = `<?xml version="1.0"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId9" Type="${R_NS}/image" Target="${target}"/></Relationships>`;
+      const body = `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}" xmlns:a="${A_NS}">
+        <wp:extent cx="914400" cy="914400"/>
+        <a:graphic><a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">
+          <pic:blipFill><a:blip r:embed="rId9" xmlns:r="${R_NS}"/></pic:blipFill>
+        </pic:pic></a:graphicData></a:graphic>
+      </wp:inline></w:drawing></w:r></w:p>`;
+      return kinds(reportOf(body, { "word/_rels/document.xml.rels": rels }));
+    };
+    expect(picture("media/chart.wmf")).toStrictEqual(["undrawable-picture"]);
+    expect(picture("media/logo.png")).toStrictEqual([]);
+    expect(picture("media/logo.emf")).toStrictEqual([]);
+  });
+
   it("reads the styles and the settings as well as the flow", () => {
     const styles = `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
       <w:style w:type="table" w:styleId="Grid"><w:tblStylePr w:type="firstRow"/></w:style></w:styles>`;
@@ -112,20 +135,35 @@ describe("readUnhonoured", () => {
   });
 });
 
-const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
-const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
-
 // The one entry that is not in the document's own words: a face is only known to
 // have been stood in for once the layout has asked for it.
-describe("unhonouredFaces", () => {
-  it("says nothing where every face the document asked for answered", () => {
-    expect(unhonouredFaces([])).toStrictEqual([]);
+describe("withSubstitutedFaces", () => {
+  const kerning: Unhonoured = {
+    kind: "character-kerning",
+    effect: "moves-text",
+    places: [{ part: "word/document.xml", paragraphIndex: 0 }],
+  };
+
+  it("leaves the list alone where every face the document asked for answered", () => {
+    expect(withSubstitutedFaces([kerning], [])).toStrictEqual([kerning]);
   });
 
   it("puts a face that was stood in for in the same list as everything else", () => {
-    const [entry] = unhonouredFaces([{ requested: { name: "Meridian Sans" } }]);
+    const [entry] = withSubstitutedFaces([], [{ requested: { name: "Meridian Sans" } }]);
     expect(entry?.kind).toBe("substituted-face");
     expect(entry?.effect).toBe("moves-text");
     expect(entry?.places).toHaveLength(1);
+  });
+
+  it("keeps the list in the order of its kinds", () => {
+    const merged = withSubstitutedFaces(
+      [kerning, { kind: "text-columns", effect: "moves-text", places: [] }],
+      [{ requested: { name: "Meridian Sans" } }],
+    );
+    expect(merged.map((each) => each.kind)).toStrictEqual([
+      "character-kerning",
+      "substituted-face",
+      "text-columns",
+    ]);
   });
 });
