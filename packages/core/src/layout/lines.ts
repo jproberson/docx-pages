@@ -58,6 +58,28 @@ export type LineBreaking =
   | { readonly kind: "lines"; readonly lines: readonly TextLine[] }
   | { readonly kind: "unmeasurable"; readonly failure: MeasureFailure };
 
+// A paragraph part way through being broken into lines. The width each line has is
+// asked for as that line is taken, since an object beside it can leave it less room
+// than the line above had, and asking takes nothing away: the same flow answers
+// again at another width, which is what a line that has to be broken a second time
+// needs.
+export type LineFlow = {
+  readonly next: (roomPt: number) => FlowedLine | null;
+  // The narrowest the next line can be made, which is what it has to be given
+  // before it can be drawn at all: a run of space narrower than this holds no
+  // line, however the rest of the paragraph is broken.
+  readonly leastPt: number;
+};
+
+export type FlowedLine = {
+  readonly line: TextLine;
+  readonly rest: LineFlow;
+};
+
+export type LineFlowStart =
+  | { readonly kind: "flow"; readonly flow: LineFlow }
+  | { readonly kind: "unmeasurable"; readonly failure: MeasureFailure };
+
 // Tab stops are measured from the left edge of the text area, so a line has to say
 // how far its own start sits from that edge for a tab to land on the right one. A
 // hanging first line starts outside that edge, and a tab on it reaches the stop at
@@ -68,14 +90,17 @@ export type LineTabs = {
   readonly firstLineOriginPt?: number;
 };
 
-export type BreakLinesInput = {
+export type FlowInput = {
   readonly runs: readonly TextRun[];
+  readonly metricsFor: MetricsResolver;
+  readonly tabs?: LineTabs;
+};
+
+export type BreakLinesInput = FlowInput & {
   readonly widthPt: number;
   // What the first line alone has room for, which a hanging indent makes wider
   // than the lines under it and a first-line indent makes narrower.
   readonly firstLineWidthPt?: number;
-  readonly metricsFor: MetricsResolver;
-  readonly tabs?: LineTabs;
 };
 
 const NO_TABS: LineTabs = { stopsPt: [], originPt: 0 };
@@ -247,29 +272,34 @@ function addPiece(
   return true;
 }
 
+// What became of a unit offered to a line: either the line took it, or the line is
+// full and whatever is left of the unit starts the next one.
+type Taken =
+  { readonly kind: "taken" } | { readonly kind: "full"; readonly rest: readonly Fragment[] | null };
+
+const TAKEN: Taken = { kind: "taken" };
+
 // Word breaks greedily: it fills a line until the next word will not fit, then
 // starts a new one, and the spaces it broke at hang past the edge rather than
-// opening the next line.
-class Breaker {
-  private readonly lines: TextLine[] = [];
+// opening the next line. One line at a time, since the room the next one has is
+// only known once this one has been placed.
+class LineBuilder {
   private segments: LineSegment[] = [];
   private committedPt = 0;
   private pending: LineSegment[] = [];
   private pendingPt = 0;
   private heightPt = 0;
   private ascentPt = 0;
-  private wrapped = false;
   private tabbed = false;
 
   constructor(
-    private readonly widthPt: number,
-    private readonly firstLineWidthPt: number,
+    private readonly room: number,
     private readonly tabs: LineTabs,
+    private readonly index: number,
+    // The line above ended because it filled up, so a gap at the head of this one
+    // hangs there rather than opening this one.
+    private readonly wrapped: boolean,
   ) {}
-
-  private get room(): number {
-    return this.lines.length === 0 ? this.firstLineWidthPt : this.widthPt;
-  }
 
   private raise(heightPt: number, ascentPt: number): void {
     this.heightPt = Math.max(this.heightPt, heightPt);
@@ -286,7 +316,6 @@ class Breaker {
     this.committedPt += this.pendingPt + widthPt;
     this.pending = [];
     this.pendingPt = 0;
-    this.wrapped = false;
     this.tabbed = false;
   }
 
@@ -300,83 +329,190 @@ class Breaker {
 
   // A trailing space hangs past the edge, but a trailing tab holds the line open
   // as far as the stop it reached: Word wraps that line around the width the tab
-  // gave it, even when nothing is drawn there.
-  flush(): void {
-    if (!this.empty || this.tabbed) {
-      this.lines.push({
-        segments: this.segments,
-        widthPt: this.committedPt + (this.tabbed ? this.pendingPt : 0),
-        heightPt: this.heightPt,
-        ascentPt: this.ascentPt,
-      });
-    }
-    this.segments = [];
-    this.committedPt = 0;
-    this.pending = [];
-    this.pendingPt = 0;
-    this.heightPt = 0;
-    this.ascentPt = 0;
-    this.tabbed = false;
+  // gave it, even when nothing is drawn there. A line with neither is no line.
+  finish(): TextLine | null {
+    if (this.empty && !this.tabbed) return null;
+    return {
+      segments: this.segments,
+      widthPt: this.committedPt + (this.tabbed ? this.pendingPt : 0),
+      heightPt: this.heightPt,
+      ascentPt: this.ascentPt,
+    };
   }
 
-  space(fragments: readonly Fragment[]): void {
-    if (this.empty && this.wrapped) return;
+  space(fragments: readonly Fragment[]): Taken {
+    if (this.empty && this.wrapped) return TAKEN;
     for (const fragment of fragments) {
       this.pending.push(startingAt(segmentOf(fragment), this.committedPt + this.pendingPt));
       this.pendingPt += fragment.widthPt;
       this.raise(fragment.heightPt, fragment.ascentPt);
     }
+    return TAKEN;
   }
 
-  tab(): void {
-    if (this.empty && this.wrapped) return;
+  tab(): Taken {
+    if (this.empty && this.wrapped) return TAKEN;
     const { stopsPt } = this.tabs;
     const originPt =
-      this.lines.length === 0
-        ? (this.tabs.firstLineOriginPt ?? this.tabs.originPt)
-        : this.tabs.originPt;
+      this.index === 0 ? (this.tabs.firstLineOriginPt ?? this.tabs.originPt) : this.tabs.originPt;
     this.pendingPt = nextTabStopPt(originPt + this.filled, stopsPt) - originPt - this.committedPt;
     this.tabbed = true;
+    return TAKEN;
   }
 
-  drawing(widthPt: number, heightPt: number): void {
-    if (!this.empty && this.filled + widthPt > this.room + EPSILON) this.wrap();
+  drawing(widthPt: number, heightPt: number): Taken {
+    if (!this.empty && this.filled + widthPt > this.room + EPSILON) {
+      return { kind: "full", rest: null };
+    }
     this.raise(heightPt, heightPt);
     this.commit([{ kind: "drawing", widthPt, heightPt, offsetPt: 0 }], widthPt);
+    return TAKEN;
   }
 
-  word(fragments: readonly Fragment[]): void {
-    let rest = fragments;
-    while (rest.length > 0) {
-      const widthPt = widthOf(rest);
-      if (this.filled + widthPt <= this.room + EPSILON) {
-        this.take(rest);
-        return;
-      }
-      if (!this.empty) {
-        this.wrap();
-        continue;
-      }
-      const [head, tail] = splitFragments(rest, this.room - this.filled);
-      this.take(head);
-      this.wrap();
-      rest = tail;
+  word(fragments: readonly Fragment[], cutting: boolean): Taken {
+    const widthPt = widthOf(fragments);
+    if (this.filled + widthPt <= this.room + EPSILON) {
+      this.take(fragments);
+      return TAKEN;
     }
+    if (!this.empty) return { kind: "full", rest: fragments };
+    // A word with no line of its own to fit on is cut where it overflows, unless
+    // what is being asked is how narrow the line can be made without cutting.
+    if (!cutting) {
+      this.take(fragments);
+      return TAKEN;
+    }
+
+    const [head, tail] = splitFragments(fragments, this.room - this.filled);
+    this.take(head);
+    return { kind: "full", rest: tail };
   }
 
   private take(fragments: readonly Fragment[]): void {
     for (const fragment of fragments) this.raise(fragment.heightPt, fragment.ascentPt);
     this.commit(fragments.map(segmentOf), widthOf(fragments));
   }
+}
 
-  private wrap(): void {
-    this.flush();
-    this.wrapped = true;
+// How far a paragraph has been broken: which unit is next, what is left of a word
+// the line above cut in two, and whether that line ended by filling up.
+type Cursor = {
+  readonly at: number;
+  readonly rest: readonly Fragment[] | null;
+  readonly wrapped: boolean;
+  readonly index: number;
+};
+
+const START: Cursor = { at: 0, rest: null, wrapped: false, index: 0 };
+
+// One line's worth of units, or nothing left to draw one from. A line held open by
+// nothing but a break carries no text and takes no room, so the flow steps over it
+// and keeps looking rather than handing back a line that is not there.
+function buildLine(
+  units: readonly Unit[],
+  tabs: LineTabs,
+  from: Cursor,
+  roomPt: number,
+  cutting = true,
+): FlowedLine | null {
+  let cursor = from;
+
+  for (;;) {
+    const built = fillLine(units, tabs, cursor, roomPt, cutting);
+    if (built === null) return null;
+    if (built.line !== null) {
+      return {
+        line: built.line,
+        rest: flowFrom(units, tabs, { ...built.cursor, index: cursor.index + 1 }),
+      };
+    }
+    cursor = built.cursor;
+  }
+}
+
+const flowFrom = (units: readonly Unit[], tabs: LineTabs, cursor: Cursor): LineFlow => ({
+  next: (roomPt) => buildLine(units, tabs, cursor, roomPt),
+  leastPt: leastRoomPt(units, tabs, cursor),
+});
+
+// The line the paragraph makes when it is given no room at all and is not allowed
+// to cut a word in two: it runs to the first place a break is legal, and how far
+// that reaches is what any run of space has to hold. A word is unbreakable, a tab
+// holds the line open to the stop it reached, and a gap hangs past the edge.
+function leastRoomPt(units: readonly Unit[], tabs: LineTabs, cursor: Cursor): number {
+  return buildLine(units, tabs, cursor, 0, false)?.line.widthPt ?? 0;
+}
+
+type Filled = { readonly line: TextLine | null; readonly cursor: Cursor };
+
+function fillLine(
+  units: readonly Unit[],
+  tabs: LineTabs,
+  cursor: Cursor,
+  roomPt: number,
+  cutting: boolean,
+): Filled | null {
+  const builder = new LineBuilder(roomPt, tabs, cursor.index, cursor.wrapped);
+  let at = cursor.at;
+
+  if (cursor.rest !== null) {
+    const took = builder.word(cursor.rest, cutting);
+    if (took.kind === "full") {
+      return filledAt(builder, { ...cursor, rest: took.rest, wrapped: true });
+    }
   }
 
-  finish(): readonly TextLine[] {
-    this.flush();
-    return this.lines;
+  while (at < units.length) {
+    const unit = units[at];
+    if (unit === undefined) break;
+    at += 1;
+
+    // A break ends the line it is on wherever it stands, and the line under it
+    // starts with whatever gap follows rather than losing it.
+    if (unit.kind === "break") {
+      return {
+        line: builder.finish(),
+        cursor: { at, rest: null, wrapped: false, index: cursor.index },
+      };
+    }
+
+    const took = tookOf(builder, unit, cutting);
+    if (took.kind === "full") {
+      // A unit the line could not take at all waits where it is; one it cut in two
+      // hands the rest of itself to the line below.
+      const rest = took.rest;
+      return filledAt(builder, {
+        at: rest === null ? at - 1 : at,
+        rest,
+        wrapped: true,
+        index: cursor.index,
+      });
+    }
+  }
+
+  const line = builder.finish();
+  return line === null
+    ? null
+    : { line, cursor: { at, rest: null, wrapped: false, index: cursor.index } };
+}
+
+const filledAt = (builder: LineBuilder, cursor: Cursor): Filled => ({
+  line: builder.finish(),
+  cursor,
+});
+
+function tookOf(builder: LineBuilder, unit: Unit, cutting: boolean): Taken {
+  switch (unit.kind) {
+    case "word":
+      return builder.word(unit.fragments, cutting);
+    case "space":
+      return builder.space(unit.fragments);
+    case "tab":
+      return builder.tab();
+    case "drawing":
+      return builder.drawing(unit.widthPt, unit.heightPt);
+    case "break":
+      return TAKEN;
   }
 }
 
@@ -513,37 +649,33 @@ export function measureText(
   };
 }
 
-export function breakLines(input: BreakLinesInput): LineBreaking {
+// Everything a paragraph's text is broken from, measured once: what fails here
+// fails whatever width the lines are then given.
+export function beginLines(input: FlowInput): LineFlowStart {
   const measurer = new Measurer(input.metricsFor);
   const tokens = tokenize(input.runs, measurer);
   if (tokens.kind === "failed") {
     return { kind: "unmeasurable", failure: measurer.failure ?? { kind: "unresolved-font" } };
   }
 
-  const breaker = new Breaker(
-    input.widthPt,
-    input.firstLineWidthPt ?? input.widthPt,
-    input.tabs ?? NO_TABS,
-  );
-  for (const unit of tokens.value) {
-    switch (unit.kind) {
-      case "word":
-        breaker.word(unit.fragments);
-        break;
-      case "space":
-        breaker.space(unit.fragments);
-        break;
-      case "tab":
-        breaker.tab();
-        break;
-      case "drawing":
-        breaker.drawing(unit.widthPt, unit.heightPt);
-        break;
-      case "break":
-        breaker.flush();
-        break;
-    }
-  }
+  const tabs = input.tabs ?? NO_TABS;
+  return { kind: "flow", flow: flowFrom(tokens.value, tabs, START) };
+}
 
-  return { kind: "lines", lines: breaker.finish() };
+// Every line of a paragraph at one width, which is what a stack with nothing
+// standing beside it asks for.
+export function breakLines(input: BreakLinesInput): LineBreaking {
+  const started = beginLines(input);
+  if (started.kind === "unmeasurable") return started;
+
+  const lines: TextLine[] = [];
+  let flow = started.flow;
+  for (;;) {
+    const taken = flow.next(
+      lines.length === 0 ? (input.firstLineWidthPt ?? input.widthPt) : input.widthPt,
+    );
+    if (taken === null) return { kind: "lines", lines };
+    lines.push(taken.line);
+    flow = taken.rest;
+  }
 }

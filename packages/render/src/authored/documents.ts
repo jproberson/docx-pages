@@ -216,10 +216,6 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Text wrapping beside an object",
       asks: "where a line starts and ends beside a wrapping object, and where it breaks",
       measuresCharacters: true,
-      // A line narrowed by an object beside it is not broken again at the narrower
-      // width, so the text after the first break runs on differently from Word's.
-      paragraphsPlaced: 2,
-      charactersPlaced: 225,
       bytes: buildAuthoredDocx({ body: wrappingDocument() }),
     },
     {

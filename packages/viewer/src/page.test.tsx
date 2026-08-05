@@ -74,6 +74,7 @@ const paragraphOf = (
     },
   ],
   marker: null,
+  markTopPt: 30,
   widowControl: true,
   contentWidthPt: options.widthPt ?? 40,
 });

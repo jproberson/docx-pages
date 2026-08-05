@@ -73,7 +73,7 @@ function placedBoxes(layout: LaidOutDocument): ReadonlyMap<number, ParagraphBox>
 
 // Word answers for a paragraph's line rather than for the paragraph's own top: one
 // whose line fell past an object reports where the line landed. An empty paragraph
-// has no line to report, so it answers from its own top.
+// draws no line, and answers from wherever its mark came to rest.
 type Placed = { readonly page: number; readonly topPt: number; readonly leftPt: number };
 
 function placedParagraphs(layout: LaidOutDocument): ReadonlyMap<number, Placed> {
@@ -92,7 +92,7 @@ function placedAt(box: ParagraphBox, pageIndex: number): Placed {
   const line = box.lines[0];
   return {
     page: pageIndex + 1,
-    topPt: line?.topPt ?? box.topPt,
+    topPt: line?.topPt ?? box.markTopPt,
     leftPt: (line?.leftPt ?? LEFT_PT) - LEFT_PT,
   };
 }

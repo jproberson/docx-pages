@@ -111,6 +111,9 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
       box.marker === null || from > 0
         ? null
         : { ...box.marker, baselinePt: box.marker.baselinePt - shiftPt },
+    // The mark stands at the end of the paragraph, so it goes with the part that
+    // holds the last of it.
+    markTopPt: to === box.lines.length ? box.markTopPt - shiftPt : bottomPt,
     widowControl: box.widowControl,
     contentWidthPt: box.contentWidthPt,
   };

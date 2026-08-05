@@ -623,6 +623,42 @@ describe("measureStack around wrapping objects", () => {
     expect(boxes[0]?.lines.map((line) => line.leftPt)).toStrictEqual([120, 120]);
   });
 
+  // Six ten-letter words fit on one line of the frame and three on a line of what
+  // the object leaves, so a line that is not broken again gives itself away.
+  it("breaks a line again at the width an object beside it left it", () => {
+    const boxes = wrapped(
+      paragraph(``, Array.from({ length: 6 }, () => "a".repeat(10)).join(" ")),
+      bandOn(0, { leftPt: 300, rightPt: 540, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines.map((line) => line.topPt)).toStrictEqual([36, 36 + ARIAL_12]);
+    expect(boxes[0]?.lines.map((line) => line.line.widthPt)).toStrictEqual([192, 192]);
+  });
+
+  // The word is 60pt and the run of space left over is 40, which no breaking makes
+  // it fit into.
+  it("falls past an object that leaves less room than the line's first word", () => {
+    const boxes = wrapped(
+      paragraph(``, `${"a".repeat(10)} ${"b".repeat(10)}`),
+      bandOn(0, { leftPt: 0, rightPt: 500, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines.map((line) => line.topPt)).toStrictEqual([100]);
+    expect(boxes[0]?.lines[0]?.leftPt).toBe(72);
+  });
+
+  // A tab holds its line open as far as the stop it reached, and nothing about it
+  // can be broken, so the line asks for that whole width even though it draws
+  // nothing. A document's invisible line falls past its objects on this alone.
+  it("asks for the room a tab held a line open to, which no breaking gives back", () => {
+    const boxes = wrapped(
+      `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="7200"/></w:tabs></w:pPr><w:r><w:tab/></w:r></w:p>`,
+      bandOn(0, { leftPt: 300, rightPt: 540, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
   it("leaves a cell's text alone, since a cell is measured from its own origin", () => {
     const boxes = wrapped(table(cell(paragraph(``, "aaaa"))), () => [
       { leftPt: 0, rightPt: 530, topPt: 0, bottomPt: 100 },

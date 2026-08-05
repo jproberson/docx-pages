@@ -23,17 +23,18 @@ import {
 import { attribute, firstNamed } from "../docx/xml.js";
 import { lineHeightPt } from "./font-metrics.js";
 import {
-  breakLines,
+  beginLines,
   faceRequestFor,
   justifyLine,
   measureText,
+  type LineFlow,
   type MeasureFailure,
   type MetricsResolver,
   type TextLine,
 } from "./lines.js";
 import { nextTabStopPt, tabStopsPt } from "./tab-stops.js";
 import { twipsToPoints } from "./units.js";
-import { fitLine, type WrapBand } from "./wrapping.js";
+import { fitLine, type LineSlot, type WrapBand } from "./wrapping.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
@@ -92,6 +93,10 @@ export type ParagraphBox = {
   // widest paragraph in it, and an empty paragraph still reaches as far as its own
   // mark.
   readonly contentWidthPt: number;
+  // Where the line the paragraph mark stands on came to rest, which is the
+  // paragraph's own top until an object moves that line down. A paragraph with no
+  // text draws nothing there and still holds the room, and Word answers for it.
+  readonly markTopPt: number;
   // What the paragraph asks of a page break running through it, which only the
   // break itself can act on.
   readonly widowControl: boolean;
@@ -259,6 +264,7 @@ function cellWidthPt(cell: TableCell): number | null {
 export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   ...box,
   topPt: box.topPt + byPt,
+  markTopPt: box.markTopPt + byPt,
   lines: box.lines.map((line) => ({
     ...line,
     topPt: line.topPt + byPt,
@@ -334,12 +340,8 @@ function measureParagraph(
       ? Number.POSITIVE_INFINITY
       : frame.widthPt - insets.leftPt - insets.rightPt;
 
-  // A hanging indent leaves its first line wider than the rest, except where a
-  // number is what hangs there: then the text starts at the indent like the rest.
-  const breaking = breakLines({
+  const breaking = beginLines({
     runs,
-    widthPt,
-    firstLineWidthPt: number === undefined ? widthPt - insets.firstLinePt : widthPt,
     metricsFor: context.metricsFor,
     tabs: {
       stopsPt: tabStopsPt(paragraphFrame),
@@ -366,7 +368,7 @@ function measureParagraph(
 
   return {
     kind: "measured",
-    box: layOutParagraph(paragraph.index, breaking.lines, {
+    box: layOutParagraph(paragraph.index, breaking.flow, {
       topPt,
       markHeightPt: markHeight,
       markWidthPt: widthOfMark(paragraphMark, context.metricsFor),
@@ -375,6 +377,10 @@ function measureParagraph(
       spacing: spacingPt(paragraph, paragraphFrame, context, neighbours),
       number: measured === null ? null : measured.number,
       bands: context.region.bands,
+      roomPt: widthPt,
+      // A hanging indent leaves its first line wider than the rest, except where a
+      // number is what hangs there: then the text starts at the indent like the rest.
+      firstLineRoomPt: number === undefined ? widthPt - insets.firstLinePt : widthPt,
     }),
   };
 }
@@ -519,23 +525,24 @@ type LayOutParagraphInput = {
   readonly spacing: Spacing;
   readonly number: MeasuredNumber | null;
   readonly bands: readonly WrapBand[];
+  // What a line has room for where nothing stands beside it, which a shape that
+  // refuses to wrap leaves unbounded.
+  readonly roomPt: number;
+  readonly firstLineRoomPt: number;
 };
 
 // A paragraph with text is as tall as the lines its runs measured to: Word does
 // not let the paragraph mark raise a line it shares with a run, however much
 // bigger the mark is. An empty paragraph is the mark's height alone.
-function layOutParagraph(
-  index: number,
-  lines: readonly TextLine[],
-  input: LayOutParagraphInput,
-): ParagraphBox {
+function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphInput): ParagraphBox {
   const { paragraphFrame, frame, number } = input;
   const insets = insetsOf(paragraphFrame);
   const { beforePt, afterPt } = input.spacing;
+  const laid = layOutLines(flow, input);
 
   // An empty paragraph is a line like any other as far as objects are concerned:
   // Word moves it out of their way even though it draws nothing there.
-  if (lines.length === 0) {
+  if (laid.length === 0) {
     const slot = fitLine({
       topPt: input.topPt + beforePt,
       heightPt: input.markHeightPt,
@@ -551,62 +558,40 @@ function layOutParagraph(
       heightPt: slot.topPt + input.markHeightPt + afterPt - input.topPt,
       lines: [],
       marker: markerAt(number, slot.topPt + (number?.ascentPt ?? 0)),
+      markTopPt: slot.topPt,
       widowControl: paragraphFrame.widowControl,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
     };
   }
 
-  const placed: PlacedLine[] = [];
-  let top = input.topPt + beforePt;
-
-  lines.forEach((line, at) => {
-    // A line a tab alone holds open has nothing measured on it to give it a
-    // height, so it takes the tallest mark the paragraph has, as an empty
-    // paragraph does.
-    const ownPt =
-      line.segments.length === 0 ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
-    const raisedPt = at === 0 ? liftOfNumber(number, line) : 0;
-    const heightPt = spacedHeightPt(ownPt + raisedPt, paragraphFrame);
-    const firstLinePt = at === 0 ? insets.firstLinePt : 0;
-    // The number takes the first line's own start, so the text after it begins
-    // wherever the number's suffix moved on to.
-    const startPt =
-      at === 0 && number !== null ? number.textStartPt : frame.leftPt + insets.leftPt + firstLinePt;
-    const endPt = frame.leftPt + frame.widthPt - insets.rightPt;
-
-    const slot = fitLine({
-      topPt: top,
-      heightPt,
-      leftPt: startPt,
-      rightPt: endPt,
-      widthPt: line.widthPt,
-      bands: input.bands,
-    });
-
+  const placed = laid.map((each, at) => {
     // A justified line fills the room it was fitted into, which an object beside
     // it may have narrowed. Only the paragraph's last line is left as it fell; a
     // line that ended at a manual break is stretched like any other.
     const filled =
-      paragraphFrame.alignment === "justify" && at < lines.length - 1
-        ? justifyLine(line, slot.rightPt - slot.leftPt)
-        : line;
+      paragraphFrame.alignment === "justify" && at < laid.length - 1
+        ? justifyLine(each.line, each.slot.rightPt - each.slot.leftPt)
+        : each.line;
 
-    placed.push({
+    return {
       line: filled,
-      leftPt: lineStartPt(paragraphFrame, slot.leftPt, slot.rightPt, filled.widthPt),
-      topPt: slot.topPt,
-      heightPt,
-      baselinePt: slot.topPt + filled.ascentPt + raisedPt,
-    });
-    top = slot.topPt + heightPt;
+      leftPt: lineStartPt(paragraphFrame, each.slot.leftPt, each.slot.rightPt, filled.widthPt),
+      topPt: each.slot.topPt,
+      heightPt: each.heightPt,
+      baselinePt: each.slot.topPt + filled.ascentPt + each.raisedPt,
+    };
   });
+
+  const last = laid[laid.length - 1];
+  const bottomPt = last === undefined ? input.topPt : last.slot.topPt + last.heightPt;
 
   return {
     index,
     topPt: input.topPt,
-    heightPt: top + afterPt - input.topPt,
+    heightPt: bottomPt + afterPt - input.topPt,
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
+    markTopPt: last === undefined ? input.topPt : last.slot.topPt,
     widowControl: paragraphFrame.widowControl,
     contentWidthPt: placed.reduce(
       (widest, line) => Math.max(widest, line.leftPt - frame.leftPt + line.line.widthPt),
@@ -614,6 +599,98 @@ function layOutParagraph(
     ),
   };
 }
+
+// A line as it came out of the paragraph's text and where it ended up, before
+// anything is asked about the line above or below it.
+type LaidLine = {
+  readonly line: TextLine;
+  readonly slot: LineSlot;
+  readonly heightPt: number;
+  readonly raisedPt: number;
+};
+
+// How many goes a line gets at settling on a height. A line broken again at a
+// narrower width can come out a different height, which moves the objects it has
+// to clear; two rounds settle anything these documents hold, and a third is the
+// backstop rather than a rule.
+const SETTLING_ROUNDS = 3;
+
+// Each line is broken at the room the frame gives it, placed clear of whatever
+// stands beside it, and, where that left it narrower than the frame, broken again
+// at the width it was left. Word breaks at the narrower width, so a paragraph
+// beside an object runs on in shorter lines rather than dropping past it whole.
+function layOutLines(flow: LineFlow, input: LayOutParagraphInput): readonly LaidLine[] {
+  const { paragraphFrame, frame, number } = input;
+  const insets = insetsOf(paragraphFrame);
+  const laid: LaidLine[] = [];
+  let rest: LineFlow = flow;
+  let top = input.topPt + input.spacing.beforePt;
+
+  for (;;) {
+    const at = laid.length;
+    const roomPt = at === 0 ? input.firstLineRoomPt : input.roomPt;
+    const firstLinePt = at === 0 ? insets.firstLinePt : 0;
+    // The number takes the first line's own start, so the text after it begins
+    // wherever the number's suffix moved on to.
+    const startPt =
+      at === 0 && number !== null ? number.textStartPt : frame.leftPt + insets.leftPt + firstLinePt;
+    const endPt = frame.leftPt + frame.widthPt - insets.rightPt;
+
+    const leastPt = rest.leastPt;
+    let taken = rest.next(roomPt);
+    if (taken === null) return laid;
+
+    let heightPt = heightOfLine(taken.line, at, input);
+    let slot = slotFor(top, heightPt, leastPt, startPt, endPt, input.bands);
+
+    for (let round = 1; round < SETTLING_ROUNDS; round += 1) {
+      const narrowedPt = slot.rightPt - slot.leftPt;
+      // Only an object beside the line narrows it. A line the frame itself leaves
+      // no room for is one a shape refusing to wrap runs past, and is left alone.
+      if (narrowedPt >= endPt - startPt - EPSILON) break;
+
+      const again = rest.next(Math.min(roomPt, narrowedPt));
+      if (again === null) break;
+
+      const settledPt = heightOfLine(again.line, at, input);
+      taken = again;
+      if (settledPt === heightPt) break;
+
+      heightPt = settledPt;
+      slot = slotFor(top, heightPt, leastPt, startPt, endPt, input.bands);
+    }
+
+    laid.push({ line: taken.line, slot, heightPt, raisedPt: raisedBy(taken.line, at, input) });
+    rest = taken.rest;
+    top = slot.topPt + heightPt;
+  }
+}
+
+// A line is not asked to fit whole, since it is broken again to whatever width it
+// is given: what it asks of a run of space is room for the word it has to start
+// with.
+const slotFor = (
+  topPt: number,
+  heightPt: number,
+  widthPt: number,
+  leftPt: number,
+  rightPt: number,
+  bands: readonly WrapBand[],
+): LineSlot => fitLine({ topPt, heightPt, leftPt, rightPt, widthPt, bands });
+
+const raisedBy = (line: TextLine, at: number, input: LayOutParagraphInput): number =>
+  at === 0 ? liftOfNumber(input.number, line) : 0;
+
+// A line a tab alone holds open has nothing measured on it to give it a height, so
+// it takes the tallest mark the paragraph has, as an empty paragraph does.
+function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): number {
+  const ownPt =
+    line.segments.length === 0 ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
+  return spacedHeightPt(ownPt + raisedBy(line, at, input), input.paragraphFrame);
+}
+
+// Room is a difference of exact ratios, so only the last bits of one need absorbing.
+const EPSILON = 1e-9;
 
 // A number lifts the top of the line it sits on by however much its own ascent
 // reaches above the line's, and never reaches below the baseline: a Symbol bullet

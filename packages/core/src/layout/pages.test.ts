@@ -57,6 +57,7 @@ function stack(
       heightPt: lineTop - top,
       lines,
       marker: null,
+      markTopPt: lines[lines.length - 1]?.topPt ?? top,
       widowControl,
       contentWidthPt: 0,
     });
@@ -184,6 +185,7 @@ describe("breakStack", () => {
         heightPt: 20,
         lines: [],
         marker: null,
+        markTopPt: 100,
         widowControl: false,
         contentWidthPt: 0,
       },
@@ -193,6 +195,7 @@ describe("breakStack", () => {
         heightPt: 20,
         lines: [],
         marker: null,
+        markTopPt: 120,
         widowControl: false,
         contentWidthPt: 0,
       },
