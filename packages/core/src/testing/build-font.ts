@@ -212,6 +212,41 @@ export function buildWoff(fixture: FontFixture, compress = false): Uint8Array {
   return out;
 }
 
+// A collection of whole sfnts behind one header, each moved to where it sits in
+// the file: a table record in a collection counts from the start of the file
+// rather than from the face's own directory.
+export function buildCollection(fixtures: readonly FontFixture[]): Uint8Array {
+  const members = fixtures.map(buildSfnt);
+  const header = 12 + members.length * 4;
+  const bases: number[] = [];
+  let offset = header;
+  for (const member of members) {
+    bases.push(offset);
+    offset += padded(member.length);
+  }
+
+  const out = new Uint8Array(offset);
+  const view = new DataView(out.buffer);
+  out.set(tagBytes("ttcf"), 0);
+  view.setUint32(4, 0x00010000);
+  view.setUint32(8, members.length);
+
+  members.forEach((member, index) => {
+    const base = bases[index] ?? 0;
+    view.setUint32(12 + index * 4, base);
+    out.set(member, base);
+
+    const inner = new DataView(out.buffer, base);
+    const count = inner.getUint16(4);
+    for (let table = 0; table < count; table += 1) {
+      const record = 12 + table * 16;
+      inner.setUint32(record + 8, inner.getUint32(record + 8) + base);
+    }
+  });
+
+  return out;
+}
+
 export const buildWoff2 = (): Uint8Array => {
   const out = new Uint8Array(48);
   out.set(tagBytes("wOF2"), 0);

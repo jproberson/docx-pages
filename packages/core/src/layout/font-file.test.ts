@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { isDocxPagesError, type DocxPagesError } from "../errors.js";
-import { buildSfnt, buildWoff, buildWoff2, type FontFixture } from "../testing/build-font.js";
+import {
+  buildCollection,
+  buildSfnt,
+  buildWoff,
+  buildWoff2,
+  type FontFixture,
+} from "../testing/build-font.js";
 import { readFontFile, readFontMetrics } from "./font-file.js";
 import { lineHeightPt, type GlyphAdvances } from "./font-metrics.js";
 
@@ -113,6 +119,23 @@ describe("readFontFile", () => {
   it("reads through a woff container as well as a bare sfnt", () => {
     const table = readFontFile(buildWoff({ ...FACE, advances: WIDTHS }, true)).advances;
     expect(table.kind === "advances" && advanceOf(table.advanceFor, "A")).toBe(660);
+  });
+
+  // Word ships Cambria, which is what it falls back on when it can resolve a name
+  // no other way, in a collection and in no other form.
+  it("reads the face a collection is named for, which is the first of them", () => {
+    const other: FontFixture = { ...FACE, ascender: 1, advances: { A: 111 } };
+    const file = readFontFile(buildCollection([{ ...FACE, advances: WIDTHS }, other]));
+
+    expect(file.metrics).toStrictEqual(METRICS);
+    expect(file.advances.kind === "advances" && advanceOf(file.advances.advanceFor, "A")).toBe(660);
+  });
+
+  it("reports a collection with no face in it", () => {
+    const collection = buildCollection([FACE]);
+    new DataView(collection.buffer).setUint32(8, 0);
+
+    expect(caught(() => readFontMetrics(collection)).code).toBe("font-unreadable");
   });
 
   it("gives glyphs past the last long metric that metric's advance", () => {

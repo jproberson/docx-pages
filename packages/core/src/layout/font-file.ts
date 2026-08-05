@@ -41,12 +41,12 @@ function sliceTable(bytes: Uint8Array, offset: number, length: number, tag: stri
   return bytes.subarray(offset, offset + length);
 }
 
-function readSfntTables(bytes: Uint8Array): ReadonlyMap<string, Uint8Array> {
+function readSfntTables(bytes: Uint8Array, at = 0): ReadonlyMap<string, Uint8Array> {
   const view = viewOf(bytes);
-  const count = view.getUint16(4);
+  const count = view.getUint16(at + 4);
   const tables = new Map<string, Uint8Array>();
   for (let index = 0; index < count; index += 1) {
-    const record = 12 + index * 16;
+    const record = at + 12 + index * 16;
     if (record + 16 > bytes.byteLength) break;
     const tag = tagAt(bytes, record);
     const offset = view.getUint32(record + 8);
@@ -106,6 +106,20 @@ function requireTable(
 
 const HHEA_METRIC_COUNT_AT = 34;
 
+// A collection holds several faces in one file, each with a table directory of its
+// own whose records still count from the start of the file. Word ships Cambria and
+// the Yu Gothic family this way and no other, so a name that resolves to one is
+// unreadable without this. The first face is the one the file is named for; the
+// rest are the styles and the maths cut, which are asked for by their own names
+// and would need a file of their own here.
+function firstOfCollection(bytes: Uint8Array): number {
+  const view = viewOf(bytes);
+  if (bytes.byteLength < 16 || view.getUint32(8) === 0) {
+    throw unreadable("the font collection holds no faces", bytes.byteLength);
+  }
+  return view.getUint32(12);
+}
+
 export function readFontFile(bytes: Uint8Array): ReadFontFileResult {
   if (bytes.byteLength < 12)
     throw unreadable("the file is too short to be a font", bytes.byteLength);
@@ -123,12 +137,16 @@ export function readFontFile(bytes: Uint8Array): ReadFontFileResult {
   const view = viewOf(bytes);
   const version = view.getUint32(0);
   const isSfnt = version === 0x00010000 || signature === "OTTO" || signature === "true";
-  if (!isSfnt && signature !== "wOFF") {
+  const isCollection = signature === "ttcf";
+  if (!isSfnt && !isCollection && signature !== "wOFF") {
     throw unreadable("the file is not an sfnt, woff or woff2 font", bytes.byteLength);
   }
 
   const format: FontFileFormat = signature === "wOFF" ? "woff" : "sfnt";
-  const tables = format === "woff" ? readWoffTables(bytes) : readSfntTables(bytes);
+  const tables =
+    format === "woff"
+      ? readWoffTables(bytes)
+      : readSfntTables(bytes, isCollection ? firstOfCollection(bytes) : 0);
 
   const head = requireTable(tables, HEAD, 20);
   const hhea = requireTable(tables, HHEA, 10);

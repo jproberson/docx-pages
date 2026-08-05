@@ -4,14 +4,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   layOutDocument,
-  lookupFontMetrics,
-  type FaceRequest,
-  type MetricsLookup,
+  substitutingMetrics,
+  WORD_FALLBACK_FACES,
   type SuppliedFace,
 } from "@docx-pages/core";
 import { imageResolver, Document, type FrameStyle } from "@docx-pages/viewer";
 
 import { authoredCases } from "../authored/cases.js";
+import { fallbackFaces } from "../fonts/fallback.js";
 import {
   authoredFaces,
   authoredFonts,
@@ -140,10 +140,21 @@ const pageName = (id: string, set: FaceSet, frames: FrameStyle): string =>
 
 export function writePreview(each: ReferenceCase, set: FaceSet, frames: FrameStyle): string {
   const pkg = readReferenceDocument(each);
-  const metricsFor = (request: FaceRequest): MetricsLookup => lookupFontMetrics(request, set.faces);
+  // A preview is for looking at, so a face nothing supplies stands the document
+  // down to what Word would have reached for rather than refusing to draw it at
+  // all. Whatever was stood in for is said out loud below, since a page drawn on
+  // the back of one is no longer the page Word would draw.
+  const faces = substitutingMetrics([...set.faces, ...fallbackFaces()], WORD_FALLBACK_FACES);
+  const metricsFor = faces.metricsFor;
   const layout = layOutDocument(pkg, metricsFor);
   if (layout.kind !== "laid-out") {
     throw new Error(`case ${each.id} is blocked: ${JSON.stringify(layout.blocker)}`);
+  }
+
+  for (const stood of faces.substitutions()) {
+    process.stdout.write(
+      `  ${each.id}: ${stood.requested.name} stood down to ${stood.used.name}\n`,
+    );
   }
 
   const body = renderToStaticMarkup(

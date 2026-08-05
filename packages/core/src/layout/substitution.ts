@@ -16,6 +16,22 @@ export type Substitution = {
   readonly used: FaceRequest;
 };
 
+/**
+ * What Word itself reaches for when it cannot resolve the name a document asks
+ * for. Six names nothing supplies were put to Word on 2026-08-05 - `Nonesuch
+ * Sans`, `Nonesuch Serif`, `Zapfino Nonesuch`, `Verdana;Arial`, `Nonesuch
+ * Sans;Arial` and `OpenSymbol;Arial Unicode MS` - and its own pdf came back in
+ * Cambria for every one of them, whatever the name suggested about the face.
+ *
+ * Word knows a table of its own beside this, which resolves a name it recognises
+ * somewhere else entirely: `DejaVu Sans` comes back Verdana, `Liberation
+ * Serif;Times New Roman` comes back Times New Roman, and anything opening `Open
+ * Sans;` comes back Segoe UI even though Open Sans itself is installed. That
+ * table is Word's own and is not reproduced here, so a document naming one of
+ * those is laid out in the last resort rather than in what Word chose.
+ */
+export const WORD_FALLBACK_FACES: readonly string[] = ["Cambria"];
+
 export type SubstitutingMetrics = {
   readonly metricsFor: MetricsResolver;
   // Every face that was stood in for, once each, in the order they were first

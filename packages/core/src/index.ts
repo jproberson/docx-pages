@@ -213,7 +213,7 @@ export type { ColorReference, Theme } from "./docx/theme.js";
 
 export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";
 
-export { substitutingMetrics } from "./layout/substitution.js";
+export { substitutingMetrics, WORD_FALLBACK_FACES } from "./layout/substitution.js";
 export type { Substitution, SubstitutingMetrics } from "./layout/substitution.js";
 
 export { readMetafilePicture } from "./metafile/picture.js";
