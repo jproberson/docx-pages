@@ -19,6 +19,8 @@ const line = (topPt: number, heightPt: number, text: string): PlacedLine => ({
     widthPt: 20,
     heightPt,
     ascentPt: heightPt * 0.8,
+    seatPt: 0,
+    fontHeightPt: heightPt,
   },
   leftPt: 0,
   topPt,

@@ -1,4 +1,5 @@
 import {
+  drawingDocument,
   numberingDocument,
   spacingDocument,
   tableDocument,
@@ -227,6 +228,20 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       asks: "where a line starts and ends beside a wrapping object, and where it breaks",
       measuresCharacters: true,
       bytes: buildAuthoredDocx({ body: wrappingDocument() }),
+    },
+    {
+      id: "drawings",
+      title: "Inline drawings",
+      asks: "how tall the line holding an inline drawing comes out under each line rule",
+      // Five of the drawings this document seats below the top of their own line
+      // are answered for by Word within a point of where Word's own rendering puts
+      // them, and rounding to the point is not enough to close that: three of them
+      // land a whole point off the nearest rounding of what the pdf draws, and one
+      // run of three identical paragraphs rounds two ways. Every drawing in the
+      // document is pinned against the rendering itself, to the twentieth of a
+      // point, which is the oracle that answers here.
+      paragraphsPlaced: 50,
+      bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
     },
     {
       id: "numbering",

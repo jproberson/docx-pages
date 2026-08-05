@@ -627,7 +627,15 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
   if (laid.length === 0) {
     // A paragraph with nothing in it answers to its line rule as any other does,
     // its mark seated in the room that rule leaves.
-    const height = seatedHeight(input.markHeightPt, number?.ascentPt ?? 0, paragraphFrame);
+    const height = seatedHeight(
+      {
+        naturalPt: input.markHeightPt,
+        ascentPt: number?.ascentPt ?? 0,
+        seatPt: 0,
+        fontHeightPt: input.markHeightPt,
+      },
+      paragraphFrame,
+    );
     const slot = fitLine({
       topPt: input.topPt + beforePt,
       heightPt: height.heightPt,
@@ -772,9 +780,18 @@ const raisedBy = (line: TextLine, at: number, input: LayOutParagraphInput): numb
 // it takes the tallest mark the paragraph has, as an empty paragraph does.
 function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): LineHeight {
   const raisedPt = raisedBy(line, at, input);
-  const ownPt =
-    line.segments.length === 0 ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
-  return seatedHeight(ownPt + raisedPt, line.ascentPt + raisedPt, input.paragraphFrame);
+  const held = line.segments.length === 0 ? input.markHeightPt : 0;
+  return seatedHeight(
+    {
+      naturalPt: Math.max(line.heightPt, held) + raisedPt,
+      ascentPt: line.ascentPt + raisedPt,
+      seatPt: line.seatPt,
+      // A number lifts the line by as much as its own face reaches, so it is part
+      // of what a multiple over the line is taken of.
+      fontHeightPt: Math.max(line.fontHeightPt, held) + raisedPt,
+    },
+    input.paragraphFrame,
+  );
 }
 
 // How tall a line stands in the stack, how far down that room its own text sits,
@@ -793,17 +810,28 @@ type LineHeight = {
 // quarter point the pdf rounds to.
 const EXACT_BASELINE = 0.8;
 
+// What a line measured to before its paragraph's rule was applied to it.
+type NaturalLine = {
+  readonly naturalPt: number;
+  readonly ascentPt: number;
+  // Room the line already seated its own content under, before the paragraph's
+  // rule opened any more above it.
+  readonly seatPt: number;
+  readonly fontHeightPt: number;
+};
+
 // Where a line rule leaves room its text does not need, `atLeast` takes it above:
 // the text keeps a line of its own height at the foot of the room. Under `auto` the
 // room falls below and the text keeps the top.
-function seatedHeight(naturalPt: number, ascentPt: number, frame: ParagraphFrame): LineHeight {
-  const heightPt = spacedHeightPt(naturalPt, frame);
+function seatedHeight(line: NaturalLine, frame: ParagraphFrame): LineHeight {
+  const heightPt = spacedHeightPt(line, frame);
   if (frame.lineTwips !== null && frame.lineRule === "exact") {
     return { heightPt, seatPt: 0, baseFromTopPt: heightPt * EXACT_BASELINE };
   }
 
-  const seatPt = frame.lineRule === "atLeast" ? Math.max(0, heightPt - naturalPt) : 0;
-  return { heightPt, seatPt, baseFromTopPt: seatPt + ascentPt };
+  const openedPt = frame.lineRule === "atLeast" ? Math.max(0, heightPt - line.naturalPt) : 0;
+  const seatPt = openedPt + line.seatPt;
+  return { heightPt, seatPt, baseFromTopPt: seatPt + line.ascentPt };
 }
 
 // Room is a difference of exact ratios, so only the last bits of one need absorbing.
@@ -828,12 +856,18 @@ const markerAt = (number: MeasuredNumber | null, baselinePt: number): ParagraphM
         baselinePt,
       };
 
-function spacedHeightPt(naturalPt: number, frame: ParagraphFrame): number {
+// A multiple is taken of the line the paragraph's own faces would have made, and
+// what it opens is added to whatever the line measured to. For a line of text
+// those are the same number and this is the multiple over the whole line; for one
+// holding a drawing they are not, and Word gives the chart in a 1.2 line paragraph
+// its own height and a fifth of a line of text, not a fifth of the chart.
+function spacedHeightPt(line: NaturalLine, frame: ParagraphFrame): number {
   const { lineTwips, lineRule } = frame;
-  if (lineTwips === null) return naturalPt;
+  if (lineTwips === null) return line.naturalPt;
   if (lineRule === "exact") return twipsToPoints(lineTwips);
-  if (lineRule === "atLeast") return Math.max(naturalPt, twipsToPoints(lineTwips));
-  return (naturalPt * lineTwips) / LINE_MULTIPLE_UNITS;
+  if (lineRule === "atLeast") return Math.max(line.naturalPt, twipsToPoints(lineTwips));
+  const multiple = lineTwips / LINE_MULTIPLE_UNITS;
+  return line.naturalPt + (multiple - 1) * line.fontHeightPt;
 }
 
 // w:line counts 240ths of a line when the rule is "auto".

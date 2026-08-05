@@ -1,3 +1,5 @@
+import { PICTURE_ID } from "./package.js";
+
 // The bodies of the authored documents that ask about a feature of the flowing
 // text rather than about a shape. Each paragraph is written so that the rule it
 // asks about shows up in where Word puts that paragraph or a character of it.
@@ -238,6 +240,130 @@ export function wrappingDocument(): string {
     // One wrapped top and bottom, which takes the whole width with it.
     paragraph("", wrapping(2, `<wp:wrapTopAndBottom/>`, 1828800, 457200)),
     paragraph("", run(FLOW)),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+
+const emu = (pt: number): string => String(Math.round(pt * 12700));
+
+// A drawing in the flow of the text, which is the one thing in these documents
+// that stands on a line without being measured from a face. Its run still states
+// a face like any other, which is what says whether the line hears anything the
+// drawing itself does not say.
+const inlinePicture = (id: number, widthPt: number, heightPt: number, mark = ""): string => {
+  const extent = `cx="${emu(widthPt)}" cy="${emu(heightPt)}"`;
+  return `<w:r>${mark === "" ? "" : `<w:rPr>${mark}</w:rPr>`}<w:drawing>
+    <wp:inline distT="0" distB="0" distL="0" distR="0">
+      <wp:extent ${extent}/>
+      <wp:effectExtent l="0" t="0" r="0" b="0"/>
+      <wp:docPr id="${String(id)}" name="picture-${String(id)}"/>
+      <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+      <a:graphic><a:graphicData uri="${PIC_NS}">
+        <pic:pic xmlns:pic="${PIC_NS}">
+          <pic:nvPicPr><pic:cNvPr id="${String(id)}" name="picture-${String(id)}"/><pic:cNvPicPr/></pic:nvPicPr>
+          <pic:blipFill><a:blip r:embed="${PICTURE_ID}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+          <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext ${extent}/></a:xfrm>
+            <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+        </pic:pic>
+      </a:graphicData></a:graphic>
+    </wp:inline></w:drawing></w:r>`;
+};
+
+// Taller than any line the text of this document would make on its own, so that
+// the drawing is what the line has to hold.
+const TALL_PT = 30;
+// Shorter than the 14.65pt line 12pt Calibri makes, so that a line holding one
+// says which of the two decides its height.
+const SQUAT_PT = 6;
+const WIDE_PT = 30;
+
+// How many times each case is written out. Word rounds the answer it gives for a
+// paragraph to the whole point, and its pdf draws a picture where it drew it: the
+// distance between one drawing and the next of a run of the same paragraph is the
+// height of that paragraph exactly, whatever the line does with its text.
+const REPEATS = 3;
+
+// One paragraph holding one drawing: the rule its paragraph carries, how tall the
+// drawing is, what its own run states, and what stands on the line beside it.
+type DrawingCase = {
+  readonly properties: string;
+  readonly heightPt: number;
+  readonly mark?: string;
+  readonly beside?: string;
+};
+
+// How tall a line holding an inline drawing comes out under each line rule.
+//
+// A drawing stands on the baseline like a letter and reaches as far above it as
+// it is tall, but it was never measured from a face: what a line multiple is
+// taken of, and what a paragraph mark still has to say once a drawing is on its
+// line, are questions the rules measured off text alone do not answer. The chart
+// in the LibreOffice sample is 162pt tall under a rule asking for 1.2 lines, and
+// Word gives that line about 165pt rather than 194.6.
+export function drawingDocument(): string {
+  const spacing = (properties: string): string => `<w:spacing ${properties}/>`;
+  const auto = (twips: number): string => spacing(`w:line="${String(twips)}" w:lineRule="auto"`);
+  const large = `<w:sz w:val="48"/>`;
+  // The mark's own size, which a paragraph states after everything else it asks
+  // for. A mark never raises a line it shares with a run, and a drawing is a run.
+  const largeMark = `<w:rPr>${large}</w:rPr>`;
+
+  const cases: readonly DrawingCase[] = [
+    // The rule every other paragraph in these documents carries, and two multiples
+    // of it: whatever the multiple is taken of, these three tell it from the
+    // drawing's own height.
+    { properties: "", heightPt: TALL_PT },
+    { properties: auto(288), heightPt: TALL_PT },
+    { properties: auto(480), heightPt: TALL_PT },
+
+    // A slot shorter than the drawing and one taller than it, asked both ways.
+    { properties: spacing(`w:line="288" w:lineRule="exact"`), heightPt: TALL_PT },
+    { properties: spacing(`w:line="1200" w:lineRule="exact"`), heightPt: TALL_PT },
+    { properties: spacing(`w:line="288" w:lineRule="atLeast"`), heightPt: TALL_PT },
+    { properties: spacing(`w:line="1200" w:lineRule="atLeast"`), heightPt: TALL_PT },
+
+    // Text on the line beside the drawing, at the size the rest of the document is
+    // and at twice it. A multiple taken of the text shows up as a difference
+    // between these two, and one taken of the drawing does not.
+    { properties: auto(288), heightPt: TALL_PT, beside: run("beside") },
+    { properties: auto(288), heightPt: TALL_PT, beside: run("beside", large) },
+    // The same two questions of the mark instead of a run, at one multiple and at
+    // none, which is what says whether the mark is on the line at all.
+    { properties: `${auto(240)}${largeMark}`, heightPt: TALL_PT },
+    { properties: `${auto(288)}${largeMark}`, heightPt: TALL_PT },
+    // And of the drawing's own run, which is the other face on the line and the
+    // only one the mark cannot speak for.
+    { properties: auto(288), heightPt: TALL_PT, mark: large },
+
+    // A drawing shorter than the line the paragraph's own text would make, which
+    // either holds the line open or leaves it to the text. Asked of the mark and
+    // of the drawing's run in turn, since whichever holds the line open is the
+    // one the multiple above is taken of as well.
+    { properties: "", heightPt: SQUAT_PT },
+    { properties: auto(288), heightPt: SQUAT_PT },
+    { properties: "", heightPt: SQUAT_PT, beside: run("beside") },
+    { properties: largeMark, heightPt: SQUAT_PT },
+    { properties: "", heightPt: SQUAT_PT, mark: large },
+  ];
+
+  let drawings = 0;
+  const withDrawing = (each: DrawingCase): string => {
+    drawings += 1;
+    return paragraph(
+      each.properties,
+      inlinePicture(drawings, WIDE_PT, each.heightPt, each.mark) + (each.beside ?? ""),
+    );
+  };
+
+  return [
+    paragraph("", run("above")),
+    ...cases.flatMap((each) => Array.from({ length: REPEATS }, () => withDrawing(each))),
+    // A mark twice the size with nothing on its line to trump it, which says that
+    // the size the cases above put on a mark is one Word read.
+    paragraph(largeMark, ""),
     paragraph("", run("below")),
     EMPTY,
   ].join("");

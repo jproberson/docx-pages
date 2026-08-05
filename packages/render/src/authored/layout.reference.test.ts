@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,11 +16,13 @@ import {
   type ParagraphBox,
 } from "@docx-pages/core";
 
+import { readImagePlacements } from "../pdf/placements.js";
 import { answeringParagraphs } from "./answers.js";
 import { characterPlacements } from "./characters.js";
 import { authoredDocuments } from "./documents.js";
 import { authoredFace } from "./faces.js";
 import { LEFT_PT } from "./package.js";
+import { authoredPath } from "./write.js";
 import {
   readMeasured,
   PARAGRAPH_TOLERANCE_PT,
@@ -34,8 +38,26 @@ const MEASURED = readMeasured();
 
 const CASES = authoredDocuments().flatMap((each) => {
   const measured: MeasuredDocument | undefined = MEASURED.documents[each.id];
-  return measured === undefined ? [] : [{ ...each, measured }];
+  return measured === undefined ? [] : [{ ...each, measured, renderedPath: renderedPath(each.id) }];
 });
+
+// Word's own rendering, which is the only oracle for where a drawing stands: the
+// answer Word gives for the paragraph holding one is rounded to the point, and
+// where the line seated the drawing below its own top it is not even the quantity
+// the rendering draws.
+function renderedPath(id: string): string | null {
+  const path = authoredPath(id).replace(/\.docx$/, ".pdf");
+  return existsSync(path) ? path : null;
+}
+
+// Word writes a picture into its pdf at the size and place it settled on, to more
+// decimal places than anything here needs; a drawing either lands there or is out
+// by a rule rather than by a rounding.
+const DRAWING_TOLERANCE_PT = 0.05;
+
+// Reading a pdf back is a second or two of work, which is more than a unit test's
+// own patience allows for.
+const RENDERING_TIMEOUT_MS = 60_000;
 
 const metricsFor: MetricsResolver = (request: FaceRequest): MetricsLookup =>
   lookupFontMetrics(request, FACE === null ? [] : [FACE]);
@@ -102,6 +124,21 @@ function placedAt(box: ParagraphBox, pageIndex: number): Placed {
     leftPt: (line?.leftPt ?? LEFT_PT) - LEFT_PT,
   };
 }
+
+// Every drawing standing in the flow of the text, page by page and in the order
+// they were written, which is the order Word draws them in.
+const placedDrawings = (
+  layout: LaidOutDocument,
+): readonly (Placed & { readonly widthPt: number; readonly heightPt: number })[] =>
+  layout.pages.flatMap((page) =>
+    page.inlines.map((inline) => ({
+      page: page.index + 1,
+      topPt: inline.topPt,
+      leftPt: inline.leftPt,
+      widthPt: inline.widthPt,
+      heightPt: inline.heightPt,
+    })),
+  );
 
 // Every shape the document holds, by the name it was authored under, so a failure
 // says which box is out rather than which index.
@@ -196,6 +233,39 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
           }
 
           agreeing(placed, each.measured.characters.length, each.charactersPlaced, off);
+        },
+      );
+
+      it.runIf(each.renderedPath !== null)(
+        "stands every drawing where Word's own rendering stands it",
+        { timeout: RENDERING_TIMEOUT_MS },
+        async () => {
+          const drawn = await readImagePlacements(
+            new Uint8Array(readFileSync(each.renderedPath ?? "")),
+          );
+          const ours = placedDrawings(layoutOf(each.bytes));
+          const off: string[] = [];
+
+          // Every drawing here stands in the flow of the text, one to a paragraph,
+          // so Word draws them in the order they were written and ours are in the
+          // same one. A page each says which drawing a failure is about.
+          expect(ours.length).toBe(drawn.length);
+          for (const [at, expected] of drawn.entries()) {
+            const mine = ours[at];
+            if (mine === undefined) continue;
+            const apart = Math.max(
+              Math.abs(mine.leftPt - expected.rect.leftPt),
+              Math.abs(mine.topPt - expected.rect.topPt),
+              Math.abs(mine.widthPt - expected.rect.widthPt),
+              Math.abs(mine.heightPt - expected.rect.heightPt),
+            );
+            if (apart <= DRAWING_TOLERANCE_PT) continue;
+            off.push(
+              `drawing ${String(at)} at ${mine.leftPt.toFixed(3)},${mine.topPt.toFixed(3)} sized ${mine.widthPt.toFixed(3)}x${mine.heightPt.toFixed(3)} on page ${String(mine.page)}; Word draws it at ${expected.rect.leftPt.toFixed(3)},${expected.rect.topPt.toFixed(3)} sized ${expected.rect.widthPt.toFixed(3)}x${expected.rect.heightPt.toFixed(3)} on page ${String(expected.rect.pageIndex + 1)}`,
+            );
+          }
+
+          expect(off).toStrictEqual([]);
         },
       );
 

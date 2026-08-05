@@ -37,7 +37,18 @@ export type TextLine = {
   readonly segments: readonly LineSegment[];
   readonly widthPt: number;
   readonly heightPt: number;
+  // How far below the line's own top its baseline falls, which is the seat below
+  // plus however far the tallest thing on the line reaches above that baseline.
   readonly ascentPt: number;
+  // The room the floor below opened above everything on the line, which a drawing
+  // shorter than the faces beside it stands under. Word answers for a paragraph
+  // from here rather than from the line's own top.
+  readonly seatPt: number;
+  // The tallest line any face on this one would make on its own, which is not the
+  // line's height once a drawing stands on it: a drawing reaches above the text
+  // without being measured from a face. This is what a line multiple is taken of,
+  // and what a line holding nothing but a drawing is never shorter than.
+  readonly fontHeightPt: number;
 };
 
 export type MeasureFailure =
@@ -136,7 +147,14 @@ type Unit =
   | { readonly kind: "word" | "space"; readonly fragments: readonly Fragment[] }
   | { readonly kind: "tab" }
   | { readonly kind: "break" }
-  | { readonly kind: "drawing"; readonly widthPt: number; readonly heightPt: number };
+  | {
+      readonly kind: "drawing";
+      readonly widthPt: number;
+      readonly heightPt: number;
+      // The line the drawing's own run would have made had it held text, which is
+      // all the face on that run has to say about the line it stands on.
+      readonly fontHeightPt: number;
+    };
 
 type Measured<T> = { readonly kind: "ok"; readonly value: T } | { readonly kind: "failed" };
 
@@ -176,6 +194,22 @@ class Measurer {
     const face = { metrics: lookup.metrics, advanceFor: lookup.advances.advanceFor };
     this.faces.set(mark, face);
     return face;
+  }
+
+  // The line a face makes, asked without asking for any of its glyphs: a drawing
+  // needs its run's face for nothing else, and a face with metrics but no
+  // advances still answers for one.
+  lineHeight(mark: ParagraphMark): number | null {
+    if (mark.font.kind === "unresolved") {
+      this.failure ??= { kind: "unresolved-font" };
+      return null;
+    }
+    const lookup = this.metricsFor(faceRequestFor(mark));
+    if (lookup.kind === "missing") {
+      this.failure ??= { kind: "unknown-font-metrics", fontName: mark.font.name };
+      return null;
+    }
+    return lineHeightPt(lookup.metrics, mark.fontSizePt);
   }
 
   fragment(mark: ParagraphMark, text: string): Fragment | null {
@@ -265,10 +299,15 @@ function addPiece(
     return true;
   }
   if (piece.kind === "drawing") {
+    // The run's face is asked for nothing but its line height, which is what a
+    // drawing's line is held open by and what a multiple over it is taken of.
+    const fontHeightPt = measurer.lineHeight(mark);
+    if (fontHeightPt === null) return false;
     units.push({
       kind: "drawing",
       widthPt: emuToPoints(piece.widthEmu),
       heightPt: emuToPoints(piece.heightEmu),
+      fontHeightPt,
     });
     return true;
   }
@@ -348,8 +387,9 @@ class LineBuilder {
   private committedPt = 0;
   private pending: LineSegment[] = [];
   private pendingPt = 0;
-  private heightPt = 0;
   private ascentPt = 0;
+  private descentPt = 0;
+  private fontHeightPt = 0;
   private tabbed = false;
 
   constructor(
@@ -361,9 +401,13 @@ class LineBuilder {
     private readonly wrapped: boolean,
   ) {}
 
-  private raise(heightPt: number, ascentPt: number): void {
-    this.heightPt = Math.max(this.heightPt, heightPt);
+  // A line reaches as far above the baseline as the highest thing on it and as far
+  // below as the deepest, which are not always the same thing: a drawing reaches
+  // above the baseline and never below it.
+  private raise(ascentPt: number, descentPt: number, fontHeightPt: number): void {
     this.ascentPt = Math.max(this.ascentPt, ascentPt);
+    this.descentPt = Math.max(this.descentPt, descentPt);
+    this.fontHeightPt = Math.max(this.fontHeightPt, fontHeightPt);
   }
 
   private commit(segments: readonly LineSegment[], widthPt: number): void {
@@ -392,11 +436,18 @@ class LineBuilder {
   // gave it, even when nothing is drawn there. A line with neither is no line.
   finish(): TextLine | null {
     if (this.empty && !this.tabbed) return null;
+    // A line is never shorter than the line its own faces would have made, and
+    // what that floor opens is room above everything on it: a drawing shorter than
+    // the faces beside it stands at the foot of the line rather than part way up.
+    const contentPt = this.ascentPt + this.descentPt;
+    const heightPt = Math.max(contentPt, this.fontHeightPt);
     return {
       segments: this.segments,
       widthPt: this.committedPt + (this.tabbed ? this.pendingPt : 0),
-      heightPt: this.heightPt,
+      heightPt,
       ascentPt: this.ascentPt,
+      seatPt: heightPt - contentPt,
+      fontHeightPt: this.fontHeightPt,
     };
   }
 
@@ -405,7 +456,7 @@ class LineBuilder {
     for (const fragment of fragments) {
       this.pending.push(startingAt(segmentOf(fragment), this.committedPt + this.pendingPt));
       this.pendingPt += fragment.widthPt;
-      this.raise(fragment.heightPt, fragment.ascentPt);
+      this.raise(fragment.ascentPt, fragment.heightPt - fragment.ascentPt, fragment.heightPt);
     }
     return TAKEN;
   }
@@ -425,11 +476,13 @@ class LineBuilder {
     return TAKEN;
   }
 
-  drawing(widthPt: number, heightPt: number): Taken {
+  // A drawing stands on the baseline and reaches nothing below it, however deep
+  // the text beside it goes.
+  drawing(widthPt: number, heightPt: number, fontHeightPt: number): Taken {
     if (!this.empty && this.filled + widthPt > this.room + EPSILON) {
       return { kind: "full", rest: null };
     }
-    this.raise(heightPt, heightPt);
+    this.raise(heightPt, 0, fontHeightPt);
     this.commit([{ kind: "drawing", widthPt, heightPt, offsetPt: 0 }], widthPt);
     return TAKEN;
   }
@@ -454,7 +507,9 @@ class LineBuilder {
   }
 
   private take(fragments: readonly Fragment[]): void {
-    for (const fragment of fragments) this.raise(fragment.heightPt, fragment.ascentPt);
+    for (const fragment of fragments) {
+      this.raise(fragment.ascentPt, fragment.heightPt - fragment.ascentPt, fragment.heightPt);
+    }
     this.commit(fragments.map(segmentOf), widthOf(fragments));
   }
 }
@@ -580,7 +635,7 @@ function tookOf(
     case "tab":
       return builder.tab(spanAfter());
     case "drawing":
-      return builder.drawing(unit.widthPt, unit.heightPt);
+      return builder.drawing(unit.widthPt, unit.heightPt, unit.fontHeightPt);
     case "break":
       return TAKEN;
   }

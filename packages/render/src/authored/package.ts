@@ -29,10 +29,13 @@ const DOCUMENT_NAMESPACES = [
 
 const OFFICE = "application/vnd.openxmlformats-officedocument.wordprocessingml";
 
-const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+const contentTypes = (
+  picture: boolean,
+): string => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  ${picture ? `<Default Extension="png" ContentType="image/png"/>` : ""}
   <Override PartName="/word/document.xml" ContentType="${OFFICE}.document.main+xml"/>
   <Override PartName="/word/styles.xml" ContentType="${OFFICE}.styles+xml"/>
   <Override PartName="/word/settings.xml" ContentType="${OFFICE}.settings+xml"/>
@@ -44,12 +47,25 @@ const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Relationship Id="rId1" Type="${R_NS}/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
-const DOCUMENT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+// Every drawing in a document points at the one picture part, since what is being
+// asked about a drawing is the room it takes rather than what is in it.
+export const PICTURE_ID = "rId4";
+
+const documentRels = (
+  picture: boolean,
+): string => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="${R_NS}/styles" Target="styles.xml"/>
   <Relationship Id="rId2" Type="${R_NS}/settings" Target="settings.xml"/>
   <Relationship Id="rId3" Type="${R_NS}/numbering" Target="numbering.xml"/>
+  ${picture ? `<Relationship Id="${PICTURE_ID}" Type="${R_NS}/image" Target="media/picture.png"/>` : ""}
 </Relationships>`;
+
+// One opaque pixel, stretched to whatever extent a drawing states. Written out
+// rather than copied from anywhere: header, an 1x1 RGB IHDR, the pixel deflated,
+// and the end marker.
+const PICTURE_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNwSFgAAAIkAUEotsXkAAAAAElFTkSuQmCC";
 
 // Letter, half-inch margins all round, so a position on the page is easy to read:
 // the text runs from 36pt to 576pt across and starts 36pt down.
@@ -100,6 +116,8 @@ export type AuthoredParts = {
   readonly extraStyles?: string;
   readonly settings?: string;
   readonly numbering?: string;
+  // Whether the document carries the picture part its drawings point at.
+  readonly picture?: boolean;
 };
 
 export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
@@ -108,13 +126,15 @@ export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
   <w:body>${parts.body}${PAGE}</w:body>
 </w:document>`;
 
+  const picture = parts.picture === true;
   return zipSync({
-    "[Content_Types].xml": strToU8(CONTENT_TYPES),
+    "[Content_Types].xml": strToU8(contentTypes(picture)),
     "_rels/.rels": strToU8(ROOT_RELS),
-    "word/_rels/document.xml.rels": strToU8(DOCUMENT_RELS),
+    "word/_rels/document.xml.rels": strToU8(documentRels(picture)),
     "word/document.xml": strToU8(document),
     "word/styles.xml": strToU8(STYLES.replace("<!--EXTRA-->", parts.extraStyles ?? "")),
     "word/settings.xml": strToU8(parts.settings ?? SETTINGS),
     "word/numbering.xml": strToU8(parts.numbering ?? NUMBERING),
+    ...(picture ? { "word/media/picture.png": Buffer.from(PICTURE_PNG, "base64") } : {}),
   });
 }
