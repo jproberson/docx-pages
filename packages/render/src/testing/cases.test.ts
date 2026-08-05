@@ -66,6 +66,7 @@ describe("readReferenceManifest", () => {
       numbersMatched: null,
       numbersPlaced: null,
       textTolerancePt: 1,
+      unhonoured: [],
     });
   });
 

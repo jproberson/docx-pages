@@ -53,6 +53,14 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   borders: { lines: 104, runs: 104, numbers: 0, placed: 97, runsPlaced: 102 },
 };
 
+// What each authored document is expected to say it passed over. A document that
+// asks about a feature and states one it does not read says so here; the rest say
+// nothing.
+const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
+  // A bar stop draws a line down the page, which nothing here draws.
+  tabs: ["bar-tab-stop"],
+};
+
 const EMPTY = {
   bodyTopPt: null,
   headerTopsPt: [],
@@ -68,6 +76,7 @@ const EMPTY = {
   unknownDrawings: 0,
   metafileFills: null,
   metafileRuns: null,
+  unhonoured: [],
 } as const;
 
 const drawnBy = (
@@ -110,6 +119,7 @@ export function authoredCases(): readonly ReferenceCase[] {
       {
         ...EMPTY,
         ...drawnBy(each.id),
+        ...(UNHONOURED[each.id] === undefined ? {} : { unhonoured: UNHONOURED[each.id] }),
         id: `authored-${each.id}`,
         documentPath,
         renderedPath: renderedPath(each.id),

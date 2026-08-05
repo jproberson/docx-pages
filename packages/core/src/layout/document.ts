@@ -3,6 +3,7 @@ import { readInlines } from "../docx/inlines.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
+import { readUnhonoured, type Unhonoured } from "../docx/fidelity.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
 import { readDocumentSettings, type DocumentSettings } from "../docx/settings.js";
 import { readStyleTable, type StyleTable } from "../docx/styles.js";
@@ -51,6 +52,10 @@ export type LaidOutDocument = {
   readonly headerInlines: readonly PlacedInline[];
   readonly footerInlines: readonly PlacedInline[];
   readonly pages: readonly LaidOutPage[];
+  // What the document asked for that this project passed over. A page with
+  // anything here is a page Word would have drawn differently, and the entry says
+  // whether that is text in the wrong place or only the wrong paint.
+  readonly unhonoured: readonly Unhonoured[];
 };
 
 export type DocumentLayout =
@@ -440,6 +445,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   return {
     kind: "laid-out",
     page,
+    unhonoured: readUnhonoured(pkg),
     headerFloats,
     footerFloats,
     headerInlines: headerDrawings.inlines,

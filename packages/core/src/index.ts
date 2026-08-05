@@ -6,6 +6,13 @@ export type { DocxPackage } from "./docx/package.js";
 
 export { readSectionGeometry, W_NS } from "./docx/section.js";
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
+export { readUnhonoured, unhonouredFaces } from "./docx/fidelity.js";
+export type {
+  Unhonoured,
+  UnhonouredEffect,
+  UnhonouredKind,
+  UnhonouredPlace,
+} from "./docx/fidelity.js";
 export {
   readDocumentSettings,
   roundsAnchorsToTwips,

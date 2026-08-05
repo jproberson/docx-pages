@@ -97,6 +97,11 @@ export type ReferenceCase = {
   readonly numbersMatched: number | null;
   readonly numbersPlaced: number | null;
   readonly textTolerancePt: number;
+  // Everything in the document this project is expected to pass over, by the name
+  // the fidelity report gives it, in the order it reports them. Left out, the
+  // document is expected to report nothing at all, which is the whole point of the
+  // list: a gap cannot be introduced quietly.
+  readonly unhonoured: readonly string[];
 };
 
 // Font files the reader has to cope with, whether or not any reference document
@@ -304,6 +309,11 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     numbersMatched: optionalNumber(source, "numbersMatched", where),
     numbersPlaced: optionalNumber(source, "numbersPlaced", where),
     textTolerancePt: optionalNumber(source, "textTolerancePt", where) ?? 1,
+    unhonoured: entries(source, "unhonoured", where).map((each, at) => {
+      if (typeof each !== "string")
+        throw invalid("expected a string", `${where}.unhonoured[${String(at)}]`);
+      return each;
+    }),
   };
 }
 
