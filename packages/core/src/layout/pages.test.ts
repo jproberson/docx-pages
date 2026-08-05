@@ -61,6 +61,7 @@ function stack(
       lines,
       marker: null,
       markTopPt: lines[lines.length - 1]?.topPt ?? top,
+      contentBottomPt: lineTop,
       widowControl,
       contentWidthPt: 0,
       clipTo: null,
@@ -181,34 +182,33 @@ describe("breakStack", () => {
     expect(pages.map(linesOn)).toStrictEqual([[1, 1], [1]]);
   });
 
+  // An empty paragraph as tall as the room its mark stands in, and one that keeps
+  // room below itself as well.
+  const emptyAt = (index: number, topPt: number, markPt: number, afterPt = 0): ParagraphBox => ({
+    index,
+    topPt,
+    heightPt: markPt + afterPt,
+    lines: [],
+    marker: null,
+    markTopPt: topPt,
+    contentBottomPt: topPt + markPt,
+    widowControl: false,
+    contentWidthPt: 0,
+    clipTo: null,
+  });
+
   it("counts an empty paragraph's own height against the page", () => {
-    const boxes: readonly ParagraphBox[] = [
-      {
-        index: 0,
-        topPt: 100,
-        heightPt: 20,
-        lines: [],
-        marker: null,
-        markTopPt: 100,
-        widowControl: false,
-        contentWidthPt: 0,
-        clipTo: null,
-      },
-      {
-        index: 1,
-        topPt: 120,
-        heightPt: 20,
-        lines: [],
-        marker: null,
-        markTopPt: 120,
-        widowControl: false,
-        contentWidthPt: 0,
-        clipTo: null,
-      },
-    ];
+    const boxes = [emptyAt(0, 100, 20), emptyAt(1, 120, 20)];
     const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
     expect(pages[1]?.boxes[0]?.topPt).toBe(100);
+  });
+
+  it("leaves an empty paragraph where the room below it is all that overflows", () => {
+    const boxes = [emptyAt(0, 100, 20), emptyAt(1, 120, 8, 40)];
+    const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0, 1]]);
   });
 });

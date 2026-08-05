@@ -78,6 +78,7 @@ const paragraphOf = (
   ],
   marker: null,
   markTopPt: 30,
+  contentBottomPt: 44,
   widowControl: true,
   contentWidthPt: options.widthPt ?? 40,
   clipTo: null,

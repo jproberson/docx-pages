@@ -1,4 +1,5 @@
 import {
+  breakingDocument,
   drawingDocument,
   numberingDocument,
   spacingDocument,
@@ -242,6 +243,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // point, which is the oracle that answers here.
       paragraphsPlaced: 50,
       bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
+    },
+    {
+      id: "breaking",
+      title: "Page breaks through a paragraph's spacing",
+      asks: "whether the room a paragraph asks for either side of itself holds it back at the foot of a page",
+      bytes: buildAuthoredDocx({ body: breakingDocument() }),
     },
     {
       id: "numbering",

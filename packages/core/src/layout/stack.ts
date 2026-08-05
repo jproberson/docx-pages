@@ -112,6 +112,11 @@ export type ParagraphBox = {
   // one. A paragraph with no text draws nothing there and still holds the room,
   // and Word answers for it.
   readonly markTopPt: number;
+  // The foot of the last thing the paragraph draws: its last line, or the room its
+  // mark stands in where it has none. A page break is decided by this rather than
+  // by the paragraph's whole height, since the room a paragraph keeps below itself
+  // never holds it back at the foot of a page.
+  readonly contentBottomPt: number;
   // What the paragraph asks of a page break running through it, which only the
   // break itself can act on.
   readonly widowControl: boolean;
@@ -324,6 +329,7 @@ export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   ...box,
   topPt: box.topPt + byPt,
   markTopPt: box.markTopPt + byPt,
+  contentBottomPt: box.contentBottomPt + byPt,
   clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt + byPt },
   lines: box.lines.map((line) => ({
     ...line,
@@ -652,6 +658,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       lines: [],
       marker: markerAt(number, slot.topPt + height.baseFromTopPt),
       markTopPt: slot.topPt + height.seatPt,
+      contentBottomPt: slot.topPt + height.heightPt,
       widowControl: paragraphFrame.widowControl,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
       clipTo: null,
@@ -687,6 +694,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
+    contentBottomPt: bottomPt,
     widowControl: paragraphFrame.widowControl,
     contentWidthPt: placed.reduce(
       (widest, line) => Math.max(widest, line.leftPt - frame.leftPt + line.line.widthPt),

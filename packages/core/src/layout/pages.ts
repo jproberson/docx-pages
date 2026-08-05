@@ -28,8 +28,11 @@ export function breakStack(input: BreakStackInput): readonly PageStack[] {
     topPt - shiftPt + heightPt > input.bottomPt && topPt - shiftPt > input.topPt;
 
   for (const box of input.boxes) {
+    // A paragraph with nothing in it is judged by the room its mark stands in, as
+    // one with lines is judged by its lines: the room it keeps below itself hangs
+    // past the foot of the page rather than moving it on.
     if (box.lines.length === 0) {
-      if (overflows(box.topPt, box.heightPt)) {
+      if (overflows(box.topPt, box.contentBottomPt - box.topPt)) {
         shiftPt = box.topPt - input.topPt;
         pages.push([]);
       }
@@ -114,6 +117,10 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
     // The mark stands at the end of the paragraph, so it goes with the part that
     // holds the last of it.
     markTopPt: to === box.lines.length ? box.markTopPt - shiftPt : bottomPt,
+    contentBottomPt:
+      to === box.lines.length || last === undefined
+        ? box.contentBottomPt - shiftPt
+        : last.topPt + last.heightPt - shiftPt,
     widowControl: box.widowControl,
     contentWidthPt: box.contentWidthPt,
     clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt - shiftPt },

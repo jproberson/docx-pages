@@ -369,6 +369,67 @@ export function drawingDocument(): string {
   ].join("");
 }
 
+// What a page break does with the room a paragraph asks for either side of
+// itself.
+//
+// The body of an authored page is 720pt tall, and every paragraph here but the
+// ones being asked about is told exactly how tall to be, so the room left at the
+// foot of a page is arithmetic rather than a measurement. Each block fills a page:
+// a marker line, nine fillers, a shim sized to leave the room the case wants, and
+// the case itself. The marker opening the next block is where the flow resumed,
+// which says whether room a break swallowed was kept anywhere.
+export function breakingDocument(): string {
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+  const room = (properties: string): string => `<w:spacing ${properties}/>`;
+
+  const FILLERS = 9;
+  const FILLER_PT = 72;
+  const MARKER_PT = 24;
+  const BLOCK_PT = 720;
+
+  // Enough room at the foot of the page for the case's own line and not for the
+  // room it asks for around it, which is 14.65pt of line against 18pt of room.
+  const LINE_PT = 24;
+  // Less room than the line itself needs, which is the case that has always moved
+  // the paragraph on.
+  const NO_LINE_PT = 12;
+
+  const marker = (text: string): string => paragraph(exactly(MARKER_PT), run(text));
+
+  // A page's worth of paragraphs ending in the case being asked about, with the
+  // room left in front of that case named in points.
+  const block = (leftPt: number, ...cases: readonly string[]): readonly string[] => [
+    ...Array.from({ length: FILLERS }, () => paragraph(exactly(FILLER_PT), run("filler"))),
+    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - leftPt), run("shim")),
+    ...cases,
+  ];
+
+  return [
+    marker("above"),
+    // Room below the paragraph that the page has no room for, which either holds
+    // the paragraph back or is swallowed by the break.
+    ...block(LINE_PT, paragraph(room(`w:after="360"`), run("after"))),
+    marker("after the after"),
+    // The same question of the room above a paragraph.
+    ...block(LINE_PT, paragraph(room(`w:before="360"`), run("before"))),
+    marker("after the before"),
+    // A paragraph whose own line the page has no room for, which has always been
+    // held back, so that the answers above read against something.
+    ...block(NO_LINE_PT, paragraph("", run("no room"))),
+    marker("after the squeeze"),
+    // Room below the paragraph greater than a whole page, which cannot be kept
+    // anywhere and either holds the paragraph back or is dropped.
+    ...block(LINE_PT, paragraph(room(`w:after="14400"`), run("wide after"))),
+    marker("after the wide after"),
+    // The same as the first, of a paragraph with nothing in it but its mark, which
+    // is what the sample from outside the family stacks at the foot of its page.
+    ...block(LINE_PT, paragraph(room(`w:after="360"`), "")),
+    marker("after the empty"),
+    EMPTY,
+  ].join("");
+}
+
 // A list numbered in the body and the same list inside a text box, which is what
 // says whether a box starts the counting again.
 export function numberingDocument(): string {
