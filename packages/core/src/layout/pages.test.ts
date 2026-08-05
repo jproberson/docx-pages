@@ -23,6 +23,7 @@ const line = (topPt: number, heightPt: number, text: string): PlacedLine => ({
   leftPt: 0,
   topPt,
   heightPt,
+  seatPt: 0,
   baselinePt: topPt + heightPt * 0.8,
 });
 

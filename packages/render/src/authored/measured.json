@@ -943,37 +943,79 @@
         {
           "index": 9,
           "page": 1,
-          "topPt": 195,
+          "topPt": 198,
           "leftPt": 0
         },
         {
           "index": 10,
           "page": 1,
-          "topPt": 221,
+          "topPt": 234,
           "leftPt": 0
         },
         {
           "index": 11,
           "page": 1,
-          "topPt": 236,
+          "topPt": 249,
           "leftPt": 0
         },
         {
           "index": 12,
           "page": 1,
-          "topPt": 251,
+          "topPt": 285,
           "leftPt": 0
         },
         {
           "index": 13,
           "page": 1,
-          "topPt": 277,
+          "topPt": 323,
           "leftPt": 0
         },
         {
           "index": 14,
           "page": 1,
-          "topPt": 292,
+          "topPt": 371,
+          "leftPt": 0
+        },
+        {
+          "index": 15,
+          "page": 1,
+          "topPt": 386,
+          "leftPt": 0
+        },
+        {
+          "index": 16,
+          "page": 1,
+          "topPt": 410,
+          "leftPt": 0
+        },
+        {
+          "index": 17,
+          "page": 1,
+          "topPt": 437,
+          "leftPt": 0
+        },
+        {
+          "index": 18,
+          "page": 1,
+          "topPt": 451,
+          "leftPt": 0
+        },
+        {
+          "index": 19,
+          "page": 1,
+          "topPt": 466,
+          "leftPt": 0
+        },
+        {
+          "index": 20,
+          "page": 1,
+          "topPt": 492,
+          "leftPt": 0
+        },
+        {
+          "index": 21,
+          "page": 1,
+          "topPt": 507,
           "leftPt": 0
         }
       ],

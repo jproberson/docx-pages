@@ -70,6 +70,7 @@ const paragraphOf = (
       leftPt: options.leftPt ?? 120,
       topPt: 30,
       heightPt: 14,
+      seatPt: 0,
       baselinePt: options.baselinePt ?? 41,
     },
   ],

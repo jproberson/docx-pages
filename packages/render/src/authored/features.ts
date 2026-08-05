@@ -98,6 +98,26 @@ export function spacingDocument(): string {
     paragraph(spacing(`w:line="120" w:lineRule="atLeast"`), run(SHORT)),
     paragraph(spacing(`w:line="360" w:lineRule="auto"`), run(SHORT)),
 
+    // Which side of the text the room a rule leaves opens on. Each of these asks it
+    // of a different amount of room, 3.36 and 21.36 points, so an answer that is a
+    // share of the room rather than the whole of it cannot pass.
+    paragraph(spacing(`w:line="360" w:lineRule="atLeast"`), run(SHORT)),
+    paragraph(spacing(`w:line="720" w:lineRule="atLeast"`), run(SHORT)),
+    paragraph(spacing(`w:line="720" w:lineRule="exact"`), run(SHORT)),
+    // Text taller than the floor it is given, which leaves no room to seat it in.
+    // This is the size the room is asked at as well: an answer measuring the room
+    // against a height of its own rather than against the text's would seat this
+    // one lower. A line of this size with room over it is not asked for, since
+    // Word's answer about one lands two thirds of a point below where its own pdf
+    // draws it, which is more than the whole answer is rounded to.
+    paragraph(spacing(`w:line="480" w:lineRule="atLeast"`), run(SHORT, `<w:sz w:val="48"/>`)),
+    // Every line of a paragraph takes the room, not the first alone: this one runs
+    // to two lines and the paragraph after it says how tall both came out.
+    paragraph(spacing(`w:line="480" w:lineRule="atLeast"`), run(FLOW)),
+    // A paragraph with nothing in it but its mark answers to the rule as well.
+    paragraph(spacing(`w:line="480" w:lineRule="atLeast"`), ""),
+    paragraph(spacing(`w:line="480" w:lineRule="exact"`), ""),
+
     // Three of a kind that keep no room between themselves but still stand off
     // whatever is either side of the run.
     paragraph("", run("before the run")),

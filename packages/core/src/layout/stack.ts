@@ -79,6 +79,9 @@ export type PlacedLine = {
   // What the line takes out of the stack, which is its own height plus whatever
   // the paragraph's line rule adds to it.
   readonly heightPt: number;
+  // How far down that room the line of text itself starts, which is nothing until
+  // a rule opens room above it. Word answers for a paragraph from here.
+  readonly seatPt: number;
   readonly baselinePt: number;
 };
 
@@ -93,9 +96,10 @@ export type ParagraphBox = {
   // widest paragraph in it, and an empty paragraph still reaches as far as its own
   // mark.
   readonly contentWidthPt: number;
-  // Where the line the paragraph mark stands on came to rest, which is the
-  // paragraph's own top until an object moves that line down. A paragraph with no
-  // text draws nothing there and still holds the room, and Word answers for it.
+  // Where the paragraph mark itself came to rest, which is the paragraph's own top
+  // until an object moves the mark's line down or a line rule seats it lower in
+  // one. A paragraph with no text draws nothing there and still holds the room,
+  // and Word answers for it.
   readonly markTopPt: number;
   // What the paragraph asks of a page break running through it, which only the
   // break itself can act on.
@@ -543,9 +547,12 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
   // An empty paragraph is a line like any other as far as objects are concerned:
   // Word moves it out of their way even though it draws nothing there.
   if (laid.length === 0) {
+    // A paragraph with nothing in it answers to its line rule as any other does,
+    // its mark seated in the room that rule leaves.
+    const height = seatedHeight(input.markHeightPt, number?.ascentPt ?? 0, paragraphFrame);
     const slot = fitLine({
       topPt: input.topPt + beforePt,
-      heightPt: input.markHeightPt,
+      heightPt: height.heightPt,
       leftPt: frame.leftPt + insets.leftPt,
       rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
       widthPt: 0,
@@ -555,10 +562,10 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
     return {
       index,
       topPt: input.topPt,
-      heightPt: slot.topPt + input.markHeightPt + afterPt - input.topPt,
+      heightPt: slot.topPt + height.heightPt + afterPt - input.topPt,
       lines: [],
-      marker: markerAt(number, slot.topPt + (number?.ascentPt ?? 0)),
-      markTopPt: slot.topPt,
+      marker: markerAt(number, slot.topPt + height.baseFromTopPt),
+      markTopPt: slot.topPt + height.seatPt,
       widowControl: paragraphFrame.widowControl,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
     };
@@ -577,13 +584,14 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       line: filled,
       leftPt: lineStartPt(paragraphFrame, each.slot.leftPt, each.slot.rightPt, filled.widthPt),
       topPt: each.slot.topPt,
-      heightPt: each.heightPt,
-      baselinePt: each.slot.topPt + filled.ascentPt + each.raisedPt,
+      heightPt: each.height.heightPt,
+      seatPt: each.height.seatPt,
+      baselinePt: each.slot.topPt + each.height.baseFromTopPt,
     };
   });
 
   const last = laid[laid.length - 1];
-  const bottomPt = last === undefined ? input.topPt : last.slot.topPt + last.heightPt;
+  const bottomPt = last === undefined ? input.topPt : last.slot.topPt + last.height.heightPt;
 
   return {
     index,
@@ -591,7 +599,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
     heightPt: bottomPt + afterPt - input.topPt,
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
-    markTopPt: last === undefined ? input.topPt : last.slot.topPt,
+    markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
     widowControl: paragraphFrame.widowControl,
     contentWidthPt: placed.reduce(
       (widest, line) => Math.max(widest, line.leftPt - frame.leftPt + line.line.widthPt),
@@ -605,8 +613,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
 type LaidLine = {
   readonly line: TextLine;
   readonly slot: LineSlot;
-  readonly heightPt: number;
-  readonly raisedPt: number;
+  readonly height: LineHeight;
 };
 
 // How many goes a line gets at settling on a height. A line broken again at a
@@ -640,8 +647,8 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): readonly Laid
     let taken = rest.next(roomPt);
     if (taken === null) return laid;
 
-    let heightPt = heightOfLine(taken.line, at, input);
-    let slot = slotFor(top, heightPt, leastPt, startPt, endPt, input.bands);
+    let height = heightOfLine(taken.line, at, input);
+    let slot = slotFor(top, height.heightPt, leastPt, startPt, endPt, input.bands);
 
     for (let round = 1; round < SETTLING_ROUNDS; round += 1) {
       const narrowedPt = slot.rightPt - slot.leftPt;
@@ -652,17 +659,17 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): readonly Laid
       const again = rest.next(Math.min(roomPt, narrowedPt));
       if (again === null) break;
 
-      const settledPt = heightOfLine(again.line, at, input);
+      const settled = heightOfLine(again.line, at, input);
       taken = again;
-      if (settledPt === heightPt) break;
+      if (settled.heightPt === height.heightPt) break;
 
-      heightPt = settledPt;
-      slot = slotFor(top, heightPt, leastPt, startPt, endPt, input.bands);
+      height = settled;
+      slot = slotFor(top, height.heightPt, leastPt, startPt, endPt, input.bands);
     }
 
-    laid.push({ line: taken.line, slot, heightPt, raisedPt: raisedBy(taken.line, at, input) });
+    laid.push({ line: taken.line, slot, height });
     rest = taken.rest;
-    top = slot.topPt + heightPt;
+    top = slot.topPt + height.heightPt;
   }
 }
 
@@ -683,10 +690,40 @@ const raisedBy = (line: TextLine, at: number, input: LayOutParagraphInput): numb
 
 // A line a tab alone holds open has nothing measured on it to give it a height, so
 // it takes the tallest mark the paragraph has, as an empty paragraph does.
-function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): number {
+function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): LineHeight {
+  const raisedPt = raisedBy(line, at, input);
   const ownPt =
     line.segments.length === 0 ? Math.max(line.heightPt, input.markHeightPt) : line.heightPt;
-  return spacedHeightPt(ownPt + raisedBy(line, at, input), input.paragraphFrame);
+  return seatedHeight(ownPt + raisedPt, line.ascentPt + raisedPt, input.paragraphFrame);
+}
+
+// How tall a line stands in the stack, how far down that room its own text sits,
+// and where its baseline falls from the line's top.
+type LineHeight = {
+  readonly heightPt: number;
+  readonly seatPt: number;
+  readonly baseFromTopPt: number;
+};
+
+// A line asked for exactly so much room is a slot the text is dropped into rather
+// than one measured from it: the baseline lands four fifths of the way down the
+// room asked for, whatever the face and whatever the size, so a slot shorter than
+// its text cuts the top off the glyphs. Measured off Word's own pdf over lines of
+// 6 to 48pt, in Calibri at two sizes and in Arial, every one of them within the
+// quarter point the pdf rounds to.
+const EXACT_BASELINE = 0.8;
+
+// Where a line rule leaves room its text does not need, `atLeast` takes it above:
+// the text keeps a line of its own height at the foot of the room. Under `auto` the
+// room falls below and the text keeps the top.
+function seatedHeight(naturalPt: number, ascentPt: number, frame: ParagraphFrame): LineHeight {
+  const heightPt = spacedHeightPt(naturalPt, frame);
+  if (frame.lineTwips !== null && frame.lineRule === "exact") {
+    return { heightPt, seatPt: 0, baseFromTopPt: heightPt * EXACT_BASELINE };
+  }
+
+  const seatPt = frame.lineRule === "atLeast" ? Math.max(0, heightPt - naturalPt) : 0;
+  return { heightPt, seatPt, baseFromTopPt: seatPt + ascentPt };
 }
 
 // Room is a difference of exact ratios, so only the last bits of one need absorbing.

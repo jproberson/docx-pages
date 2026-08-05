@@ -207,8 +207,6 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "spacing",
       title: "Spacing between and within paragraphs",
       asks: "where a line sits under each line rule, and what contextual spacing closes up",
-      // One line rule is not yet answered.
-      paragraphsPlaced: 13,
       bytes: buildAuthoredDocx({ body: spacingDocument(), extraStyles: SPACING_STYLES }),
     },
     {
