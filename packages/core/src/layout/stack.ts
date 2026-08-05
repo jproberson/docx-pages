@@ -270,6 +270,13 @@ function measureBlocks(
         above: paragraphAt(blocks, at - 1),
         below: paragraphAt(blocks, at + 1),
       };
+      // An object wraps the text on the page its anchor landed on and no other, so
+      // an explicit break is where the objects met before it are let go of.
+      // Measuring is one column with no pages in it, and a break is the only place
+      // in it that a later page is known about: without this a narrow object on one
+      // page moves the first line of the next one out of its way, which the page
+      // break then leaves standing where nothing is beside it.
+      if (opensPage(paragraph, boxes.at(-1), context)) standing = [];
       const anchorTopPt = anchoredAtPt ?? top;
       const bands = [...standing, ...bandsOf(paragraph, anchorTopPt, context)];
       const measured = measureParagraph(paragraph, context, top, frame, neighbours, {
@@ -317,6 +324,16 @@ function measureBlocks(
 
 const bandsOf = (paragraph: Paragraph, topPt: number, context: Context): readonly WrapBand[] =>
   context.bandsFor === undefined ? [] : context.bandsFor(paragraph, topPt);
+
+// Whether a paragraph opens a page: it asks for one of its own, or the paragraph
+// above it ended on a break. A cell is the one place Word ignores both.
+const opensPage = (
+  paragraph: Paragraph,
+  above: ParagraphBox | undefined,
+  context: Context,
+): boolean =>
+  !context.inCell &&
+  (above?.endsPage === true || resolveParagraphFrame(paragraph, context.styles).pageBreakBefore);
 
 // Half the twip a legacy document's anchors are rounded to, which is as far over
 // the paragraph above an object can come to stand by that rounding alone. An
@@ -902,7 +919,7 @@ type LayOutParagraphInput = {
 // bigger the mark is. An empty paragraph is the mark's height alone.
 function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphInput): ParagraphBox {
   const across = acrossOf(input);
-  return droppedPast(layOutWholeParagraph(index, flow, input), input.ahead, across);
+  return droppedPast(layOutWholeParagraph(index, flow, input), input, across);
 }
 
 const acrossOf = (input: LayOutParagraphInput): Span => {
@@ -921,8 +938,11 @@ type Span = { readonly leftPt: number; readonly rightPt: number };
 // it answers any blocked line: measured over paragraphs of one line, of three and
 // of none at all, only the last of them falls, it lands on the object's foot, and
 // the room the paragraph keeps below itself goes with it. Beside an object narrow
-// enough to leave the line somewhere to sit, nothing moves.
-function droppedPast(box: ParagraphBox, ahead: readonly WrapBand[], across: Span): ParagraphBox {
+// enough to leave the line somewhere to sit it does not fall at all, and takes
+// that room instead: measured on an object wrapped on its largest side, whose line
+// came back where it started and three hundred and ninety points across.
+function droppedPast(box: ParagraphBox, input: LayOutParagraphInput, across: Span): ParagraphBox {
+  const ahead = input.ahead;
   if (ahead.length === 0) return box;
 
   const last = box.lines[box.lines.length - 1];
@@ -936,7 +956,11 @@ function droppedPast(box: ParagraphBox, ahead: readonly WrapBand[], across: Span
   });
 
   const byPt = slot.topPt - topPt;
-  if (byPt <= EPSILON) return box;
+  const leftPt =
+    last === undefined
+      ? 0
+      : lineStartPt(input.paragraphFrame, slot.leftPt, slot.rightPt, last.line.widthPt);
+  if (byPt <= EPSILON && (last === undefined || leftPt === last.leftPt)) return box;
   return {
     ...box,
     heightPt: box.heightPt + byPt,
@@ -947,7 +971,7 @@ function droppedPast(box: ParagraphBox, ahead: readonly WrapBand[], across: Span
         ? box.lines
         : [
             ...box.lines.slice(0, -1),
-            { ...last, topPt: last.topPt + byPt, baselinePt: last.baselinePt + byPt },
+            { ...last, leftPt, topPt: last.topPt + byPt, baselinePt: last.baselinePt + byPt },
           ],
     // A number stands on the paragraph's first line, and moves only when that is
     // the line that fell.

@@ -20,8 +20,10 @@ export {
   PICTURE_MEDIA_TYPES,
 } from "./docx/pictures.js";
 export {
+  honoursAWrapOnTheLeft,
   readDocumentSettings,
   roundsAnchorsToTwips,
+  takesTheRightOnEqualSides,
   DEFAULT_SETTINGS,
   SETTINGS_PART,
 } from "./docx/settings.js";
@@ -162,7 +164,7 @@ export { paintOfCell, paintOfParagraph, PARAGRAPH_PAINT_PT } from "./layout/pain
 export type { Painted, PaintedFill, PaintedLine } from "./layout/painting.js";
 
 export { fitLine, freeSpans } from "./layout/wrapping.js";
-export type { FitLineInput, LineSlot, WrapBand } from "./layout/wrapping.js";
+export type { BandSide, FitLineInput, LineSlot, WrapBand } from "./layout/wrapping.js";
 
 export { breakStack } from "./layout/pages.js";
 export type { BreakStackInput, PageStack } from "./layout/pages.js";
@@ -186,6 +188,7 @@ export type {
   WrapArea,
   WrapDistances,
   WrapMode,
+  WrapSide,
 } from "./docx/anchors.js";
 
 export { placeFloat, UNPAINTED } from "./layout/floats.js";

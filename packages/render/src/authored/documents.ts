@@ -8,6 +8,7 @@ import {
   spacingDocument,
   tableDocument,
   wrappingDocument,
+  wrapSidesDocument,
   NUMBERING,
   SPACING_STYLES,
 } from "./features.js";
@@ -246,6 +247,22 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       asks: "where a line starts and ends beside a wrapping object, and where it breaks",
       measuresCharacters: true,
       bytes: buildAuthoredDocx({ body: wrappingDocument() }),
+    },
+    {
+      id: "wrap-sides",
+      title: "The side of an object text is allowed on",
+      asks: "which side of a wrapping object Word puts a line on, and what a line refused its side does",
+      bytes: buildAuthoredDocx({ body: wrapSidesDocument(), picture: true }),
+    },
+    {
+      id: "legacy-wrap-sides",
+      title: "The same sides in a document that declares no compatibility mode",
+      asks: "which of the side rules the compatibility mode decides",
+      bytes: buildAuthoredDocx({
+        body: wrapSidesDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+        picture: true,
+      }),
     },
     {
       id: "drawings",

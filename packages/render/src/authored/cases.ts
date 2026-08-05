@@ -41,12 +41,15 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   numbering: { lines: 10, runs: 10, numbers: 7 },
   pages: { lines: 24, runs: 24, numbers: 0 },
   // Three lines a case, five where the paragraph above the object holds three,
-  // and two where it holds none at all.
-  // Two of them stand beside the narrow object, which Word puts on the side with
-  // the most room and, where the two sides are equal, on the right. Nothing here
-  // reads `wrapText`, so both start at the left of the column instead.
-  "legacy-wrapping": { lines: 21, runs: 21, numbers: 0, placed: 19, runsPlaced: 19 },
-  "modern-wrapping": { lines: 21, runs: 21, numbers: 0, placed: 19, runsPlaced: 19 },
+  // and two where it holds none at all. Two of them stand beside the narrow
+  // object, which is centred in the column and wrapped on its largest side, so
+  // which of the two equal sides they take is the whole of what the two documents
+  // say differently here.
+  "legacy-wrapping": { lines: 21, runs: 21, numbers: 0 },
+  "modern-wrapping": { lines: 21, runs: 21, numbers: 0 },
+  // Four lines a case: one naming it and three beside the object.
+  "wrap-sides": { lines: 28, runs: 28, numbers: 0 },
+  "legacy-wrap-sides": { lines: 28, runs: 28, numbers: 0 },
   // Every line but the seven under the wave borders, which Word draws neither at
   // the width they state nor at any width read off it: the rows they line come out
   // shorter here and everything below them stands too high.
@@ -61,9 +64,6 @@ const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
   tabs: ["bar-tab-stop"],
   // The wave borders, which are drawn as plain lines of the stated width.
   borders: ["approximated-border"],
-  // Both hold an object wrapped on its largest side, which nothing here reads.
-  "legacy-wrapping": ["wrap-side"],
-  "modern-wrapping": ["wrap-side"],
 };
 
 const EMPTY = {

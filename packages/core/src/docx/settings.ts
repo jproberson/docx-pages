@@ -30,6 +30,28 @@ export const DEFAULT_SETTINGS: DocumentSettings = {
 export const roundsAnchorsToTwips = (settings: DocumentSettings): boolean =>
   settings.compatibilityMode === null || settings.compatibilityMode < 15;
 
+// Whether a document is one of the old ones, which the two rules below are the
+// whole of besides the rounding above.
+const legacy = roundsAnchorsToTwips;
+
+// An object asking for the largest side with the same room either side of it puts
+// the text on the left in a document declaring 15 and on the right in one
+// declaring nothing. Measured with the same body written both ways: an object
+// exactly centred in the column, at two widths and stated both as an offset and as
+// an alignment, and every one of the four flipped sides with the setting.
+export const takesTheRightOnEqualSides = legacy;
+
+// A document declaring no compatibility mode does not keep text off the right of
+// an object wrapped on its left: the line takes the run of free space beside the
+// object as though the wrap named both sides. Measured with an object flush to the
+// left margin, and again with one wide enough that the free run past it starts
+// beyond the middle of the column, which both put the line beside it. The same
+// document declaring 15 drops the line past the object instead.
+//
+// A wrap naming the right is honoured either way round: an object flush to the
+// right margin drops the line past itself in both.
+export const honoursAWrapOnTheLeft = (settings: DocumentSettings): boolean => !legacy(settings);
+
 const COMPATIBILITY_MODE = "compatibilityMode";
 
 function numbered(raw: string | undefined): number | null {

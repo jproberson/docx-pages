@@ -113,6 +113,14 @@ describe("readAnchors", () => {
     expect(anchor.wrap).toBe("square");
   });
 
+  it("reads the side a wrap allows text on, and takes both where it names none", () => {
+    const sideOf = (wrap: string) => firstAnchor(anchorXml({ h: offsetH(0), v: offsetV(0), wrap }));
+    expect(sideOf('<wp:wrapSquare wrapText="largest"/>').side).toBe("largest");
+    expect(sideOf('<wp:wrapSquare wrapText="left"/>').side).toBe("left");
+    expect(sideOf("<wp:wrapSquare/>").side).toBe("bothSides");
+    expect(sideOf("<wp:wrapTopAndBottom/>").side).toBe("bothSides");
+  });
+
   it("keeps text off the whole of an object wrapped square", () => {
     const anchor = firstAnchor(
       anchorXml({ h: offsetH(0), v: offsetV(0), wrap: '<wp:wrapSquare wrapText="bothSides"/>' }),

@@ -5,7 +5,12 @@ import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readUnhonoured, withSubstitutedFaces, type Unhonoured } from "../docx/fidelity.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
-import { readDocumentSettings, type DocumentSettings } from "../docx/settings.js";
+import {
+  honoursAWrapOnTheLeft,
+  readDocumentSettings,
+  takesTheRightOnEqualSides,
+  type DocumentSettings,
+} from "../docx/settings.js";
 import { readStyleTable, type StyleTable } from "../docx/styles.js";
 import type { SubstitutingMetrics } from "./substitution.js";
 import { readTheme, type Theme } from "../docx/theme.js";
@@ -24,7 +29,7 @@ import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from 
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
-import type { OutlinePoint, WrapBand } from "./wrapping.js";
+import type { BandSide, OutlinePoint, WrapBand } from "./wrapping.js";
 
 // The header and the footer are drawn again on every page, so only the body is
 // broken up: a page is the run of it that fitted between the two.
@@ -193,19 +198,64 @@ function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
   const { area, distances, wrap } = float.anchor;
   const spansPage = wrap === "topAndBottom";
   const outline = spansPage ? undefined : outlineOf(float);
+  const leftPt = spansPage
+    ? 0
+    : float.leftPt + float.widthPt * area.left - emuToPoints(distances.leftEmu);
+  const rightPt = spansPage
+    ? twipsToPoints(frame.page.widthTwips)
+    : float.leftPt + float.widthPt * area.right + emuToPoints(distances.rightEmu);
+  const side = spansPage ? undefined : sideOf(float, leftPt, rightPt, frame);
+
   return {
-    leftPt: spansPage
-      ? 0
-      : float.leftPt + float.widthPt * area.left - emuToPoints(distances.leftEmu),
-    rightPt: spansPage
-      ? twipsToPoints(frame.page.widthTwips)
-      : float.leftPt + float.widthPt * area.right + emuToPoints(distances.rightEmu),
+    leftPt,
+    rightPt,
     topPt: float.topPt + float.heightPt * area.top - emuToPoints(distances.topEmu),
     bottomPt: float.topPt + float.heightPt * area.bottom + emuToPoints(distances.bottomEmu),
+    ...(side === undefined ? {} : { side }),
     ...(outline === undefined ? {} : { outline }),
     ...(wrap === "tight" || wrap === "through" ? { outlined: true } : {}),
   };
 }
+
+/**
+ * Which side of an object a line may sit on, once the object stands where it will.
+ *
+ * `largest` is the side of the column the object leaves the most room on, measured
+ * against the two margins. Word takes the left of two equal sides in a document
+ * declaring a compatibility mode and the right in one declaring none, which is one
+ * of the two things the setting decides here; the other is that an old document
+ * does not keep text off the right of an object wrapped on its left at all.
+ *
+ * The room is measured off the band rather than off the object's own frame. The
+ * two are the same in everything measured, since every case put to Word held its
+ * text off itself by the same distance on both sides.
+ */
+function sideOf(
+  float: PlacedFloat,
+  leftPt: number,
+  rightPt: number,
+  frame: FloatFrame,
+): BandSide | undefined {
+  const { settings } = frame;
+  const side = float.anchor.side;
+  if (side === "bothSides") return undefined;
+  if (side === "left") return honoursAWrapOnTheLeft(settings) ? "left" : undefined;
+  if (side === "right") return "right";
+
+  const columnLeftPt = twipsToPoints(frame.page.margin.leftTwips);
+  const columnRightPt = twipsToPoints(frame.page.widthTwips - frame.page.margin.rightTwips);
+  const roomLeftPt = leftPt - columnLeftPt;
+  const roomRightPt = columnRightPt - rightPt;
+  if (Math.abs(roomLeftPt - roomRightPt) < EQUAL_SIDES_PT) {
+    return takesTheRightOnEqualSides(settings) ? "right" : "left";
+  }
+  return roomLeftPt > roomRightPt ? "left" : "right";
+}
+
+// Two sides are the same side when they are this near each other. Positions here
+// are sums of exact ratios, so this absorbs the last bits of one rather than any
+// quantity Word would tell apart.
+const EQUAL_SIDES_PT = 1e-9;
 
 // A polygon that is its own rectangle says nothing the band does not already, so
 // only a shape narrower than that somewhere is carried into the layout.

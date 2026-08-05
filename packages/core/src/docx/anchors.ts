@@ -18,6 +18,10 @@ export type AnchorPosition =
 
 export type WrapMode = "none" | "square" | "tight" | "through" | "topAndBottom";
 
+// Which side of a wrapping object text is allowed on. `largest` leaves it to
+// whichever side of the object has the most room in the column.
+export type WrapSide = "bothSides" | "left" | "right" | "largest";
+
 // How far text is kept off each edge of a wrapping object.
 export type WrapDistances = {
   readonly topEmu: number;
@@ -54,6 +58,7 @@ export type FloatingAnchor = {
   readonly vertical: AnchorPosition;
   readonly content: DrawingContent;
   readonly wrap: WrapMode;
+  readonly side: WrapSide;
   readonly area: WrapArea;
   readonly distances: WrapDistances;
   readonly behindDoc: boolean;
@@ -133,14 +138,23 @@ function readWrapArea(wrap: XmlElement, flip: DrawingFlip): WrapArea {
   };
 }
 
-type Wrapping = { readonly mode: WrapMode; readonly area: WrapArea };
+type Wrapping = { readonly mode: WrapMode; readonly side: WrapSide; readonly area: WrapArea };
+
+const SIDES: readonly WrapSide[] = ["bothSides", "left", "right", "largest"];
+
+// An object wrapped top and bottom, or not at all, leaves nothing beside it to
+// choose between, and one that states no side takes both.
+function readSide(wrap: XmlElement): WrapSide {
+  const stated = attribute(wrap, "", "wrapText");
+  return SIDES.find((side) => side === stated) ?? "bothSides";
+}
 
 function readWrapping(anchor: XmlElement, flip: DrawingFlip): Wrapping {
   for (const [name, mode] of WRAPS) {
     const wrap = firstNamed(anchor, WP_NS, name);
-    if (wrap !== null) return { mode, area: readWrapArea(wrap, flip) };
+    if (wrap !== null) return { mode, side: readSide(wrap), area: readWrapArea(wrap, flip) };
   }
-  return { mode: "none", area: WHOLE_FRAME };
+  return { mode: "none", side: "bothSides", area: WHOLE_FRAME };
 }
 
 const numberAttribute = (element: XmlElement, name: string, fallback: number): number => {
@@ -163,6 +177,7 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
       horizontal: readPosition(anchor, "positionH", "column"),
       vertical: readPosition(anchor, "positionV", "paragraph"),
       wrap: wrapping.mode,
+      side: wrapping.side,
       area: wrapping.area,
       distances: {
         topEmu: numberAttribute(anchor, "distT", 0),

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument, WORDPROCESSING_NS } from "../testing/build-docx.js";
 import { openDocx } from "./package.js";
-import { readDocumentSettings, roundsAnchorsToTwips, DEFAULT_SETTINGS } from "./settings.js";
+import {
+  honoursAWrapOnTheLeft,
+  readDocumentSettings,
+  roundsAnchorsToTwips,
+  takesTheRightOnEqualSides,
+  DEFAULT_SETTINGS,
+} from "./settings.js";
 
 const settingsOf = (inner: string | null) =>
   readDocumentSettings(
@@ -55,5 +61,17 @@ describe("roundsAnchorsToTwips", () => {
 
   it("leaves an object where the flow put it for a document declaring 15", () => {
     expect(roundsAnchorsToTwips(settingsOf(compat("15")))).toBe(false);
+  });
+});
+
+describe("what the compatibility mode decides about a wrap", () => {
+  it("takes the right of two equal sides only in a document Word laid out differently", () => {
+    expect(takesTheRightOnEqualSides(settingsOf(""))).toBe(true);
+    expect(takesTheRightOnEqualSides(settingsOf(compat("15")))).toBe(false);
+  });
+
+  it("keeps text off the right of an object wrapped left only in a document declaring 15", () => {
+    expect(honoursAWrapOnTheLeft(settingsOf(compat("15")))).toBe(true);
+    expect(honoursAWrapOnTheLeft(settingsOf(""))).toBe(false);
   });
 });

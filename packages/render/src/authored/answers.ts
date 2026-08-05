@@ -1,4 +1,4 @@
-import type { Block } from "@docx-pages/core";
+import { readAnchors, type Block, type Paragraph } from "@docx-pages/core";
 
 // Which paragraph of ours each of Word's answers is about.
 //
@@ -15,6 +15,11 @@ import type { Block } from "@docx-pages/core";
 // column, which makes it nought for every paragraph in a table whatever the cell
 // holds, so there is nothing there to compare against. Word's own pdf is the
 // oracle for where a cell put its text.
+//
+// The horizontal answer is where the paragraph's own text starts, which is not
+// where a line an object narrowed began: Word reports nought for a line it drew
+// three hundred points across. So a story holding anything text wraps round is not
+// compared on the left at all, and the pdf answers for those too.
 
 export type Answer = {
   // The paragraph of ours whose place Word is reporting.
@@ -26,8 +31,19 @@ export type Answer = {
 export function answeringParagraphs(blocks: readonly Block[]): readonly Answer[] {
   const answers: Answer[] = [];
   walk(blocks, answers, null);
-  return answers;
+  if (!wrapsText(blocks)) return answers;
+  return answers.map((answer) => ({ ...answer, comparesLeft: false }));
 }
+
+const wrapsText = (blocks: readonly Block[]): boolean =>
+  blocks.some((block) =>
+    block.kind === "paragraph"
+      ? anchorsWrap(block.paragraph)
+      : block.rows.some((row) => row.cells.some((cell) => wrapsText(cell.blocks))),
+  );
+
+const anchorsWrap = (paragraph: Paragraph): boolean =>
+  readAnchors(paragraph).some((anchor) => anchor.wrap !== "none");
 
 // `endingAnswer` is the paragraph the cell's own last paragraph answers with, or
 // null in a run of blocks no cell holds.

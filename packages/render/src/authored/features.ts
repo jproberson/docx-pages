@@ -901,3 +901,74 @@ export function compatibilityDocument(): string {
 // enough that a case and the object it holds fit on one page.
 const COLUMN_PT = RIGHT_PT - LEFT_PT;
 const OBJECT_PT = 72;
+
+// A third of the column, so that sliding one across changes which side has the
+// most room by a wide margin while both sides stay able to hold a line.
+const WRAP_OBJECT_PT = 180;
+
+// Which side of a wrapping object text may sit on, which `wrapText` names.
+//
+// Every case holds one object of the same size at a different place across the
+// column, so what changes between them is how much room is left either side. Each
+// asks its question by where the lines beside the object start: a line on the left
+// opens at the column's own edge, a line on the right opens past the object, and
+// a line allowed neither side falls below it. The two `largest` cases with room to
+// spare on one side put that side against the plain `left` and `right` cases at the
+// same offset, so a reading that always takes the wider side and one that takes the
+// side it was told cannot both pass.
+export function wrapSidesDocument(): string {
+  const anchored = (id: number, wrapText: string, offsetPt: number): string =>
+    `<w:r><w:drawing><wp:anchor behindDoc="0" distT="0" distB="0" distL="0" distR="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="${String(id)}">
+      <wp:simplePos x="0" y="0"/>
+      <wp:positionH relativeFrom="column"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionH>
+      <wp:positionV relativeFrom="paragraph"><wp:align>top</wp:align></wp:positionV>
+      <wp:extent cx="${emu(WRAP_OBJECT_PT)}" cy="${emu(OBJECT_PT)}"/>
+      <wp:effectExtent l="0" t="0" r="0" b="0"/>
+      <wp:wrapSquare wrapText="${wrapText}"/>
+      <wp:docPr id="${String(id)}" name="sided-${String(id)}"/>
+      <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+      <a:graphic><a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">
+        <pic:nvPicPr><pic:cNvPr id="${String(id)}" name="sided-${String(id)}"/><pic:cNvPicPr/></pic:nvPicPr>
+        <pic:blipFill><a:blip r:embed="${PICTURE_ID}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+        <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(WRAP_OBJECT_PT)}" cy="${emu(OBJECT_PT)}"/></a:xfrm>
+          <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+      </pic:pic></a:graphicData></a:graphic>
+    </wp:anchor></w:drawing></w:r>`;
+
+  const cases = [
+    { wrapText: "largest", offsetPt: 120 },
+    { wrapText: "largest", offsetPt: 240 },
+    // Both sides the same, which is the one case where the widest side cannot
+    // decide it.
+    { wrapText: "largest", offsetPt: 180 },
+    // Told a side against the run of the room: the narrow one here, and below it
+    // the narrow one there.
+    { wrapText: "left", offsetPt: 120 },
+    { wrapText: "right", offsetPt: 240 },
+    // Told a side with nothing on it at all, which is what says whether a line
+    // refused its side gives up on the object or takes the other one.
+    { wrapText: "left", offsetPt: 0 },
+    { wrapText: "right", offsetPt: COLUMN_PT - WRAP_OBJECT_PT },
+  ];
+
+  return cases
+    .map((each, at) => {
+      const name = `${each.wrapText} at ${String(each.offsetPt)}`;
+      return (
+        paragraph(`${at === 0 ? "" : "<w:pageBreakBefore/>"}${EXACT_LINE}`, run(name)) +
+        paragraph(EXACT_LINE, anchored(at + 1, each.wrapText, each.offsetPt)) +
+        // Three lines, since the object is tall enough for all of them and a rule
+        // that moved only the first would read as no rule at all.
+        [1, 2, 3]
+          .map((line) => paragraph(EXACT_LINE, run(`${String(at + 1)} beside ${String(line)}`)))
+          .join("")
+      );
+    })
+    .join("");
+}
+
+// A whole number of twips a line, so that every paragraph in the document stands on
+// the twip grid. A legacy document's objects are rounded to that grid, and an
+// object rounded off the place the flow gave it drops the paragraph above it past
+// itself, which is a rule of its own and not the one being asked about here.
+const EXACT_LINE = `<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/>`;

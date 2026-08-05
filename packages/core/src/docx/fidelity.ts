@@ -63,7 +63,6 @@ export type UnhonouredKind =
   | "page-background"
   | "unknown-drawing"
   | "undrawable-picture"
-  | "wrap-side"
   | "approximated-border"
   | "alternate-first-or-even-page"
   | "substituted-face";
@@ -102,9 +101,6 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // the metafile this project plays: its room is held and it is marked rather than
   // drawn.
   "undrawable-picture": "changes-paint",
-  // Which side of an object text may sit on. Word takes the side the anchor names;
-  // this project takes whichever free space it meets first, which is the left.
-  "wrap-side": "moves-text",
   "approximated-border": "changes-paint",
   // Only one header and one footer are drawn, on every page alike, so a document
   // that asks for another on its first page or on its even ones draws the wrong
@@ -149,10 +145,6 @@ function unhonouredBy(
     if (content.kind !== "picture") return null;
     const held = resolvePart(content.relationshipId);
     return held === null || drawablePicture(held) ? null : "undrawable-picture";
-  }
-  if (element.namespace === WP_NS && WRAPS.has(element.name)) {
-    const side = attribute(element, "", "wrapText");
-    return side === undefined || side === "bothSides" ? null : "wrap-side";
   }
   if (element.namespace !== W_NS) return null;
 
@@ -219,10 +211,6 @@ function unhonouredBy(
       return null;
   }
 }
-
-// The wraps that take a side. An object wrapped top and bottom, or not at all,
-// leaves nothing beside it to choose between.
-const WRAPS = new Set(["wrapSquare", "wrapTight", "wrapThrough"]);
 
 // A border names its pattern in `w:val`, and only inside one of the elements that
 // hold borders: `w:top` means something else entirely in a cell's margins.

@@ -58,6 +58,29 @@ describe("freeSpans", () => {
   it("ignores a band standing outside the frame", () => {
     expect(freeSpans(36, 576, [band(0, 20, 0, 10)])).toStrictEqual([{ leftPt: 36, rightPt: 576 }]);
   });
+
+  it("takes out the runs on the side a band allows nothing on", () => {
+    const middle = band(200, 300, 0, 10);
+    expect(freeSpans(36, 576, [{ ...middle, side: "left" }])).toStrictEqual([
+      { leftPt: 36, rightPt: 200 },
+    ]);
+    expect(freeSpans(36, 576, [{ ...middle, side: "right" }])).toStrictEqual([
+      { leftPt: 300, rightPt: 576 },
+    ]);
+  });
+
+  it("leaves nothing where the side a band allows has no room on it", () => {
+    expect(freeSpans(36, 576, [{ ...band(36, 200, 0, 10), side: "left" }])).toStrictEqual([]);
+  });
+
+  // Two objects each allowing one side leave only what both of them allow.
+  it("keeps a run only where every band allows it", () => {
+    const spans = freeSpans(36, 576, [
+      { ...band(200, 300, 0, 10), side: "right" },
+      { ...band(400, 500, 0, 10), side: "left" },
+    ]);
+    expect(spans).toStrictEqual([{ leftPt: 300, rightPt: 400 }]);
+  });
 });
 
 describe("fitLine", () => {

@@ -5,11 +5,18 @@ export type OutlinePoint = { readonly xPt: number; readonly yPt: number };
 // distances the anchor asks text to stay off it. An object whose wrap draws an
 // outline narrower than that rectangle in places carries it as well, and the
 // rectangle stays the one every line is blocked by.
+// The one side of a band a line may sit on. An object that allows both sides says
+// nothing, and one asking for the largest has already been resolved to a side by
+// the time it gets here, since which side that is depends on the column the band
+// stands in rather than on the line.
+export type BandSide = "left" | "right";
+
 export type WrapBand = {
   readonly leftPt: number;
   readonly rightPt: number;
   readonly topPt: number;
   readonly bottomPt: number;
+  readonly side?: BandSide;
   readonly outline?: readonly OutlinePoint[];
   // Whether the wrap follows the object's outline rather than its frame, which
   // Word treats differently in two ways that go together: see `crosses` and
@@ -49,8 +56,19 @@ export const LEAST_SPAN_PT = 18;
 
 type Span = { readonly leftPt: number; readonly rightPt: number };
 
+// Whether a band that allows text on one side of itself allows it in this run of
+// free space. A run lies on the side of a band it does not overlap, and a band that
+// allows both sides bars nothing.
+const allows = (band: WrapBand, span: Span): boolean =>
+  band.side === undefined ||
+  (band.side === "left"
+    ? span.rightPt <= band.leftPt + EPSILON
+    : span.leftPt >= band.rightPt - EPSILON);
+
 // The runs of the frame left over once every band crossing the line is taken out
-// of it, in the order text would meet them.
+// of it, in the order text would meet them. A band allowing text on one side of
+// itself takes the runs on the other side out as well, so a line that could have
+// sat there falls past the object instead.
 export function freeSpans(
   leftPt: number,
   rightPt: number,
@@ -66,11 +84,11 @@ export function freeSpans(
       spans.push({ leftPt: openPt, rightPt: Math.min(band.leftPt, rightPt) });
     }
     openPt = band.rightPt;
-    if (openPt >= rightPt - EPSILON) return spans;
+    if (openPt >= rightPt - EPSILON) break;
   }
 
-  spans.push({ leftPt: openPt, rightPt });
-  return spans;
+  if (openPt < rightPt - EPSILON) spans.push({ leftPt: openPt, rightPt });
+  return spans.filter((span) => bands.every((band) => allows(band, span)));
 }
 
 // How far an outline reaches across between two heights, which is asked of the
