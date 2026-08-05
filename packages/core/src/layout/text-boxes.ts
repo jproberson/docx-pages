@@ -3,9 +3,11 @@ import type { StyleTable } from "../docx/styles.js";
 import {
   measureStack,
   shiftBoxes,
+  shiftCells,
   type LayoutBlocker,
   type MetricsResolver,
   type ParagraphBox,
+  type PlacedCell,
 } from "./stack.js";
 import { emuToPoints } from "./units.js";
 
@@ -18,6 +20,9 @@ export type TextBoxRect = {
 
 export type PlacedTextBox = {
   readonly boxes: readonly ParagraphBox[];
+  // The cells of any table the box holds, which are drawn behind its text like
+  // any other table's.
+  readonly cells: readonly PlacedCell[];
   readonly contentHeightPt: number;
   // How far the widest line reaches past the box's own left inset, which is what
   // a box that fits itself to its text is as wide as.
@@ -63,6 +68,7 @@ export function layOutTextBox(input: LayOutTextBoxInput): TextBoxLayout {
     kind: "laid-out",
     text: {
       boxes: shiftBoxes(measured.boxes, offsetPt),
+      cells: shiftCells(measured.cells, offsetPt),
       contentHeightPt: measured.heightPt,
       contentWidthPt: widestParagraphPt(measured.boxes),
     },

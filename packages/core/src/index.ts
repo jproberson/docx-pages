@@ -105,7 +105,7 @@ export {
   type TabStopPt,
 } from "./layout/tab-stops.js";
 
-export { measureStack, shiftBox, shiftBoxes, WP_NS } from "./layout/stack.js";
+export { measureStack, shiftBox, shiftBoxes, shiftCells, WP_NS } from "./layout/stack.js";
 export type {
   BandResolver,
   ClipRect,
@@ -114,9 +114,32 @@ export type {
   MetricsResolver,
   ParagraphBox,
   ParagraphMarker,
+  ParagraphPaint,
+  PlacedCell,
   PlacedLine,
   StackMeasurement,
 } from "./layout/stack.js";
+
+export {
+  borderExtentPt,
+  readBorder,
+  readBorders,
+  readShading,
+  readTableBorders,
+  resolveCellBorders,
+  SIDES,
+} from "./docx/borders.js";
+export type {
+  Border,
+  Borders,
+  BorderSide,
+  BorderStyle,
+  StatedBorders,
+  TableBorders,
+} from "./docx/borders.js";
+
+export { paintOfCell, paintOfParagraph, PARAGRAPH_PAINT_PT } from "./layout/painting.js";
+export type { Painted, PaintedFill, PaintedLine } from "./layout/painting.js";
 
 export { fitLine, freeSpans } from "./layout/wrapping.js";
 export type { FitLineInput, LineSlot, WrapBand } from "./layout/wrapping.js";

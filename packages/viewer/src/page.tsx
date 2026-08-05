@@ -1,8 +1,14 @@
 import type { CSSProperties, ReactElement } from "react";
 
 import {
+  paintOfCell,
+  paintOfParagraph,
   twipsToPoints,
+  type BorderStyle,
   type CropInsets,
+  type Painted,
+  type PaintedFill,
+  type PaintedLine,
   type LaidOutDocument,
   type LaidOutPage,
   type MetafilePicture,
@@ -384,6 +390,74 @@ function textLayer(
   );
 }
 
+// How Word draws each pattern, measured at a width of a point and a half: a
+// dashed line runs four widths on and four off, where a dotted one runs one and
+// one. A double line is two bands, which the geometry has already made of it.
+const DASHES: Readonly<Record<BorderStyle, readonly number[] | null>> = {
+  single: null,
+  double: null,
+  dashed: [4, 4],
+  dotted: [1, 1],
+};
+
+function paintedLine(line: PaintedLine, key: string): ReactElement {
+  const dashes = DASHES[line.style];
+  return (
+    <line
+      key={key}
+      x1={line.vertical ? line.atPt : line.fromPt}
+      x2={line.vertical ? line.atPt : line.toPt}
+      y1={line.vertical ? line.fromPt : line.atPt}
+      y2={line.vertical ? line.toPt : line.atPt}
+      stroke={line.color ?? "currentColor"}
+      strokeWidth={line.widthPt}
+      strokeDasharray={
+        dashes === null ? undefined : dashes.map((each) => each * line.widthPt).join(" ")
+      }
+    />
+  );
+}
+
+const paintedFill = (fill: PaintedFill, key: string): ReactElement => (
+  <rect
+    key={key}
+    x={fill.leftPt}
+    y={fill.topPt}
+    width={fill.widthPt}
+    height={fill.heightPt}
+    fill={fill.color}
+  />
+);
+
+const drawn = (painted: Painted, key: string): readonly ReactElement[] => [
+  ...painted.fills.map((fill, at) => paintedFill(fill, `${key}-fill-${String(at)}`)),
+  ...painted.lines.map((line, at) => paintedLine(line, `${key}-line-${String(at)}`)),
+];
+
+// Everything drawn behind a story's text: the cells of its tables first, then what
+// each paragraph asks for, which Word draws over the cell holding it.
+function paintLayer(
+  drawable: Extract<Drawable, { kind: "paint" }>,
+  widthPt: number,
+  heightPt: number,
+): ReactElement {
+  return (
+    <svg
+      key={drawable.key}
+      data-kind="paint"
+      style={{ position: "absolute", left: 0, top: 0 }}
+      width={pt(widthPt)}
+      height={pt(heightPt)}
+      viewBox={`0 0 ${String(widthPt)} ${String(heightPt)}`}
+    >
+      {drawable.cells.flatMap((cell, at) => drawn(paintOfCell(cell), `cell-${String(at)}`))}
+      {drawable.paragraphs.flatMap((each, at) =>
+        drawn(paintOfParagraph(each.paint, each.topPt, each.bottomPt), `paragraph-${String(at)}`),
+      )}
+    </svg>
+  );
+}
+
 const kept = (element: ReactElement | null): readonly ReactElement[] =>
   element === null ? [] : [element];
 
@@ -465,11 +539,13 @@ export function Page(props: PageProps): ReactElement {
         transformOrigin: "top left",
       }}
     >
-      {drawablesOf(layout, page).flatMap((drawable) =>
-        drawable.kind === "text"
-          ? [textLayer(drawable, widthPt, heightPt, fallbackFonts)]
-          : renderObject(drawable, imageUrl, frames, fallbackFonts),
-      )}
+      {drawablesOf(layout, page).flatMap((drawable) => {
+        if (drawable.kind === "paint") return [paintLayer(drawable, widthPt, heightPt)];
+        if (drawable.kind === "text") {
+          return [textLayer(drawable, widthPt, heightPt, fallbackFonts)];
+        }
+        return renderObject(drawable, imageUrl, frames, fallbackFonts);
+      })}
     </div>
   );
 }

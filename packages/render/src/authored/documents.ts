@@ -1,4 +1,5 @@
 import {
+  bordersDocument,
   breakingDocument,
   drawingDocument,
   numberingDocument,
@@ -217,6 +218,20 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Tables",
       asks: "how tall a row is and how far a cell holds its text off its own walls",
       bytes: buildAuthoredDocx({ body: tableDocument() }),
+    },
+    {
+      id: "borders",
+      title: "Table borders, paragraph borders and shading",
+      asks: "how thick each border is drawn, where it hangs off the edge it runs along, and what a fill covers",
+      // Twenty one of these are answers this project reads off Word's own pdf
+      // instead. Eleven are the wave borders and what stands under them, which
+      // Word draws at no width the file states. Eight are rows whose true top
+      // falls within a tenth of a point of the half way mark Word's answer is
+      // rounded at, and land the other side of it. The last two are paragraphs
+      // with a border of their own, which Word answers for a point or so below
+      // where its own pdf draws their text.
+      paragraphsPlaced: 122,
+      bytes: buildAuthoredDocx({ body: bordersDocument() }),
     },
     {
       id: "spacing",

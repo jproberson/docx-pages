@@ -68,12 +68,22 @@ function stack(
       endsPage: false,
       contentWidthPt: 0,
       clipTo: null,
+      paint: null,
     });
     top = lineTop;
   });
 
   return boxes;
 }
+
+const cellAt = (topPt: number, heightPt: number) => ({
+  leftPt: 100,
+  topPt,
+  widthPt: 72,
+  heightPt,
+  fillColor: null,
+  borders: { top: null, left: null, bottom: null, right: null },
+});
 
 const linesOn = (
   page: { readonly boxes: readonly ParagraphBox[] } | undefined,
@@ -84,14 +94,24 @@ const indexesOn = (page: { readonly boxes: readonly ParagraphBox[] }): readonly 
 
 describe("breakStack", () => {
   it("leaves a stack that fits on the one page", () => {
-    const pages = breakStack({ boxes: stack([[10], [10], [10]]), topPt: 100, bottomPt: 200 });
+    const pages = breakStack({
+      cells: [],
+      boxes: stack([[10], [10], [10]]),
+      topPt: 100,
+      bottomPt: 200,
+    });
 
     expect(pages).toHaveLength(1);
     expect(indexesOn(pages[0] ?? { boxes: [] })).toStrictEqual([0, 1, 2]);
   });
 
   it("moves the paragraph that would cross the bottom onto the next page", () => {
-    const pages = breakStack({ boxes: stack([[10], [10], [10]]), topPt: 100, bottomPt: 125 });
+    const pages = breakStack({
+      cells: [],
+      boxes: stack([[10], [10], [10]]),
+      topPt: 100,
+      bottomPt: 125,
+    });
 
     expect(pages).toHaveLength(2);
     expect(indexesOn(pages[0] ?? { boxes: [] })).toStrictEqual([0, 1]);
@@ -99,7 +119,12 @@ describe("breakStack", () => {
   });
 
   it("starts the next page at the top of the body rather than where the flow was", () => {
-    const pages = breakStack({ boxes: stack([[10], [10], [10]]), topPt: 100, bottomPt: 125 });
+    const pages = breakStack({
+      cells: [],
+      boxes: stack([[10], [10], [10]]),
+      topPt: 100,
+      bottomPt: 125,
+    });
 
     expect(pages[1]?.boxes[0]?.topPt).toBe(100);
     expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
@@ -107,7 +132,12 @@ describe("breakStack", () => {
   });
 
   it("breaks a paragraph between its own lines and carries the rest over", () => {
-    const pages = breakStack({ boxes: stack([[10, 10, 10]]), topPt: 100, bottomPt: 120 });
+    const pages = breakStack({
+      cells: [],
+      boxes: stack([[10, 10, 10]]),
+      topPt: 100,
+      bottomPt: 120,
+    });
 
     expect(pages).toHaveLength(2);
     expect(pages[0]?.boxes[0]?.lines).toHaveLength(2);
@@ -118,6 +148,7 @@ describe("breakStack", () => {
 
   it("keeps carrying paragraphs onto further pages for as long as the stack runs", () => {
     const pages = breakStack({
+      cells: [],
       boxes: stack([[10], [10], [10], [10], [10], [10]]),
       topPt: 100,
       bottomPt: 120,
@@ -135,14 +166,14 @@ describe("breakStack", () => {
       ...box,
       marker: { ...MARKER, baselinePt: 108 },
     }));
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 105 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 105 });
 
     expect(pages[0]?.boxes[0]?.marker?.baselinePt).toBe(108);
     expect(pages[1]?.boxes[0]?.marker).toBeNull();
   });
 
   it("draws a line taller than the page rather than looking for a page it fits", () => {
-    const pages = breakStack({ boxes: stack([[400]]), topPt: 100, bottomPt: 200 });
+    const pages = breakStack({ cells: [], boxes: stack([[400]]), topPt: 100, bottomPt: 200 });
 
     expect(pages).toHaveLength(1);
     expect(pages[0]?.boxes[0]?.lines).toHaveLength(1);
@@ -150,7 +181,7 @@ describe("breakStack", () => {
 
   it("takes a paragraph over whole rather than leaving its first line at the foot", () => {
     const boxes = stack([[10], [10, 10]], 100, true);
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 125 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 125 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
     expect(pages.map(linesOn)).toStrictEqual([[1], [2]]);
@@ -159,7 +190,7 @@ describe("breakStack", () => {
 
   it("moves the line above the break down with it rather than leaving the last line alone", () => {
     const boxes = stack([[10], [10, 10, 10, 10]], 100, true);
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 145 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 145 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0, 1], [1]]);
     expect(pages.map(linesOn)).toStrictEqual([[1, 2], [2]]);
@@ -167,20 +198,25 @@ describe("breakStack", () => {
 
   it("leaves the break where it fell when neither end of the paragraph is left alone", () => {
     const boxes = stack([[10], [10, 10, 10, 10, 10]], 100, true);
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 135 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 135 });
 
     expect(pages.map(linesOn)).toStrictEqual([[1, 2], [3]]);
   });
 
   it("breaks a paragraph that starts at the top of its page, having nowhere to move it", () => {
-    const pages = breakStack({ boxes: stack([[10, 10]], 100, true), topPt: 100, bottomPt: 115 });
+    const pages = breakStack({
+      cells: [],
+      boxes: stack([[10, 10]], 100, true),
+      topPt: 100,
+      bottomPt: 115,
+    });
 
     expect(pages.map(linesOn)).toStrictEqual([[1], [1]]);
   });
 
   it("splits a paragraph whose file asks for no widow control", () => {
     const boxes = stack([[10], [10, 10]], 100, false);
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 125 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 125 });
 
     expect(pages.map(linesOn)).toStrictEqual([[1, 1], [1]]);
   });
@@ -200,11 +236,12 @@ describe("breakStack", () => {
     endsPage: false,
     contentWidthPt: 0,
     clipTo: null,
+    paint: null,
   });
 
   it("counts an empty paragraph's own height against the page", () => {
     const boxes = [emptyAt(0, 100, 20), emptyAt(1, 120, 20)];
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 130 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
     expect(pages[1]?.boxes[0]?.topPt).toBe(100);
@@ -212,7 +249,7 @@ describe("breakStack", () => {
 
   it("leaves an empty paragraph where the room below it is all that overflows", () => {
     const boxes = [emptyAt(0, 100, 20), emptyAt(1, 120, 8, 40)];
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 130 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 130 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0, 1]]);
   });
@@ -240,7 +277,7 @@ describe("breakStack", () => {
 
   it("gives a paragraph that asked for a page of its own one, with room to spare", () => {
     const boxes = asking(stack([[10], [10], [10]]), 1, { startsPage: true });
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
     expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
@@ -248,14 +285,14 @@ describe("breakStack", () => {
 
   it("makes no page for a paragraph that asked for one and already stands at a top", () => {
     const boxes = asking(stack([[10], [10]]), 0, { startsPage: true });
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0, 1]]);
   });
 
   it("breaks a paragraph at a line of its own that asked to start a page", () => {
     const boxes = asking(stack([[10, 10, 10]]), 0, { line: 1 });
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
 
     expect(pages.map(linesOn)).toStrictEqual([[1], [2]]);
     expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
@@ -265,7 +302,7 @@ describe("breakStack", () => {
   // the stack to be seen at: the paragraph after it is what carries the page over.
   it("puts what follows a paragraph that ended on a break on a page of its own", () => {
     const boxes = asking(stack([[10], [10], [10]]), 0, { endsPage: true });
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
 
     expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
   });
@@ -274,8 +311,36 @@ describe("breakStack", () => {
   // document asked for is not one of those.
   it("holds a line asked onto a page there whatever widow control would say", () => {
     const boxes = asking(stack([[10, 10, 10, 10]], 100, true), 0, { line: 3 });
-    const pages = breakStack({ boxes, topPt: 100, bottomPt: 200 });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
 
     expect(pages.map(linesOn)).toStrictEqual([[3], [1]]);
+  });
+});
+
+// A cell is not broken by anything of its own: it is cut where the text it holds
+// broke, and the piece of it on each page is what it covered there.
+describe("breakStack over the cells of a table", () => {
+  const boxes = stack([[20], [20], [20]], 100);
+
+  it("keeps a cell on the page its row landed on, shifted with it", () => {
+    const pages = breakStack({
+      boxes,
+      cells: [cellAt(140, 20)],
+      topPt: 100,
+      bottomPt: 140,
+    });
+    expect(pages[0]?.cells).toStrictEqual([]);
+    expect(pages[1]?.cells).toStrictEqual([cellAt(100, 20)]);
+  });
+
+  it("cuts one the break ran through, and starts the rest again at the top", () => {
+    const pages = breakStack({
+      boxes,
+      cells: [cellAt(120, 40)],
+      topPt: 100,
+      bottomPt: 140,
+    });
+    expect(pages[0]?.cells).toStrictEqual([cellAt(120, 20)]);
+    expect(pages[1]?.cells).toStrictEqual([cellAt(100, 20)]);
   });
 });

@@ -9,10 +9,12 @@ import { readTheme, type Theme } from "../docx/theme.js";
 import {
   measureStack,
   shiftBoxes,
+  shiftCells,
   type BandResolver,
   type LayoutBlocker,
   type MetricsResolver,
   type ParagraphBox,
+  type PlacedCell,
 } from "./stack.js";
 import { breakStack, type PageStack } from "./pages.js";
 import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from "./floats.js";
@@ -26,6 +28,7 @@ import type { OutlinePoint, WrapBand } from "./wrapping.js";
 export type LaidOutPage = {
   readonly index: number;
   readonly body: readonly ParagraphBox[];
+  readonly cells: readonly PlacedCell[];
   readonly floats: readonly PlacedFloat[];
   readonly inlines: readonly PlacedInline[];
 };
@@ -40,6 +43,8 @@ export type LaidOutDocument = {
   readonly footerTopPt: number;
   readonly header: readonly ParagraphBox[];
   readonly footer: readonly ParagraphBox[];
+  readonly headerCells: readonly PlacedCell[];
+  readonly footerCells: readonly PlacedCell[];
   readonly headerFloats: readonly PlacedFloat[];
   readonly footerFloats: readonly PlacedFloat[];
   readonly headerInlines: readonly PlacedInline[];
@@ -225,6 +230,7 @@ type Story = {
   readonly part: string | null;
   readonly blocks: readonly Block[];
   readonly boxes: readonly ParagraphBox[];
+  readonly cells: readonly PlacedCell[];
   readonly heightPt: number;
 };
 
@@ -237,7 +243,14 @@ type StoryFrame = {
   readonly widthPt: number;
 };
 
-const EMPTY_STORY: Story = { kind: "measured", part: null, blocks: [], boxes: [], heightPt: 0 };
+const EMPTY_STORY: Story = {
+  kind: "measured",
+  part: null,
+  blocks: [],
+  boxes: [],
+  cells: [],
+  heightPt: 0,
+};
 
 function measureStory(
   pkg: DocxPackage,
@@ -251,7 +264,14 @@ function measureStory(
   const blocks = readBlocks(pkg, part);
   const measured = measureStack({ ...frame, blocks, part, originPt, bandsFor });
   if (measured.kind === "blocked") return measured;
-  return { kind: "measured", part, blocks, boxes: measured.boxes, heightPt: measured.heightPt };
+  return {
+    kind: "measured",
+    part,
+    blocks,
+    boxes: measured.boxes,
+    cells: measured.cells,
+    heightPt: measured.heightPt,
+  };
 }
 
 export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): DocumentLayout {
@@ -320,6 +340,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const footer: Story = {
     ...measuredFooter,
     boxes: shiftBoxes(measuredFooter.boxes, footerTopPt),
+    cells: shiftCells(measuredFooter.cells, footerTopPt),
   };
 
   const marginBottomPt = pageHeightPt - twipsToPoints(page.margin.bottomTwips);
@@ -384,7 +405,12 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
 
   const headerDrawings = drawingsIn(header, headerTopPt);
   const footerDrawings = drawingsIn(footer, footerTopPt);
-  const broken = breakStack({ boxes: bodyStack.boxes, topPt: bodyTopPt, bottomPt: bodyBottomPt });
+  const broken = breakStack({
+    boxes: bodyStack.boxes,
+    cells: bodyStack.cells,
+    topPt: bodyTopPt,
+    bottomPt: bodyBottomPt,
+  });
   const bodyDrawings = pageBoxes(broken).map((boxOf) =>
     drawingsFor(bodyBlocks, boxOf, floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
   );
@@ -415,9 +441,12 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     footerTopPt,
     header: header.boxes,
     footer: footer.boxes,
+    headerCells: header.cells,
+    footerCells: footer.cells,
     pages: broken.map((each) => ({
       index: each.index,
       body: each.boxes,
+      cells: each.cells,
       floats: pageFloats[each.index] ?? [],
       inlines: bodyDrawings[each.index]?.inlines ?? [],
     })),

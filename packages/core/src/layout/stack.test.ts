@@ -117,7 +117,7 @@ describe("measureStack", () => {
   it("measures an empty document as zero height", () => {
     const result = measure(``);
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
-    expect(result).toStrictEqual({ kind: "measured", boxes: [], heightPt: 0 });
+    expect(result).toStrictEqual({ kind: "measured", boxes: [], cells: [], heightPt: 0 });
   });
 });
 
@@ -796,3 +796,75 @@ describe("measureStack where a paragraph asks for contextual spacing", () => {
 const cell = (inner: string, properties = "") =>
   `<w:tc><w:tcPr>${properties}</w:tcPr>${inner}</w:tc>`;
 const table = (...cells: readonly string[]) => `<w:tbl><w:tr>${cells.join("")}</w:tr></w:tbl>`;
+
+// A line drawn round a cell, and the margins the table holds its text off its
+// walls by, which are what a border has to be told from.
+const lined = (eighths: number) =>
+  `<w:tcBorders><w:top w:val="single" w:sz="${String(eighths)}" w:color="FF0000"/>` +
+  `<w:bottom w:val="single" w:sz="${String(eighths)}" w:color="FF0000"/></w:tcBorders>`;
+
+const walls = (twips: number) =>
+  `<w:tblPr><w:tblCellMar><w:top w:w="${String(twips)}" w:type="dxa"/>` +
+  `<w:bottom w:w="${String(twips)}" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
+
+const linedTable = (eighths: number, marginTwips = 0) =>
+  `<w:tbl>${walls(marginTwips)}<w:tr>${cell(`<w:p/>`, lined(eighths))}</w:tr></w:tbl>`;
+
+describe("measureStack over a table's own lines", () => {
+  it("leaves each row half of every line drawn along its edges", () => {
+    const result = measure(linedTable(48));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    // Six points of line, half of it inside the row at each edge and half outside.
+    expect(result.boxes[0]?.topPt).toBeCloseTo(36 + 6, 9);
+    expect(result.heightPt).toBeCloseTo(6 + ARIAL_12 + 6, 9);
+  });
+
+  it("leaves nothing for a line the cell's own margin already clears", () => {
+    const result = measure(linedTable(2, 144));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.heightPt).toBeCloseTo(7.2 + ARIAL_12 + 7.2 + 0.25, 9);
+  });
+
+  it("hands the page a rectangle for every cell, whatever its paragraphs did", () => {
+    const result = measure(table(cell(`<w:p/><w:p/>`, lined(8)), cell(`<w:p/>`)));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.cells.map((each) => [each.topPt, each.heightPt])).toStrictEqual([
+      [36.5, ARIAL_12 * 2 + 1],
+      [36.5, ARIAL_12 * 2 + 1],
+    ]);
+    expect(result.cells[0]?.borders.top?.widthPt).toBe(1);
+    expect(result.cells[1]?.borders.top).toBeNull();
+  });
+});
+
+describe("measureStack over a paragraph's own lines", () => {
+  const boxed = (properties: string, space = 0) =>
+    paragraph(
+      `<w:pBdr><w:top w:val="single" w:sz="12" w:space="${String(space)}" w:color="FF0000"/>` +
+        `<w:bottom w:val="single" w:sz="12" w:space="${String(space)}" w:color="FF0000"/></w:pBdr>${properties}`,
+    );
+
+  it("takes the room the lines round it need out of the flow", () => {
+    const boxes = boxesOf(boxed("", 6));
+    expect(boxes[0]?.heightPt).toBeCloseTo(7.5 + ARIAL_12 + 7.5, 9);
+    expect(boxes[0]?.lines[0]?.topPt).toBeCloseTo(36 + 7.5, 9);
+  });
+
+  it("joins a run of paragraphs asking for the same box into one", () => {
+    const boxes = boxesOf(`${boxed("")}${boxed("")}`);
+    expect(boxes[0]?.paint?.borders.bottom).toBeNull();
+    expect(boxes[1]?.paint?.borders.top).toBeNull();
+    expect(boxes[0]?.paint?.borders.top?.widthPt).toBe(1.5);
+    // The line between them is not drawn, so neither is any room left for it.
+    expect(boxes[1]?.topPt).toBeCloseTo(36 + 1.5 + ARIAL_12, 9);
+  });
+
+  it("reaches across the text area rather than across what the text filled", () => {
+    const boxes = boxesOf(boxed(`<w:ind w:left="720" w:right="1440"/>`));
+    expect([boxes[0]?.paint?.leftPt, boxes[0]?.paint?.rightPt]).toStrictEqual([72 + 36, 540 - 72]);
+  });
+
+  it("leaves a paragraph that asks for neither line nor colour nothing to draw", () => {
+    expect(boxesOf(paragraph(""))[0]?.paint).toBeNull();
+  });
+});

@@ -6,15 +6,25 @@ import type {
   TableInsets,
   TableRow,
 } from "../docx/blocks.js";
+import {
+  borderExtentPt,
+  resolveCellBorders,
+  NO_BORDERS,
+  SIDES,
+  type Border,
+  type Borders,
+} from "../docx/borders.js";
 import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js";
 import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns, type TextRun } from "../docx/runs.js";
 import { W_NS } from "../docx/section.js";
 import {
+  mergeTableBorders,
   resolveNumberMark,
   resolveParagraphFrame,
   resolveParagraphMark,
   resolveRunMarks,
+  resolveTableBorders,
   styleIdOf,
   type ParagraphFrame,
   type ParagraphMark,
@@ -99,6 +109,19 @@ export type ClipRect = {
   readonly heightPt: number;
 };
 
+// The lines drawn round a paragraph and the colour drawn behind it. How far up
+// and down they reach is the paragraph's own lines; how far out to either side is
+// here, since that is the text area rather than anything the text did with it.
+//
+// A border a neighbour asks for in the same words is left out: Word joins a run
+// of such paragraphs into one box rather than drawing a line between each pair.
+export type ParagraphPaint = {
+  readonly leftPt: number;
+  readonly rightPt: number;
+  readonly fillColor: string | null;
+  readonly borders: Borders;
+};
+
 export type ParagraphBox = {
   readonly index: number;
   readonly topPt: number;
@@ -130,12 +153,30 @@ export type ParagraphBox = {
   // What the paragraph's text is cut off at, which is the row when a row was told
   // exactly how tall to be and nothing anywhere else.
   readonly clipTo: ClipRect | null;
+  readonly paint: ParagraphPaint | null;
+};
+
+// A cell as it stands on the page: the rectangle its grid lines mark out, the
+// colour behind its text, and the line drawn along each of its edges. Word
+// centres a border on the edge it runs along, so half of one falls outside this
+// rectangle, and a fill stops at the inner side of each.
+//
+// This is a peer of a paragraph rather than something hanging off one: a cell
+// holds paragraphs, and drawing one is not drawing any of them.
+export type PlacedCell = {
+  readonly leftPt: number;
+  readonly topPt: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+  readonly fillColor: string | null;
+  readonly borders: Borders;
 };
 
 export type StackMeasurement =
   | {
       readonly kind: "measured";
       readonly boxes: readonly ParagraphBox[];
+      readonly cells: readonly PlacedCell[];
       readonly heightPt: number;
     }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
@@ -210,6 +251,7 @@ function measureBlocks(
   frame: Frame,
 ): StackMeasurement {
   const boxes: ParagraphBox[] = [];
+  const cells: PlacedCell[] = [];
   let top = originPt;
 
   for (const [at, block] of blocks.entries()) {
@@ -224,16 +266,62 @@ function measureBlocks(
       continue;
     }
 
-    for (const row of block.rows) {
-      const measured = measureRow(row, context, top, frame, block.insets);
-      if (measured.kind === "blocked") return measured;
-      boxes.push(...measured.boxes);
-      top += measured.heightPt;
-    }
+    const measured = measureTable(block, context, top, frame);
+    if (measured.kind === "blocked") return measured;
+    boxes.push(...measured.boxes);
+    cells.push(...measured.cells);
+    top += measured.heightPt;
   }
 
-  return { kind: "measured", boxes, heightPt: top - originPt };
+  return { kind: "measured", boxes, cells, heightPt: top - originPt };
 }
+
+type Table = Extract<Block, { kind: "table" }>;
+
+// Half of a border falls outside the line it is centred on, so half of the ones
+// round the outside of a table falls outside the table. What stands where the
+// table goes is that outer edge: its first grid line is half its widest top
+// border below the flow, and half its widest left border in from its indent.
+function measureTable(
+  block: Table,
+  context: Context,
+  topPt: number,
+  frame: Frame,
+): StackMeasurement {
+  const borders = resolveCellBorders(
+    block.rows.map((row) => row.cells.map((cell) => cell.borders)),
+    mergeTableBorders(resolveTableBorders(context.styles, block.styleId), block.borders),
+  );
+
+  const first = borders[0] ?? [];
+  const last = borders[borders.length - 1] ?? [];
+  const outerTopPt = halfOf(first.map((cell) => cell.top));
+  const outerBottomPt = halfOf(last.map((cell) => cell.bottom));
+  const outerLeftPt = halfOf(borders.map((row) => row[0]?.left ?? null));
+
+  const boxes: ParagraphBox[] = [];
+  const cells: PlacedCell[] = [];
+  const rowFrame = {
+    leftPt: frame.leftPt + twipsToPoints(block.insets.indentTwips) + outerLeftPt,
+    widthPt: frame.widthPt,
+  };
+
+  let top = topPt + outerTopPt;
+  for (const [at, row] of block.rows.entries()) {
+    const measured = measureRow(row, borders[at] ?? [], context, top, rowFrame, block.insets);
+    if (measured.kind === "blocked") return measured;
+    boxes.push(...measured.boxes);
+    cells.push(...measured.cells);
+    top += measured.heightPt;
+  }
+
+  return { kind: "measured", boxes, cells, heightPt: top + outerBottomPt - topPt };
+}
+
+// How far a line drawn along an edge reaches to either side of it, which is the
+// room the cells on both sides of it have to leave.
+const halfOf = (borders: readonly (Border | null)[]): number =>
+  Math.max(0, ...borders.map((border) => borderExtentPt(border) / 2));
 
 // A paragraph in the next cell or on the other side of a table is not a
 // neighbour: only what stands beside it in its own run of blocks is.
@@ -245,9 +333,14 @@ function paragraphAt(blocks: readonly Block[], at: number): Paragraph | null {
 type MeasuredCell = {
   readonly align: CellVerticalAlign;
   readonly boxes: readonly ParagraphBox[];
+  // The cells of a table inside this one, which move with its content rather
+  // than with the row.
+  readonly inner: readonly PlacedCell[];
   readonly heightPt: number;
   readonly leftPt: number;
   readonly widthPt: number;
+  readonly fillColor: string | null;
+  readonly borders: Borders;
 };
 
 // A row is as tall as its tallest cell, and every cell starts at the row's top;
@@ -259,27 +352,48 @@ type MeasuredCell = {
 // below they are the row's: the largest top margin any cell in the row asks for
 // holds every cell in it off the top wall, and the largest bottom margin adds to
 // the row under all of them.
+//
+// A border is not room on top of that but room of its own: the text clears the
+// half of the line that falls inside the cell, and where the margin already holds
+// it further off than that the border asks for nothing. Case h's rows, held off
+// their walls by 2.75pt and lined with a quarter point, come out the height they
+// came out with no borders read at all; the same rows with a 6pt line and no
+// margin clear the whole 3pt of it.
 function measureRow(
   row: TableRow,
+  borders: readonly Borders[],
   context: Context,
   topPt: number,
   frame: Frame,
   insets: TableInsets,
 ): StackMeasurement {
   const measured: MeasuredCell[] = [];
-  const topMarginPt = rowMarginPt(row, insets, "topTwips");
-  const bottomMarginPt = rowMarginPt(row, insets, "bottomTwips");
+  const topMarginPt = Math.max(
+    rowMarginPt(row, insets, "topTwips"),
+    halfOf(borders.map((of) => of.top)),
+  );
+  const bottomMarginPt = Math.max(
+    rowMarginPt(row, insets, "bottomTwips"),
+    halfOf(borders.map((of) => of.bottom)),
+  );
   let contentHeightPt = 0;
-  let leftPt = frame.leftPt + twipsToPoints(insets.indentTwips);
+  let leftPt = frame.leftPt;
 
   // A cell is measured from its own origin and only then moved down to the row, so
   // the page coordinates a wrapping object stands in cannot reach inside one.
   const inCell: Context = { ...context, region: { bands: [] }, bandsFor: () => [], inCell: true };
 
-  for (const cell of row.cells) {
+  for (const [at, cell] of row.cells.entries()) {
     const widthPt = cellWidthPt(cell) ?? frame.widthPt;
-    const leftMarginPt = twipsToPoints(cell.margins.leftTwips ?? insets.leftTwips);
-    const rightMarginPt = twipsToPoints(cell.margins.rightTwips ?? insets.rightTwips);
+    const own = borders[at] ?? NO_BORDERS;
+    const leftMarginPt = Math.max(
+      twipsToPoints(cell.margins.leftTwips ?? insets.leftTwips),
+      halfOf([own.left]),
+    );
+    const rightMarginPt = Math.max(
+      twipsToPoints(cell.margins.rightTwips ?? insets.rightTwips),
+      halfOf([own.right]),
+    );
     const cellFrame = {
       leftPt: leftPt + leftMarginPt,
       widthPt: Math.max(0, widthPt - leftMarginPt - rightMarginPt),
@@ -289,9 +403,12 @@ function measureRow(
     measured.push({
       align: cell.verticalAlign,
       boxes: of.boxes,
+      inner: of.cells,
       heightPt: of.heightPt,
       leftPt,
       widthPt,
+      fillColor: cell.fillColor,
+      borders: own,
     });
     contentHeightPt = Math.max(contentHeightPt, of.heightPt);
     leftPt += widthPt;
@@ -303,6 +420,7 @@ function measureRow(
   const roomPt = Math.max(0, heightPt - topMarginPt - bottomMarginPt);
 
   const boxes: ParagraphBox[] = [];
+  const cells: PlacedCell[] = [];
   for (const cell of measured) {
     const offset = topPt + topMarginPt + seatingOffset(cell.align, roomPt, cell.heightPt);
     // Only a row given a height of its own can be shorter than what it holds, so
@@ -312,9 +430,18 @@ function measureRow(
         ? { leftPt: cell.leftPt, topPt, widthPt: cell.widthPt, heightPt }
         : null;
     for (const box of cell.boxes) boxes.push({ ...shiftBox(box, offset), clipTo });
+    for (const inner of cell.inner) cells.push({ ...inner, topPt: inner.topPt + offset });
+    cells.push({
+      leftPt: cell.leftPt,
+      topPt,
+      widthPt: cell.widthPt,
+      heightPt,
+      fillColor: cell.fillColor,
+      borders: cell.borders,
+    });
   }
 
-  return { kind: "measured", boxes, heightPt };
+  return { kind: "measured", boxes, cells, heightPt };
 }
 
 // The largest margin any cell in the row asks for at that side, which is what
@@ -353,6 +480,9 @@ export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   })),
   marker: box.marker === null ? null : { ...box.marker, baselinePt: box.marker.baselinePt + byPt },
 });
+
+export const shiftCells = (cells: readonly PlacedCell[], byPt: number): readonly PlacedCell[] =>
+  byPt === 0 ? cells : cells.map((cell) => ({ ...cell, topPt: cell.topPt + byPt }));
 
 export const shiftBoxes = (
   boxes: readonly ParagraphBox[],
@@ -452,6 +582,10 @@ function measureParagraph(
       frame,
       paragraphFrame,
       spacing: spacingPt(paragraph, paragraphFrame, context, neighbours),
+      paint: paintOf(paragraphFrame, context, neighbours, {
+        leftPt: frame.leftPt + insets.leftPt,
+        rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
+      }),
       startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
       number: measured === null ? null : measured.number,
       bands: context.region.bands,
@@ -473,6 +607,48 @@ function flowing(runs: readonly TextRun[], inCell: boolean): readonly TextRun[] 
     pieces: run.pieces.filter((piece) => piece.kind !== "break" || !piece.endsPage),
   }));
 }
+
+// What a paragraph has drawn round it, once the neighbours have had their say.
+// A run of paragraphs asking for the same border is one box in Word: the line
+// between two of them is not drawn, and no room is left for it either.
+function paintOf(
+  paragraphFrame: ParagraphFrame,
+  context: Context,
+  neighbours: Neighbours,
+  across: { readonly leftPt: number; readonly rightPt: number },
+): ParagraphPaint | null {
+  const { borders, fillColor } = paragraphFrame;
+  if (fillColor === null && SIDES.every((side) => borders[side] === null)) return null;
+
+  const joins = (other: Paragraph | null): boolean =>
+    other !== null && sameBorders(borders, resolveParagraphFrame(other, context.styles).borders);
+
+  return {
+    ...across,
+    fillColor,
+    borders: {
+      ...borders,
+      top: joins(neighbours.above) ? null : borders.top,
+      bottom: joins(neighbours.below) ? null : borders.bottom,
+    },
+  };
+}
+
+const sameBorders = (one: Borders, other: Borders): boolean =>
+  SIDES.every((side) => sameBorder(one[side], other[side]));
+
+const sameBorder = (one: Border | null, other: Border | null): boolean =>
+  one === null || other === null
+    ? one === other
+    : one.style === other.style &&
+      one.widthPt === other.widthPt &&
+      one.color === other.color &&
+      one.spacePt === other.spacePt;
+
+// The room a line drawn round a paragraph takes from the flow: the line itself and
+// the distance it stands off the text.
+const borderRoomPt = (border: Border | null): number =>
+  border === null ? 0 : borderExtentPt(border) + border.spacePt;
 
 // The room a paragraph keeps above and below itself. `w:contextualSpacing` drops
 // whichever of the two faces a paragraph of the same style, which is how a list
@@ -638,6 +814,7 @@ type LayOutParagraphInput = {
   readonly frame: Frame;
   readonly paragraphFrame: ParagraphFrame;
   readonly spacing: Spacing;
+  readonly paint: ParagraphPaint | null;
   readonly number: MeasuredNumber | null;
   // Whether the paragraph asked for a page of its own.
   readonly startsPage: boolean;
@@ -652,9 +829,13 @@ type LayOutParagraphInput = {
 // not let the paragraph mark raise a line it shares with a run, however much
 // bigger the mark is. An empty paragraph is the mark's height alone.
 function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphInput): ParagraphBox {
-  const { paragraphFrame, frame, number } = input;
+  const { paragraphFrame, frame, number, paint } = input;
   const insets = insetsOf(paragraphFrame);
   const { beforePt, afterPt } = input.spacing;
+  // A border round the paragraph is room it takes out of the flow, above the
+  // first line and below the last.
+  const abovePt = borderRoomPt(paint?.borders.top ?? null);
+  const belowPt = borderRoomPt(paint?.borders.bottom ?? null);
   const { lines: laid, endsPage } = layOutLines(flow, input);
 
   // An empty paragraph is a line like any other as far as objects are concerned:
@@ -672,7 +853,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       paragraphFrame,
     );
     const slot = fitLine({
-      topPt: input.topPt + beforePt,
+      topPt: input.topPt + beforePt + abovePt,
       heightPt: height.heightPt,
       leftPt: frame.leftPt + insets.leftPt,
       rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
@@ -683,7 +864,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
     return {
       index,
       topPt: input.topPt,
-      heightPt: slot.topPt + height.heightPt + afterPt - input.topPt,
+      heightPt: slot.topPt + height.heightPt + belowPt + afterPt - input.topPt,
       lines: [],
       marker: markerAt(number, slot.topPt + height.baseFromTopPt),
       markTopPt: slot.topPt + height.seatPt,
@@ -693,6 +874,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       endsPage,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
       clipTo: null,
+      paint,
     };
   }
 
@@ -722,7 +904,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
   return {
     index,
     topPt: input.topPt,
-    heightPt: bottomPt + afterPt - input.topPt,
+    heightPt: bottomPt + belowPt + afterPt - input.topPt,
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
@@ -735,6 +917,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
       0,
     ),
     clipTo: null,
+    paint,
   };
 }
 
@@ -769,7 +952,7 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
   const insets = insetsOf(paragraphFrame);
   const laid: LaidLine[] = [];
   let rest: LineFlow = flow;
-  let top = input.topPt + input.spacing.beforePt;
+  let top = input.topPt + input.spacing.beforePt + borderRoomPt(input.paint?.borders.top ?? null);
 
   for (;;) {
     const at = laid.length;

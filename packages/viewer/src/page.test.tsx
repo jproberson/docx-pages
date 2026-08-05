@@ -9,6 +9,7 @@ import type {
   MetafilePicture,
   ParagraphBox,
   ParagraphMark,
+  PlacedCell,
   PlacedContent,
   PlacedPaint,
   SectionGeometry,
@@ -39,7 +40,7 @@ const EMPTY_BODY: TextBoxBody = {
 const textBox = (boxes: readonly ParagraphBox[] = []): PlacedContent => ({
   kind: "text-box",
   body: EMPTY_BODY,
-  text: boxes.length === 0 ? null : { boxes, contentHeightPt: 0, contentWidthPt: 0 },
+  text: boxes.length === 0 ? null : { boxes, cells: [], contentHeightPt: 0, contentWidthPt: 0 },
   paint: UNPAINTED,
 });
 
@@ -85,6 +86,7 @@ const paragraphOf = (
   endsPage: false,
   contentWidthPt: options.widthPt ?? 40,
   clipTo: null,
+  paint: null,
 });
 
 const LETTER: SectionGeometry = {
@@ -128,6 +130,7 @@ const layoutWith = (
   floats: readonly ReturnType<typeof float>[],
   body: readonly ParagraphBox[] = [],
   footerFloats: readonly ReturnType<typeof float>[] = [],
+  cells: readonly PlacedCell[] = [],
 ): LaidOutDocument => ({
   kind: "laid-out",
   page: LETTER,
@@ -138,11 +141,13 @@ const layoutWith = (
   footerTopPt: 784.8,
   header: [],
   footer: [],
+  headerCells: [],
+  footerCells: [],
   headerFloats: [],
   footerFloats,
   headerInlines: [],
   footerInlines: [],
-  pages: [{ index: 0, body, floats, inlines: [] }],
+  pages: [{ index: 0, body, cells, floats, inlines: [] }],
 });
 
 // A block of colour cut to a rectangle, a rule and a run of text, which is what a
@@ -427,6 +432,42 @@ describe("Page drawing text", () => {
 
   it("draws no text layer for a document that has none", () => {
     expect(markup(layoutWith([]))).not.toContain('data-kind="text"');
+  });
+});
+
+const CELL: PlacedCell = {
+  leftPt: 100,
+  topPt: 200,
+  widthPt: 72,
+  heightPt: 20,
+  fillColor: "#DEEBF7",
+  borders: {
+    top: { style: "single", widthPt: 1.5, color: "#FF0000", spacePt: 0 },
+    left: null,
+    bottom: null,
+    right: { style: "dashed", widthPt: 1, color: null, spacePt: 0 },
+  },
+};
+
+describe("Page drawing a table's own lines", () => {
+  it("lays a cell's colour and draws its lines", () => {
+    const html = markup(layoutWith([], [], [], [CELL]));
+    expect(html).toContain('data-kind="paint"');
+    expect(html).toContain('fill="#DEEBF7"');
+    expect(html).toContain('stroke="#FF0000"');
+  });
+
+  it("cuts a dashed line into the dashes Word draws it with", () => {
+    expect(markup(layoutWith([], [], [], [CELL]))).toContain('stroke-dasharray="4 4"');
+  });
+
+  it("draws the whole of it behind the text", () => {
+    const html = markup(layoutWith([], [paragraphOf("Hello")], [], [CELL]));
+    expect(html.indexOf('data-kind="paint"')).toBeLessThan(html.indexOf('data-kind="text"'));
+  });
+
+  it("draws no layer at all for a page with nothing painted on it", () => {
+    expect(markup(layoutWith([], [paragraphOf("Hello")]))).not.toContain('data-kind="paint"');
   });
 });
 

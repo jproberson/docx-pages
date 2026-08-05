@@ -2,10 +2,20 @@ import type {
   LaidOutDocument,
   LaidOutPage,
   ParagraphBox,
+  ParagraphPaint,
+  PlacedCell,
   PlacedContent,
   PlacedFloat,
   PlacedInline,
 } from "@docx-pages/core";
+
+// A paragraph's own fill and border, with the room its lines took: how far up and
+// down they reach is the paragraph's, how far across is the text area's.
+export type PaintedParagraph = {
+  readonly paint: ParagraphPaint;
+  readonly topPt: number;
+  readonly bottomPt: number;
+};
 
 export type Drawable =
   | {
@@ -25,6 +35,15 @@ export type Drawable =
       // The rectangle the text is cut to, which a shape's own text has and the
       // text a story flowed down the page does not.
       readonly clipTo: Rect | null;
+    }
+  // Everything drawn behind the text of a story: the cells of its tables and the
+  // fills and borders its paragraphs ask for. One layer holds them all, since they
+  // are drawn in the page's own coordinates and nothing stands between them.
+  | {
+      readonly kind: "paint";
+      readonly key: string;
+      readonly cells: readonly PlacedCell[];
+      readonly paragraphs: readonly PaintedParagraph[];
     };
 
 export type Rect = {
@@ -68,16 +87,31 @@ const hasText = (boxes: readonly ParagraphBox[]): boolean =>
 // anywhere, it is simply not drawn.
 function textOf(float: PlacedFloat, key: string): readonly Drawable[] {
   const { content } = float;
-  if (content.kind !== "text-box" || content.text === null || !hasText(content.text.boxes)) {
-    return [];
-  }
+  if (content.kind !== "text-box" || content.text === null) return [];
+
   const clipTo = {
     leftPt: float.leftPt,
     topPt: float.topPt,
     widthPt: float.widthPt,
     heightPt: float.heightPt,
   };
-  return [{ kind: "text", key: `${key}-text`, boxes: content.text.boxes, clipTo }];
+  const { boxes, cells } = content.text;
+  const painted = paintLayer(cells, boxes, `${key}-paint`);
+  return [
+    ...painted,
+    ...(hasText(boxes) ? [{ kind: "text" as const, key: `${key}-text`, boxes, clipTo }] : []),
+  ];
+}
+
+// Everything drawn behind a story's text, where there is anything at all.
+function paintLayer(
+  cells: readonly PlacedCell[],
+  boxes: readonly ParagraphBox[],
+  key: string,
+): readonly Drawable[] {
+  const paragraphs = paintedParagraphs(boxes);
+  if (cells.length + paragraphs.length === 0) return [];
+  return [{ kind: "paint", key, cells, paragraphs }];
 }
 
 // Word stacks the floats of one story by relativeHeight alone. It is not two
@@ -113,6 +147,22 @@ function cutText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
   });
 }
 
+// What a paragraph draws behind itself reaches as far as its own lines do, and a
+// paragraph with none is the room its mark stands in.
+function paintedParagraphs(boxes: readonly ParagraphBox[]): readonly PaintedParagraph[] {
+  return boxes.flatMap((box) =>
+    box.paint === null
+      ? []
+      : [
+          {
+            paint: box.paint,
+            topPt: box.lines[0]?.topPt ?? box.markTopPt,
+            bottomPt: box.contentBottomPt,
+          },
+        ],
+  );
+}
+
 export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonly Drawable[] {
   const inlines = [...layout.headerInlines, ...page.inlines, ...layout.footerInlines].map(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
@@ -120,9 +170,11 @@ export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonl
 
   const flowed = [...layout.header, ...page.body, ...layout.footer];
   const text = [...flowedText(flowed), ...cutText(flowed)];
+  const cells = [...layout.headerCells, ...page.cells, ...layout.footerCells];
 
   return [
     ...stacked([...layout.headerFloats, ...layout.footerFloats], "story"),
+    ...paintLayer(cells, flowed, "paint"),
     ...text,
     ...inlines,
     ...stacked(page.floats, "float"),

@@ -527,6 +527,268 @@ export function pageDocument(): string {
   ].join("");
 }
 
+// Where Word draws the lines round a table and the colour behind its text.
+//
+// Nothing here is read off a paragraph's position: a border is painted rather
+// than laid out, and Word's pdf reports each one as a filled rectangle. Every
+// border and every fill in this document is given a colour of its own, since the
+// colour is the only thing in that report that says which question it answers.
+// The cases that could move the text as well carry text that names them, so the
+// same rendering says whether the layout moved.
+export function bordersDocument(): string {
+  const CELL_TWIPS = 1440;
+  const MARGIN_TWIPS = 108;
+
+  const edge = (side: string, style: string, eighths: number, color: string, space = 0): string =>
+    `<w:${side} w:val="${style}" w:sz="${String(eighths)}" w:space="${String(space)}" w:color="${color}"/>`;
+
+  const around = (style: string, eighths: number, color: string, space = 0): string =>
+    ["top", "left", "bottom", "right"]
+      .map((side) => edge(side, style, eighths, color, space))
+      .join("");
+
+  const cellBorders = (edges: string): string => `<w:tcBorders>${edges}</w:tcBorders>`;
+  const shading = (color: string, pattern = "clear", foreground = "auto"): string =>
+    `<w:shd w:val="${pattern}" w:color="${foreground}" w:fill="${color}"/>`;
+
+  const cell = (properties: string, content: string, widthTwips = CELL_TWIPS): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(widthTwips)}" w:type="dxa"/>${properties}</w:tcPr>${content}</w:tc>`;
+
+  // The margins are stated because an authored document declares no table style,
+  // and a table asking for none of its own would hold its text off its walls by
+  // nothing at all.
+  const margins = `<w:tblCellMar>
+      <w:top w:w="0" w:type="dxa"/><w:left w:w="${String(MARGIN_TWIPS)}" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="${String(MARGIN_TWIPS)}" w:type="dxa"/>
+    </w:tblCellMar>`;
+
+  const table = (properties: string, columns: number, cells: string): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(columns * CELL_TWIPS)}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/>${margins}${properties}</w:tblPr>
+      <w:tblGrid>${Array.from({ length: columns }, () => `<w:gridCol w:w="${String(CELL_TWIPS)}"/>`).join("")}</w:tblGrid>
+      <w:tr>${cells}</w:tr></w:tbl>`;
+
+  // One cell with a border of its own on every side, which says how thick Word
+  // draws each width and where it hangs the line off the cell's own edge. The
+  // text names the case so the same rendering says whether a thick border moved
+  // it: a cell edge is at 36pt and its text starts 5.4pt inside that.
+  const alone = (name: string, properties: string): string =>
+    table("", 1, cell(properties, paragraph("", run(name))));
+
+  const WIDTHS = [
+    { eighths: 2, color: "FF0000" },
+    { eighths: 4, color: "00B050" },
+    { eighths: 6, color: "0070C0" },
+    { eighths: 8, color: "FF00FF" },
+    { eighths: 12, color: "00B0F0" },
+    { eighths: 18, color: "FFC000" },
+    { eighths: 24, color: "7030A0" },
+    { eighths: 36, color: "C00000" },
+    { eighths: 48, color: "008080" },
+  ] as const;
+
+  // The styles a document in the wild asks for. Each is drawn at the one width, so
+  // what comes back says how many rectangles the style is made of and how they
+  // stand against the single line of the same width.
+  const STYLES = [
+    { style: "single", color: "E97132" },
+    { style: "double", color: "196B24" },
+    { style: "dashed", color: "0F9ED5" },
+    { style: "dotted", color: "A02B93" },
+    { style: "thick", color: "4EA72E" },
+    { style: "dotDash", color: "B10202" },
+    { style: "none", color: "3B7D23" },
+    { style: "nil", color: "D86DCB" },
+  ] as const;
+
+  const STYLE_EIGHTHS = 12;
+
+  return [
+    paragraph("", run("above")),
+
+    // How thick each width is drawn and where it sits.
+    ...WIDTHS.flatMap((each) => [
+      alone(`w${String(each.eighths)}`, cellBorders(around("single", each.eighths, each.color))),
+      paragraph("", run("between")),
+    ]),
+
+    // What each style makes of the one width.
+    ...STYLES.flatMap((each) => [
+      alone(`s-${each.style}`, cellBorders(around(each.style, STYLE_EIGHTHS, each.color))),
+      paragraph("", run("between")),
+    ]),
+
+    // Two cells that both state the line between them, which only one of them can
+    // draw. The wider is asked for from each side in turn, and then the two are
+    // made the same width so that something other than the width has to settle it.
+    table(
+      "",
+      2,
+      cell(cellBorders(edge("right", "single", 8, "FF0000")), paragraph("", run("c1 thin"))) +
+        cell(cellBorders(edge("left", "single", 24, "0070C0")), paragraph("", run("c1 thick"))),
+    ),
+    paragraph("", run("between")),
+    table(
+      "",
+      2,
+      cell(cellBorders(edge("right", "single", 24, "FF0000")), paragraph("", run("c2 thick"))) +
+        cell(cellBorders(edge("left", "single", 8, "0070C0")), paragraph("", run("c2 thin"))),
+    ),
+    paragraph("", run("between")),
+    table(
+      "",
+      2,
+      cell(cellBorders(edge("right", "single", 12, "FF0000")), paragraph("", run("c3 left"))) +
+        cell(cellBorders(edge("left", "single", 12, "0070C0")), paragraph("", run("c3 right"))),
+    ),
+    paragraph("", run("between")),
+    // One side asking for no line at all against a side that asks for one, which
+    // says whether nil is a width of nothing or a refusal that carries.
+    table(
+      "",
+      2,
+      cell(cellBorders(edge("right", "nil", 0, "auto")), paragraph("", run("c4 nil"))) +
+        cell(cellBorders(edge("left", "single", 12, "0070C0")), paragraph("", run("c4 line"))),
+    ),
+    paragraph("", run("between")),
+
+    // The table states the lines and a cell overrides one of them: whether a cell
+    // can rub out a line the table drew, and whether the table's own inside line
+    // stands where neither cell asks for anything.
+    table(
+      `<w:tblBorders>${around("single", 8, "FFC000")}${edge("insideV", "single", 8, "FFC000")}${edge("insideH", "single", 8, "FFC000")}</w:tblBorders>`,
+      2,
+      cell("", paragraph("", run("d1 kept"))) +
+        cell(cellBorders(edge("left", "nil", 0, "auto")), paragraph("", run("d1 rubbed"))),
+    ),
+    paragraph("", run("between")),
+    // The table's inside line against a wider one a cell asks for.
+    table(
+      `<w:tblBorders>${edge("insideV", "single", 4, "FFC000")}</w:tblBorders>`,
+      2,
+      cell(cellBorders(edge("right", "single", 24, "7030A0")), paragraph("", run("d2 wide"))) +
+        cell("", paragraph("", run("d2 none"))),
+    ),
+    paragraph("", run("between")),
+
+    // What a fill covers: a cell on its own, a cell whose border is thick enough
+    // to say which side of the line the fill stops at, and a fill under a pattern.
+    table("", 1, cell(shading("FFF2CC"), paragraph("", run("e1 fill")))),
+    paragraph("", run("between")),
+    table(
+      "",
+      1,
+      cell(
+        `${cellBorders(around("single", 48, "C00000"))}${shading("DEEBF7")}`,
+        paragraph("", run("e2 fill")),
+      ),
+    ),
+    paragraph("", run("between")),
+    table("", 1, cell(shading("FFFF00", "pct25", "FF0000"), paragraph("", run("e3 pattern")))),
+    paragraph("", run("between")),
+    // A fill the paragraph asks for rather than the cell, inside a cell that asks
+    // for none: the two rectangles are not the same shape.
+    table("", 1, cell("", paragraph(shading("E2EFDA"), run("e4 paragraph")))),
+    paragraph("", run("between")),
+
+    // A paragraph's own fill and its own border, out in the flow of the page where
+    // the text area's edges are known: the text runs from 36pt to 576pt.
+    paragraph(shading("FBE5D6"), run("f1 fill")),
+    paragraph("", run("between")),
+    paragraph(`<w:ind w:left="720" w:right="1440"/>${shading("E2F0D9")}`, run("f2 indented fill")),
+    paragraph("", run("between")),
+    // A border under the paragraph, at no distance from it and then at twelve
+    // points, which says both where the line goes and whether the room it asks for
+    // is room the paragraph takes.
+    paragraph(`<w:pBdr>${edge("bottom", "single", 12, "FF0000")}</w:pBdr>`, run("f3 under")),
+    paragraph("", run("between")),
+    paragraph(
+      `<w:pBdr>${edge("bottom", "single", 12, "0070C0", 12)}</w:pBdr>`,
+      run("f4 under at twelve"),
+    ),
+    paragraph("", run("between")),
+    // A box round the paragraph, which says how far past the text it reaches at
+    // each side and what the room it asks for does there.
+    paragraph(`<w:pBdr>${around("single", 12, "7030A0", 6)}</w:pBdr>`, run("f5 boxed")),
+    paragraph("", run("between")),
+    paragraph(
+      `<w:ind w:left="720" w:right="1440"/><w:pBdr>${around("single", 12, "00B050", 0)}</w:pBdr>`,
+      run("f6 boxed and indented"),
+    ),
+    paragraph("", run("between")),
+    // Three paragraphs asking for the same box, which Word either draws three
+    // times or joins into one.
+    ...["f7 first", "f7 second", "f7 third"].map((each) =>
+      paragraph(`<w:pBdr>${around("single", 12, "C00000", 0)}</w:pBdr>`, run(each)),
+    ),
+    paragraph("", run("between")),
+    // A fill under a paragraph that keeps room above and below itself, which says
+    // whether the room is part of what is filled.
+    paragraph(`<w:spacing w:before="240" w:after="240"/>${shading("FFE699")}`, run("f8 spaced")),
+    paragraph("", run("between")),
+
+    // The lines of a table stand where the widths of the borders themselves put
+    // them, and half of an outer one falls outside the table. These ask which side
+    // of the line the table starts on, and how much room a line between two rows
+    // takes from each of them: one border at a time, wide enough that half of it
+    // cannot be mistaken for the whole.
+    table("", 1, cell(cellBorders(edge("left", "single", 48, "FF6699")), paragraph("", run("g1")))),
+    paragraph("", run("between")),
+    table("", 1, cell(cellBorders(edge("top", "single", 48, "66FF99")), paragraph("", run("g2")))),
+    paragraph("", run("between")),
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(CELL_TWIPS)}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/>${margins}
+      <w:tblBorders>${edge("insideH", "single", 48, "9966FF")}</w:tblBorders></w:tblPr>
+      <w:tblGrid><w:gridCol w:w="${String(CELL_TWIPS)}"/></w:tblGrid>
+      <w:tr>${cell("", paragraph("", run("g3 over")))}</w:tr>
+      <w:tr>${cell("", paragraph("", run("g3 under")))}</w:tr></w:tbl>`,
+    paragraph("", run("between")),
+    // A line of text pushed against the right wall of a cell, which is the only way
+    // to read where that wall is: with a wide border either side of it, the answer
+    // says whether the room a cell gives its text is the whole of the cell or the
+    // cell inside its own borders.
+    table(
+      "",
+      1,
+      cell(
+        cellBorders(around("single", 48, "996633")),
+        paragraph(`<w:jc w:val="right"/>`, run("g4")),
+      ),
+    ),
+    paragraph("", run("between")),
+    table("", 1, cell("", paragraph(`<w:jc w:val="right"/>`, run("g5")))),
+    paragraph("", run("between")),
+
+    // Where a table's own indent puts it. The lines say where the table's edge
+    // went and the text says where the cell's own margin then held it off that
+    // edge, which is the whole question: an indent smaller than the margin either
+    // adds to it or is swallowed by it.
+    ...[0, 54, 720].flatMap((twips, at) => [
+      `<w:tbl><w:tblPr><w:tblW w:w="${String(CELL_TWIPS)}" w:type="dxa"/>
+        <w:tblInd w:w="${String(twips)}" w:type="dxa"/>${margins}</w:tblPr>
+        <w:tblGrid><w:gridCol w:w="${String(CELL_TWIPS)}"/></w:tblGrid>
+        <w:tr>${cell(
+          cellBorders(around("single", 8, ["FF3399", "33CC33", "3366FF"][at] ?? "000000")),
+          paragraph("", run(`i${String(twips)} indent`)),
+        )}</w:tr></w:tbl>`,
+      paragraph("", run("between")),
+    ]),
+
+    // A wave, which is not drawn between the walls of its own width at all: at
+    // four eighths and at twenty four it reaches the same 2.64pt across, and at
+    // twelve 3.36. Nothing here reads that off a width, so the wave is drawn as a
+    // plain line of the width it states and the rows it lines come out shorter
+    // than Word's. These cases stand last for that reason: what a case cannot
+    // answer for should not move everything under it.
+    ...[4, 12, 24].flatMap((eighths) => [
+      alone(`h${String(eighths)} wave`, cellBorders(around("wave", eighths, "156082"))),
+      paragraph("", run("between")),
+    ]),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
 // A list numbered in the body and the same list inside a text box, which is what
 // says whether a box starts the counting again.
 export function numberingDocument(): string {

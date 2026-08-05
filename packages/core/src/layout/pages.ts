@@ -1,13 +1,15 @@
-import type { ParagraphBox } from "./stack.js";
+import type { ParagraphBox, PlacedCell } from "./stack.js";
 
 export type PageStack = {
   readonly index: number;
   readonly boxes: readonly ParagraphBox[];
+  readonly cells: readonly PlacedCell[];
 };
 
 export type BreakStackInput = {
   // A stack measured from `topPt` with no bottom, as `measureStack` produces it.
   readonly boxes: readonly ParagraphBox[];
+  readonly cells: readonly PlacedCell[];
   readonly topPt: number;
   readonly bottomPt: number;
 };
@@ -18,10 +20,18 @@ export type BreakStackInput = {
 // what the break leaves behind.
 export function breakStack(input: BreakStackInput): readonly PageStack[] {
   const pages: ParagraphBox[][] = [[]];
+  // Where in the stack each page started, which is what the cells are cut by
+  // once the text has said where the pages fall.
+  const shifts: number[] = [0];
   let shiftPt = 0;
 
   const put = (box: ParagraphBox): void => {
     pages[pages.length - 1]?.push(box);
+  };
+
+  const open = (): void => {
+    shifts.push(shiftPt);
+    pages.push([]);
   };
 
   const overflows = (topPt: number, heightPt: number): boolean =>
@@ -34,7 +44,7 @@ export function breakStack(input: BreakStackInput): readonly PageStack[] {
   const leave = (topPt: number): boolean => {
     if (topPt - shiftPt <= input.topPt) return false;
     shiftPt = topPt - input.topPt;
-    pages.push([]);
+    open();
     return true;
   };
 
@@ -52,7 +62,7 @@ export function breakStack(input: BreakStackInput): readonly PageStack[] {
     if (box.lines.length === 0) {
       if (overflows(box.topPt, box.contentBottomPt - box.topPt)) {
         shiftPt = box.topPt - input.topPt;
-        pages.push([]);
+        open();
       }
       put(partOf(box, 0, 0, shiftPt));
       continue;
@@ -80,7 +90,7 @@ export function breakStack(input: BreakStackInput): readonly PageStack[] {
       const cut = asked ? at : cutFor(box, { from, at, shiftPt, topPt: input.topPt });
       if (cut > from) put(partOf(box, from, cut, shiftPt));
       shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - input.topPt;
-      pages.push([]);
+      open();
       from = cut;
       at = cut + 1;
     }
@@ -88,7 +98,35 @@ export function breakStack(input: BreakStackInput): readonly PageStack[] {
     put(partOf(box, from, box.lines.length, shiftPt));
   }
 
-  return pages.map((boxes, index) => ({ index, boxes }));
+  return pages.map((boxes, index) => ({
+    index,
+    boxes,
+    cells: cellsOn(input, shifts, index),
+  }));
+}
+
+// A cell is cut by the pages the text broke into rather than breaking them: the
+// piece of one standing on a page is what it covers between where that page
+// started in the stack and where the next page did.
+function cellsOn(
+  input: BreakStackInput,
+  shifts: readonly number[],
+  index: number,
+): readonly PlacedCell[] {
+  const shiftPt = shifts[index] ?? 0;
+  const fromPt = input.topPt + shiftPt;
+  const next = shifts[index + 1];
+  const toPt = Math.min(
+    next === undefined ? Number.POSITIVE_INFINITY : input.topPt + next,
+    fromPt + (input.bottomPt - input.topPt),
+  );
+
+  return input.cells.flatMap((cell) => {
+    const topPt = Math.max(cell.topPt, fromPt);
+    const bottomPt = Math.min(cell.topPt + cell.heightPt, toPt);
+    if (bottomPt - topPt <= 0) return [];
+    return [{ ...cell, topPt: topPt - shiftPt, heightPt: bottomPt - topPt }];
+  });
 }
 
 type Cut = {
@@ -154,5 +192,6 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
     endsPage: to === box.lines.length && box.endsPage,
     contentWidthPt: box.contentWidthPt,
     clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt - shiftPt },
+    paint: box.paint,
   };
 }

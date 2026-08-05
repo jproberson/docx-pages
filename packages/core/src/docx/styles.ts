@@ -1,5 +1,15 @@
 import type { Paragraph } from "./blocks.js";
 import {
+  readBorders,
+  readShading,
+  readTableBorders,
+  NOTHING_STATED,
+  NO_TABLE_BORDERS,
+  type Borders,
+  type StatedBorders,
+  type TableBorders,
+} from "./borders.js";
+import {
   numberingLevel,
   readNumberingTable,
   type NumberingLevel,
@@ -78,6 +88,8 @@ type PartialFrame = {
   readonly pageBreakBefore: boolean | undefined;
   readonly contextualSpacing: boolean | undefined;
   readonly tabStops: readonly TabStopEntry[] | undefined;
+  readonly borders: StatedBorders;
+  readonly fillColor: string | null | undefined;
 };
 
 // Either half can arrive on its own: a style names the list, a paragraph the
@@ -93,6 +105,9 @@ type StyleDefinition = {
   readonly mark: PartialMark;
   readonly frame: PartialFrame;
   readonly numbering: PartialNumbering;
+  // A table style says nothing about a paragraph's own frame; what it carries
+  // here is the lines round the table it is set on.
+  readonly tableBorders: TableBorders;
 };
 
 export type StyleTable = {
@@ -127,6 +142,8 @@ const EMPTY_FRAME: PartialFrame = {
   pageBreakBefore: undefined,
   contextualSpacing: undefined,
   tabStops: undefined,
+  borders: NOTHING_STATED,
+  fillColor: undefined,
 };
 
 const NO_NUMBERING: PartialNumbering = { numId: undefined, ilvl: undefined };
@@ -152,6 +169,15 @@ const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   // is why a clear has to travel with them.
   tabStops:
     over.tabStops === undefined ? base.tabStops : [...(base.tabStops ?? []), ...over.tabStops],
+  // Each side of a border stands or falls on its own, so a paragraph that states
+  // one of them keeps the other three from its style.
+  borders: {
+    top: over.borders.top === undefined ? base.borders.top : over.borders.top,
+    left: over.borders.left === undefined ? base.borders.left : over.borders.left,
+    bottom: over.borders.bottom === undefined ? base.borders.bottom : over.borders.bottom,
+    right: over.borders.right === undefined ? base.borders.right : over.borders.right,
+  },
+  fillColor: over.fillColor ?? base.fillColor,
 });
 
 function toLineRule(value: string | undefined): LineRule | undefined {
@@ -202,6 +228,8 @@ function readFrame(container: XmlElement | null): PartialFrame {
     pageBreakBefore: onOff(pPr, "pageBreakBefore"),
     contextualSpacing: onOff(pPr, "contextualSpacing"),
     tabStops: readTabStops(pPr),
+    borders: readBorders(pPr, "pBdr"),
+    fillColor: readShading(pPr),
   };
 }
 
@@ -380,6 +408,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       mark: readMark(style, themeFonts),
       frame: readFrame(style),
       numbering: readNumbering(style),
+      tableBorders: readTableBorders(firstNamed(style, W_NS, "tblPr")),
     });
     const isParagraph = (attribute(style, W_NS, "type") ?? "paragraph") === "paragraph";
     if (isParagraph && attribute(style, W_NS, "default") === "1") defaultParagraphStyleId = id;
@@ -527,7 +556,34 @@ export type ParagraphFrame = {
   // In ascending order, measured from the left edge of the text area rather than
   // from the paragraph's own indent.
   readonly tabStops: readonly TabStop[];
+  // The lines drawn round the paragraph and the colour drawn behind it, both of
+  // which take room the paragraph has to leave for them.
+  readonly borders: Borders;
+  readonly fillColor: string | null;
 };
+
+// The lines a table style asks for round the table it is set on, which whatever
+// the table states itself stands in front of. Word's conditional formats, which
+// dress the first row or the banded ones differently, are not read.
+export function resolveTableBorders(table: StyleTable, styleId: string | null): TableBorders {
+  let resolved = NO_TABLE_BORDERS;
+  for (const style of styleChain(table, styleId ?? undefined)) {
+    resolved = mergeTableBorders(resolved, style.tableBorders);
+  }
+  return resolved;
+}
+
+// A side stated as `nil` is an answer like any other, so what a table states
+// stands in front of its style even where it asks for no line at all.
+export const mergeTableBorders = (base: TableBorders, over: TableBorders): TableBorders => ({
+  top: over.top === undefined ? base.top : over.top,
+  left: over.left === undefined ? base.left : over.left,
+  bottom: over.bottom === undefined ? base.bottom : over.bottom,
+  right: over.right === undefined ? base.right : over.right,
+  insideHorizontal:
+    over.insideHorizontal === undefined ? base.insideHorizontal : over.insideHorizontal,
+  insideVertical: over.insideVertical === undefined ? base.insideVertical : over.insideVertical,
+});
 
 export type ParagraphNumbering = {
   readonly numId: string;
@@ -593,6 +649,13 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     pageBreakBefore: resolved.pageBreakBefore ?? false,
     contextualSpacing: resolved.contextualSpacing ?? false,
     tabStops: settledStops(resolved.tabStops),
+    borders: {
+      top: resolved.borders.top ?? null,
+      left: resolved.borders.left ?? null,
+      bottom: resolved.borders.bottom ?? null,
+      right: resolved.borders.right ?? null,
+    },
+    fillColor: resolved.fillColor ?? null,
   };
 }
 

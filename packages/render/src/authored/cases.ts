@@ -26,6 +26,11 @@ type Drawn = {
   readonly lines: number;
   readonly runs: number;
   readonly numbers: number;
+  // How many of those lines and runs land where Word drew them. Short of all of
+  // them names a rule the layout has measured and does not answer, which is then
+  // a number that cannot quietly grow.
+  readonly placed?: number;
+  readonly runsPlaced?: number;
 };
 
 const DRAWN: Readonly<Record<string, Drawn>> = {
@@ -35,6 +40,10 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   wrapping: { lines: 7, runs: 7, numbers: 0 },
   numbering: { lines: 10, runs: 10, numbers: 7 },
   pages: { lines: 24, runs: 24, numbers: 0 },
+  // Every line but the seven under the wave borders, which Word draws neither at
+  // the width they state nor at any width read off it: the rows they line come out
+  // shorter here and everything below them stands too high.
+  borders: { lines: 104, runs: 104, numbers: 0, placed: 97, runsPlaced: 102 },
 };
 
 const EMPTY = {
@@ -78,9 +87,9 @@ const drawnBy = (
   }
   return {
     textLinesMatched: drawn.lines,
-    textLinesPlaced: drawn.lines,
+    textLinesPlaced: drawn.placed ?? drawn.lines,
     textRunsMatched: drawn.runs,
-    textRunsPlaced: drawn.runs,
+    textRunsPlaced: drawn.runsPlaced ?? drawn.runs,
     numbersMatched: drawn.numbers,
     numbersPlaced: drawn.numbers,
   };

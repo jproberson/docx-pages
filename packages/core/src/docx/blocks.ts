@@ -1,3 +1,10 @@
+import {
+  readBorders,
+  readShading,
+  readTableBorders,
+  type StatedBorders,
+  type TableBorders,
+} from "./borders.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
@@ -25,6 +32,10 @@ export type TableCell = {
   readonly blocks: readonly Block[];
   readonly verticalAlign: CellVerticalAlign;
   readonly margins: CellMargins;
+  // What the cell asks for at each of its own edges, which the table's own lines
+  // stand behind. Settling them takes the whole table: see `resolveCellBorders`.
+  readonly borders: StatedBorders;
+  readonly fillColor: string | null;
 };
 
 // How tall a row asks to be. A stated height is a floor under the row unless the
@@ -63,7 +74,15 @@ export const DEFAULT_TABLE_INSETS: TableInsets = {
 
 export type Block =
   | { readonly kind: "paragraph"; readonly paragraph: Paragraph }
-  | { readonly kind: "table"; readonly rows: readonly TableRow[]; readonly insets: TableInsets };
+  | {
+      readonly kind: "table";
+      readonly rows: readonly TableRow[];
+      readonly insets: TableInsets;
+      readonly borders: TableBorders;
+      // The table style the borders above stand in front of, which the styles
+      // rather than the blocks can look up.
+      readonly styleId: string | null;
+    };
 
 // Text box content is laid out inside its own frame, and mc:Fallback repeats the
 // shape that mc:Choice already described.
@@ -97,16 +116,27 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
       if (tc.namespace !== W_NS || tc.name !== "tc") continue;
       const blocks: Block[] = [];
       collect(tc, blocks, nextIndex);
+      const properties = firstNamed(tc, W_NS, "tcPr");
       cells.push({
         element: tc,
         blocks,
         verticalAlign: verticalAlignOf(tc),
         margins: cellMargins(tc),
+        borders: readBorders(properties, "tcBorders"),
+        fillColor: readShading(properties),
       });
     }
     rows.push({ cells, height: rowHeight(tr) });
   }
-  return { kind: "table", rows, insets: tableInsets(element) };
+  const properties = firstNamed(element, W_NS, "tblPr");
+  const style = properties === null ? null : firstNamed(properties, W_NS, "tblStyle");
+  return {
+    kind: "table",
+    rows,
+    insets: tableInsets(element),
+    borders: readTableBorders(properties),
+    styleId: style === null ? null : (attribute(style, W_NS, "val") ?? null),
+  };
 }
 
 // A height with no rule under it is a floor, which is what Word makes of one.
