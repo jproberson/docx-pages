@@ -179,6 +179,7 @@ describe("the paint a shape carries", () => {
       outline: {
         color: { base: { kind: "literal", hex: "BFBFBF" }, luminanceScale: 1, luminanceOffset: 0 },
         widthPt: 0.75,
+        widthStated: false,
       },
       geometry: "rectangle",
     });
@@ -192,6 +193,16 @@ describe("the paint a shape carries", () => {
         .outline?.widthPt;
     expect(outlined(``)).toBe(0.75);
     expect(outlined(`w="25400"`)).toBe(2);
+  });
+
+  // A box that fits itself to its text grows by a width the file states and by
+  // nothing for one it does not, so the two have to be told apart.
+  it("says whether the file stated the outline's width or Word's hairline stood in", () => {
+    const stated = (attributes: string) =>
+      shapePaint(`<a:ln ${attributes}><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`)
+        .outline?.widthStated;
+    expect(stated(``)).toBe(false);
+    expect(stated(`w="25400"`)).toBe(true);
   });
 
   it("reads an outline that paints nothing as one that takes room and no colour", () => {

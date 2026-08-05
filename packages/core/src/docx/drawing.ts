@@ -57,6 +57,10 @@ export type ShapeGeometry = "rectangle" | "line";
 export type ShapeOutline = {
   readonly color: ColorReference | null;
   readonly widthPt: number;
+  // Whether the file states that width or Word's own hairline stands in for it.
+  // A box fitting itself to its text grows by a width the file states and by
+  // nothing at all for one it does not, though Word draws both.
+  readonly widthStated: boolean;
 };
 
 // How a shape is painted, before the theme has said what its colours are.
@@ -115,9 +119,11 @@ function readOutline(shapeProperties: XmlElement): ShapeOutline | null {
   const color = fill === null ? null : readColorReference(fill);
   const raw = attribute(line, "", "w");
   const width = raw === undefined ? Number.NaN : Number(raw);
+  const widthStated = Number.isFinite(width);
   return {
     color,
-    widthPt: Number.isFinite(width) ? width / EMU_PER_POINT : DEFAULT_OUTLINE_WIDTH_PT,
+    widthPt: widthStated ? width / EMU_PER_POINT : DEFAULT_OUTLINE_WIDTH_PT,
+    widthStated,
   };
 }
 

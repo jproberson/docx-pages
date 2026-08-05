@@ -127,16 +127,23 @@ function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
   });
   if (laid.kind === "blocked") return stored;
 
-  // The box is as tall as its text, its insets, and the outline that runs round
-  // the whole of it: an outline is centred on the edge, so it takes half its width
-  // above the text and half below. Measured against Word by fitting one line inside
-  // outlines of nothing, three quarters of a point and three points.
+  // The box is as tall as its text, its insets, and the outline that runs round the
+  // whole of it, and as wide as the same three when the text does not wrap. Only a
+  // width the file states counts: an outline that states none is still drawn, as a
+  // hairline, but the box does not grow for it. Measured against Word over outlines
+  // of nothing, three quarters of a point, one and a half, three and six, in both
+  // wrap modes: every stated width grew the box by the whole of itself on each axis
+  // being fitted, and the unstated one grew it on neither.
   const { insets, wraps } = content.body;
-  const outlinePt = content.paint.outline?.widthPt ?? 0;
+  const outline = content.paint.outline;
+  const outlinePt = outline === null || !outline.widthStated ? 0 : outline.widthPt;
   return {
     widthPt: wraps
       ? stored.widthPt
-      : laid.text.contentWidthPt + emuToPoints(insets.leftEmu) + emuToPoints(insets.rightEmu),
+      : laid.text.contentWidthPt +
+        emuToPoints(insets.leftEmu) +
+        emuToPoints(insets.rightEmu) +
+        outlinePt,
     heightPt:
       laid.text.contentHeightPt +
       emuToPoints(insets.topEmu) +
