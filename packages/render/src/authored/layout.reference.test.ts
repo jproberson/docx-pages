@@ -134,19 +134,23 @@ function placedAt(box: ParagraphBox, pageIndex: number): Placed {
   };
 }
 
-// Every drawing standing in the flow of the text, page by page and in the order
-// they were written, which is the order Word draws them in.
+// Every picture in the document, page by page and in the order they were written,
+// which is the order Word draws them in. No page of an authored document holds
+// both kinds, so an anchored one standing before an inline one here says nothing
+// about which Word would draw first.
 const placedDrawings = (
   layout: LaidOutDocument,
 ): readonly (Placed & { readonly widthPt: number; readonly heightPt: number })[] =>
   layout.pages.flatMap((page) =>
-    page.inlines.map((inline) => ({
-      page: page.index + 1,
-      topPt: inline.topPt,
-      leftPt: inline.leftPt,
-      widthPt: inline.widthPt,
-      heightPt: inline.heightPt,
-    })),
+    [...page.floats.filter((float) => float.content.kind === "picture"), ...page.inlines].map(
+      (drawing) => ({
+        page: page.index + 1,
+        topPt: drawing.topPt,
+        leftPt: drawing.leftPt,
+        widthPt: drawing.widthPt,
+        heightPt: drawing.heightPt,
+      }),
+    ),
   );
 
 // Every shape the document holds, by the name it was authored under, so a failure

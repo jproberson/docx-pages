@@ -1,4 +1,4 @@
-import { PICTURE_ID } from "./package.js";
+import { LEFT_PT, PICTURE_ID, RIGHT_PT } from "./package.js";
 
 // The bodies of the authored documents that ask about a feature of the flowing
 // text rather than about a shape. Each paragraph is written so that the rule it
@@ -831,3 +831,73 @@ export const NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?
   <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
   <w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>
 </w:numbering>`;
+
+// Where a wrapping object stands, and what falls past it, in a document that
+// declares no compatibility mode.
+//
+// Word puts such a document's objects on the twip grid and leaves a modern one's
+// where the flow put them. An object anchored at the top of its paragraph stands
+// at the foot of the paragraph before it, so rounding down puts its wrap band over
+// that paragraph's last line, which then falls to the object's foot. Whether the
+// rounding goes up or down is all that decides it, and the size of the face above
+// is what moves the fraction: at 11pt each case here rounds down and fires, at
+// 10.5pt it rounds up and nothing moves. The same body is written twice, once
+// declaring 15 and once declaring nothing, so the difference is the setting.
+//
+// Every case stands on a page of its own, and the object is exactly as wide as the
+// column so that nothing can sit beside it.
+export function compatibilityDocument(): string {
+  const anchored = (id: number, widthPt: number): string =>
+    `<w:r><w:drawing><wp:anchor behindDoc="0" distT="0" distB="0" distL="0" distR="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="${String(id)}">
+      <wp:simplePos x="0" y="0"/>
+      <wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>
+      <wp:positionV relativeFrom="paragraph"><wp:align>top</wp:align></wp:positionV>
+      <wp:extent cx="${emu(widthPt)}" cy="${emu(OBJECT_PT)}"/>
+      <wp:effectExtent l="0" t="0" r="0" b="0"/>
+      <wp:wrapSquare wrapText="largest"/>
+      <wp:docPr id="${String(id)}" name="anchored-${String(id)}"/>
+      <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+      <a:graphic><a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">
+        <pic:nvPicPr><pic:cNvPr id="${String(id)}" name="anchored-${String(id)}"/><pic:cNvPicPr/></pic:nvPicPr>
+        <pic:blipFill><a:blip r:embed="${PICTURE_ID}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+        <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(widthPt)}" cy="${emu(OBJECT_PT)}"/></a:xfrm>
+          <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+      </pic:pic></a:graphicData></a:graphic>
+    </wp:anchor></w:drawing></w:r>`;
+
+  const cases = [
+    { name: "one line rounding down", sizeHalfPt: 22, lines: 1, widthPt: COLUMN_PT },
+    { name: "one line rounding up", sizeHalfPt: 21, lines: 1, widthPt: COLUMN_PT },
+    // Three lines, to say which of them the object moves.
+    { name: "three lines rounding down", sizeHalfPt: 28, lines: 3, widthPt: COLUMN_PT },
+    { name: "three lines rounding up", sizeHalfPt: 26, lines: 3, widthPt: COLUMN_PT },
+    // An object narrow enough to leave the line somewhere to sit, which is the
+    // whole difference between falling past one and being narrowed by it.
+    { name: "beside a narrow object", sizeHalfPt: 22, lines: 1, widthPt: 240 },
+    // Nothing but a paragraph mark above the anchor, which is the shape a document
+    // out of another word processor met this rule with.
+    { name: "an empty paragraph rounding down", sizeHalfPt: 22, lines: 0, widthPt: COLUMN_PT },
+  ];
+
+  return cases
+    .map((each, at) => {
+      const mark = `<w:sz w:val="${String(each.sizeHalfPt)}"/><w:szCs w:val="${String(each.sizeHalfPt)}"/>`;
+      const spacing = `<w:spacing w:before="0" w:after="225" w:line="288" w:lineRule="auto"/>`;
+      const above = Array.from({ length: each.lines }, (_, line) =>
+        run(`above ${String(at + 1)} line ${String(line + 1)}`, mark),
+      ).join(`<w:r><w:rPr>${mark}</w:rPr><w:br/></w:r>`);
+
+      return (
+        paragraph(at === 0 ? "" : "<w:pageBreakBefore/>", run(`case ${String(at + 1)}`)) +
+        paragraph(`${spacing}<w:rPr>${mark}</w:rPr>`, above) +
+        paragraph("", anchored(at + 1, each.widthPt)) +
+        paragraph("", run(`below ${String(at + 1)}`))
+      );
+    })
+    .join("");
+}
+
+// As wide as the text column, so the object leaves no room beside it, and short
+// enough that a case and the object it holds fit on one page.
+const COLUMN_PT = RIGHT_PT - LEFT_PT;
+const OBJECT_PT = 72;

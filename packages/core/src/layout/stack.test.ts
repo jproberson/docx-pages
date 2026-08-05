@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { readBlocks } from "../docx/blocks.js";
 import { openDocx } from "../docx/package.js";
+import { DEFAULT_SETTINGS, type DocumentSettings } from "../docx/settings.js";
 import { readStyleTable } from "../docx/styles.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { buildFace } from "../testing/build-font.js";
@@ -300,6 +301,41 @@ describe("measureStack over text", () => {
 
     expect(box.lines).toHaveLength(1);
     expect(box.heightPt).toBeCloseTo(ARIAL_12, 9);
+  });
+});
+
+// The stops a paragraph falls back on are the document's, not a number this
+// package chose: a tab in a paragraph declaring none lands on the first of them.
+describe("measureStack and the stops the document falls back on", () => {
+  const tabbed = (settings: DocumentSettings | undefined) => {
+    const pkg = openDocx(
+      buildDocx({
+        "word/document.xml": wordDocument(`<w:p><w:r><w:tab/><w:t>aaaa</w:t></w:r></w:p>`),
+        "word/styles.xml": NORMAL,
+      }),
+    );
+    const result = measureStack({
+      blocks: readBlocks(pkg),
+      styles: readStyleTable(pkg),
+      metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+      part: "word/document.xml",
+      originPt: 36,
+      leftPt: 72,
+      widthPt: 468,
+      ...(settings === undefined ? {} : { settings }),
+    });
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    const segment = result.boxes[0]?.lines[0]?.line.segments.at(-1);
+    if (segment === undefined) throw new Error("expected a segment after the tab");
+    return segment.offsetPt;
+  };
+
+  it("starts the text after a tab at the stop the settings space out", () => {
+    expect(tabbed({ ...DEFAULT_SETTINGS, defaultTabStopTwips: 567 })).toBeCloseTo(28.35, 6);
+  });
+
+  it("falls back to Word's own spacing where nothing has read the settings", () => {
+    expect(tabbed(undefined)).toBeCloseTo(36, 6);
   });
 });
 

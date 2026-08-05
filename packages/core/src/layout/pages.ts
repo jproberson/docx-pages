@@ -168,6 +168,7 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
   return {
     index: box.index,
     topPt,
+    anchorTopPt: box.anchorTopPt - shiftPt,
     heightPt: bottomPt - topPt,
     lines: lines.map((line) => ({
       ...line,

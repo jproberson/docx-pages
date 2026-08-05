@@ -18,6 +18,7 @@ import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js"
 import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns, type TextRun } from "../docx/runs.js";
 import { W_NS } from "../docx/section.js";
+import { roundsAnchorsToTwips, DEFAULT_SETTINGS, type DocumentSettings } from "../docx/settings.js";
 import {
   mergeTableBorders,
   resolveNumberMark,
@@ -125,6 +126,10 @@ export type ParagraphPaint = {
 export type ParagraphBox = {
   readonly index: number;
   readonly topPt: number;
+  // Where the objects this paragraph anchors are measured from, which is its own
+  // top until a legacy document's rounding drops the paragraph past one of them:
+  // the object keeps the place the flow first gave it.
+  readonly anchorTopPt: number;
   readonly heightPt: number;
   readonly lines: readonly PlacedLine[];
   readonly marker: ParagraphMarker | null;
@@ -195,16 +200,14 @@ export type MeasureStackInput = {
   // The objects a paragraph anchors, in page coordinates, asked for as the stack
   // reaches that paragraph: every line from there on has to sit clear of them.
   readonly bandsFor?: BandResolver;
+  readonly settings?: DocumentSettings;
 };
 
 export type BandResolver = (paragraph: Paragraph, topPt: number) => readonly WrapBand[];
 
-// The objects met so far, which grows as the stack walks forward.
-type Region = { readonly bands: WrapBand[] };
-
 type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "widthPt"> & {
   readonly numbers: ReadonlyMap<number, ParagraphNumber>;
-  readonly region: Region;
+  readonly settings: DocumentSettings;
   // A page break inside a cell is no break at all, and a cell is the only place
   // that has to know it.
   readonly inCell: boolean;
@@ -235,7 +238,7 @@ export function measureStack(input: MeasureStackInput): StackMeasurement {
   const context: Context = {
     ...input,
     numbers: numbered.numbers,
-    region: { bands: [] },
+    settings: input.settings ?? DEFAULT_SETTINGS,
     inCell: false,
   };
   return measureBlocks(input.blocks, context, input.originPt, {
@@ -253,16 +256,51 @@ function measureBlocks(
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
   let top = originPt;
+  // The objects met so far, which grows as the stack walks forward: every line
+  // from an object's own paragraph on has to sit clear of it.
+  let standing: readonly WrapBand[] = [];
+  // Where the paragraph coming up anchors its objects, which is its own top until
+  // the one above it was dropped past one of them.
+  let anchoredAtPt: number | null = null;
 
   for (const [at, block] of blocks.entries()) {
     if (block.kind === "paragraph") {
-      const measured = measureParagraph(block.paragraph, context, top, frame, {
+      const { paragraph } = block;
+      const neighbours = {
         above: paragraphAt(blocks, at - 1),
         below: paragraphAt(blocks, at + 1),
+      };
+      const anchorTopPt = anchoredAtPt ?? top;
+      const bands = [...standing, ...bandsOf(paragraph, anchorTopPt, context)];
+      const measured = measureParagraph(paragraph, context, top, frame, neighbours, {
+        bands,
+        ahead: [],
+        anchorTopPt,
       });
       if (measured.kind === "blocked") return measured;
-      boxes.push(measured.box);
-      top += measured.box.heightPt;
+
+      standing = bands;
+      anchoredAtPt = null;
+      let box = measured.box;
+
+      // Where the anchor rounds down, the object the next paragraph holds stands
+      // over the foot of this one, whose last line is then blocked and falls past
+      // it. The object itself keeps the place the flow gave it, so the room the
+      // line had is left empty.
+      const ahead = lookedAhead(neighbours.below, top + box.heightPt, context);
+      if (ahead.length > 0) {
+        const again = measureParagraph(paragraph, context, top, frame, neighbours, {
+          bands,
+          ahead,
+          anchorTopPt,
+        });
+        if (again.kind === "blocked") return again;
+        anchoredAtPt = top + box.heightPt;
+        box = again.box;
+      }
+
+      boxes.push(box);
+      top += box.heightPt;
       continue;
     }
 
@@ -270,10 +308,33 @@ function measureBlocks(
     if (measured.kind === "blocked") return measured;
     boxes.push(...measured.boxes);
     cells.push(...measured.cells);
+    anchoredAtPt = null;
     top += measured.heightPt;
   }
 
   return { kind: "measured", boxes, cells, heightPt: top - originPt };
+}
+
+const bandsOf = (paragraph: Paragraph, topPt: number, context: Context): readonly WrapBand[] =>
+  context.bandsFor === undefined ? [] : context.bandsFor(paragraph, topPt);
+
+// Half the twip a legacy document's anchors are rounded to, which is as far over
+// the paragraph above an object can come to stand by that rounding alone. An
+// object reaching further up than that is one nothing has measured, and is left to
+// the paragraph that anchors it as it always was.
+const ROUNDING_PT = 1 / 40;
+
+// The objects the next paragraph anchors that ended up standing over the foot of
+// this one, which only a document Word rounds an anchor's position in can have.
+function lookedAhead(
+  below: Paragraph | null,
+  footPt: number,
+  context: Context,
+): readonly WrapBand[] {
+  if (below === null || !roundsAnchorsToTwips(context.settings)) return [];
+  return bandsOf(below, footPt, context).filter(
+    (band) => band.topPt < footPt - EPSILON && footPt - band.topPt <= ROUNDING_PT + EPSILON,
+  );
 }
 
 type Table = Extract<Block, { kind: "table" }>;
@@ -381,7 +442,7 @@ function measureRow(
 
   // A cell is measured from its own origin and only then moved down to the row, so
   // the page coordinates a wrapping object stands in cannot reach inside one.
-  const inCell: Context = { ...context, region: { bands: [] }, bandsFor: () => [], inCell: true };
+  const inCell: Context = { ...context, bandsFor: () => [], inCell: true };
 
   for (const [at, cell] of row.cells.entries()) {
     const widthPt = cellWidthPt(cell) ?? frame.widthPt;
@@ -470,6 +531,7 @@ function cellWidthPt(cell: TableCell): number | null {
 export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   ...box,
   topPt: box.topPt + byPt,
+  anchorTopPt: box.anchorTopPt + byPt,
   markTopPt: box.markTopPt + byPt,
   contentBottomPt: box.contentBottomPt + byPt,
   clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt + byPt },
@@ -507,12 +569,23 @@ type Neighbours = {
   readonly below: Paragraph | null;
 };
 
+// What the objects around the paragraph have already settled: the ones standing in
+// its way, and where its own were anchored.
+type Standing = {
+  readonly bands: readonly WrapBand[];
+  // Objects the paragraph after this one anchors that came to stand over its foot,
+  // which its last line has to make room for.
+  readonly ahead: readonly WrapBand[];
+  readonly anchorTopPt: number;
+};
+
 function measureParagraph(
   paragraph: Paragraph,
   context: Context,
   topPt: number,
   frame: Frame,
   neighbours: Neighbours,
+  standing: Standing,
 ): ParagraphMeasurement {
   const paragraphMark = resolveParagraphMark(paragraph, context.styles);
   const marks: readonly ParagraphMark[] = [
@@ -532,12 +605,6 @@ function measureParagraph(
     markHeight = Math.max(markHeight, height.value);
   }
 
-  // An object is met where it is anchored, so a paragraph's own floats are already
-  // standing there when its first line looks for room.
-  if (context.bandsFor !== undefined) {
-    context.region.bands.push(...context.bandsFor(paragraph, topPt));
-  }
-
   const paragraphFrame = resolveParagraphFrame(paragraph, context.styles);
   const runs = flowing(readRuns(paragraph, context.styles), context.inCell);
   const insets = insetsOf(paragraphFrame);
@@ -554,6 +621,7 @@ function measureParagraph(
       stopsPt: tabStopsPt(paragraphFrame),
       originPt: insets.leftPt,
       firstLineOriginPt: number === undefined ? insets.leftPt + insets.firstLinePt : insets.leftPt,
+      defaultStopPt: twipsToPoints(context.settings.defaultTabStopTwips),
     },
   });
 
@@ -577,6 +645,7 @@ function measureParagraph(
     kind: "measured",
     box: layOutParagraph(paragraph.index, breaking.flow, {
       topPt,
+      anchorTopPt: standing.anchorTopPt,
       markHeightPt: markHeight,
       markWidthPt: widthOfMark(paragraphMark, context.metricsFor),
       frame,
@@ -588,7 +657,8 @@ function measureParagraph(
       }),
       startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
       number: measured === null ? null : measured.number,
-      bands: context.region.bands,
+      bands: standing.bands,
+      ahead: standing.ahead,
       roomPt: widthPt,
       // A hanging indent leaves its first line wider than the rest, except where a
       // number is what hangs there: then the text starts at the indent like the rest.
@@ -809,6 +879,7 @@ const insetsOf = (frame: ParagraphFrame): Insets => ({
 
 type LayOutParagraphInput = {
   readonly topPt: number;
+  readonly anchorTopPt: number;
   readonly markHeightPt: number;
   readonly markWidthPt: number;
   readonly frame: Frame;
@@ -819,6 +890,7 @@ type LayOutParagraphInput = {
   // Whether the paragraph asked for a page of its own.
   readonly startsPage: boolean;
   readonly bands: readonly WrapBand[];
+  readonly ahead: readonly WrapBand[];
   // What a line has room for where nothing stands beside it, which a shape that
   // refuses to wrap leaves unbounded.
   readonly roomPt: number;
@@ -829,6 +901,68 @@ type LayOutParagraphInput = {
 // not let the paragraph mark raise a line it shares with a run, however much
 // bigger the mark is. An empty paragraph is the mark's height alone.
 function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphInput): ParagraphBox {
+  const across = acrossOf(input);
+  return droppedPast(layOutWholeParagraph(index, flow, input), input.ahead, across);
+}
+
+const acrossOf = (input: LayOutParagraphInput): Span => {
+  const insets = insetsOf(input.paragraphFrame);
+  return {
+    leftPt: input.frame.leftPt + insets.leftPt,
+    rightPt: input.frame.leftPt + input.frame.widthPt - insets.rightPt,
+  };
+};
+
+type Span = { readonly leftPt: number; readonly rightPt: number };
+
+// What the paragraph draws last: its last line, or the room its mark stands in
+// where it has none, taken down to the paragraph's own foot. That is the box an
+// object standing over the foot is asked to make room for, and Word answers it as
+// it answers any blocked line: measured over paragraphs of one line, of three and
+// of none at all, only the last of them falls, it lands on the object's foot, and
+// the room the paragraph keeps below itself goes with it. Beside an object narrow
+// enough to leave the line somewhere to sit, nothing moves.
+function droppedPast(box: ParagraphBox, ahead: readonly WrapBand[], across: Span): ParagraphBox {
+  if (ahead.length === 0) return box;
+
+  const last = box.lines[box.lines.length - 1];
+  const topPt = last === undefined ? box.markTopPt : last.topPt;
+  const slot = fitLine({
+    topPt,
+    heightPt: box.topPt + box.heightPt - topPt,
+    ...across,
+    widthPt: last?.line.widthPt ?? 0,
+    bands: ahead,
+  });
+
+  const byPt = slot.topPt - topPt;
+  if (byPt <= EPSILON) return box;
+  return {
+    ...box,
+    heightPt: box.heightPt + byPt,
+    contentBottomPt: box.contentBottomPt + byPt,
+    markTopPt: box.markTopPt + byPt,
+    lines:
+      last === undefined
+        ? box.lines
+        : [
+            ...box.lines.slice(0, -1),
+            { ...last, topPt: last.topPt + byPt, baselinePt: last.baselinePt + byPt },
+          ],
+    // A number stands on the paragraph's first line, and moves only when that is
+    // the line that fell.
+    marker:
+      box.marker === null || box.lines.length > 1
+        ? box.marker
+        : { ...box.marker, baselinePt: box.marker.baselinePt + byPt },
+  };
+}
+
+function layOutWholeParagraph(
+  index: number,
+  flow: LineFlow,
+  input: LayOutParagraphInput,
+): ParagraphBox {
   const { paragraphFrame, frame, number, paint } = input;
   const insets = insetsOf(paragraphFrame);
   const { beforePt, afterPt } = input.spacing;
@@ -864,6 +998,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
     return {
       index,
       topPt: input.topPt,
+      anchorTopPt: input.anchorTopPt,
       heightPt: slot.topPt + height.heightPt + belowPt + afterPt - input.topPt,
       lines: [],
       marker: markerAt(number, slot.topPt + height.baseFromTopPt),
@@ -904,6 +1039,7 @@ function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphIn
   return {
     index,
     topPt: input.topPt,
+    anchorTopPt: input.anchorTopPt,
     heightPt: bottomPt + belowPt + afterPt - input.topPt,
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),

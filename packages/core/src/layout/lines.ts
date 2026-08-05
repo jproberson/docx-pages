@@ -104,6 +104,9 @@ export type LineTabs = {
   readonly stopsPt: readonly TabStopPt[];
   readonly originPt: number;
   readonly firstLineOriginPt?: number;
+  // How far apart the stops the document falls back on stand, which is where a tab
+  // past the last one the paragraph declares lands.
+  readonly defaultStopPt?: number;
 };
 
 export type FlowInput = {
@@ -471,7 +474,7 @@ class LineBuilder {
     const { stopsPt } = this.tabs;
     const originPt =
       this.index === 0 ? (this.tabs.firstLineOriginPt ?? this.tabs.originPt) : this.tabs.originPt;
-    const stop = nextTabStop(originPt + this.filled, stopsPt);
+    const stop = nextTabStop(originPt + this.filled, stopsPt, this.tabs.defaultStopPt);
     // A stop that lines its text up never pulls it back over what the line already
     // holds: where there is not room for the text in front of the stop, the tab
     // opens none at all and the text carries on from where it was.

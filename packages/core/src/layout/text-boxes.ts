@@ -1,5 +1,6 @@
 import type { TextBoxAnchor, TextBoxBody } from "../docx/drawing.js";
 import type { StyleTable } from "../docx/styles.js";
+import type { DocumentSettings } from "../docx/settings.js";
 import {
   measureStack,
   shiftBoxes,
@@ -34,6 +35,7 @@ export type LayOutTextBoxInput = {
   readonly rect: TextBoxRect;
   readonly styles: StyleTable;
   readonly metricsFor: MetricsResolver;
+  readonly settings?: DocumentSettings;
   readonly part: string;
 };
 
@@ -54,6 +56,7 @@ export function layOutTextBox(input: LayOutTextBoxInput): TextBoxLayout {
     blocks: body.blocks,
     styles: input.styles,
     metricsFor: input.metricsFor,
+    ...(input.settings === undefined ? {} : { settings: input.settings }),
     part: input.part,
     originPt: topPt,
     leftPt,

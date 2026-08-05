@@ -1,6 +1,7 @@
 import {
   bordersDocument,
   breakingDocument,
+  compatibilityDocument,
   drawingDocument,
   numberingDocument,
   pageDocument,
@@ -10,7 +11,7 @@ import {
   NUMBERING,
   SPACING_STYLES,
 } from "./features.js";
-import { buildAuthoredDocx, FACE } from "./package.js";
+import { buildAuthoredDocx, settingsPart, FACE } from "./package.js";
 
 // Documents written here rather than found in the wild, so that Word's own answers
 // about them can be committed: nothing in them is anyone's collateral. Each one
@@ -271,6 +272,22 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Explicit page breaks",
       asks: "where the text goes when the document breaks its own pages",
       bytes: buildAuthoredDocx({ body: pageDocument() }),
+    },
+    {
+      id: "legacy-wrapping",
+      title: "Wrapping in a document that declares no compatibility mode",
+      asks: "where Word puts an anchored object without one, and whose line falls past it",
+      bytes: buildAuthoredDocx({
+        body: compatibilityDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+        picture: true,
+      }),
+    },
+    {
+      id: "modern-wrapping",
+      title: "The same wrapping in a document that declares one",
+      asks: "whether declaring 15 is what leaves an object where the flow put it",
+      bytes: buildAuthoredDocx({ body: compatibilityDocument(), picture: true }),
     },
     {
       id: "numbering",

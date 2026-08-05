@@ -6,6 +6,13 @@ export type { DocxPackage } from "./docx/package.js";
 
 export { readSectionGeometry, W_NS } from "./docx/section.js";
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
+export {
+  readDocumentSettings,
+  roundsAnchorsToTwips,
+  DEFAULT_SETTINGS,
+  SETTINGS_PART,
+} from "./docx/settings.js";
+export type { DocumentSettings } from "./docx/settings.js";
 
 export {
   advanceWidthPt,

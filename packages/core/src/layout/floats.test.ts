@@ -4,6 +4,7 @@ import { readAnchors, WHOLE_FRAME, type FloatingAnchor, type WrapArea } from "..
 import { openDocx } from "../docx/package.js";
 import { readParagraphs } from "../docx/blocks.js";
 import type { SectionGeometry } from "../docx/section.js";
+import { DEFAULT_SETTINGS } from "../docx/settings.js";
 import { NO_THEME } from "../docx/theme.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { placeFloat, UNPAINTED } from "./floats.js";
@@ -79,6 +80,10 @@ const firstAnchor = (body: string): FloatingAnchor => {
   return anchor;
 };
 
+// Every position below was measured off a document Word itself wrote, which
+// declares the compatibility mode that leaves an object where the flow put it.
+const MODERN = { ...DEFAULT_SETTINGS, compatibilityMode: 15 };
+
 const place = (body: string, paragraphTopPt: number, bodyTopPt = 36) =>
   placeFloat({
     anchor: firstAnchor(body),
@@ -88,6 +93,7 @@ const place = (body: string, paragraphTopPt: number, bodyTopPt = 36) =>
     marginTopPt: 36,
     resolvePart: () => null,
     theme: NO_THEME,
+    settings: MODERN,
   });
 
 describe("readAnchors", () => {
@@ -210,8 +216,24 @@ describe("placeFloat", () => {
       marginTopPt: 69.04,
       resolvePart: () => null,
       theme: NO_THEME,
+      settings: MODERN,
     });
     expect(placed.topPt).toBeCloseTo(13.27, 2);
+  });
+
+  // A document declaring no compatibility mode has Word put its objects on the
+  // twip grid, which is what a legacy document's wrapping turns on.
+  it("rounds the place a legacy document puts an object to the whole twip", () => {
+    const legacy = placeFloat({
+      anchor: firstAnchor(anchorXml({ h: offsetH(0), v: offsetV(0) })),
+      page: LETTER,
+      paragraphTopPt: 494.636,
+      bodyTopPt: 36,
+      marginTopPt: 36,
+      resolvePart: () => null,
+      theme: NO_THEME,
+    });
+    expect(legacy.topPt).toBe(494.65);
   });
 
   it("measures a page-relative offset from the page edge, not the margin", () => {

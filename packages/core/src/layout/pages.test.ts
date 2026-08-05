@@ -58,6 +58,7 @@ function stack(
     boxes.push({
       index,
       topPt: top,
+      anchorTopPt: top,
       heightPt: lineTop - top,
       lines,
       marker: null,
@@ -226,6 +227,7 @@ describe("breakStack", () => {
   const emptyAt = (index: number, topPt: number, markPt: number, afterPt = 0): ParagraphBox => ({
     index,
     topPt,
+    anchorTopPt: topPt,
     heightPt: markPt + afterPt,
     lines: [],
     marker: null,

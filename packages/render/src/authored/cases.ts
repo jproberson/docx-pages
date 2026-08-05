@@ -40,6 +40,13 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   wrapping: { lines: 7, runs: 7, numbers: 0 },
   numbering: { lines: 10, runs: 10, numbers: 7 },
   pages: { lines: 24, runs: 24, numbers: 0 },
+  // Three lines a case, five where the paragraph above the object holds three,
+  // and two where it holds none at all.
+  // Two of them stand beside the narrow object, which Word puts on the side with
+  // the most room and, where the two sides are equal, on the right. Nothing here
+  // reads `wrapText`, so both start at the left of the column instead.
+  "legacy-wrapping": { lines: 21, runs: 21, numbers: 0, placed: 19, runsPlaced: 19 },
+  "modern-wrapping": { lines: 21, runs: 21, numbers: 0, placed: 19, runsPlaced: 19 },
   // Every line but the seven under the wave borders, which Word draws neither at
   // the width they state nor at any width read off it: the rows they line come out
   // shorter here and everything below them stands too high.

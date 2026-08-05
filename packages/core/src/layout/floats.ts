@@ -7,6 +7,7 @@ import type {
   TextBoxBody,
 } from "../docx/drawing.js";
 import type { SectionGeometry } from "../docx/section.js";
+import { roundsAnchorsToTwips, DEFAULT_SETTINGS, type DocumentSettings } from "../docx/settings.js";
 import { themeColor, type Theme } from "../docx/theme.js";
 import type { PlacedTextBox } from "./text-boxes.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
@@ -63,6 +64,7 @@ export type PlaceFloatInput = {
   readonly marginTopPt: number;
   readonly resolvePart: PartResolver;
   readonly theme: Theme;
+  readonly settings?: DocumentSettings;
   // What the object turned out to be, for one that sizes itself to its content.
   // An aligned object lands on its own size, so this decides where it goes.
   readonly sizePt?: FloatSize;
@@ -158,8 +160,20 @@ export function resolveContent(
     : { kind: "picture", part, crop: content.crop, paint };
 }
 
+// A document declaring no compatibility mode has its objects put on the twip grid,
+// which is the whole of what tells its wrapping apart from a modern one: Word draws
+// the same picture at 77.30 in one and 77.28 in the other, and where the rounding
+// went down the object now stands over the paragraph above it.
+const onTheTwip = (positionPt: number, settings: DocumentSettings): number =>
+  roundsAnchorsToTwips(settings)
+    ? Math.round(positionPt * TWIPS_PER_POINT) / TWIPS_PER_POINT
+    : positionPt;
+
+const TWIPS_PER_POINT = 20;
+
 export function placeFloat(input: PlaceFloatInput): PlacedFloat {
   const { anchor } = input;
+  const settings = input.settings ?? DEFAULT_SETTINGS;
   const widthPt = input.sizePt?.widthPt ?? emuToPoints(anchor.widthEmu);
   const heightPt = input.sizePt?.heightPt ?? emuToPoints(anchor.heightEmu);
 
@@ -167,7 +181,10 @@ export function placeFloat(input: PlaceFloatInput): PlacedFloat {
     anchor,
     content: resolveContent(anchor.content, input.resolvePart, input.theme),
     leftPt: resolve(anchor.horizontal, horizontalBand(input.page, anchor.horizontal.from), widthPt),
-    topPt: resolve(anchor.vertical, verticalBand(input, anchor.vertical.from), heightPt),
+    topPt: onTheTwip(
+      resolve(anchor.vertical, verticalBand(input, anchor.vertical.from), heightPt),
+      settings,
+    ),
     widthPt,
     heightPt,
   };

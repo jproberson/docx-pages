@@ -84,11 +84,27 @@ export const TOP_PT = 36;
 // metrics answer for it.
 export const FACE = "Calibri";
 
-const SETTINGS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+// What a document says about itself. Every authored document declares the
+// compatibility mode Word writes today unless it is asking what changes without
+// one, and the tab stop Word itself would have written unless it is asking whether
+// that number is read at all.
+export type AuthoredSettings = {
+  readonly defaultTabStopTwips?: number;
+  readonly compatibilityMode?: number | null;
+};
+
+export function settingsPart(settings: AuthoredSettings = {}): string {
+  const mode = settings.compatibilityMode === undefined ? 15 : settings.compatibilityMode;
+  const compat =
+    mode === null
+      ? ""
+      : `<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="${String(mode)}"/></w:compat>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:settings xmlns:w="${W_NS}">
-  <w:defaultTabStop w:val="720"/>
-  <w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>
+  <w:defaultTabStop w:val="${String(settings.defaultTabStopTwips ?? 720)}"/>
+  ${compat}
 </w:settings>`;
+}
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="${W_NS}">
@@ -133,7 +149,7 @@ export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
     "word/_rels/document.xml.rels": strToU8(documentRels(picture)),
     "word/document.xml": strToU8(document),
     "word/styles.xml": strToU8(STYLES.replace("<!--EXTRA-->", parts.extraStyles ?? "")),
-    "word/settings.xml": strToU8(parts.settings ?? SETTINGS),
+    "word/settings.xml": strToU8(parts.settings ?? settingsPart()),
     "word/numbering.xml": strToU8(parts.numbering ?? NUMBERING),
     ...(picture ? { "word/media/picture.png": Buffer.from(PICTURE_PNG, "base64") } : {}),
   });

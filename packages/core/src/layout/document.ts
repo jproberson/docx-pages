@@ -4,6 +4,7 @@ import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
+import { readDocumentSettings, type DocumentSettings } from "../docx/settings.js";
 import { readStyleTable, type StyleTable } from "../docx/styles.js";
 import { readTheme, type Theme } from "../docx/theme.js";
 import {
@@ -70,6 +71,7 @@ function fillTextBoxes(
   parts: readonly FloatsInPart[],
   styles: StyleTable,
   metricsFor: MetricsResolver,
+  settings: DocumentSettings,
 ): FilledFloats {
   const filled: (readonly PlacedFloat[])[] = [];
 
@@ -86,6 +88,7 @@ function fillTextBoxes(
         rect: float,
         styles,
         metricsFor,
+        settings,
         part,
       });
       if (laid.kind === "blocked") return { kind: "blocked", blocker: laid.blocker };
@@ -102,6 +105,7 @@ type FloatFrame = {
   readonly styles: StyleTable;
   readonly metricsFor: MetricsResolver;
   readonly theme: Theme;
+  readonly settings: DocumentSettings;
   readonly part: string;
   // Where the story's own text column starts, which is what a column-relative
   // offset is measured from.
@@ -128,6 +132,7 @@ function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
     rect: { leftPt: 0, topPt: 0, ...stored },
     styles: frame.styles,
     metricsFor: frame.metricsFor,
+    settings: frame.settings,
     part: frame.part,
   });
   if (laid.kind === "blocked") return stored;
@@ -171,6 +176,7 @@ const placeFloatIn = (
     marginTopPt: frame.marginTopPt,
     resolvePart,
     theme: frame.theme,
+    settings: frame.settings,
     sizePt: fittedSizePt(anchor, frame),
   });
 
@@ -239,6 +245,7 @@ type StoryMeasurement = Story | { readonly kind: "blocked"; readonly blocker: La
 type StoryFrame = {
   readonly styles: StyleTable;
   readonly metricsFor: MetricsResolver;
+  readonly settings: DocumentSettings;
   readonly leftPt: number;
   readonly widthPt: number;
 };
@@ -278,11 +285,12 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
   const page = readSectionGeometry(pkg);
   const styles = readStyleTable(pkg);
   const theme = readTheme(pkg);
+  const settings = readDocumentSettings(pkg);
   const headerTopPt = twipsToPoints(page.margin.headerTwips);
   const pageHeightPt = twipsToPoints(page.heightTwips);
   const leftPt = twipsToPoints(page.margin.leftTwips);
   const widthPt = twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
-  const frame: StoryFrame = { styles, metricsFor, leftPt, widthPt };
+  const frame: StoryFrame = { styles, metricsFor, settings, leftPt, widthPt };
 
   const floatFrame = (
     part: string | null,
@@ -293,6 +301,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     styles,
     metricsFor,
     theme,
+    settings,
     part: part ?? MAIN_DOCUMENT_PART,
     columnTopPt,
     marginTopPt,
@@ -380,7 +389,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     return {
       floats: anchored.flatMap(({ paragraph, box }) =>
         readAnchors(paragraph).map((anchor) =>
-          placeFloatIn(anchor, box.topPt, floats, resolvePart),
+          placeFloatIn(anchor, box.anchorTopPt, floats, resolvePart),
         ),
       ),
       inlines: anchored.flatMap(({ paragraph, box }) =>
@@ -423,6 +432,7 @@ export function layOutDocument(pkg: DocxPackage, metricsFor: MetricsResolver): D
     ],
     styles,
     metricsFor,
+    settings,
   );
   if (filled.kind === "blocked") return filled;
   const [headerFloats = [], footerFloats = [], ...pageFloats] = filled.floats;

@@ -1,8 +1,8 @@
 import type { ParagraphFrame, TabAlignment } from "../docx/styles.js";
 import { twipsToPoints } from "./units.js";
 
-// Word's own default, from w:defaultTabStop, which both reference documents set to
-// exactly this.
+// What the stops fall back to where nothing has read `w:defaultTabStop`, which is
+// the 720 twips Word itself writes there.
 export const DEFAULT_TAB_STOP_PT = 36;
 
 // Positions are compared, not accumulated, so this only has to absorb the last
@@ -36,13 +36,18 @@ export function tabStopsPt(frame: ParagraphFrame): readonly TabStopPt[] {
   return [...declared, hanging].sort((left, right) => left.positionPt - right.positionPt);
 }
 
-// Past the last stop a paragraph declares, Word falls back to its default ones,
-// which start the text where they stand.
-export function nextTabStop(fromPt: number, stops: readonly TabStopPt[]): TabStopPt {
+// Past the last stop a paragraph declares, Word falls back to the ones the document
+// spaces evenly across the page, which start the text where they stand.
+export function nextTabStop(
+  fromPt: number,
+  stops: readonly TabStopPt[],
+  defaultStopPt: number = DEFAULT_TAB_STOP_PT,
+): TabStopPt {
   const declared = stops.find((stop) => stop.positionPt > fromPt + EPSILON);
   if (declared !== undefined) return declared;
+  if (defaultStopPt <= 0) return { positionPt: fromPt, alignment: "left" };
   return {
-    positionPt: (Math.floor(fromPt / DEFAULT_TAB_STOP_PT + EPSILON) + 1) * DEFAULT_TAB_STOP_PT,
+    positionPt: (Math.floor(fromPt / defaultStopPt + EPSILON) + 1) * defaultStopPt,
     alignment: "left",
   };
 }
