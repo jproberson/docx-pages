@@ -1,0 +1,98 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first one's answer worthless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+
+      # A runner has neither the reference documents nor Word, so the suites that
+      # need either report nothing to run rather than failing. That is right, and
+      # it means a green tick here covers less than a green tick on a machine that
+      # has them: say which suites actually ran rather than leaving it implied.
+      - name: Say which suites ran
+        if: always()
+        run: pnpm vitest run --reporter=basic 2>&1 | tail -20
+
+  # What `pnpm verify` cannot see: whether the thing a consumer installs works.
+  # An exports map that points at a file `files` does not ship, or a `workspace:*`
+  # range that never got rewritten, breaks every downstream install and no test in
+  # this repository would notice.
+  installs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+      # `pnpm pack` rather than `npm pack`: only pnpm rewrites the `workspace:*`
+      # range viewer names core by, and `npm pack` leaves it in the tarball where
+      # no consumer can install it.
+      - name: Pack the publishable packages
+        run: |
+          mkdir -p /tmp/packed
+          cd packages/core && pnpm pack --pack-destination /tmp/packed && cd -
+          cd packages/viewer && pnpm pack --pack-destination /tmp/packed && cd -
+          ! tar -xzOf /tmp/packed/docx-pages-viewer-*.tgz package/package.json | grep -q "workspace:"
+
+      # React and its types are the consumer's to bring, which is what a peer
+      # dependency means, so the check brings them as a consumer would.
+      - name: Install them into a project that is not this one
+        run: |
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y > /dev/null
+          npm pkg set type=module
+          npm install /tmp/packed/*.tgz react react-dom > /dev/null
+          npm install --save-dev @types/react @types/react-dom > /dev/null
+
+      - name: Import what they promise
+        run: |
+          cd /tmp/consumer
+          cat > check.mjs <<'EOF'
+          import { layOutDocument, openDocx, substitutingMetrics } from "@docx-pages/core";
+          import { Document, Page } from "@docx-pages/viewer";
+
+          const missing = Object.entries({
+            layOutDocument, openDocx, substitutingMetrics, Document, Page,
+          }).filter(([, value]) => value === undefined);
+
+          if (missing.length > 0) {
+            throw new Error(`installed but not exported: ${missing.map(([n]) => n).join(", ")}`);
+          }
+          console.log("both packages install and export what they promise");
+          EOF
+          node check.mjs
+
+      - name: Resolve their types from outside the workspace
+        run: |
+          cd /tmp/consumer
+          npm install --save-dev typescript > /dev/null
+          cat > check.ts <<'EOF'
+          import { layOutDocument } from "@docx-pages/core";
+          import { Document } from "@docx-pages/viewer";
+
+          export const used: unknown = [layOutDocument, Document];
+          EOF
+          npx tsc --noEmit --module nodenext --moduleResolution nodenext --target es2022 --jsx react-jsx --strict check.ts

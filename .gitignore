@@ -11,7 +11,11 @@ samples/
 # A corpus of real documents to sweep, and whatever a sweep writes about one.
 # Other people's work: it is found through DOCX_PAGES_CORPUS and lives outside
 # the repository, and this is here in case anyone puts one inside it.
-corpus/
+#
+# Anchored to the root on purpose. Unanchored, it also swallowed the code that
+# does the sweeping, `packages/render/src/corpus`, which is this repository's own
+# and which `docs/gaps.md` tells the reader to run.
+/corpus/
 
 # Working notes, not part of the library.
 BRIEF.md
