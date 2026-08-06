@@ -15,10 +15,11 @@ measurement is what the tests hold on to.
 
 ## The packages
 
-| Package                                 | Runs on   | What it is                                                                       |
-| --------------------------------------- | --------- | -------------------------------------------------------------------------------- |
-| [`@docx-pages/core`](packages/core)     | anywhere  | Reads the package, lays it out, plays metafiles. Touches no disk and no network. |
-| [`@docx-pages/viewer`](packages/viewer) | React 18+ | Draws a laid-out page.                                                           |
+| Package                                 | Runs on   | What it is                                                                                               |
+| --------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------- |
+| [`@docx-pages/core`](packages/core)     | anywhere  | Reads the package, lays it out, plays metafiles. Touches no disk and no network.                         |
+| [`@docx-pages/viewer`](packages/viewer) | React 18+ | Draws a laid-out page, or a whole `.docx` from its bytes.                                                |
+| [`@docx-pages/fonts`](packages/fonts)   | anywhere  | Freely redistributable twins of the faces documents usually name, for laying out without the real fonts. |
 
 A third package, `render`, is not published. It is the Word oracle: it drives Word
 over AppleScript, reads Word's own pdf back, and holds the test suites. It lives in
@@ -31,29 +32,50 @@ npm install @docx-pages/core @docx-pages/viewer
 ```
 
 ```tsx
-import { layOutDocument, openDocx, substitutingMetrics } from "@docx-pages/core";
-import { Document } from "@docx-pages/viewer";
+import { DocxDocument } from "@docx-pages/viewer";
 
-// Every face the document names has to be supplied. Nothing is guessed: which
-// face answers for a name this machine has not got is a question about the
-// machine, not about the file, so the library never invents one.
-const faces = substitutingMetrics(suppliedFaces, ["Cambria"]);
-
-const layout = layOutDocument(openDocx(bytes), faces);
-if (layout.kind !== "laid-out") {
-  // A document is refused rather than drawn wrongly. `layout.blocker` says why.
-  throw new Error(JSON.stringify(layout.blocker));
-}
-
-<Document layout={layout} />;
+<DocxDocument source={bytes} onReport={(report) => console.log(report.substitutions)} />;
 ```
 
-### Fonts are yours to supply
+That is the whole consumer. Every face the document names that nothing supplies
+falls to a metric twin from `@docx-pages/fonts`: Carlito for Calibri, Caladea
+for Cambria, the Liberation family for Arial, Times New Roman and Courier New,
+each matching the named face's advance widths glyph for glyph, so lines still
+break where they would have broken. A name with no twin falls to a default of
+the shape the document's own font table gives it. Nothing is quiet about any of
+this: `onReport` names every face stood in for, every character borrowed from
+another face, and every character nothing could draw. Supply the real fonts
+through the `fonts` prop and none of it happens.
+
+Underneath, for a caller drawing by hand or running without React:
+
+```tsx
+import { bestEffortMetrics, layOutDocument, openDocx, readFaceShapes } from "@docx-pages/core";
+import { defaultFaces } from "@docx-pages/fonts";
+import { Document, imageResolver } from "@docx-pages/viewer";
+
+const pkg = openDocx(bytes);
+const faces = bestEffortMetrics(suppliedFaces, await defaultFaces(), readFaceShapes(pkg));
+const layout = layOutDocument(pkg, faces);
+if (layout.kind !== "laid-out") throw new Error(JSON.stringify(layout.blocker));
+
+<Document layout={layout} imageUrl={imageResolver(pkg, faces.metricsFor)} />;
+```
+
+For exactness rather than resilience, hand `layOutDocument` a
+`substitutingMetrics` over only the faces you supply, or a bare resolver: a
+document asking for anything more is then **refused rather than drawn wrongly**,
+with `layout.blocker` saying why. That is the mode every measurement in this
+repository is made in.
+
+### Fonts are yours to supply, and the pack answers when you do not
 
 `core` reads font files but never goes looking for one. A face is handed in as a
 `SuppliedFace` carrying its metrics and its glyph advances, both read out of the
 file with `readFontFile`. The reader takes ttf, otf, ttc and woff, and refuses
-woff2, which needs brotli.
+woff2, which needs brotli. `@docx-pages/fonts` is a set of such faces that may
+be shipped where the named ones may not, and everything below applies to a face
+out of the pack exactly as it applies to one of yours.
 
 Where a document names a face nothing supplies, `substitutingMetrics` stands the
 nearest usable one in its place and **says so**: whatever it stood in for comes
