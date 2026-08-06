@@ -120,6 +120,10 @@ export function authoredCases(): readonly ReferenceCase[] {
   return authoredDocuments().flatMap((each) => {
     const documentPath = authoredPath(each.id);
     if (!existsSync(documentPath)) return [];
+    // A document this project refuses cannot be compared against anything. It is
+    // still written and still asked about; it is only kept out of the suites that
+    // need a page to compare, until the rule it asks about is built.
+    if (each.refuses !== undefined) return [];
     return [
       {
         ...EMPTY,

@@ -972,3 +972,43 @@ export function wrapSidesDocument(): string {
 // object rounded off the place the flow gave it drops the paragraph above it past
 // itself, which is a rule of its own and not the one being asked about here.
 const EXACT_LINE = `<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/>`;
+
+// What Word draws for a character the face it is written in does not map.
+//
+// Three of these stop this project outright today, and each is a different
+// question. `U+202F` is a narrow no-break space Arial has no glyph for; `U+00A0`
+// is the ordinary no-break space, which every face here maps except Symbol; and
+// `U+2022` is a bullet written into a Wingdings run, where Wingdings addresses its
+// glyphs through a symbol page and has nothing at that code point.
+//
+// Each case is a pair: two letters alone, and the same two letters with the
+// character between them. The difference between the two widths Word's own pdf
+// draws is the width of the character, and a third line puts an ordinary space in
+// the same place so a character drawn as a space says so. The pdf also names the
+// face each run was drawn in, which is what says whether Word gave up on the
+// stated face and reached for another.
+export function unmappedCharacterDocument(): string {
+  const cases = [
+    { face: "Arial", character: " ", name: "narrow no-break space" },
+    { face: "Symbol", character: " ", name: "no-break space" },
+    { face: "Wingdings", character: "•", name: "bullet" },
+    // The same character in a face that does map it, so the question is the face
+    // rather than the character.
+    { face: "Calibri", character: " ", name: "no-break space" },
+    { face: "Calibri", character: " ", name: "narrow no-break space" },
+  ];
+
+  const inFace = (face: string, text: string): string =>
+    run(text, `<w:rFonts w:ascii="${face}" w:hAnsi="${face}" w:cs="${face}"/>`);
+
+  return cases
+    .flatMap((each, at) => [
+      paragraph(at === 0 ? "" : "<w:pageBreakBefore/>", run(`${each.face} ${each.name}`)),
+      // Two letters alone, the two with the character between them, and the two
+      // with a plain space between them.
+      paragraph("", inFace(each.face, "HH")),
+      paragraph("", inFace(each.face, `H${each.character}H`)),
+      paragraph("", inFace(each.face, "H H")),
+    ])
+    .join("");
+}

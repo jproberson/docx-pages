@@ -7,6 +7,7 @@ import {
   pageDocument,
   spacingDocument,
   tableDocument,
+  unmappedCharacterDocument,
   wrappingDocument,
   wrapSidesDocument,
   NUMBERING,
@@ -37,6 +38,12 @@ export type AuthoredDocument = {
   // grow. Left out, every one of them has to agree.
   readonly paragraphsPlaced?: number;
   readonly charactersPlaced?: number;
+  // Why this project refuses the document today, where it does. A document is
+  // written to ask a question, and a question worth asking is often one nothing
+  // here can answer yet: it is committed so that Word's answer can be had by
+  // anyone, and left out of the suites that lay a document out until there is
+  // something to compare. Naming the reason is what stops it being forgotten.
+  readonly refuses?: string;
   readonly bytes: Uint8Array;
 };
 
@@ -263,6 +270,13 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
         settings: settingsPart({ compatibilityMode: null }),
         picture: true,
       }),
+    },
+    {
+      id: "unmapped-characters",
+      title: "A character the face it is written in does not map",
+      asks: "what Word draws where a face has no glyph for a character, and in which face",
+      refuses: "a character the face it is written in does not map is unmeasurable",
+      bytes: buildAuthoredDocx({ body: unmappedCharacterDocument() }),
     },
     {
       id: "drawings",
