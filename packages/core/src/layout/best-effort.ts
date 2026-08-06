@@ -6,6 +6,7 @@ import {
   type MissingGlyph,
   type SubstitutingMetrics,
 } from "./substitution.js";
+import { aliasedSymbolCharacter, isAliasedSymbolFace } from "./symbol-aliases.js";
 
 /**
  * The faces that stand behind every name once being exact has already been given
@@ -36,6 +37,14 @@ export type BestEffortMetrics = SubstitutingMetrics & {
 };
 
 const normalise = (name: string): string => name.trim().toLowerCase();
+
+const sameRequest = (
+  one: { readonly name: string; readonly bold: boolean; readonly italic: boolean },
+  other: { readonly name: string; readonly bold: boolean; readonly italic: boolean },
+): boolean =>
+  normalise(one.name) === normalise(other.name) &&
+  one.bold === other.bold &&
+  one.italic === other.italic;
 
 /**
  * Resolves faces so that every request is answered and every document lays out:
@@ -93,12 +102,31 @@ export function bestEffortMetrics(
       const found = under.metricsFor(request);
       if (found.kind !== "found" || found.advances.kind !== "advances") return found;
 
-      const own = found.advances.notDefAdvance;
+      // A symbol face that was stood in for holds positions in its own page, not
+      // text: the stand-in's letters would be the wrong glyphs wearing the right
+      // widths. So each position is measured as its Unicode meaning, and one the
+      // tables do not carry goes to the box rather than to the stand-in's letter.
+      const symbolPage =
+        isAliasedSymbolFace(request.name) &&
+        under.substitutions().some((each) => sameRequest(each.requested, request));
+
+      const advances = found.advances;
+      const advanceFor = !symbolPage
+        ? advances.advanceFor
+        : (codePoint: number) => {
+            const alias = aliasedSymbolCharacter(request.name, codePoint);
+            return alias === null ? null : advances.advanceFor(alias.codePointAt(0) ?? 0);
+          };
+
+      const own = advances.notDefAdvance;
       const reached = found.elsewhere;
       return {
         ...found,
+        advances: { ...advances, advanceFor },
         elsewhere: (codePoint: number) => {
-          const borrowed = reached?.(codePoint) ?? null;
+          const alias = symbolPage ? aliasedSymbolCharacter(request.name, codePoint) : null;
+          const meant = alias?.codePointAt(0) ?? codePoint;
+          const borrowed = symbolPage && alias === null ? null : (reached?.(meant) ?? null);
           if (borrowed !== null) return borrowed;
 
           const box =

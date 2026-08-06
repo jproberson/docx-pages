@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from "react";
 
 import {
   bestEffortMetrics,
+  isAliasedSymbolFace,
   layOutDocument,
   openDocx,
   readFaceShapes,
@@ -146,7 +147,12 @@ function offerToBrowser(name: string, bold: boolean, italic: boolean, bytes: Uin
 type Shown =
   | { readonly state: "opening" }
   | { readonly state: "blocked"; readonly reason: unknown }
-  | { readonly state: "shown"; readonly layout: LaidOutDocument; readonly imageUrl: ImageResolver };
+  | {
+      readonly state: "shown";
+      readonly layout: LaidOutDocument;
+      readonly imageUrl: ImageResolver;
+      readonly aliasSymbolFaces: ReadonlySet<string> | null;
+    };
 
 /**
  * Draws a `.docx` from its bytes alone: opens it, resolves every face it names
@@ -224,7 +230,21 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
           missingGlyphs: faces.missingGlyphs(),
           unhonoured: layout.unhonoured,
         });
-        setShown({ state: "shown", layout, imageUrl: imageResolver(pkg, faces.metricsFor) });
+
+        // Runs in a symbol face that was stood in for are drawn as what their
+        // positions mean; one whose real face was supplied draws as written.
+        const aliasedFaces = new Set(
+          faces
+            .substitutions()
+            .filter((each) => isAliasedSymbolFace(each.requested.name))
+            .map((each) => each.requested.name.trim().toLowerCase()),
+        );
+        setShown({
+          state: "shown",
+          layout,
+          imageUrl: imageResolver(pkg, faces.metricsFor),
+          aliasSymbolFaces: aliasedFaces.size > 0 ? aliasedFaces : null,
+        });
       } catch (error) {
         if (!stale) setShown({ state: "blocked", reason: error });
       }
@@ -246,6 +266,7 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
     <Document
       layout={shown.layout}
       imageUrl={shown.imageUrl}
+      {...(shown.aliasSymbolFaces === null ? {} : { aliasSymbolFaces: shown.aliasSymbolFaces })}
       {...(props.scale === undefined ? {} : { scale: props.scale })}
       {...(props.frames === undefined ? {} : { frames: props.frames })}
       {...(props.className === undefined ? {} : { className: props.className })}

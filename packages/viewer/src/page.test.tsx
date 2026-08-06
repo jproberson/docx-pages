@@ -203,6 +203,16 @@ const markup = (
   );
 
 describe("Page", () => {
+  it("draws a stood-in symbol face's positions as what they mean, only when told to", () => {
+    const wingdings: ParagraphMark = { ...MARK, font: { kind: "named", name: "Wingdings" } };
+    const layout = layoutWith([], [paragraphOf("l", wingdings)]);
+
+    // Told the face was stood in for, the position paints as its meaning; not
+    // told, the face is really there and the run paints as written.
+    expect(markup(layout, { aliasSymbolFaces: new Set(["wingdings"]) })).toContain("●");
+    expect(markup(layout)).toContain(">l</tspan>");
+  });
+
   it("sizes the page in points so everything below stays in Word's coordinates", () => {
     const html = markup(layoutWith([]));
     expect(html).toContain("width:612pt");

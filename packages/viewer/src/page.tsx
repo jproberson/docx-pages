@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactElement } from "react";
 
 import {
+  aliasedSymbolText,
   paintOfCell,
   paintOfParagraph,
   twipsToPoints,
@@ -32,6 +33,12 @@ export type DocumentProps = {
   readonly scale?: number;
   readonly frames?: FrameStyle;
   readonly fallbackFonts?: string;
+  // Symbol faces the layout stood in for, by lowercased name: runs written in
+  // one are drawn as what their positions mean rather than as the stand-in's
+  // own letters. `DocxDocument` fills this from its substitution report; a
+  // caller who supplied the real face leaves it out and the run draws as
+  // written.
+  readonly aliasSymbolFaces?: ReadonlySet<string>;
   readonly className?: string;
 };
 
@@ -279,11 +286,29 @@ function frame(drawable: ObjectDrawable, kind: string, frames: FrameStyle): Reac
 const familyOf = (mark: ParagraphMark, fallback: string): string =>
   mark.font.kind === "named" ? `"${mark.font.name}", ${fallback}` : fallback;
 
+// A run in a symbol face that was stood in for holds positions in that face's
+// page, and the stand-in would draw them as its own letters. Drawn as what the
+// positions mean instead, which is how the layout measured them.
+function shownText(
+  mark: ParagraphMark,
+  text: string,
+  aliasFaces: ReadonlySet<string> | null,
+): string {
+  if (aliasFaces === null || mark.font.kind !== "named") return text;
+  if (!aliasFaces.has(mark.font.name.trim().toLowerCase())) return text;
+  return aliasedSymbolText(mark.font.name, text) ?? text;
+}
+
 // The line was measured with the authored face's own widths. Holding each run to
 // that width keeps the break points Word chose even when the page draws the text
 // in a substitute, and starting each one where layout put it keeps a tab's gap
 // and an inline picture from carrying the rest of the line along with them.
-function lineText(placed: PlacedLine, key: string, fallback: string): ReactElement | null {
+function lineText(
+  placed: PlacedLine,
+  key: string,
+  fallback: string,
+  aliasFaces: ReadonlySet<string> | null,
+): ReactElement | null {
   const spans = placed.line.segments.flatMap((segment, at) =>
     segment.kind === "text"
       ? [
@@ -301,7 +326,7 @@ function lineText(placed: PlacedLine, key: string, fallback: string): ReactEleme
             textLength={segment.widthPt > 0 ? segment.widthPt : undefined}
             lengthAdjust="spacing"
           >
-            {segment.text}
+            {shownText(segment.mark, segment.text, aliasFaces)}
           </tspan>,
         ]
       : [],
@@ -317,7 +342,12 @@ function lineText(placed: PlacedLine, key: string, fallback: string): ReactEleme
 
 // A list's number is drawn out of the text flow, at the position the level's
 // hanging indent pulls the first line back to.
-function markerText(marker: ParagraphMarker, key: string, fallback: string): ReactElement | null {
+function markerText(
+  marker: ParagraphMarker,
+  key: string,
+  fallback: string,
+  aliasFaces: ReadonlySet<string> | null,
+): ReactElement | null {
   if (marker.text === "") return null;
   return (
     <text
@@ -334,7 +364,7 @@ function markerText(marker: ParagraphMarker, key: string, fallback: string): Rea
       textLength={marker.widthPt > 0 ? marker.widthPt : undefined}
       lengthAdjust="spacing"
     >
-      {marker.text}
+      {shownText(marker.mark, marker.text, aliasFaces)}
     </text>
   );
 }
@@ -344,17 +374,20 @@ function textLayer(
   widthPt: number,
   heightPt: number,
   fallback: string,
+  aliasFaces: ReadonlySet<string> | null,
 ): ReactElement {
   // The header, the body and the footer each number their paragraphs from zero, so
   // a key is where the box sits in the layer rather than the index it carries.
   const lines = drawable.boxes.flatMap((paragraph: ParagraphBox, box: number) => {
     const key = String(box);
     const marker =
-      paragraph.marker === null ? null : markerText(paragraph.marker, `${key}-number`, fallback);
+      paragraph.marker === null
+        ? null
+        : markerText(paragraph.marker, `${key}-number`, fallback, aliasFaces);
     return [
       ...(marker === null ? [] : [marker]),
       ...paragraph.lines.flatMap((placed, at) => {
-        const element = lineText(placed, `${key}-${String(at)}`, fallback);
+        const element = lineText(placed, `${key}-${String(at)}`, fallback, aliasFaces);
         return element === null ? [] : [element];
       }),
     ];
@@ -521,6 +554,7 @@ export function Page(props: PageProps): ReactElement {
     scale = 1,
     frames = "hidden",
     fallbackFonts = DEFAULT_FALLBACK_FONTS,
+    aliasSymbolFaces = null,
     className,
   } = props;
   const widthPt = twipsToPoints(layout.page.widthTwips);
@@ -542,7 +576,7 @@ export function Page(props: PageProps): ReactElement {
       {drawablesOf(layout, page).flatMap((drawable) => {
         if (drawable.kind === "paint") return [paintLayer(drawable, widthPt, heightPt)];
         if (drawable.kind === "text") {
-          return [textLayer(drawable, widthPt, heightPt, fallbackFonts)];
+          return [textLayer(drawable, widthPt, heightPt, fallbackFonts, aliasSymbolFaces)];
         }
         return renderObject(drawable, imageUrl, frames, fallbackFonts);
       })}

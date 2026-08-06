@@ -211,6 +211,12 @@ export type {
 export { bestEffortMetrics } from "./layout/best-effort.js";
 export type { BestEffortMetrics, FaceDefaults } from "./layout/best-effort.js";
 
+export {
+  aliasedSymbolCharacter,
+  aliasedSymbolText,
+  isAliasedSymbolFace,
+} from "./layout/symbol-aliases.js";
+
 export { readFaceShapes, FONT_TABLE_PART } from "./docx/font-table.js";
 export type { FaceShape } from "./docx/font-table.js";
 

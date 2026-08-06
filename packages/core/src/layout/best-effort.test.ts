@@ -109,6 +109,28 @@ describe("bestEffortMetrics", () => {
     expect(kinds).toContain("missing-glyph");
   });
 
+  it("measures a stood-in symbol face's positions as what they mean", () => {
+    // The pack fixture maps the bullet characters, so the aliased position is
+    // measured at a real advance instead of at the box.
+    const withBullets = {
+      ...DEFAULTS,
+      faces: [
+        buildFace({ name: "Twin Sans", metrics: METRICS, characters: "●▪✓ ", notdefAdvance: 350 }),
+      ],
+    };
+    const faces = bestEffortMetrics([], withBullets);
+    const found = faces.metricsFor(ask("Wingdings"));
+    if (found.kind !== "found" || found.advances.kind !== "advances") throw new Error("unusable");
+
+    // Bare or lifted, the position means the bullet and takes its advance.
+    expect(found.advances.advanceFor(0x6c)).toBe(500);
+    expect(found.advances.advanceFor(0xf0a7)).toBe(500);
+    // A position the tables do not carry goes to the box, never to the letter q.
+    expect(found.advances.advanceFor(0x71)).toBeNull();
+    expect(found.elsewhere?.(0x71)).toStrictEqual({ metrics: METRICS, advance: 350 });
+    expect(faces.missingGlyphs()).toStrictEqual([{ face: ask("Wingdings"), codePoint: 0x71 }]);
+  });
+
   it("reads the document's own classification for the shape", () => {
     const bytes = buildDocx({
       "word/document.xml": wordDocument(`<w:p><w:r><w:t>a</w:t></w:r></w:p>${SECTION}`),
