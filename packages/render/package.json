@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@docx-pages/core": "workspace:*",
-    "pdfjs-dist": "^6.2.108",
-    "fflate": "^0.8.3"
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {
     "@docx-pages/viewer": "workspace:*",
@@ -26,5 +26,14 @@
     "@types/react-dom": "^19.2.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jproberson/docx-pages.git",
+    "directory": "packages/render"
+  },
+  "homepage": "https://github.com/jproberson/docx-pages#readme",
+  "bugs": {
+    "url": "https://github.com/jproberson/docx-pages/issues"
   }
 }

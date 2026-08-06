@@ -35,5 +35,14 @@
     "carlito",
     "caladea",
     "liberation"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jproberson/docx-pages.git",
+    "directory": "packages/fonts"
+  },
+  "homepage": "https://github.com/jproberson/docx-pages#readme",
+  "bugs": {
+    "url": "https://github.com/jproberson/docx-pages/issues"
+  }
 }

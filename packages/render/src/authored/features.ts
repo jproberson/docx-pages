@@ -1043,7 +1043,8 @@ export function unmappedCharacterDocument(): string {
 // does for a symbol one, and it reached for five different faces over the eleven
 // cases. Which face is not one name: a sans face borrows from Arial and a serif one
 // from Times New Roman, and a character neither of those carries goes on to
-// whichever face on the machine has it. See `docs/gaps.md`.
+// whichever face on the machine has it. `WORD_CHARACTER_FALLBACK_FACES` in core
+// names them in the order Word reaches for them.
 export function unmappedInTextFaceDocument(): string {
   const cases = [
     // The four geometric bullets a real document wants. Calibri carries three of

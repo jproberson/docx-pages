@@ -12,9 +12,9 @@ import { featuresIn, type DocumentCensus } from "./census.js";
 //
 // **The numbers never enter the repository.** They are written under
 // `samples/corpus/`, which is gitignored whole, along with everything else derived
-// from documents that are not this project's to keep. What is committed is the gap
-// list in `docs/gaps.md`: each gap's name, what it costs, its status, and the order
-// this ranking put it in. An order says nothing about any document.
+// from documents that are not this project's to keep. All that is worth carrying
+// away is the order this ranking put the gaps in, which says nothing about any
+// document.
 
 const SWEEP_PATH = process.env["DOCX_PAGES_CORPUS_REPORT"] ?? "samples/corpus/sweep.jsonl";
 const CENSUS_PATH = process.env["DOCX_PAGES_CORPUS_CENSUS"] ?? "samples/corpus/census.jsonl";
@@ -71,8 +71,8 @@ export function rankingReport(ranked: readonly GapRank[], documents: number): st
     "# What the corpus asks for and does not get",
     "",
     `Generated from a sweep of ${String(documents)} documents. **Not for the repository**:`,
-    "everything here is derived from documents this project does not own. The committed",
-    "gap list in `docs/gaps.md` carries the order alone.",
+    "everything here is derived from documents this project does not own. Only the order",
+    "the gaps came out in is worth carrying away.",
     "",
     "| gap | documents | of those that could | share |",
     "| --- | --- | --- | --- |",
@@ -127,7 +127,7 @@ function main(): void {
   writeFileSync(resolve(RANKING_PATH), rankingReport(ranked, swept.length));
   process.stdout.write(`${rankingReport(ranked, swept.length)}\nWritten to ${RANKING_PATH}\n`);
   process.stdout.write(
-    `\nThe order, which is what docs/gaps.md carries:\n${ranked.map((each, at) => `  ${String(at + 1)}. ${each.kind}`).join("\n")}\n`,
+    `\nThe order, which is all that is worth carrying away:\n${ranked.map((each, at) => `  ${String(at + 1)}. ${each.kind}`).join("\n")}\n`,
   );
 }
 

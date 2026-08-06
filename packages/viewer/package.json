@@ -43,5 +43,14 @@
     "pagination",
     "office",
     "react"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jproberson/docx-pages.git",
+    "directory": "packages/viewer"
+  },
+  "homepage": "https://github.com/jproberson/docx-pages#readme",
+  "bugs": {
+    "url": "https://github.com/jproberson/docx-pages/issues"
+  }
 }

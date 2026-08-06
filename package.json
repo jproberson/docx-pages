@@ -28,5 +28,13 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.66.0",
     "vitest": "^4.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jproberson/docx-pages.git"
+  },
+  "homepage": "https://github.com/jproberson/docx-pages#readme",
+  "bugs": {
+    "url": "https://github.com/jproberson/docx-pages/issues"
   }
 }

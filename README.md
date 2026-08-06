@@ -90,20 +90,29 @@ whether it moves text or only changes paint. It is not a list of things known to
 drawn wrongly: it is what a document asks for that nothing here answers, whether or
 not it showed.
 
-Seventeen such gaps are ranked in [`docs/gaps.md`](docs/gaps.md), with the whole
-backlog in [`docs/remaining.md`](docs/remaining.md). The ones worth knowing before
-you start: character spacing, kerning and `keep-with-next` are read from the
-document and reported, and not yet acted on.
+The ones worth knowing before you start, every one of them named in the report
+rather than passed over quietly: character spacing, kerning and `keep-with-next`
+are read from the document and not yet acted on; a footnote takes no room at the
+foot of its page; only the last section's geometry is read, so a document that
+changes page size or margins part way through lays the rest out on the wrong
+page; and a cell spanning its neighbours is laid out at its own width.
+
+Two gaps are **not** named in the report, which makes them the ones to watch: the
+old `w:pict` and `w:object` drawing form, which nothing here reads, and a
+paragraph whose indents together exceed the frame they stand in, which is drawn to
+a rule that was never measured against Word.
 
 ## The evidence
 
-Two suites, and only one of them can be published.
+Word's own answers are committed, so the claim above is one anybody can check.
 
-**Authored documents** are written by this repository to ask Word a single question
-each, so Word's own answers about them are committed, in
-`packages/render/src/authored/measured.json`. Nothing in them is anyone's
-collateral: they invent their own words. This is the evidence anyone can reproduce,
-on a machine with Word and Calibri:
+**Authored documents** are written by this repository to ask Word a single
+question each: where a tab lands at every alignment, how tall a row is, what an
+outline does to a box that fits itself to its text. They invent their own words
+and hold nobody's content, so both the documents and Word's answers about them
+ship here, in `packages/render/src/authored/measured.json`. The suite lays each
+one out and holds the result to what Word said. On a machine with Word and
+Calibri:
 
 ```
 pnpm verify     # format, lint, typecheck, test
@@ -111,14 +120,16 @@ pnpm measure    # rewrite measured.json by asking Word again
 pnpm browse     # each rendering beside Word's own page
 ```
 
-**Reference documents** are real one-pagers. They are labelled internal collateral
-and are never committed, so the suites that use them find them through a manifest
-and report nothing to run without one. A clone will skip them.
+Word is asked two ways, and they answer different quantities. Over AppleScript it
+gives the position and page of every paragraph, including the empty ones, which
+draw nothing and so cannot be measured from a rendering at all; those answers are
+rounded to the whole point. Word's own pdf says where something was drawn, to more
+decimal places than anything here needs, and is the oracle for anything about a
+position.
 
-Two oracles answer, and they are not the same quantity. Word over AppleScript
-reports empty paragraphs, which draw nothing and cannot be measured from a
-rendering at all, and its answers are rounded to the whole point. Word's own pdf
-says where something was drawn, to more decimal places than anything here needs.
+A second suite runs against real documents, which are private and are no part of
+this repository. It finds them through a manifest and reports nothing to run
+without one, so a clone skips it.
 
 ## Licence
 
