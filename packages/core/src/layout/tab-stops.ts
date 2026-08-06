@@ -9,7 +9,6 @@ export const DEFAULT_TAB_STOP_PT = 36;
 // bits of a conversion out of twips.
 const EPSILON = 1e-9;
 
-// A place a tab can reach, and what it does with the text that follows it there.
 export type TabStopPt = {
   readonly positionPt: number;
   readonly alignment: TabAlignment;

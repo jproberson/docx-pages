@@ -4,7 +4,6 @@ import { attribute, childrenNamed, firstNamed } from "./xml.js";
 
 export const SETTINGS_PART = "word/settings.xml";
 
-// What the document says about itself rather than about any of its content.
 export type DocumentSettings = {
   // How far apart the stops a paragraph falls back on stand, which Word writes as
   // 720 twips and a document that says nothing keeps.

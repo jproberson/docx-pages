@@ -19,12 +19,10 @@ const FILES: Readonly<Record<string, readonly string[]>> = {
     "/System/Library/Fonts/Supplemental/Cambria.ttc",
     "/usr/share/fonts/truetype/msttcorefonts/Cambria.ttf",
   ],
-  // The system's Times New Roman comes before Word's own copy of it, which is the
-  // other way round from Symbol. The two files differ in one number, the line gap
-  // their `hhea` states: 87 units in the system's and none in Word's. The line
-  // Word drew the borrowed bullet on in the authored `unmapped-characters`
-  // document stands 13.80pt tall at 12pt, which is the gap of 87 and not the gap
-  // of none, so the face Word reached for is the system's.
+  // The system's copy comes before Word's own, which is the other way round from
+  // Symbol. The two differ in one number, the line gap their `hhea` states: 87
+  // units in the system's and none in Word's. Word makes a Times New Roman line
+  // 13.80pt tall at 12pt, which is the gap of 87.
   [WORD_CHARACTER_FALLBACK_FACE]: [
     "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
     "/Library/Fonts/Microsoft/Times New Roman.ttf",

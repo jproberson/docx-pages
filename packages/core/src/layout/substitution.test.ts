@@ -121,10 +121,8 @@ describe("substitutingMetrics", () => {
   });
 });
 
-// Word draws a character a symbol face cannot alias into its own page out of Times
-// New Roman, which is the last of the three rules an unmapped character meets and
-// the only one that leaves the face the run states. Measured on 2026-08-06 off
-// Word's pdf of the authored `unmapped-characters` document.
+// The last of the three rules an unmapped character meets, and the only one that
+// leaves the face the run states: see `WORD_CHARACTER_FALLBACK_FACE`.
 describe("a character the face it stands in cannot draw", () => {
   const SERIF = { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 };
 

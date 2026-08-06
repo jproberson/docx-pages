@@ -1,16 +1,16 @@
 // A point on the outline a wrapping object keeps text off, in page points.
 export type OutlinePoint = { readonly xPt: number; readonly yPt: number };
 
-// The rectangle a wrapping object keeps text out of: its own frame grown by the
-// distances the anchor asks text to stay off it. An object whose wrap draws an
-// outline narrower than that rectangle in places carries it as well, and the
-// rectangle stays the one every line is blocked by.
 // The one side of a band a line may sit on. An object that allows both sides says
 // nothing, and one asking for the largest has already been resolved to a side by
 // the time it gets here, since which side that is depends on the column the band
 // stands in rather than on the line.
 export type BandSide = "left" | "right";
 
+// The rectangle a wrapping object keeps text out of: its own frame grown by the
+// distances the anchor asks text to stay off it. An object whose wrap draws an
+// outline narrower than that rectangle in places carries it as well, and the
+// rectangle stays the one every line is blocked by.
 export type WrapBand = {
   readonly leftPt: number;
   readonly rightPt: number;

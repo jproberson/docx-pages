@@ -138,7 +138,6 @@ export const faceRequestFor = (mark: ParagraphMark): FaceRequest => ({
 type Face = {
   readonly metrics: FontMetrics;
   readonly advanceFor: GlyphAdvances;
-  // What draws the characters this face has no glyph for, where anything does.
   readonly elsewhere: FaceElsewhere | null;
 };
 
@@ -227,12 +226,9 @@ class Measurer {
     return lineHeightPt(lookup.metrics, mark.fontSizePt);
   }
 
-  // A fragment is measured in the face its run states, character by character, and
-  // in whatever draws the characters that face has none of. Word takes such a
-  // character out of another face and seats the line over that face too, so the
-  // fragment stands as tall as the tallest face drawn in it and its baseline sits
-  // under the deepest ascent among them, which is how a line of two runs is seated
-  // as well.
+  // A character drawn out of another face raises the fragment as a run in that
+  // face would have: it stands as tall as the tallest face drawn in it and seats
+  // its baseline under the deepest ascent among them.
   fragment(mark: ParagraphMark, text: string): Fragment | null {
     const face = this.faceFor(mark);
     if (face === null) return null;
@@ -257,8 +253,8 @@ class Measurer {
 
       widthPt += advanceWidthPt(drawn.advance, drawn.metrics, mark.fontSizePt);
 
-      // The face's own glyphs are what the fragment already stands on, so only a
-      // character drawn out of another face can raise it.
+      // The fragment already stands on its own face, so only a borrowed character
+      // can raise it.
       if (drawn.metrics !== face.metrics) {
         const above = ascentPt(drawn.metrics, mark.fontSizePt);
         abovePt = Math.max(abovePt, above);
@@ -277,8 +273,6 @@ class Measurer {
   }
 }
 
-// The face a character is drawn in and what it advances there: the run's own face
-// wherever it has a glyph, and whatever answers for it where it has none.
 function drawnBy(
   face: Face,
   codePoint: number,

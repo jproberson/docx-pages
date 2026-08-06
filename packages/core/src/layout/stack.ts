@@ -904,7 +904,6 @@ type LayOutParagraphInput = {
   readonly spacing: Spacing;
   readonly paint: ParagraphPaint | null;
   readonly number: MeasuredNumber | null;
-  // Whether the paragraph asked for a page of its own.
   readonly startsPage: boolean;
   readonly bands: readonly WrapBand[];
   readonly ahead: readonly WrapBand[];

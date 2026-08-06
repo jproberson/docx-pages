@@ -69,7 +69,6 @@ type TabStopEntry = {
   readonly kind: "stop" | "clear";
 };
 
-// A stop the cascade settled on.
 export type TabStop = {
   readonly positionTwips: number;
   readonly alignment: TabAlignment;

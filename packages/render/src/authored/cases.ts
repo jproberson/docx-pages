@@ -133,7 +133,7 @@ export function authoredCases(): readonly ReferenceCase[] {
     // need a page to compare, until the rule it asks about is built.
     if (each.refuses !== undefined) return [];
     // A document naming a face this machine has not got would be laid out in
-    // another one, which answers a different question from the one it asks.
+    // another one, which answers a different question.
     if (!hasStatedFaces(each.statedFaces ?? [])) return [];
     return [
       {

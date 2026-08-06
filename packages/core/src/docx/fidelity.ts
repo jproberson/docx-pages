@@ -110,11 +110,9 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A face the document asked for that another one answered for: every line drawn
   // in it may break where Word did not break it.
   "substituted-face": "moves-text",
-  // A character the face it stands in has no glyph for, which Word draws out of
-  // another face and this project measures out of the same one. The room it takes
-  // is Word's, so nothing moves; what is drawn in that room is whatever the viewer
-  // finds for a character its stated face cannot draw, which is not the glyph Word
-  // drew.
+  // A character measured out of the face Word drew it from, so the room it takes
+  // is Word's and nothing moves. What is drawn in that room is whatever the viewer
+  // finds for a character its stated face cannot draw, which is not Word's glyph.
   "character-from-another-face": "changes-paint",
 };
 

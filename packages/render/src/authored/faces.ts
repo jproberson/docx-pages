@@ -30,11 +30,10 @@ export function authoredFace(): SuppliedFace | null {
   return faceOf(FACE, facePath());
 }
 
-// Where the faces an authored document names by hand are to be found. One document
-// asks what a face draws for a character it has no glyph for, and that question
-// cannot be asked in the face everything else is written in: it needs a face that
-// leaves a character out. Each of them ships with Word or with the system, and none
-// is anyone's collateral, so they are looked for in the same way as the one face.
+// Where the faces an authored document names by hand are to be found. What a face
+// draws for a character it has no glyph for cannot be asked in the face everything
+// else is written in: it needs a face that leaves a character out. Each of these
+// ships with Word or with the system, so none is anyone's collateral.
 const STATED: Readonly<Record<string, readonly string[]>> = {
   Arial: [
     "/Applications/Microsoft Word.app/Contents/Resources/DFonts/arial.ttf",

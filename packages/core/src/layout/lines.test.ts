@@ -473,12 +473,10 @@ describe("breakLines", () => {
   });
 });
 
-// Word draws a character the face it is written in has no glyph for out of another
-// face, and measures the line over that face as well: the line holding the bullet
-// Word took out of Times New Roman stands as tall as Times New Roman makes one.
-// Measured on 2026-08-06 off Word's pdf of the authored `unmapped-characters`
-// document, where the line came out 13.80pt tall at 12pt against the 13.32pt of
-// the symbol face beside it.
+// Word measures a line over the face it borrowed a character from as well as over
+// the one the run states. Measured on 2026-08-06 off Word's pdf of the authored
+// `unmapped-characters` document: the line holding the borrowed bullet came out
+// 13.80pt tall at 12pt against the 13.32pt of the symbol face beside it.
 describe("a character drawn out of another face", () => {
   const BULLET = "\u2022";
 
