@@ -1,6 +1,8 @@
 import {
   lookupFontMetrics,
   type FaceRequest,
+  type FontMetrics,
+  type GlyphAdvances,
   type MetricsLookup,
   type SuppliedFace,
 } from "./font-metrics.js";
@@ -32,12 +34,43 @@ export type Substitution = {
  */
 export const WORD_FALLBACK_FACES: readonly string[] = ["Cambria"];
 
+/**
+ * The face Word draws a character out of when the face it is written in has no
+ * glyph for it and no place in its own page to alias it to.
+ *
+ * This is the last of the three rules an unmapped character meets, and the only
+ * one that leaves the face the run states. Measured on 2026-08-06 off Word's own
+ * pdf of the authored `unmapped-characters` document: Word drew `U+2022` in
+ * Wingdings from **Times New Roman**, which the document never mentions, at Times
+ * New Roman's own bullet of 717 units in 2048. Wingdings maps neither `U+2022` nor
+ * anything in its page that stands for it, `U+2022` being above `0xFF` and so
+ * having no low byte to alias to, which is what tells this rule from the `.notdef`
+ * a symbol face answers its own page with.
+ */
+export const WORD_CHARACTER_FALLBACK_FACE = "Times New Roman";
+
+// A character measured out of a face the document never asked for. Word does this
+// silently too, and it is not the same thing as standing a whole face in: the
+// character takes the room Word gave it, so nothing moves, and only the glyph
+// drawn in that room is anyone's guess.
+export type FallbackCharacter = {
+  // The face the character stands in, which has no glyph for it, and which is the
+  // face that was measured with rather than the one the document asked for: a run
+  // whose face was stood in for asks this of the stand-in.
+  readonly face: FaceRequest;
+  readonly used: FaceRequest;
+  readonly codePoint: number;
+};
+
 export type SubstitutingMetrics = {
   readonly metricsFor: MetricsResolver;
   // Every face that was stood in for, once each, in the order they were first
   // asked for. Read it after laying out: nothing is known until the layout has
   // asked for the faces it needs.
   substitutions(): readonly Substitution[];
+  // Every character that was measured out of another face, once each face and
+  // character. Read it after laying out, as the substitutions are.
+  fallbackCharacters(): readonly FallbackCharacter[];
 };
 
 // Measuring text needs the widths of the face's own glyphs. A face whose metrics
@@ -87,6 +120,7 @@ export function substitutingMetrics(
   fallbackNames: readonly string[],
 ): SubstitutingMetrics {
   const stood = new Map<string, Substitution>();
+  const characters = new Map<string, FallbackCharacter>();
 
   const metricsFor: MetricsResolver = (request) => {
     let asked: MetricsLookup | null = null;
@@ -100,11 +134,81 @@ export function substitutingMetrics(
         const key = keyOf(request);
         if (!stood.has(key)) stood.set(key, { requested: request, used });
       }
-      return found;
+      return throughAnotherFace(found, used, supplied, characters);
     }
 
     return asked ?? lookupFontMetrics(request, supplied);
   };
 
-  return { metricsFor, substitutions: () => [...stood.values()] };
+  return {
+    metricsFor,
+    substitutions: () => [...stood.values()],
+    fallbackCharacters: () => [...characters.values()],
+  };
+}
+
+/**
+ * Answers a symbol face's unmappable characters out of the face Word reaches for,
+ * and says which characters those were.
+ *
+ * Only a symbol face asks this. Everything a symbol face can draw at all it has
+ * already answered for, at `.notdef` where its own page holds a place and nothing
+ * to draw there, so a character it reports unmapped is one Word could not keep in
+ * the face either. What a **text** face does with a character it has no glyph for
+ * is a different question, and an unmeasured one, so such a character is left to
+ * refuse the document rather than drawn in a guess.
+ *
+ * The face comes back whole rather than as a width, since Word measures the line
+ * over it as well: the line holding the bullet Word took out of Times New Roman
+ * stands as tall as Times New Roman would have made it.
+ */
+function throughAnotherFace(
+  found: MetricsLookup,
+  face: FaceRequest,
+  supplied: readonly SuppliedFace[],
+  characters: Map<string, FallbackCharacter>,
+): MetricsLookup {
+  if (found.kind !== "found" || found.advances.kind !== "advances") return found;
+  if (!found.advances.symbolEncoded) return found;
+
+  const reached = reachableFace(face, supplied);
+  if (reached === null) return found;
+
+  const { used } = reached;
+  return {
+    ...found,
+    elsewhere: {
+      metrics: reached.metrics,
+      // Asked only of a character the face itself has no glyph for, which is what
+      // makes this the place to say that one was met.
+      advanceFor: (codePoint) => {
+        const drawn = reached.advanceFor(codePoint);
+        if (drawn === null) return null;
+        const key = `${keyOf(face)}|${String(codePoint)}`;
+        if (!characters.has(key)) characters.set(key, { face, used, codePoint });
+        return drawn;
+      },
+    },
+  };
+}
+
+type ReachedFace = {
+  readonly used: FaceRequest;
+  readonly metrics: FontMetrics;
+  readonly advanceFor: GlyphAdvances;
+};
+
+// Word's fallback face in the style the run is written in, or in the plain style
+// where the machine has only that one. The style is worth trying for and not worth
+// refusing the document over: what a bold run's fallback weighs is unmeasured, and
+// a width out of the regular weight of the right face is nearer than no page at
+// all.
+function reachableFace(face: FaceRequest, supplied: readonly SuppliedFace[]): ReachedFace | null {
+  const named = { ...face, name: WORD_CHARACTER_FALLBACK_FACE };
+  for (const used of [named, { ...named, bold: false, italic: false }]) {
+    const elsewhere = lookupFontMetrics(used, supplied);
+    if (elsewhere.kind !== "found" || elsewhere.advances.kind !== "advances") continue;
+    return { used, metrics: elsewhere.metrics, advanceFor: elsewhere.advances.advanceFor };
+  }
+  return null;
 }

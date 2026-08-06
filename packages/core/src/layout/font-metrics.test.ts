@@ -73,7 +73,11 @@ describe("advanceWidthPt", () => {
 describe("lookupFontMetrics", () => {
   const NARROW: FontMetrics = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
   const SUPPLIED: FontMetrics = { unitsPerEm: 2048, ascender: 1944, descender: -546, lineGap: 0 };
-  const advances: SuppliedFace["advances"] = { kind: "advances", advanceFor: () => 500 };
+  const advances: SuppliedFace["advances"] = {
+    kind: "advances",
+    symbolEncoded: false,
+    advanceFor: () => 500,
+  };
 
   it("resolves a built-in font", () => {
     expect(lookupFontMetrics(asked("Times New Roman"))).toStrictEqual({
@@ -131,7 +135,11 @@ describe("lookupFontMetrics", () => {
     const regular = { ...face("Meridian Sans", NARROW), advances };
     const bold = {
       ...face("Meridian Sans", NARROW, { bold: true }),
-      advances: { kind: "advances", advanceFor: () => 600 } satisfies SuppliedFace["advances"],
+      advances: {
+        kind: "advances",
+        symbolEncoded: false,
+        advanceFor: () => 600,
+      } satisfies SuppliedFace["advances"],
     };
     const lookup = lookupFontMetrics(asked("Meridian Sans", true), [regular, bold]);
 

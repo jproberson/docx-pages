@@ -282,6 +282,8 @@ export type FaceFixture = {
   readonly italic?: boolean;
   readonly advance?: number;
   readonly characters?: string;
+  readonly subtables?: FontFixture["subtables"];
+  readonly notdefAdvance?: number;
 };
 
 // A face whose every glyph is the same width, so a test can count characters
@@ -290,6 +292,8 @@ export function buildFace(fixture: FaceFixture): SuppliedFace {
   const advance = fixture.advance ?? fixture.metrics.unitsPerEm / 2;
   const file = buildSfnt({
     ...fixture.metrics,
+    ...(fixture.subtables === undefined ? {} : { subtables: fixture.subtables }),
+    ...(fixture.notdefAdvance === undefined ? {} : { notdefAdvance: fixture.notdefAdvance }),
     advances: Object.fromEntries(
       Array.from(fixture.characters ?? MEASURABLE, (character) => [character, advance]),
     ),

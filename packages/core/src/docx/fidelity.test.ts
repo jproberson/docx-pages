@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument, WORDPROCESSING_NS } from "../testing/build-docx.js";
-import { readUnhonoured, withSubstitutedFaces, type Unhonoured } from "./fidelity.js";
+import {
+  readUnhonoured,
+  withFallbackCharacters,
+  withSubstitutedFaces,
+  type Unhonoured,
+} from "./fidelity.js";
 import { openDocx } from "./package.js";
 
 const SECTION = `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`;
@@ -176,5 +181,28 @@ describe("withSubstitutedFaces", () => {
       "substituted-face",
       "text-columns",
     ]);
+  });
+});
+
+// The other entry the layout finds rather than the document stating it: which
+// characters a face had no glyph for is only known once the layout has asked.
+describe("withFallbackCharacters", () => {
+  const BULLET = 0x2022;
+
+  it("leaves the list alone where every character its own face drew", () => {
+    expect(withFallbackCharacters([], [])).toStrictEqual([]);
+  });
+
+  // The character takes the room Word gave it, so nothing moves; only the glyph
+  // drawn in that room is anyone's guess.
+  it("names a character drawn from another face as paint rather than as movement", () => {
+    const [entry] = withFallbackCharacters([], [{ codePoint: BULLET }]);
+    expect(entry?.kind).toBe("character-from-another-face");
+    expect(entry?.effect).toBe("changes-paint");
+  });
+
+  it("keeps one place a character", () => {
+    const [entry] = withFallbackCharacters([], [{ codePoint: BULLET }, { codePoint: 0x25a0 }]);
+    expect(entry?.places).toHaveLength(2);
   });
 });

@@ -3,7 +3,12 @@ import { readInlines } from "../docx/inlines.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
-import { readUnhonoured, withSubstitutedFaces, type Unhonoured } from "../docx/fidelity.js";
+import {
+  readUnhonoured,
+  withFallbackCharacters,
+  withSubstitutedFaces,
+  type Unhonoured,
+} from "../docx/fidelity.js";
 import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
 import {
   honoursAWrapOnTheLeft,
@@ -511,9 +516,9 @@ export function layOutDocument(
   return {
     kind: "laid-out",
     page,
-    unhonoured: withSubstitutedFaces(
-      readUnhonoured(pkg),
-      faces === null ? [] : faces.substitutions(),
+    unhonoured: withFallbackCharacters(
+      withSubstitutedFaces(readUnhonoured(pkg), faces === null ? [] : faces.substitutions()),
+      faces === null ? [] : faces.fallbackCharacters(),
     ),
     headerFloats,
     footerFloats,

@@ -5,6 +5,7 @@ import {
   ascentPt,
   lineHeightPt,
   type AdvancesUnavailable,
+  type FaceElsewhere,
   type FaceRequest,
   type FontMetrics,
   type GlyphAdvances,
@@ -137,6 +138,8 @@ export const faceRequestFor = (mark: ParagraphMark): FaceRequest => ({
 type Face = {
   readonly metrics: FontMetrics;
   readonly advanceFor: GlyphAdvances;
+  // What draws the characters this face has no glyph for, where anything does.
+  readonly elsewhere: FaceElsewhere | null;
 };
 
 type Fragment = {
@@ -199,7 +202,11 @@ class Measurer {
       return null;
     }
 
-    const face = { metrics: lookup.metrics, advanceFor: lookup.advances.advanceFor };
+    const face = {
+      metrics: lookup.metrics,
+      advanceFor: lookup.advances.advanceFor,
+      elsewhere: lookup.elsewhere ?? null,
+    };
     this.faces.set(mark, face);
     return face;
   }
@@ -220,17 +227,26 @@ class Measurer {
     return lineHeightPt(lookup.metrics, mark.fontSizePt);
   }
 
+  // A fragment is measured in the face its run states, character by character, and
+  // in whatever draws the characters that face has none of. Word takes such a
+  // character out of another face and seats the line over that face too, so the
+  // fragment stands as tall as the tallest face drawn in it and its baseline sits
+  // under the deepest ascent among them, which is how a line of two runs is seated
+  // as well.
   fragment(mark: ParagraphMark, text: string): Fragment | null {
     const face = this.faceFor(mark);
     if (face === null) return null;
 
     let widthPt = 0;
     let beforePointPt: number | null = null;
+    let abovePt = ascentPt(face.metrics, mark.fontSizePt);
+    let belowPt = lineHeightPt(face.metrics, mark.fontSizePt) - abovePt;
+
     for (const character of text) {
       if (beforePointPt === null && character === DECIMAL_POINT) beforePointPt = widthPt;
       const codePoint = character.codePointAt(0) ?? 0;
-      const advance = face.advanceFor(codePoint);
-      if (advance === null) {
+      const drawn = drawnBy(face, codePoint);
+      if (drawn === null) {
         this.failure ??= {
           kind: "unmapped-character",
           fontName: mark.font.kind === "named" ? mark.font.name : "",
@@ -238,7 +254,16 @@ class Measurer {
         };
         return null;
       }
-      widthPt += advanceWidthPt(advance, face.metrics, mark.fontSizePt);
+
+      widthPt += advanceWidthPt(drawn.advance, drawn.metrics, mark.fontSizePt);
+
+      // The face's own glyphs are what the fragment already stands on, so only a
+      // character drawn out of another face can raise it.
+      if (drawn.metrics !== face.metrics) {
+        const above = ascentPt(drawn.metrics, mark.fontSizePt);
+        abovePt = Math.max(abovePt, above);
+        belowPt = Math.max(belowPt, lineHeightPt(drawn.metrics, mark.fontSizePt) - above);
+      }
     }
 
     return {
@@ -246,10 +271,25 @@ class Measurer {
       text,
       widthPt,
       beforePointPt,
-      heightPt: lineHeightPt(face.metrics, mark.fontSizePt),
-      ascentPt: ascentPt(face.metrics, mark.fontSizePt),
+      heightPt: abovePt + belowPt,
+      ascentPt: abovePt,
     };
   }
+}
+
+// The face a character is drawn in and what it advances there: the run's own face
+// wherever it has a glyph, and whatever answers for it where it has none.
+function drawnBy(
+  face: Face,
+  codePoint: number,
+): { readonly metrics: FontMetrics; readonly advance: number } | null {
+  const own = face.advanceFor(codePoint);
+  if (own !== null) return { metrics: face.metrics, advance: own };
+
+  const elsewhere = face.elsewhere;
+  if (elsewhere === null) return null;
+  const advance = elsewhere.advanceFor(codePoint);
+  return advance === null ? null : { metrics: elsewhere.metrics, advance };
 }
 
 // The character a decimal stop lines its text up on. Word takes it from the

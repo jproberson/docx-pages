@@ -473,6 +473,62 @@ describe("breakLines", () => {
   });
 });
 
+// Word draws a character the face it is written in has no glyph for out of another
+// face, and measures the line over that face as well: the line holding the bullet
+// Word took out of Times New Roman stands as tall as Times New Roman makes one.
+// Measured on 2026-08-06 off Word's pdf of the authored `unmapped-characters`
+// document, where the line came out 13.80pt tall at 12pt against the 13.32pt of
+// the symbol face beside it.
+describe("a character drawn out of another face", () => {
+  const BULLET = "\u2022";
+
+  // Taller and deeper than `EVEN`, so what it lends the line shows in both.
+  const TALL = readFontFile(
+    buildSfnt({
+      unitsPerEm: 1000,
+      ascender: 900,
+      descender: -300,
+      lineGap: 0,
+      advances: { [BULLET]: 700 },
+    }),
+  );
+  const lent =
+    TALL.advances.kind === "advances"
+      ? { metrics: TALL.metrics, advanceFor: TALL.advances.advanceFor }
+      : null;
+
+  const lending = (request: { readonly name: string }): MetricsLookup => {
+    const found = metricsFor()(request);
+    return found.kind === "found" && lent !== null ? { ...found, elsewhere: lent } : found;
+  };
+
+  const lineOf = (text: string, metrics = lending): TextLine => {
+    const result = breakLines({ runs: [runOf(text)], widthPt: 1000, metricsFor: metrics });
+    if (result.kind !== "lines") throw new Error(result.failure.kind);
+    const [line] = result.lines;
+    if (line === undefined) throw new Error("no line");
+    return line;
+  };
+
+  it("takes the width out of the face that drew it", () => {
+    expect(lineOf(`ab${BULLET}`).widthPt).toBeCloseTo(5 + 5 + 7, 9);
+  });
+
+  it("stands as tall as that face, and seats the line under its ascent", () => {
+    const line = lineOf(`ab${BULLET}`);
+
+    expect(line.ascentPt).toBeCloseTo(9, 9);
+    expect(line.heightPt).toBeCloseTo(12, 9);
+  });
+
+  it("leaves a line of characters the face itself draws alone", () => {
+    const line = lineOf("ab");
+
+    expect(line.ascentPt).toBeCloseTo(8, 9);
+    expect(line.heightPt).toBeCloseTo(10, 9);
+  });
+});
+
 // Measured against Word itself: every space character on the line takes an equal
 // share of the room the line did not fill, and nothing else takes any.
 describe("justifyLine", () => {

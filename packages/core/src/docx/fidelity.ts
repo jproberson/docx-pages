@@ -65,7 +65,8 @@ export type UnhonouredKind =
   | "undrawable-picture"
   | "approximated-border"
   | "alternate-first-or-even-page"
-  | "substituted-face";
+  | "substituted-face"
+  | "character-from-another-face";
 
 const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // Only the last section's geometry is read, so a document that changes page
@@ -109,6 +110,12 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A face the document asked for that another one answered for: every line drawn
   // in it may break where Word did not break it.
   "substituted-face": "moves-text",
+  // A character the face it stands in has no glyph for, which Word draws out of
+  // another face and this project measures out of the same one. The room it takes
+  // is Word's, so nothing moves; what is drawn in that room is whatever the viewer
+  // finds for a character its stated face cannot draw, which is not the glyph Word
+  // drew.
+  "character-from-another-face": "changes-paint",
 };
 
 // Whether an element that is a toggle is on. Word writes the toggle bare to turn
@@ -340,18 +347,40 @@ function gathered(found: readonly Found[]): readonly Unhonoured[] {
 // order of kinds gives them.
 //
 // One place a face, naming the document's own part: the layout knows which faces
-// it stood in for but not which paragraph asked for each of them.
+// it stood in for but not which paragraph asked for each of them. The same is true
+// of a character drawn from another face.
 export function withSubstitutedFaces(
   unhonoured: readonly Unhonoured[],
   substitutions: readonly { readonly requested: { readonly name: string } }[],
 ): readonly Unhonoured[] {
-  if (substitutions.length === 0) return unhonoured;
+  return withEntryFor("substituted-face", unhonoured, substitutions.length);
+}
+
+// The other of the two, and the same argument: which characters a face had no
+// glyph for is only known once the layout has asked it for them. One place a
+// character, so a document drawing two of them says so twice.
+export function withFallbackCharacters(
+  unhonoured: readonly Unhonoured[],
+  characters: readonly { readonly codePoint: number }[],
+): readonly Unhonoured[] {
+  return withEntryFor("character-from-another-face", unhonoured, characters.length);
+}
+
+function withEntryFor(
+  kind: UnhonouredKind,
+  unhonoured: readonly Unhonoured[],
+  met: number,
+): readonly Unhonoured[] {
+  if (met === 0) return unhonoured;
   return [
     ...unhonoured,
     {
-      kind: "substituted-face" as const,
-      effect: EFFECTS["substituted-face"],
-      places: substitutions.map(() => ({ part: MAIN_DOCUMENT_PART, paragraphIndex: null })),
+      kind,
+      effect: EFFECTS[kind],
+      places: Array.from({ length: met }, () => ({
+        part: MAIN_DOCUMENT_PART,
+        paragraphIndex: null,
+      })),
     },
   ].sort((one, other) => one.kind.localeCompare(other.kind));
 }

@@ -20,7 +20,16 @@ export type AdvancesUnavailable =
   | "hmtx-malformed";
 
 export type AdvanceTable =
-  | { readonly kind: "advances"; readonly advanceFor: GlyphAdvances }
+  | {
+      readonly kind: "advances";
+      readonly advanceFor: GlyphAdvances;
+      // Whether the face declares the Microsoft symbol encoding, which is what
+      // says where a character it has no glyph for is drawn from. Such a face has
+      // already answered for everything its own page holds a place for, so a
+      // character it reports unmapped is one it cannot draw at all, and Word goes
+      // to another face for that one character.
+      readonly symbolEncoded: boolean;
+    }
   | { readonly kind: "unavailable"; readonly reason: AdvancesUnavailable };
 
 // Vertical metrics alone place empty paragraphs and floats; measuring text needs
@@ -40,12 +49,28 @@ export type SuppliedFace = FaceRequest & {
   readonly advances: AdvanceTable;
 };
 
+/**
+ * What draws a character the face itself has no glyph for.
+ *
+ * Word reaches for another face one character at a time rather than one run at a
+ * time, and measures the line over that face as well as over the one the run
+ * states, so what comes back here is a whole face and not only a width.
+ *
+ * `lookupFontMetrics` never finds one: which face answers is a question about
+ * every face the machine has, which only a resolver that holds them all can put.
+ */
+export type FaceElsewhere = {
+  readonly metrics: FontMetrics;
+  readonly advanceFor: GlyphAdvances;
+};
+
 export type MetricsLookup =
   | {
       readonly kind: "found";
       readonly source: "builtin" | "supplied";
       readonly metrics: FontMetrics;
       readonly advances: AdvanceTable;
+      readonly elsewhere?: FaceElsewhere;
     }
   | { readonly kind: "missing"; readonly fontName: string };
 

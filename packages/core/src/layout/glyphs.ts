@@ -105,8 +105,9 @@ function throughThinSpace(glyphFor: CodeToGlyph): CodeToGlyph {
 // .notdef where it has no glyph there rather than letting the character go
 // elsewhere. Measured on 2026-08-06: Word drew U+00A0 in Symbol from Symbol, at
 // Symbol's .notdef advance of 1229 units, where the face maps neither U+00A0 nor
-// the F0A0 it stands for. A character with no place in that page is a question of
-// its own, and stays unmapped here.
+// the F0A0 it stands for. A character with no place in that page is drawn from
+// another face altogether, which is a question no one file can answer: it comes
+// back unmapped here and `substitutingMetrics` reaches for the face Word does.
 const NOTDEF_GLYPH = 0;
 
 function parseFormat4(table: Uint8Array): CharacterMap {
@@ -218,6 +219,7 @@ export function readAdvanceTable(
 
   return {
     kind: "advances",
+    symbolEncoded: subtable.symbol,
     advanceFor: (codePoint) => {
       const glyph = glyphFor(codePoint);
       if (glyph !== 0) return advanceOf(glyph);

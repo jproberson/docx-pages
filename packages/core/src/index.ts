@@ -11,7 +11,7 @@ export type { XmlElement } from "./docx/xml.js";
 
 export { pageGeometrySignature, readSectionGeometry, W_NS } from "./docx/section.js";
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
-export { readUnhonoured, withSubstitutedFaces } from "./docx/fidelity.js";
+export { readUnhonoured, withFallbackCharacters, withSubstitutedFaces } from "./docx/fidelity.js";
 export type {
   Unhonoured,
   UnhonouredEffect,
@@ -241,8 +241,16 @@ export type { ColorReference, Theme } from "./docx/theme.js";
 
 export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";
 
-export { substitutingMetrics, WORD_FALLBACK_FACES } from "./layout/substitution.js";
-export type { Substitution, SubstitutingMetrics } from "./layout/substitution.js";
+export {
+  substitutingMetrics,
+  WORD_CHARACTER_FALLBACK_FACE,
+  WORD_FALLBACK_FACES,
+} from "./layout/substitution.js";
+export type {
+  FallbackCharacter,
+  Substitution,
+  SubstitutingMetrics,
+} from "./layout/substitution.js";
 
 export { readMetafilePicture } from "./metafile/picture.js";
 export type { MetafilePicture, MetafileRect, MetafileShape } from "./metafile/picture.js";
