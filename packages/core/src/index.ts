@@ -21,7 +21,12 @@ export type { DocxPackage } from "./docx/package.js";
 export type { XmlElement } from "./docx/xml.js";
 
 export type { PageMargin, SectionGeometry } from "./docx/section.js";
-export { readUnhonoured, withFallbackCharacters, withSubstitutedFaces } from "./docx/fidelity.js";
+export {
+  readUnhonoured,
+  withFallbackCharacters,
+  withMissingGlyphs,
+  withSubstitutedFaces,
+} from "./docx/fidelity.js";
 export type {
   Unhonoured,
   UnhonouredEffect,
@@ -197,9 +202,17 @@ export {
 } from "./layout/substitution.js";
 export type {
   FallbackCharacter,
+  FallbackNames,
+  MissingGlyph,
   Substitution,
   SubstitutingMetrics,
 } from "./layout/substitution.js";
+
+export { bestEffortMetrics } from "./layout/best-effort.js";
+export type { BestEffortMetrics, FaceDefaults } from "./layout/best-effort.js";
+
+export { readFaceShapes, FONT_TABLE_PART } from "./docx/font-table.js";
+export type { FaceShape } from "./docx/font-table.js";
 
 export { readMetafilePicture } from "./metafile/picture.js";
 export type { MetafilePicture, MetafileRect, MetafileShape } from "./metafile/picture.js";

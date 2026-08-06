@@ -107,6 +107,13 @@ export type FallbackCharacter = {
   readonly codePoint: number;
 };
 
+// A character nothing on hand could draw, which the best-effort resolver answers
+// with the missing-glyph box rather than refusing the document over.
+export type MissingGlyph = {
+  readonly face: FaceRequest;
+  readonly codePoint: number;
+};
+
 export type SubstitutingMetrics = {
   readonly metricsFor: MetricsResolver;
   // Every face that was stood in for, once each, in the order they were first
@@ -116,6 +123,9 @@ export type SubstitutingMetrics = {
   // Every character measured out of another face, once each face and character,
   // and read after laying out as the substitutions are.
   fallbackCharacters(): readonly FallbackCharacter[];
+  // Every character drawn as a missing-glyph box, which only the best-effort
+  // resolver ever answers with: this one never does, so it never says.
+  missingGlyphs?(): readonly MissingGlyph[];
 };
 
 // Measuring text needs the widths of the face's own glyphs. A face whose metrics
@@ -128,6 +138,14 @@ const keyOf = (request: FaceRequest): string =>
   `${request.name.trim().toLowerCase()}|${request.bold ? "b" : ""}|${request.italic ? "i" : ""}`;
 
 const same = (one: FaceRequest, other: FaceRequest): boolean => keyOf(one) === keyOf(other);
+
+// Which names stand behind a request. A fixed list serves a caller who knows the
+// machine; the best-effort resolver chooses per name instead, since the right
+// stand-in for a serif name is not the right one for a sans name.
+export type FallbackNames = readonly string[] | ((request: FaceRequest) => readonly string[]);
+
+const namesFor = (fallbackNames: FallbackNames, request: FaceRequest): readonly string[] =>
+  typeof fallbackNames === "function" ? fallbackNames(request) : fallbackNames;
 
 // What to try, in the order worth trying it. The face the document asked for comes
 // first; then the same face without the style, since a run drawn in its own family
@@ -162,7 +180,7 @@ function candidates(
  */
 export function substitutingMetrics(
   supplied: readonly SuppliedFace[],
-  fallbackNames: readonly string[],
+  fallbackNames: FallbackNames,
 ): SubstitutingMetrics {
   const stood = new Map<string, Substitution>();
   const characters = new Map<string, FallbackCharacter>();
@@ -170,7 +188,7 @@ export function substitutingMetrics(
   const metricsFor: MetricsResolver = (request) => {
     let asked: MetricsLookup | null = null;
 
-    for (const used of candidates(request, fallbackNames)) {
+    for (const used of candidates(request, namesFor(fallbackNames, request))) {
       const found = lookupFontMetrics(used, supplied);
       asked ??= found;
       if (!measures(found)) continue;

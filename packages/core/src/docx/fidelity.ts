@@ -66,7 +66,8 @@ export type UnhonouredKind =
   | "approximated-border"
   | "alternate-first-or-even-page"
   | "substituted-face"
-  | "character-from-another-face";
+  | "character-from-another-face"
+  | "missing-glyph";
 
 const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // Only the last section's geometry is read, so a document that changes page
@@ -114,6 +115,10 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // is Word's and nothing moves. What is drawn in that room is whatever the viewer
   // finds for a character its stated face cannot draw, which is not Word's glyph.
   "character-from-another-face": "changes-paint",
+  // A character no face on hand maps at all, drawn as a missing-glyph box at the
+  // box's own advance. Word would have reached for a face of its own before
+  // drawing one, so the width here is not Word's width.
+  "missing-glyph": "moves-text",
 };
 
 // Whether an element that is a toggle is on. Word writes the toggle bare to turn
@@ -362,6 +367,15 @@ export function withFallbackCharacters(
   characters: readonly { readonly codePoint: number }[],
 ): readonly Unhonoured[] {
   return withEntryFor("character-from-another-face", unhonoured, characters.length);
+}
+
+// The last of the three, from the same resolver: a character nothing on hand
+// could draw, stood in for by the missing-glyph box.
+export function withMissingGlyphs(
+  unhonoured: readonly Unhonoured[],
+  characters: readonly { readonly codePoint: number }[],
+): readonly Unhonoured[] {
+  return withEntryFor("missing-glyph", unhonoured, characters.length);
 }
 
 function withEntryFor(

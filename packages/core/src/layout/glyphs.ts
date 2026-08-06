@@ -224,6 +224,7 @@ export function readAdvanceTable(
       if (glyph !== 0) return advanceOf(glyph);
       return subtable.symbol && symbolAlias(codePoint) !== null ? advanceOf(NOTDEF_GLYPH) : null;
     },
+    notDefAdvance: advanceOf(NOTDEF_GLYPH),
   };
 }
 

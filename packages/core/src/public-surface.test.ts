@@ -14,6 +14,7 @@ const CORE_SURFACE: readonly string[] = [
   "DEFAULT_TEXT_INSETS",
   "DocxPagesError",
   "EMU_PER_POINT",
+  "FONT_TABLE_PART",
   "MAIN_DOCUMENT_PART",
   "METAFILE_EXTENSION",
   "NO_ADVANCES",
@@ -33,6 +34,7 @@ const CORE_SURFACE: readonly string[] = [
   "WORD_SERIF_FALLBACK_FACE",
   "advanceWidthPt",
   "ascentPt",
+  "bestEffortMetrics",
   "drawablePicture",
   "emuToPoints",
   "isDocxPagesError",
@@ -44,6 +46,7 @@ const CORE_SURFACE: readonly string[] = [
   "paintOfParagraph",
   "pictureExtension",
   "readColorReference",
+  "readFaceShapes",
   "readFontFile",
   "readFontMetrics",
   "readMetafilePicture",
@@ -53,6 +56,7 @@ const CORE_SURFACE: readonly string[] = [
   "themeColor",
   "twipsToPoints",
   "withFallbackCharacters",
+  "withMissingGlyphs",
   "withSubstitutedFaces",
 ];
 

@@ -6,6 +6,7 @@ import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import {
   readUnhonoured,
   withFallbackCharacters,
+  withMissingGlyphs,
   withSubstitutedFaces,
   type Unhonoured,
 } from "../docx/fidelity.js";
@@ -516,9 +517,12 @@ export function layOutDocument(
   return {
     kind: "laid-out",
     page,
-    unhonoured: withFallbackCharacters(
-      withSubstitutedFaces(readUnhonoured(pkg), faces === null ? [] : faces.substitutions()),
-      faces === null ? [] : faces.fallbackCharacters(),
+    unhonoured: withMissingGlyphs(
+      withFallbackCharacters(
+        withSubstitutedFaces(readUnhonoured(pkg), faces === null ? [] : faces.substitutions()),
+        faces === null ? [] : faces.fallbackCharacters(),
+      ),
+      faces === null ? [] : (faces.missingGlyphs?.() ?? []),
     ),
     headerFloats,
     footerFloats,

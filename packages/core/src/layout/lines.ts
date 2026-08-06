@@ -15,7 +15,13 @@ import {
 import { nextTabStop, type TabStopPt } from "./tab-stops.js";
 import { emuToPoints } from "./units.js";
 
-export type MetricsResolver = (request: FaceRequest) => MetricsLookup;
+export type MetricsResolver = ((request: FaceRequest) => MetricsLookup) & {
+  // Whether a run whose style cascade names no face at all may be put to the
+  // resolver anyway, as a request for the empty name. Only a resolver that has
+  // an answer for every name says so; without it such a run refuses the
+  // document, which is the exact behaviour the suites hold to.
+  readonly answersForUnresolved?: true;
+};
 
 // Where the run sits along its line, measured from the line's own start. A tab
 // opens a gap the runs after it never account for, so each one carries the place
@@ -186,12 +192,12 @@ class Measurer {
     const cached = this.faces.get(mark);
     if (cached !== undefined) return cached;
 
-    if (mark.font.kind === "unresolved") {
+    if (mark.font.kind === "unresolved" && this.metricsFor.answersForUnresolved !== true) {
       this.failure ??= { kind: "unresolved-font" };
       return null;
     }
 
-    const fontName = mark.font.name;
+    const fontName = mark.font.kind === "named" ? mark.font.name : "";
     const lookup = this.metricsFor(faceRequestFor(mark));
     if (lookup.kind === "missing") {
       this.failure ??= { kind: "unknown-font-metrics", fontName };
@@ -215,13 +221,16 @@ class Measurer {
   // needs its run's face for nothing else, and a face with metrics but no
   // advances still answers for one.
   lineHeight(mark: ParagraphMark): number | null {
-    if (mark.font.kind === "unresolved") {
+    if (mark.font.kind === "unresolved" && this.metricsFor.answersForUnresolved !== true) {
       this.failure ??= { kind: "unresolved-font" };
       return null;
     }
     const lookup = this.metricsFor(faceRequestFor(mark));
     if (lookup.kind === "missing") {
-      this.failure ??= { kind: "unknown-font-metrics", fontName: mark.font.name };
+      this.failure ??= {
+        kind: "unknown-font-metrics",
+        fontName: mark.font.kind === "named" ? mark.font.name : "",
+      };
       return null;
     }
     return lineHeightPt(lookup.metrics, mark.fontSizePt);

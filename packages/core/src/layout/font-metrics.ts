@@ -20,7 +20,15 @@ export type AdvancesUnavailable =
   | "hmtx-malformed";
 
 export type AdvanceTable =
-  | { readonly kind: "advances"; readonly advanceFor: GlyphAdvances }
+  | {
+      readonly kind: "advances";
+      readonly advanceFor: GlyphAdvances;
+      // What the face's missing-glyph box advances, which is the last width left
+      // when no face at all maps a character and the caller would still rather
+      // have a page than a refusal. A face built by hand rather than read out of
+      // a file may not say.
+      readonly notDefAdvance?: number;
+    }
   | { readonly kind: "unavailable"; readonly reason: AdvancesUnavailable };
 
 // Vertical metrics alone place empty paragraphs and floats; measuring text needs

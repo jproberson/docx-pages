@@ -1281,7 +1281,8 @@ type MarkHeight =
   { readonly kind: "height"; readonly value: number } | { readonly kind: "blocked" };
 
 function heightOf(mark: ParagraphMark, metricsFor: MetricsResolver): MarkHeight {
-  if (mark.font.kind === "unresolved") return { kind: "blocked" };
+  if (mark.font.kind === "unresolved" && metricsFor.answersForUnresolved !== true)
+    return { kind: "blocked" };
   const lookup = metricsFor(faceRequestFor(mark));
   if (lookup.kind === "missing") return { kind: "blocked" };
   return { kind: "height", value: lineHeightPt(lookup.metrics, mark.fontSizePt) };
