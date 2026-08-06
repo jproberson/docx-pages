@@ -2,9 +2,15 @@ name: publish
 
 # A tag is the release. Nothing reaches the registry from a branch, so a push to
 # main can never publish by accident.
+#
+# The same run can be started by hand against a tag, which is what a release
+# wants when the push event itself never arrived: the version guard below reads
+# the ref either way, so a hand-started run publishes exactly what the tag says
+# and nothing else.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   publish:
