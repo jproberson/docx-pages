@@ -1,6 +1,7 @@
 {
   "name": "@docx-pages/viewer",
-  "version": "0.0.0",
+  "description": "React components that draw a page laid out by @docx-pages/core.",
+  "version": "1.0.0",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -10,7 +11,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src",
+    "!dist/**/*.test.*",
+    "!src/**/*.test.*",
+    "!dist/testing",
+    "!src/testing"
   ],
   "scripts": {
     "build": "tsc --build"
@@ -27,5 +33,14 @@
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18"
-  }
+  },
+  "keywords": [
+    "docx",
+    "word",
+    "ooxml",
+    "layout",
+    "pagination",
+    "office",
+    "react"
+  ]
 }

@@ -1,6 +1,7 @@
 {
   "name": "@docx-pages/core",
-  "version": "0.0.0",
+  "description": "Lay out a .docx the way Word does, page by page. Isomorphic, and measured against Word.",
+  "version": "1.0.0",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -10,7 +11,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src",
+    "!dist/**/*.test.*",
+    "!src/**/*.test.*",
+    "!dist/testing",
+    "!src/testing"
   ],
   "scripts": {
     "build": "tsc --build"
@@ -18,5 +24,13 @@
   "dependencies": {
     "fast-xml-parser": "^5.10.1",
     "fflate": "^0.8.3"
-  }
+  },
+  "keywords": [
+    "docx",
+    "word",
+    "ooxml",
+    "layout",
+    "pagination",
+    "office"
+  ]
 }
