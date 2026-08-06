@@ -67,9 +67,18 @@ let packOnce: Promise<readonly PackEntry[]> | null = null;
 const loadPack = (): Promise<readonly PackEntry[]> => {
   packOnce ??= Promise.all(
     PACK_FACES.map(async (face) => {
-      const response = await fetch(fontUrl(face));
+      const url = fontUrl(face);
+      // A dev server that prebundles its dependencies moves this module into a
+      // deps cache, away from the files it resolves beside itself. Vite's is the
+      // one met so far, and the way out is configuration, so say so.
+      if (url.href.includes("/.vite/")) {
+        throw new Error(
+          `the font pack was prebundled away from its own files (${url.href}); add optimizeDeps: { exclude: ["@docx-pages/viewer", "@docx-pages/fonts"] } to vite.config`,
+        );
+      }
+      const response = await fetch(url);
       if (!response.ok)
-        throw new Error(`the font at ${fontUrl(face).href} came back ${String(response.status)}`);
+        throw new Error(`the font at ${url.href} came back ${String(response.status)}`);
       const bytes = new Uint8Array(await response.arrayBuffer());
       const read = readFontFile(bytes);
       return {

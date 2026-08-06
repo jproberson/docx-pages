@@ -21,3 +21,15 @@ to Caladea, because Word's own last resort for a name it cannot place is
 Cambria.
 
 The font files keep their own licenses, committed beside them under `fonts/`.
+
+One consumer note: the pack finds its files beside its own module, so a dev
+server that prebundles dependencies has to leave these two alone. Under Vite
+that is
+
+```ts
+optimizeDeps: {
+  exclude: ["@docx-pages/viewer", "@docx-pages/fonts"];
+}
+```
+
+and `vite build` needs nothing.
