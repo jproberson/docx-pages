@@ -1020,3 +1020,74 @@ export function unmappedCharacterDocument(): string {
     ])
     .join("");
 }
+
+// The same question of a text face, which the document above never asks: every one
+// of its faces either maps the character or addresses its glyphs through a symbol
+// page, and those are the two rules already measured. A text face with no glyph and
+// no page to alias to is the third, and it is the whole of what this project still
+// turns a document down for.
+//
+// A case is a character in a text face that has no glyph for it. Each stands on a
+// page of its own, so the faces Word's pdf names on that page beyond the one stated
+// are the faces Word reached for itself, with no other case to confuse them.
+//
+// Every case is written out three times over, since the height of a line is the
+// distance between one repeat and the next: a character borrowed from another face
+// raises the line it stands on where that face is the taller, and the two letters
+// either side of it are drawn in the stated face whatever happens to the character
+// between them. Above them the same two letters alone, three times over as well, so
+// the stated face's own line is the same measurement rather than a number from
+// somewhere else.
+//
+// Word answered on 2026-08-06: it reaches for another face for a text face as it
+// does for a symbol one, and it reached for five different faces over the eleven
+// cases. Which face is not one name: a sans face borrows from Arial and a serif one
+// from Times New Roman, and a character neither of those carries goes on to
+// whichever face on the machine has it. See `docs/gaps.md`.
+export function unmappedInTextFaceDocument(): string {
+  const cases = [
+    // The four geometric bullets a real document wants. Calibri carries three of
+    // them and Cambria none, and Cambria is what a document naming a face nothing
+    // supplies is laid out in, which is how a document meets them at all.
+    { face: "Calibri", character: "■", name: "black square" },
+    { face: "Cambria", character: "■", name: "black square" },
+    // The same character in two more faces that have no glyph for it, one of each
+    // kind, since two cases cannot tell a face chosen for the character from a face
+    // chosen to go with the one that asked.
+    { face: "Verdana", character: "■", name: "black square" },
+    { face: "Georgia", character: "■", name: "black square" },
+    { face: "Cambria", character: "▪", name: "small black square" },
+    { face: "Cambria", character: "●", name: "black circle" },
+    { face: "Cambria", character: "◦", name: "white bullet" },
+    // The hyphen, which the two files answering to the name Times New Roman differ
+    // over: the system's maps nothing at it and Word's own maps it at 682 units.
+    // Asking it of the face itself is what says which copy answers for a glyph,
+    // since the line height already says the system's answers for the metrics.
+    { face: "Arial", character: "‐", name: "hyphen" },
+    { face: "Times New Roman", character: "‐", name: "hyphen" },
+    // A character with no glyph in any face on this machine, and one that is not
+    // meant to be drawn at all: whether Word gives up on the character or on the
+    // page is a rule of its own.
+    { face: "Cambria", character: "\u{1D44E}", name: "italic a" },
+    { face: "Calibri", character: "\u2060", name: "word joiner" },
+  ];
+
+  const inFace = (face: string, text: string): string =>
+    run(text, `<w:rFonts w:ascii="${face}" w:hAnsi="${face}" w:cs="${face}"/>`);
+
+  const thrice = (content: string): string => [content, content, content].join("");
+
+  return cases
+    .flatMap((each, at) => [
+      // The line naming the case is in the face the case is about, so that a face
+      // beyond it on the page is one Word chose rather than one the document wrote.
+      paragraph(
+        at === 0 ? "" : "<w:pageBreakBefore/>",
+        inFace(each.face, `${each.face} ${each.name}`),
+      ),
+      thrice(paragraph("", inFace(each.face, "HH"))),
+      thrice(paragraph("", inFace(each.face, `H${each.character}H`))),
+      paragraph("", inFace(each.face, "H H")),
+    ])
+    .join("");
+}

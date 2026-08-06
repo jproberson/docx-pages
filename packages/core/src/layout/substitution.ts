@@ -43,6 +43,10 @@ export const WORD_FALLBACK_FACES: readonly string[] = ["Cambria"];
  * document never mentions, at Times New Roman's own bullet of 717 units in 2048.
  * `U+2022` is above `0xFF` and so has no low byte to alias to, which is what tells
  * this from the `.notdef` a symbol face answers its own page with.
+ *
+ * Times New Roman is the answer for a serif face and Arial for a sans one, measured
+ * on 2026-08-06 of text faces, so this name is the half of that rule a symbol face
+ * falls on rather than a last resort of Word's.
  */
 export const WORD_CHARACTER_FALLBACK_FACE = "Times New Roman";
 
@@ -145,9 +149,11 @@ export function substitutingMetrics(
 
 // Only a symbol face asks this. Everything such a face can draw at all it has
 // already answered for, so a character it reports unmapped is one Word could not
-// keep in the face either. What a text face does with a character it has no glyph
-// for is a different question and an unmeasured one, so that one is left to refuse
-// the document rather than drawn in a guess.
+// keep in the face either. A text face reaches for another face as well, measured
+// on 2026-08-06, but not for this one: which face answers turns on the kind of face
+// that asked and on the character, and Word named five of them over eleven cases.
+// So a text face is left to refuse the document rather than drawn out of a face
+// that would be the right one six times in eleven. See `docs/gaps.md`.
 function throughAnotherFace(
   found: MetricsLookup,
   face: FaceRequest,

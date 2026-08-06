@@ -36,6 +36,10 @@ const MEASURED = readMeasured();
 const CASES = authoredDocuments().flatMap((each) => {
   const measured: MeasuredDocument | undefined = MEASURED.documents[each.id];
   if (measured === undefined) return [];
+  // A document this project refuses has no page to compare Word's answers against.
+  // The answers are committed all the same, since they are what the document was
+  // written to ask, and the rule it asks about is built against them later.
+  if (each.refuses !== undefined) return [];
   // A document naming a face this machine has not got would be laid out in
   // something else, which answers a different question from the one it asks.
   if (!hasStatedFaces(each.statedFaces ?? [])) return [];

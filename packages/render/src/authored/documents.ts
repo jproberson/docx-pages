@@ -8,6 +8,7 @@ import {
   spacingDocument,
   tableDocument,
   unmappedCharacterDocument,
+  unmappedInTextFaceDocument,
   wrappingDocument,
   wrapSidesDocument,
   NUMBERING,
@@ -282,6 +283,16 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       measuresCharacters: true,
       statedFaces: ["Arial", "Symbol", "Wingdings", "Times New Roman"],
       bytes: buildAuthoredDocx({ body: unmappedCharacterDocument() }),
+    },
+    {
+      id: "unmapped-in-a-text-face",
+      title: "A character a text face has no glyph for",
+      asks: "which face Word draws a character out of when a text face has none, and how tall that leaves the line",
+      // Calibri is not among these: it is the face every authored document is
+      // written in, and a machine without it has no suite at all.
+      statedFaces: ["Cambria", "Arial", "Times New Roman", "Verdana", "Georgia"],
+      refuses: "a text face met with a character it has no glyph for is unmeasurable",
+      bytes: buildAuthoredDocx({ body: unmappedInTextFaceDocument() }),
     },
     {
       id: "drawings",

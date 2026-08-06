@@ -54,6 +54,19 @@ const STATED: Readonly<Record<string, readonly string[]>> = {
     "/Library/Fonts/Microsoft/Wingdings.ttf",
     "/System/Library/Fonts/Supplemental/Wingdings.ttf",
   ],
+  // A sans face and a serif one, neither of which carries the black square, so
+  // which face Word draws it out of can be read against the kind of face that
+  // asked rather than against one case of each.
+  Verdana: [
+    "/Applications/Microsoft Word.app/Contents/Resources/DFonts/Verdana.ttf",
+    "/Library/Fonts/Microsoft/Verdana.ttf",
+    "/System/Library/Fonts/Supplemental/Verdana.ttf",
+  ],
+  Georgia: [
+    "/Applications/Microsoft Word.app/Contents/Resources/DFonts/Georgia.ttf",
+    "/Library/Fonts/Microsoft/Georgia.ttf",
+    "/System/Library/Fonts/Supplemental/Georgia.ttf",
+  ],
 };
 
 // A document may state the face Word itself reaches for, which the fallback
