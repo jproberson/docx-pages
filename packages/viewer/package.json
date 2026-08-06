@@ -1,7 +1,7 @@
 {
   "name": "@docx-pages/viewer",
   "description": "React components that draw a page laid out by @docx-pages/core.",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "license": "MIT",
   "type": "module",
   "exports": {

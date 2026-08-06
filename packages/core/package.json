@@ -1,7 +1,7 @@
 {
   "name": "@docx-pages/core",
   "description": "Lay out a .docx the way Word does, page by page. Isomorphic, and measured against Word.",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "license": "MIT",
   "type": "module",
   "exports": {

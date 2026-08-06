@@ -1,0 +1,55 @@
+name: publish
+
+# A tag is the release. Nothing reaches the registry from a branch, so a push to
+# main can never publish by accident.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          # Writes the .npmrc that NODE_AUTH_TOKEN below fills in.
+          registry-url: https://registry.npmjs.org
+
+      # A tag that disagrees with the packages would publish a version nobody
+      # asked for, under a name that says otherwise. Cheaper to stop here.
+      - name: The tag and the packages have to agree
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          for each in core fonts viewer; do
+            VERSION=$(node -p "require('./packages/$each/package.json').version")
+            if [ "$VERSION" != "$TAG" ]; then
+              echo "packages/$each is $VERSION, but the tag says $TAG"
+              exit 1
+            fi
+          done
+
+      - run: pnpm install --frozen-lockfile
+
+      # Nothing reaches the registry that the gate would have turned down.
+      - run: pnpm verify
+
+      # `dist` is packed as it stands, and `tsc --build` never removes the output
+      # of a source file that has gone: a release builds from an empty one, or a
+      # probe deleted months ago ships.
+      - name: Build a release from an empty dist
+        run: |
+          rm -rf packages/*/dist
+          pnpm typecheck
+
+      # `pnpm publish` rather than `npm publish`: only pnpm rewrites the
+      # `workspace:*` ranges the packages name each other by, and npm leaves them
+      # in the tarball where no consumer can install them. Recursive publishing
+      # goes in dependency order and passes over `render`, which is private.
+      - name: Publish to npm
+        run: pnpm -r publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
