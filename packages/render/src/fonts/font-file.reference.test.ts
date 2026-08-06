@@ -23,6 +23,12 @@ const bytesOf = (path: string): Uint8Array => new Uint8Array(readFileSync(path))
 const advanceOf = (advanceFor: GlyphAdvances, character: string): number | null =>
   advanceFor(character.codePointAt(0) ?? 0);
 
+const THIN_SPACE = " ";
+const NARROW_NO_BREAK_SPACE = " ";
+const NO_BREAK_SPACE = " ";
+// A character a symbol face keeps in the page it addresses its glyphs by.
+const IN_THE_SYMBOL_PAGE = "";
+
 describe.skipIf(SUBJECTS.length === 0)("readFontFile on a real font file", () => {
   for (const font of SUBJECTS) {
     const index = String(SUBJECTS.indexOf(font));
@@ -54,6 +60,28 @@ describe.skipIf(SUBJECTS.length === 0)("readFontFile on a real font file", () =>
       if (wide === null || narrow === null) return;
       expect(wide).toBeLessThanOrEqual(font.metrics.unitsPerEm * 2);
       expect(wide).toBeGreaterThanOrEqual(narrow);
+    });
+
+    // What Word draws where a face has no glyph for a character, measured off the
+    // authored `unmapped-characters` document and held here as a relation, so that
+    // the real faces exercise the rules without their widths being written down.
+    // Both say nothing about a face that maps the character itself.
+    it(`answers as Word does for a character it has no glyph for, font ${index}`, () => {
+      const advances = readFontFile(bytesOf(font.filePath)).advances;
+      if (advances.kind !== "advances") throw new Error(advances.reason);
+
+      const { advanceFor } = advances;
+
+      // A face with a thin space answers for the narrow no-break space out of it.
+      if (advanceOf(advanceFor, THIN_SPACE) !== null) {
+        expect(advanceOf(advanceFor, NARROW_NO_BREAK_SPACE)).not.toBeNull();
+      }
+
+      // A symbol face answers for everything its own page has a place for, at its
+      // notdef where it has no glyph there.
+      if (advanceOf(advanceFor, IN_THE_SYMBOL_PAGE) !== null) {
+        expect(advanceOf(advanceFor, NO_BREAK_SPACE)).not.toBeNull();
+      }
     });
   }
 });

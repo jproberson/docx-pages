@@ -27,8 +27,10 @@ type Group = {
 const viewOf = (bytes: Uint8Array): DataView =>
   new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
-// A symbol face has no Unicode subtable at all; its glyphs are reachable only
-// through the private use page its own subtable maps.
+// A symbol face declares this encoding to say its glyphs are addressed by byte,
+// through the private use page rather than by what its characters mean. Declaring
+// it is what makes a face one, whether or not the subtable under it is what is
+// read here.
 const SYMBOL_ENCODING = 0;
 
 type Subtable = {
@@ -38,7 +40,8 @@ type Subtable = {
 
 // Full-repertoire Unicode subtables first, so a face that maps beyond the basic
 // plane is read at its widest rather than through its legacy subtable. The symbol
-// subtable comes last, since a face that has one usually has nothing else.
+// subtable comes last: Symbol carries a Unicode one beside it that maps its own
+// page and the Greek and the maths its glyphs stand for besides.
 function preferenceOf(platform: number, encoding: number): number {
   if (platform === 3 && encoding === 10) return 5;
   if (platform === 0 && encoding >= 4) return 4;
@@ -61,12 +64,12 @@ function selectSubtable(cmap: Uint8Array): Subtable | null {
     if (record + 8 > cmap.byteLength) break;
     const platform = view.getUint16(record);
     const encoding = view.getUint16(record + 2);
+    if (platform === 3 && encoding === SYMBOL_ENCODING) symbol = true;
     const score = preferenceOf(platform, encoding);
     const offset = view.getUint32(record + 4);
     if (score > bestScore && offset + 4 <= cmap.byteLength) {
       bestScore = score;
       bestOffset = offset;
-      symbol = platform === 3 && encoding === SYMBOL_ENCODING;
     }
   }
 
@@ -81,6 +84,30 @@ function symbolAlias(codePoint: number): number | null {
   if (codePoint >= 0xf020 && codePoint <= 0xf0ff) return codePoint - 0xf000;
   return null;
 }
+
+// The narrow no-break space is drawn out of the face's own thin space where the
+// face maps no glyph of its own for it. Measured on 2026-08-06 off Word's pdf of
+// the authored `unmapped-characters` document: Word drew U+202F in Arial from
+// Arial, embedding one glyph whose advance is 410 units, and the one glyph in the
+// whole face carrying that advance is U+2009.
+const NARROW_NO_BREAK_SPACE = 0x202f;
+const THIN_SPACE = 0x2009;
+
+function throughThinSpace(glyphFor: CodeToGlyph): CodeToGlyph {
+  return (codePoint) => {
+    const direct = glyphFor(codePoint);
+    if (direct !== 0 || codePoint !== NARROW_NO_BREAK_SPACE) return direct;
+    return glyphFor(THIN_SPACE);
+  };
+}
+
+// A symbol face answers for every character its own page has a place for, drawing
+// .notdef where it has no glyph there rather than letting the character go
+// elsewhere. Measured on 2026-08-06: Word drew U+00A0 in Symbol from Symbol, at
+// Symbol's .notdef advance of 1229 units, where the face maps neither U+00A0 nor
+// the F0A0 it stands for. A character with no place in that page is a question of
+// its own, and stays unmapped here.
+const NOTDEF_GLYPH = 0;
 
 function parseFormat4(table: Uint8Array): CharacterMap {
   if (table.byteLength < 16) return { kind: "malformed" };
@@ -177,7 +204,9 @@ export function readAdvanceTable(
   const parsed = parseSubtable(subtable.bytes);
   if (parsed.kind === "unsupported") return { kind: "unavailable", reason: "cmap-unsupported" };
   if (parsed.kind === "malformed") return { kind: "unavailable", reason: "cmap-malformed" };
-  const glyphFor = subtable.symbol ? throughSymbolPage(parsed.glyphFor) : parsed.glyphFor;
+  const glyphFor = throughThinSpace(
+    subtable.symbol ? throughSymbolPage(parsed.glyphFor) : parsed.glyphFor,
+  );
 
   // Glyphs past the last long metric all repeat it, which is how a face gives its
   // monospaced tail a single advance.
@@ -185,11 +214,14 @@ export function readAdvanceTable(
   if (long < 1) return { kind: "unavailable", reason: "hmtx-malformed" };
 
   const view = viewOf(hmtx);
+  const advanceOf = (glyph: number): number => view.getUint16(Math.min(glyph, long - 1) * 4);
+
   return {
     kind: "advances",
     advanceFor: (codePoint) => {
       const glyph = glyphFor(codePoint);
-      return glyph === 0 ? null : view.getUint16(Math.min(glyph, long - 1) * 4);
+      if (glyph !== 0) return advanceOf(glyph);
+      return subtable.symbol && symbolAlias(codePoint) !== null ? advanceOf(NOTDEF_GLYPH) : null;
     },
   };
 }

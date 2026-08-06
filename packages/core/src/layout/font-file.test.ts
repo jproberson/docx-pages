@@ -170,7 +170,7 @@ describe("readFontFile", () => {
 describe("a symbol cmap", () => {
   const SYMBOL: FontFixture = {
     ...FACE,
-    symbolCmap: true,
+    subtables: ["symbol"],
     advances: { "\uF0A7": 480, "\uF041": 500 },
   };
 
@@ -183,7 +183,7 @@ describe("a symbol cmap", () => {
   });
 
   it("answers for a character the face maps in the low byte", () => {
-    const low: FontFixture = { ...FACE, symbolCmap: true, advances: { A: 500 } };
+    const low: FontFixture = { ...FACE, subtables: ["symbol"], advances: { A: 500 } };
     expect(advanceOf(advancesOf(low), "\uF041")).toBe(500);
   });
 
@@ -194,5 +194,63 @@ describe("a symbol cmap", () => {
   it("is not how a unicode face is read, which maps only what it says it maps", () => {
     const unicode: FontFixture = { ...FACE, advances: { A: 500 } };
     expect(advanceOf(advancesOf(unicode), "\uF041")).toBeNull();
+  });
+
+  // Symbol declares both encodings, and the unicode one is what is read here, since
+  // it maps the face's own page and the Greek and the maths beside it.
+  it("makes a face a symbol face by what it declares, not by the subtable read", () => {
+    const both: FontFixture = {
+      ...FACE,
+      subtables: ["unicode", "symbol"],
+      notdefAdvance: 600,
+      advances: { A: 500 },
+    };
+
+    expect(advanceOf(advancesOf(both), "A")).toBe(500);
+    expect(advanceOf(advancesOf(both), "\u00A0")).toBe(600);
+  });
+});
+
+// Word draws a symbol face's own notdef for a character its own page has a place
+// for and no glyph at, rather than reaching for another face. Measured off Word's
+// pdf of the authored `unmapped-characters` document.
+describe("a character a symbol face has no glyph for", () => {
+  const SYMBOL: FontFixture = {
+    ...FACE,
+    subtables: ["symbol"],
+    notdefAdvance: 600,
+    advances: { "\uF0A7": 480 },
+  };
+
+  it("is drawn at the face's own notdef where its page has a place for it", () => {
+    expect(advanceOf(advancesOf(SYMBOL), "\u00A0")).toBe(600);
+    expect(advanceOf(advancesOf(SYMBOL), "\uF0A0")).toBe(600);
+  });
+
+  it("is unmapped where the page has no place for it at all", () => {
+    expect(advanceOf(advancesOf(SYMBOL), "\u2022")).toBeNull();
+  });
+
+  it("leaves a unicode face reporting it unmapped, which is a question of its own", () => {
+    const unicode: FontFixture = { ...FACE, notdefAdvance: 600, advances: { A: 500 } };
+    expect(advanceOf(advancesOf(unicode), "\u00A0")).toBeNull();
+  });
+});
+
+// The narrow no-break space is drawn out of another of the face's own glyphs, its
+// thin space, which is measured off the same pdf.
+describe("a narrow no-break space", () => {
+  it("takes the face's thin space where the face maps no glyph for it", () => {
+    const thin: FontFixture = { ...FACE, advances: { "\u2009": 205 } };
+    expect(advanceOf(advancesOf(thin), "\u202F")).toBe(205);
+  });
+
+  it("keeps the face's own glyph where it has one", () => {
+    const both: FontFixture = { ...FACE, advances: { "\u2009": 205, "\u202F": 260 } };
+    expect(advanceOf(advancesOf(both), "\u202F")).toBe(260);
+  });
+
+  it("is unmapped in a face that has no thin space either", () => {
+    expect(advanceOf(advancesOf({ ...FACE, advances: WIDTHS }), "\u202F")).toBeNull();
   });
 });

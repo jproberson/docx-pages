@@ -275,7 +275,7 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "unmapped-characters",
       title: "A character the face it is written in does not map",
       asks: "what Word draws where a face has no glyph for a character, and in which face",
-      refuses: "a character the face it is written in does not map is unmeasurable",
+      refuses: "a bullet in a symbol face falls back to a face per character, which nothing does",
       bytes: buildAuthoredDocx({ body: unmappedCharacterDocument() }),
     },
     {

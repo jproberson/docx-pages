@@ -10,8 +10,13 @@ export type FontFixture = {
   readonly lineGap: number;
   readonly advances?: Readonly<Record<string, number>>;
   readonly cmapFormat?: 4 | 6 | 12;
-  // A symbol face declares platform 3 encoding 0 and maps only its own page.
-  readonly symbolCmap?: boolean;
+  // Which encodings the face declares it maps. A symbol face declares the symbol
+  // one, and Symbol itself declares both: its glyphs are reachable by byte through
+  // its own page and by what they mean.
+  readonly subtables?: readonly ("unicode" | "symbol")[];
+  // What .notdef advances, which is what a symbol face answers for a character its
+  // page has no glyph for.
+  readonly notdefAdvance?: number;
   readonly longMetrics?: number;
   readonly omit?: "head" | "hhea" | "cmap" | "hmtx";
 };
@@ -62,7 +67,10 @@ function hmtxTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
   const long = Math.min(longMetricCount(fixture, glyphs), total);
   const table = new Uint8Array(long * 4 + (total - long) * 2);
   const view = new DataView(table.buffer);
-  const advanceOf = (id: number): number => glyphs.find((glyph) => glyph.id === id)?.advance ?? 0;
+  const advanceOf = (id: number): number =>
+    id === 0
+      ? (fixture.notdefAdvance ?? 0)
+      : (glyphs.find((glyph) => glyph.id === id)?.advance ?? 0);
 
   for (let id = 0; id < long; id += 1) view.setUint16(id * 4, advanceOf(id));
   return table;
@@ -125,18 +133,28 @@ function cmapFormat6(): Uint8Array {
   return table;
 }
 
+// Every encoding the fixture declares points at the one subtable, since what a
+// fixture has to say here is which encodings a face offers rather than what each
+// of them maps.
 function cmapTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
   const format = fixture.cmapFormat ?? 4;
   const subtable =
     format === 12 ? cmapFormat12(glyphs) : format === 6 ? cmapFormat6() : cmapFormat4(glyphs);
+  const declared = fixture.subtables ?? ["unicode"];
 
-  const table = new Uint8Array(12 + subtable.length);
+  const at = 4 + declared.length * 8;
+  const table = new Uint8Array(at + subtable.length);
   const view = new DataView(table.buffer);
-  view.setUint16(2, 1);
-  view.setUint16(4, 3);
-  view.setUint16(6, fixture.symbolCmap === true ? 0 : format === 12 ? 10 : 1);
-  view.setUint32(8, 12);
-  table.set(subtable, 12);
+  view.setUint16(2, declared.length);
+
+  declared.forEach((encoding, index) => {
+    const record = 4 + index * 8;
+    view.setUint16(record, 3);
+    view.setUint16(record + 2, encoding === "symbol" ? 0 : format === 12 ? 10 : 1);
+    view.setUint32(record + 4, at);
+  });
+
+  table.set(subtable, at);
   return table;
 }
 
