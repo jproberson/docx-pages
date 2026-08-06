@@ -84,6 +84,9 @@ importers:
       '@docx-pages/core':
         specifier: workspace:*
         version: link:../core
+      '@docx-pages/fonts':
+        specifier: workspace:*
+        version: link:../fonts
     devDependencies:
       '@types/react':
         specifier: ^19.2.18
