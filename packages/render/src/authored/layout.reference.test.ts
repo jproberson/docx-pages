@@ -5,13 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
   blockParagraphs,
   layOutDocument,
-  lookupFontMetrics,
   openDocx,
   readBlocks,
   readStyleTable,
-  type FaceRequest,
   type LaidOutDocument,
-  type MetricsLookup,
   type MetricsResolver,
   type ParagraphBox,
 } from "@docx-pages/core";
@@ -20,7 +17,7 @@ import { readImagePlacements } from "../pdf/placements.js";
 import { answeringParagraphs } from "./answers.js";
 import { characterPlacements } from "./characters.js";
 import { authoredDocuments } from "./documents.js";
-import { authoredFace } from "./faces.js";
+import { authoredFace, authoredMetrics, hasStatedFaces } from "./faces.js";
 import { LEFT_PT } from "./package.js";
 import { authoredPath } from "./write.js";
 import {
@@ -38,7 +35,11 @@ const MEASURED = readMeasured();
 
 const CASES = authoredDocuments().flatMap((each) => {
   const measured: MeasuredDocument | undefined = MEASURED.documents[each.id];
-  return measured === undefined ? [] : [{ ...each, measured, renderedPath: renderedPath(each.id) }];
+  if (measured === undefined) return [];
+  // A document naming a face this machine has not got would be laid out in
+  // something else, which answers a different question from the one it asks.
+  if (!hasStatedFaces(each.statedFaces ?? [])) return [];
+  return [{ ...each, measured, renderedPath: renderedPath(each.id) }];
 });
 
 // Word's own rendering, which is the only oracle for where a drawing stands: the
@@ -59,8 +60,7 @@ const DRAWING_TOLERANCE_PT = 0.05;
 // own patience allows for.
 const RENDERING_TIMEOUT_MS = 60_000;
 
-const metricsFor: MetricsResolver = (request: FaceRequest): MetricsLookup =>
-  lookupFontMetrics(request, FACE === null ? [] : [FACE]);
+const metricsFor: MetricsResolver = authoredMetrics();
 
 const layoutOf = (bytes: Uint8Array): LaidOutDocument => {
   const laid = layOutDocument(openDocx(bytes), metricsFor);

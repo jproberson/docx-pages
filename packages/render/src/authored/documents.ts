@@ -38,6 +38,10 @@ export type AuthoredDocument = {
   // grow. Left out, every one of them has to agree.
   readonly paragraphsPlaced?: number;
   readonly charactersPlaced?: number;
+  // Faces the document names beyond the one they are all written in, which only a
+  // document asking about faces states. A machine without one of them is left out
+  // of the suite for that document rather than laying it out in something else.
+  readonly statedFaces?: readonly string[];
   // Why this project refuses the document today, where it does. A document is
   // written to ask a question, and a question worth asking is often one nothing
   // here can answer yet: it is committed so that Word's answer can be had by
@@ -275,7 +279,8 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "unmapped-characters",
       title: "A character the face it is written in does not map",
       asks: "what Word draws where a face has no glyph for a character, and in which face",
-      refuses: "a bullet in a symbol face falls back to a face per character, which nothing does",
+      measuresCharacters: true,
+      statedFaces: ["Arial", "Symbol", "Wingdings", "Times New Roman"],
       bytes: buildAuthoredDocx({ body: unmappedCharacterDocument() }),
     },
     {

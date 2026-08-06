@@ -9,11 +9,12 @@ import {
   type LaidOutDocument,
   type PaintedFill,
   type PaintedLine,
-  type SuppliedFace,
+  type FaceRequest,
+  type MetricsResolver,
 } from "@docx-pages/core";
 
 import { authoredCases } from "../authored/cases.js";
-import { authoredFace } from "../authored/faces.js";
+import { authoredFace, authoredMetrics } from "../authored/faces.js";
 import { readFillPlacements, type FillPlacement } from "../pdf/fills.js";
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
@@ -29,14 +30,20 @@ import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/ca
 
 type Compared = {
   readonly each: ReferenceCase;
-  readonly facesFor: () => readonly SuppliedFace[];
+  readonly metricsFor: () => MetricsResolver;
 };
 
 const FACE = authoredFace();
 
 const CASES: readonly Compared[] = [
-  ...referenceCases().map((each) => ({ each, facesFor: suppliedFaces })),
-  ...(FACE === null ? [] : authoredCases().map((each) => ({ each, facesFor: () => [FACE] }))),
+  ...referenceCases().map((each) => ({
+    each,
+    metricsFor: () => {
+      const faces = suppliedFaces();
+      return (request: FaceRequest) => lookupFontMetrics(request, faces);
+    },
+  })),
+  ...(FACE === null ? [] : authoredCases().map((each) => ({ each, metricsFor: authoredMetrics }))),
 ].filter(({ each }) => each.renderedPath !== null);
 
 // Word's own pdf lands everything on a grid of about a quarter point, so nothing
@@ -141,9 +148,7 @@ type Agreement = {
 
 async function compare(compared: Compared): Promise<Agreement> {
   const { each } = compared;
-  const layout = layOutDocument(readReferenceDocument(each), (request) =>
-    lookupFontMetrics(request, compared.facesFor()),
-  );
+  const layout = layOutDocument(readReferenceDocument(each), compared.metricsFor());
   if (layout.kind !== "laid-out") throw new Error(layout.blocker.kind);
 
   const drawn = await readFillPlacements(new Uint8Array(readFileSync(each.renderedPath ?? "")));

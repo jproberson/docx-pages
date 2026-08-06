@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 import type { ReferenceCase } from "../testing/cases.js";
 import { authoredDocuments } from "./documents.js";
+import { hasStatedFaces } from "./faces.js";
 import { authoredPath } from "./write.js";
 
 // The authored documents, dressed as reference cases so that everything already
@@ -50,6 +51,13 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Four lines a case: one naming it and three beside the object.
   "wrap-sides": { lines: 28, runs: 28, numbers: 0 },
   "legacy-wrap-sides": { lines: 28, runs: 28, numbers: 0 },
+  // Twenty-one of the twenty-four lines, and the three left out are the ones Word
+  // drew in pieces around a space of its own: an item carrying no ink is dropped
+  // here before the lines are lined up, and a line whose middle is a space can
+  // then no longer be spelled out of what is left. That is the reading and not the
+  // layout, which the whole-point answers of the other suite put where Word put
+  // them.
+  "unmapped-characters": { lines: 21, runs: 21, numbers: 0 },
   // Every line but the seven under the wave borders, which Word draws neither at
   // the width they state nor at any width read off it: the rows they line come out
   // shorter here and everything below them stands too high.
@@ -124,6 +132,9 @@ export function authoredCases(): readonly ReferenceCase[] {
     // still written and still asked about; it is only kept out of the suites that
     // need a page to compare, until the rule it asks about is built.
     if (each.refuses !== undefined) return [];
+    // A document naming a face this machine has not got would be laid out in
+    // another one, which answers a different question from the one it asks.
+    if (!hasStatedFaces(each.statedFaces ?? [])) return [];
     return [
       {
         ...EMPTY,

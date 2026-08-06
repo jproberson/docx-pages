@@ -975,11 +975,13 @@ const EXACT_LINE = `<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule=
 
 // What Word draws for a character the face it is written in does not map.
 //
-// Three of these stop this project outright today, and each is a different
-// question. `U+202F` is a narrow no-break space Arial has no glyph for; `U+00A0`
-// is the ordinary no-break space, which every face here maps except Symbol; and
-// `U+2022` is a bullet written into a Wingdings run, where Wingdings addresses its
-// glyphs through a symbol page and has nothing at that code point.
+// Three of these once stopped this project outright, and each turned out to be a
+// different rule. `U+202F` is a narrow no-break space Arial has no glyph for;
+// `U+00A0` is the ordinary no-break space, which every face here maps except
+// Symbol; and `U+2022` is a bullet written into a Wingdings run, where Wingdings
+// addresses its glyphs through a symbol page and has nothing at that code point.
+// The last of the three is the only one Word answers out of another face
+// altogether, which is why the face it reaches for is asked here in its own right.
 //
 // Each case is a pair: two letters alone, and the same two letters with the
 // character between them. The difference between the two widths Word's own pdf
@@ -996,6 +998,12 @@ export function unmappedCharacterDocument(): string {
     // rather than the character.
     { face: "Calibri", character: " ", name: "no-break space" },
     { face: "Calibri", character: " ", name: "narrow no-break space" },
+    // The face Word reached for above, asked directly. Two files on this machine
+    // answer to the name and they differ: the one Word ships states no line gap
+    // and maps the hyphen, and the system's states a gap of 87 units and does not.
+    // How tall these lines come out says which of them Word lays a paragraph out
+    // in, which is the same question as which one the bullet above was drawn from.
+    { face: "Times New Roman", character: "•", name: "bullet" },
   ];
 
   const inFace = (face: string, text: string): string =>

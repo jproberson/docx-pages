@@ -8,28 +8,35 @@ import {
   type LaidOutPage,
   type ParagraphBox,
   type PlacedLine,
-  type SuppliedFace,
+  type FaceRequest,
+  type MetricsResolver,
 } from "@docx-pages/core";
 
 import { authoredCases } from "../authored/cases.js";
-import { authoredFace } from "../authored/faces.js";
+import { authoredFace, authoredMetrics } from "../authored/faces.js";
 import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 
 // A document is laid out in the faces it was measured in: the manifest's for the
-// seven reference documents, and for the authored ones the single face they are
-// all written in, which the manifest knows nothing about.
+// seven reference documents, and for the authored ones the faces they name, which
+// the manifest knows nothing about.
 type Compared = {
   readonly each: ReferenceCase;
-  readonly facesFor: () => readonly SuppliedFace[];
+  readonly metricsFor: () => MetricsResolver;
 };
 
 const FACE = authoredFace();
 
 const CASES: readonly Compared[] = [
-  ...referenceCases().map((each) => ({ each, facesFor: suppliedFaces })),
-  ...(FACE === null ? [] : authoredCases().map((each) => ({ each, facesFor: () => [FACE] }))),
+  ...referenceCases().map((each) => ({
+    each,
+    metricsFor: () => {
+      const faces = suppliedFaces();
+      return (request: FaceRequest) => lookupFontMetrics(request, faces);
+    },
+  })),
+  ...(FACE === null ? [] : authoredCases().map((each) => ({ each, metricsFor: authoredMetrics }))),
 ].filter(({ each }) => each.renderedPath !== null && each.textLinesMatched !== null);
 
 const textOf = (placed: PlacedLine): string =>
@@ -127,13 +134,11 @@ const runsOf = (placed: PlacedLine): readonly Run[] =>
       : [],
   );
 
-async function laidOut({ each, facesFor }: Compared): Promise<{
+async function laidOut({ each, metricsFor }: Compared): Promise<{
   readonly layout: LaidOutDocument;
   readonly drawn: readonly TextPlacement[];
 }> {
-  const layout = layOutDocument(readReferenceDocument(each), (request) =>
-    lookupFontMetrics(request, facesFor()),
-  );
+  const layout = layOutDocument(readReferenceDocument(each), metricsFor());
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
 
   const drawn = (
