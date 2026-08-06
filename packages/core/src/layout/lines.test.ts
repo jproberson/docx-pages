@@ -4,7 +4,12 @@ import type { ParagraphMark } from "../docx/styles.js";
 import type { RunPiece, TextRun } from "../docx/runs.js";
 import { buildSfnt } from "../testing/build-font.js";
 import { readFontFile } from "./font-file.js";
-import { NO_ADVANCES, type MetricsLookup, type SuppliedFace } from "./font-metrics.js";
+import {
+  NO_ADVANCES,
+  type FaceElsewhere,
+  type MetricsLookup,
+  type SuppliedFace,
+} from "./font-metrics.js";
 import { beginLines, breakLines, justifyLine, type TextLine } from "./lines.js";
 import type { TabStopPt } from "./tab-stops.js";
 
@@ -490,9 +495,13 @@ describe("a character drawn out of another face", () => {
       advances: { [BULLET]: 700 },
     }),
   );
-  const lent =
-    TALL.advances.kind === "advances"
-      ? { metrics: TALL.metrics, advanceFor: TALL.advances.advanceFor }
+  const advances = TALL.advances;
+  const lent: FaceElsewhere | null =
+    advances.kind === "advances"
+      ? (codePoint) => {
+          const advance = advances.advanceFor(codePoint);
+          return advance === null ? null : { metrics: TALL.metrics, advance };
+        }
       : null;
 
   const lending = (request: { readonly name: string }): MetricsLookup => {

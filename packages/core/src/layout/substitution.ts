@@ -34,21 +34,66 @@ export type Substitution = {
  */
 export const WORD_FALLBACK_FACES: readonly string[] = ["Cambria"];
 
+// The emoji face, and the face for each kind of text face. Named one at a time
+// because a caller reaches for them one at a time: `fallback.ts` knows where Times
+// New Roman lives and that it is the one face read out of two files.
+export const WORD_EMOJI_FACE = "Apple Color Emoji";
+export const WORD_SANS_FALLBACK_FACE = "Arial";
+export const WORD_SERIF_FALLBACK_FACE = "Times New Roman";
+
+// What both kinds go on to for a character neither Arial nor Times New Roman
+// carries, in the order measured.
+const AFTERWARDS: readonly string[] = ["Cambria Math", "Segoe UI Symbol"];
+
 /**
- * The face Word draws a character out of when the face it is written in has no
- * glyph for it and no place in its own page to alias it to.
+ * Every face Word draws a character out of when the face it is written in has no
+ * glyph for it and no place in its own page to alias it to, which is what a caller
+ * has to supply before any of this can happen at all. Which one answers is not one
+ * name: it turns on the kind of face that asked and then on the character.
  *
  * Measured on 2026-08-06 off Word's own pdf of the authored `unmapped-characters`
- * document: Word drew `U+2022` in Wingdings from Times New Roman, which the
- * document never mentions, at Times New Roman's own bullet of 717 units in 2048.
- * `U+2022` is above `0xFF` and so has no low byte to alias to, which is what tells
- * this from the `.notdef` a symbol face answers its own page with.
+ * and `unmapped-in-a-text-face` documents, twelve cases over six stated faces, each
+ * on a page of its own so that a face the pdf names there is one Word reached for
+ * itself. Every advance below is the borrowed face's own, read off where Word put
+ * the letter after the character rather than off the pdf's rounded `/Widths`.
  *
- * Times New Roman is the answer for a serif face and Arial for a sans one, measured
- * on 2026-08-06 of text faces, so this name is the half of that rule a symbol face
- * falls on rather than a last resort of Word's.
+ * - **The emoji face answers first for a character it has one for.** `U+25AA` in
+ *   Cambria came out of Apple Color Emoji a whole em wide, though both Arial and
+ *   Times New Roman carry the same shape at 726 units in 2048. It is the one of
+ *   the four geometric bullets Unicode gives an emoji, and the emoji face maps
+ *   little else, so the face's own map is the list of characters this covers.
+ * - **Then the kind of face that asked decides.** One character in four faces that
+ *   have no glyph for it: the two sans faces were answered by Arial and the two
+ *   serif faces by Times New Roman. The bullet Wingdings could not alias went to
+ *   Times New Roman too, so a symbol face falls on the serif half of this rule
+ *   rather than on a last resort of Word's.
+ * - **Then the character decides, where neither of those carries it.** A hyphen in
+ *   Arial and a maths italic letter in Cambria both went to Cambria Math, at 680
+ *   and 1141 units, against the 819 and 1141 of Segoe UI Symbol; the word joiner,
+ *   which is not meant to be drawn at all, went to Segoe UI Symbol at no width.
+ *
+ * So which face answers is a question about the machine: four of these ship with
+ * Word and the fifth is macOS's own emoji face, and a machine holding a different
+ * set would answer differently. Nothing in a document says which face Word will
+ * name, which is why `lookupFontMetrics` never offers a fallback of its own and
+ * only a resolver holding every face the machine has can.
  */
-export const WORD_CHARACTER_FALLBACK_FACE = "Times New Roman";
+export const WORD_CHARACTER_FALLBACK_FACES: readonly string[] = [
+  WORD_EMOJI_FACE,
+  WORD_SANS_FALLBACK_FACE,
+  WORD_SERIF_FALLBACK_FACE,
+  ...AFTERWARDS,
+];
+
+// What a face of the given kind reaches for, in the order worth reaching. Only one
+// of the two the kind decides is in either list: a sans face met with the hyphen
+// it has no glyph for went to Cambria Math at 680 units rather than to Times New
+// Roman's 682, so the face for the other kind is never tried.
+const reachedBy = (sansSerif: boolean): readonly string[] => [
+  WORD_EMOJI_FACE,
+  sansSerif ? WORD_SANS_FALLBACK_FACE : WORD_SERIF_FALLBACK_FACE,
+  ...AFTERWARDS,
+];
 
 // A character measured out of a face the document never asked for. Word does this
 // silently too, and it is not the same thing as standing a whole face in: the
@@ -147,13 +192,12 @@ export function substitutingMetrics(
   };
 }
 
-// Only a symbol face asks this. Everything such a face can draw at all it has
-// already answered for, so a character it reports unmapped is one Word could not
-// keep in the face either. A text face reaches for another face as well, measured
-// on 2026-08-06, but not for this one: which face answers turns on the kind of face
-// that asked and on the character, and Word named five of them over eleven cases.
-// So a text face is left to refuse the document rather than drawn out of a face
-// that would be the right one six times in eleven. See `docs/gaps.md`.
+// Hangs the faces the stated one borrows from off the lookup, so that the line
+// measurer can ask them for a character the stated face has no glyph for. Both a
+// symbol face and a text face reach: everything a symbol face can draw at all it
+// has already answered for out of its own page, and a text face has nothing of the
+// kind, so a character either of them reports unmapped is one Word could not keep
+// in the face either.
 function throughAnotherFace(
   found: MetricsLookup,
   face: FaceRequest,
@@ -161,25 +205,24 @@ function throughAnotherFace(
   characters: Map<string, FallbackCharacter>,
 ): MetricsLookup {
   if (found.kind !== "found" || found.advances.kind !== "advances") return found;
-  if (!found.advances.symbolEncoded) return found;
 
-  const reached = reachableFace(face, supplied);
-  if (reached === null) return found;
+  const reached = reachableFaces(face, supplied);
+  if (reached.length === 0) return found;
 
-  const { used } = reached;
   return {
     ...found,
-    elsewhere: {
-      metrics: reached.metrics,
-      // Asked only of a character the face itself has no glyph for, which is what
-      // makes this the place to say that one was met.
-      advanceFor: (codePoint) => {
-        const drawn = reached.advanceFor(codePoint);
-        if (drawn === null) return null;
+    // Asked only of a character the face itself has no glyph for, which is what
+    // makes this the place to say that one was met.
+    elsewhere: (codePoint) => {
+      for (const each of reached) {
+        const advance = each.advanceFor(codePoint);
+        if (advance === null) continue;
+
         const key = `${keyOf(face)}|${String(codePoint)}`;
-        if (!characters.has(key)) characters.set(key, { face, used, codePoint });
-        return drawn;
-      },
+        if (!characters.has(key)) characters.set(key, { face, used: each.used, codePoint });
+        return { metrics: each.metrics, advance };
+      }
+      return null;
     },
   };
 }
@@ -190,15 +233,33 @@ type ReachedFace = {
   readonly advanceFor: GlyphAdvances;
 };
 
+// A face measures text only where the machine has the very style asked for, since
+// a near miss comes back with the wrong style's widths and no advances at all. So
+// the exact entry is the one that says what kind of face this is.
+const suppliedAs = (face: FaceRequest, supplied: readonly SuppliedFace[]): SuppliedFace | null =>
+  supplied.find((each) => same(each, face)) ?? null;
+
+// The faces this one borrows from, in order, and only those the machine has: a
+// missing one is passed over rather than refused, which leaves a machine with none
+// of them exactly where it was.
+//
 // The style is worth trying for and not worth refusing the document over: what a
 // bold run's fallback weighs is unmeasured, and the regular weight of the right
 // face is nearer than no page at all.
-function reachableFace(face: FaceRequest, supplied: readonly SuppliedFace[]): ReachedFace | null {
-  const named = { ...face, name: WORD_CHARACTER_FALLBACK_FACE };
-  for (const used of [named, { ...named, bold: false, italic: false }]) {
-    const elsewhere = lookupFontMetrics(used, supplied);
-    if (elsewhere.kind !== "found" || elsewhere.advances.kind !== "advances") continue;
-    return { used, metrics: elsewhere.metrics, advanceFor: elsewhere.advances.advanceFor };
-  }
-  return null;
+function reachableFaces(
+  face: FaceRequest,
+  supplied: readonly SuppliedFace[],
+): readonly ReachedFace[] {
+  const kind = reachedBy(suppliedAs(face, supplied)?.sansSerif ?? false);
+
+  return kind.flatMap((name) => {
+    const named = { ...face, name };
+    for (const used of [named, { ...named, bold: false, italic: false }]) {
+      const elsewhere = lookupFontMetrics(used, supplied);
+      if (elsewhere.kind !== "found" || elsewhere.advances.kind !== "advances") continue;
+      if (same(used, face)) continue;
+      return [{ used, metrics: elsewhere.metrics, advanceFor: elsewhere.advances.advanceFor }];
+    }
+    return [];
+  });
 }

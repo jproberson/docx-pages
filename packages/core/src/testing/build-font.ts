@@ -18,6 +18,13 @@ export type FontFixture = {
   // page has no glyph for.
   readonly notdefAdvance?: number;
   readonly longMetrics?: number;
+  // What the face says about itself in its PANOSE classification, which is what
+  // decides the face a character it has no glyph for is drawn out of. A fixture
+  // that states neither writes no OS/2 table at all, as a face may.
+  readonly panoseFamily?: number;
+  readonly panoseSerifStyle?: number;
+  // What the face calls itself, which is how one is picked out of a collection.
+  readonly faceName?: string;
   readonly omit?: "head" | "hhea" | "cmap" | "hmtx";
 };
 
@@ -158,6 +165,45 @@ function cmapTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
   return table;
 }
 
+// Long enough to hold the PANOSE bytes, which sit ten bytes in and are the only
+// part of the table anything here reads.
+const OS2_LENGTH = 78;
+const PANOSE_AT = 32;
+
+function os2Table(fixture: FontFixture): Uint8Array {
+  const table = new Uint8Array(OS2_LENGTH);
+  table[PANOSE_AT] = fixture.panoseFamily ?? 0;
+  table[PANOSE_AT + 1] = fixture.panoseSerifStyle ?? 0;
+  return table;
+}
+
+// The family a face belongs to and the whole of its own name, which a collection
+// is searched by. Written on the Windows platform, two bytes to a character.
+const FAMILY_NAME = 1;
+const FULL_NAME = 4;
+
+function nameTable(faceName: string): Uint8Array {
+  const ids = [FAMILY_NAME, FULL_NAME];
+  const stringsAt = 6 + ids.length * 12;
+  const table = new Uint8Array(stringsAt + faceName.length * 2);
+  const view = new DataView(table.buffer);
+
+  view.setUint16(2, ids.length);
+  view.setUint16(4, stringsAt);
+  ids.forEach((id, index) => {
+    const record = 6 + index * 12;
+    view.setUint16(record, 3);
+    view.setUint16(record + 2, 1);
+    view.setUint16(record + 6, id);
+    view.setUint16(record + 8, faceName.length * 2);
+  });
+  for (const [at, character] of Array.from(faceName).entries()) {
+    view.setUint16(stringsAt + at * 2, character.charCodeAt(0));
+  }
+
+  return table;
+}
+
 function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array])[] {
   const glyphs = glyphsOf(fixture);
   const tables: (readonly [string, Uint8Array])[] = [
@@ -165,6 +211,10 @@ function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array]
     ["hhea", hheaTable(fixture, glyphs)],
   ];
 
+  if (fixture.panoseFamily !== undefined || fixture.panoseSerifStyle !== undefined) {
+    tables.push(["OS/2", os2Table(fixture)]);
+  }
+  if (fixture.faceName !== undefined) tables.push(["name", nameTable(fixture.faceName)]);
   if (fixture.advances !== undefined) {
     tables.push(["cmap", cmapTable(fixture, glyphs)], ["hmtx", hmtxTable(fixture, glyphs)]);
   }
@@ -284,7 +334,15 @@ export type FaceFixture = {
   readonly characters?: string;
   readonly subtables?: FontFixture["subtables"];
   readonly notdefAdvance?: number;
+  // Whether the face draws its letters without serifs, which it says through its
+  // PANOSE classification as a real face does rather than being told.
+  readonly sansSerif?: boolean;
 };
+
+// The plainest PANOSE classification of each kind: a Latin text face of normal
+// sans, and one whose serifs are coves.
+const SANS_SERIF = { panoseFamily: 2, panoseSerifStyle: 11 };
+const SERIF = { panoseFamily: 2, panoseSerifStyle: 2 };
 
 // A face whose every glyph is the same width, so a test can count characters
 // instead of consulting a real font's widths.
@@ -294,16 +352,19 @@ export function buildFace(fixture: FaceFixture): SuppliedFace {
     ...fixture.metrics,
     ...(fixture.subtables === undefined ? {} : { subtables: fixture.subtables }),
     ...(fixture.notdefAdvance === undefined ? {} : { notdefAdvance: fixture.notdefAdvance }),
+    ...(fixture.sansSerif === undefined ? {} : fixture.sansSerif ? SANS_SERIF : SERIF),
     advances: Object.fromEntries(
       Array.from(fixture.characters ?? MEASURABLE, (character) => [character, advance]),
     ),
   });
+  const read = readFontFile(file);
 
   return {
     name: fixture.name,
     bold: fixture.bold ?? false,
     italic: fixture.italic ?? false,
     metrics: fixture.metrics,
-    advances: readFontFile(file).advances,
+    advances: read.advances,
+    sansSerif: read.sansSerif,
   };
 }

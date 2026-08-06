@@ -131,6 +131,24 @@ describe("readFontFile", () => {
     expect(file.advances.kind === "advances" && advanceOf(file.advances.advanceFor, "A")).toBe(660);
   });
 
+  // Word borrows a maths letter and a hyphen from Cambria Math, which is the
+  // second face of the file Cambria is the first of.
+  it("reads a face out of a collection by name rather than by where it sits", () => {
+    const maths: FontFixture = { ...FACE, faceName: "Meridian Math", advances: { A: 111 } };
+    const file = readFontFile(
+      buildCollection([{ ...FACE, faceName: "Meridian", advances: WIDTHS }, maths]),
+      "Meridian Math",
+    );
+
+    expect(file.advances.kind === "advances" && advanceOf(file.advances.advanceFor, "A")).toBe(111);
+  });
+
+  it("reports a collection that holds no face of the name asked for", () => {
+    const collection = buildCollection([{ ...FACE, faceName: "Meridian", advances: WIDTHS }]);
+
+    expect(caught(() => readFontFile(collection, "Meridian Math")).code).toBe("font-face-missing");
+  });
+
   it("reports a collection with no face in it", () => {
     const collection = buildCollection([FACE]);
     new DataView(collection.buffer).setUint32(8, 0);
@@ -162,6 +180,45 @@ describe("readFontFile", () => {
 
   it("still reports metrics for a face it cannot measure text with", () => {
     expect(readFontFile(buildSfnt(FACE)).metrics).toStrictEqual(METRICS);
+  });
+});
+
+// Which face Word draws a character out of when the stated one has no glyph for it
+// turns on whether that face has serifs, and nothing in a document says: the file
+// itself is asked. PANOSE classifies a Latin text face's serifs, and its styles
+// from 11 up are the sans ones.
+describe("what a face says it is", () => {
+  const classified = (panoseFamily: number, panoseSerifStyle: number): boolean =>
+    readFontFile(buildSfnt({ ...FACE, panoseFamily, panoseSerifStyle })).sansSerif;
+
+  const LATIN_TEXT = 2;
+  const PICTORIAL = 5;
+
+  it("reads a Latin text face of normal sans as one without serifs", () => {
+    expect(classified(LATIN_TEXT, 11)).toBe(true);
+  });
+
+  // Calibri classifies itself as rounded, which is the last of the sans styles.
+  it("reads the rounded and flared styles as sans as well", () => {
+    expect(classified(LATIN_TEXT, 14)).toBe(true);
+    expect(classified(LATIN_TEXT, 15)).toBe(true);
+  });
+
+  it("reads the cove styles Times New Roman and Cambria claim as serif", () => {
+    expect(classified(LATIN_TEXT, 2)).toBe(false);
+    expect(classified(LATIN_TEXT, 4)).toBe(false);
+  });
+
+  // The byte means something else entirely under another family type: Wingdings is
+  // a pictorial face whose style byte is 0, and a pictorial face is not a sans one
+  // whatever it says there.
+  it("reads a face of any other family as not a sans one", () => {
+    expect(classified(PICTORIAL, 11)).toBe(false);
+    expect(classified(PICTORIAL, 0)).toBe(false);
+  });
+
+  it("reads a face that classifies itself not at all as not a sans one", () => {
+    expect(readFontFile(buildSfnt(FACE)).sansSerif).toBe(false);
   });
 });
 

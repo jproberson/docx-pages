@@ -219,7 +219,6 @@ export function readAdvanceTable(
 
   return {
     kind: "advances",
-    symbolEncoded: subtable.symbol,
     advanceFor: (codePoint) => {
       const glyph = glyphFor(codePoint);
       if (glyph !== 0) return advanceOf(glyph);

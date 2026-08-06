@@ -43,6 +43,11 @@ export type AuthoredDocument = {
   // document asking about faces states. A machine without one of them is left out
   // of the suite for that document rather than laying it out in something else.
   readonly statedFaces?: readonly string[];
+  // How many of the images in Word's own rendering are glyphs rather than
+  // drawings. Word paints a colour emoji as a bitmap, so a document that borrows a
+  // character from the emoji face has images in its pdf that nothing in it asked
+  // for and nothing here draws as a picture.
+  readonly glyphsPaintedAsImages?: number;
   // Why this project refuses the document today, where it does. A document is
   // written to ask a question, and a question worth asking is often one nothing
   // here can answer yet: it is committed so that Word's answer can be had by
@@ -289,9 +294,23 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A character a text face has no glyph for",
       asks: "which face Word draws a character out of when a text face has none, and how tall that leaves the line",
       // Calibri is not among these: it is the face every authored document is
-      // written in, and a machine without it has no suite at all.
-      statedFaces: ["Cambria", "Arial", "Times New Roman", "Verdana", "Georgia"],
-      refuses: "a text face met with a character it has no glyph for is unmeasurable",
+      // written in, and a machine without it has no suite at all. The last three
+      // are named by nothing in the document and stated here all the same, since
+      // they are the faces Word drew its characters out of: a machine without one
+      // lays the document out a different way and answers a different question.
+      statedFaces: [
+        "Cambria",
+        "Arial",
+        "Times New Roman",
+        "Verdana",
+        "Georgia",
+        "Apple Color Emoji",
+        "Cambria Math",
+        "Segoe UI Symbol",
+      ],
+      // The three repeats of the small black square, which is the one case Word
+      // answered out of the emoji face: each is a 12pt bitmap at 12pt, a whole em.
+      glyphsPaintedAsImages: 3,
       bytes: buildAuthoredDocx({ body: unmappedInTextFaceDocument() }),
     },
     {

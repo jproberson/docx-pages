@@ -265,8 +265,10 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
 
           // Every drawing here stands in the flow of the text, one to a paragraph,
           // so Word draws them in the order they were written and ours are in the
-          // same one. A page each says which drawing a failure is about.
-          expect(ours.length).toBe(drawn.length);
+          // same one. A page each says which drawing a failure is about. A glyph
+          // Word painted as a bitmap is an image in the rendering and a drawing in
+          // nobody's document, so it is counted out rather than looked for.
+          expect(ours.length).toBe(drawn.length - (each.glyphsPaintedAsImages ?? 0));
           for (const [at, expected] of drawn.entries()) {
             const mine = ours[at];
             if (mine === undefined) continue;

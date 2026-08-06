@@ -44,6 +44,8 @@ export {
 export type {
   AdvanceTable,
   AdvancesUnavailable,
+  BorrowedGlyph,
+  FaceElsewhere,
   FaceRequest,
   FontMetrics,
   GlyphAdvances,
@@ -243,8 +245,11 @@ export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./la
 
 export {
   substitutingMetrics,
-  WORD_CHARACTER_FALLBACK_FACE,
+  WORD_CHARACTER_FALLBACK_FACES,
+  WORD_EMOJI_FACE,
   WORD_FALLBACK_FACES,
+  WORD_SANS_FALLBACK_FACE,
+  WORD_SERIF_FALLBACK_FACE,
 } from "./layout/substitution.js";
 export type {
   FallbackCharacter,

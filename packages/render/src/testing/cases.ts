@@ -357,17 +357,20 @@ export const referenceCases = (): readonly ReferenceCase[] =>
   readReferenceManifest().cases.filter((each) => existsSync(each.documentPath));
 
 // The manifest's metrics stay authoritative for vertical geometry; the font file
-// is read only for the advances, which no manifest could carry.
+// is read for the advances and for what kind of face it is, neither of which a
+// manifest could carry.
 function faceOf(font: ReferenceFont): SuppliedFace {
   const path = font.filePath;
   const style = { name: font.name, bold: font.bold, italic: font.italic };
   if (path === null || !existsSync(path)) {
     return { ...style, metrics: font.metrics, advances: NO_ADVANCES };
   }
+  const read = readFontFile(new Uint8Array(readFileSync(path)));
   return {
     ...style,
     metrics: font.metrics,
-    advances: readFontFile(new Uint8Array(readFileSync(path))).advances,
+    advances: read.advances,
+    sansSerif: read.sansSerif,
   };
 }
 
@@ -386,6 +389,7 @@ function authoredFaceOf(face: AuthoredFace): SuppliedFace {
     italic: face.italic,
     metrics: read.metrics,
     advances: read.advances,
+    sansSerif: read.sansSerif,
   };
 }
 

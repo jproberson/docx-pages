@@ -5,6 +5,7 @@ import {
   ascentPt,
   lineHeightPt,
   type AdvancesUnavailable,
+  type BorrowedGlyph,
   type FaceElsewhere,
   type FaceRequest,
   type FontMetrics,
@@ -273,17 +274,10 @@ class Measurer {
   }
 }
 
-function drawnBy(
-  face: Face,
-  codePoint: number,
-): { readonly metrics: FontMetrics; readonly advance: number } | null {
+function drawnBy(face: Face, codePoint: number): BorrowedGlyph | null {
   const own = face.advanceFor(codePoint);
   if (own !== null) return { metrics: face.metrics, advance: own };
-
-  const elsewhere = face.elsewhere;
-  if (elsewhere === null) return null;
-  const advance = elsewhere.advanceFor(codePoint);
-  return advance === null ? null : { metrics: elsewhere.metrics, advance };
+  return face.elsewhere === null ? null : face.elsewhere(codePoint);
 }
 
 // The character a decimal stop lines its text up on. Word takes it from the

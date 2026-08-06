@@ -20,14 +20,7 @@ export type AdvancesUnavailable =
   | "hmtx-malformed";
 
 export type AdvanceTable =
-  | {
-      readonly kind: "advances";
-      readonly advanceFor: GlyphAdvances;
-      // Whether the face declares the Microsoft symbol encoding. Such a face has
-      // already answered for everything its own page holds a place for, so a
-      // character it reports unmapped is one it cannot draw at all.
-      readonly symbolEncoded: boolean;
-    }
+  | { readonly kind: "advances"; readonly advanceFor: GlyphAdvances }
   | { readonly kind: "unavailable"; readonly reason: AdvancesUnavailable };
 
 // Vertical metrics alone place empty paragraphs and floats; measuring text needs
@@ -45,16 +38,26 @@ export type FaceRequest = {
 export type SuppliedFace = FaceRequest & {
   readonly metrics: FontMetrics;
   readonly advances: AdvanceTable;
+  // Whether the face draws its letters without serifs, which decides the face Word
+  // borrows a character from where this one has no glyph for it: a sans face
+  // borrows from Arial and every other face from Times New Roman, measured on
+  // 2026-08-06. A face that does not say is not a sans one.
+  readonly sansSerif?: boolean;
 };
 
-// What draws a character the face itself has no glyph for. A whole face rather
-// than a width, since Word measures the line over it as well. `lookupFontMetrics`
-// never finds one: which face answers is a question about every face the machine
-// has, and `substitutingMetrics` is what holds them all.
-export type FaceElsewhere = {
+// A character drawn out of a face the run never named, and the metrics of the face
+// that drew it: Word measures the line over that face as well as over the stated
+// one, so the width is no use without them.
+export type BorrowedGlyph = {
   readonly metrics: FontMetrics;
-  readonly advanceFor: GlyphAdvances;
+  readonly advance: number;
 };
+
+// What draws a character the face itself has no glyph for. Which face answers
+// turns on the character as well as on the face that asked, so the two come back
+// together. `lookupFontMetrics` never offers one: only a resolver holding every
+// face the machine has can say, and `substitutingMetrics` is that resolver.
+export type FaceElsewhere = (codePoint: number) => BorrowedGlyph | null;
 
 export type MetricsLookup =
   | {

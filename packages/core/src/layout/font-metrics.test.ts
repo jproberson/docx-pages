@@ -75,7 +75,6 @@ describe("lookupFontMetrics", () => {
   const SUPPLIED: FontMetrics = { unitsPerEm: 2048, ascender: 1944, descender: -546, lineGap: 0 };
   const advances: SuppliedFace["advances"] = {
     kind: "advances",
-    symbolEncoded: false,
     advanceFor: () => 500,
   };
 
@@ -137,7 +136,6 @@ describe("lookupFontMetrics", () => {
       ...face("Meridian Sans", NARROW, { bold: true }),
       advances: {
         kind: "advances",
-        symbolEncoded: false,
         advanceFor: () => 600,
       } satisfies SuppliedFace["advances"],
     };
