@@ -67,7 +67,7 @@ jobs:
           npm install /tmp/packed/*.tgz react react-dom > /dev/null
           npm install --save-dev @types/react @types/react-dom > /dev/null
 
-      - name: Import what they promise
+      - name: Import what they promise, and nothing they do not
         run: |
           cd /tmp/consumer
           cat > check.mjs <<'EOF'
@@ -81,7 +81,22 @@ jobs:
           if (missing.length > 0) {
             throw new Error(`installed but not exported: ${missing.map(([n]) => n).join(", ")}`);
           }
-          console.log("both packages install and export what they promise");
+
+          // The plumbing is render's, and render is this repository rather than a
+          // consumer. A published door into it is a promise nobody meant to make,
+          // so the absence of one is worth asserting rather than assuming.
+          for (const shut of ["@docx-pages/core/internal", "@docx-pages/core/testing"]) {
+            let reached = false;
+            try {
+              await import(shut);
+              reached = true;
+            } catch (error) {
+              if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+            }
+            if (reached) throw new Error(`${shut} is reachable from outside the repository`);
+          }
+
+          console.log("both packages install, export what they promise, and hide what they do not");
           EOF
           node check.mjs
 

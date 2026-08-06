@@ -1,4 +1,5 @@
-import { readAnchors, type Block, type Paragraph } from "@docx-pages/core";
+import { type Block, type Paragraph } from "@docx-pages/core";
+import { readAnchors } from "@docx-pages/core/internal";
 
 // Which paragraph of ours each of Word's answers is about.
 //

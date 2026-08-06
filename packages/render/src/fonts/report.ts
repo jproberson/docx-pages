@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
-import { facesUsed, lookupFontMetrics, openDocx, type UsedFace } from "@docx-pages/core";
+import { lookupFontMetrics, openDocx, type UsedFace } from "@docx-pages/core";
+import { facesUsed } from "@docx-pages/core/internal";
 
 import { suppliedFaces } from "../testing/cases.js";
 

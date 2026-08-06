@@ -1,16 +1,7 @@
 import { createHash } from "node:crypto";
 
-import {
-  attribute,
-  openDocx,
-  pageGeometrySignature,
-  partXml,
-  MAIN_DOCUMENT_PART,
-  W_NS,
-  WP_NS,
-  type DocxPackage,
-  type XmlElement,
-} from "@docx-pages/core";
+import { openDocx, MAIN_DOCUMENT_PART, type DocxPackage, type XmlElement } from "@docx-pages/core";
+import { attribute, pageGeometrySignature, partXml, W_NS, WP_NS } from "@docx-pages/core/internal";
 
 // What is actually inside a corpus of documents, as against what this project
 // cannot honour in one.

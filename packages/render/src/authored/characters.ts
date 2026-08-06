@@ -1,11 +1,10 @@
 import {
-  measureText,
-  readRuns,
   type MetricsResolver,
   type Paragraph,
   type ParagraphBox,
   type StyleTable,
 } from "@docx-pages/core";
+import { measureText, readRuns } from "@docx-pages/core/internal";
 
 // Where every character of a paragraph sits along its line, which is the only way
 // to say where a tab landed: the line's own start says nothing about what happened

@@ -13,6 +13,12 @@ export const config = defineConfig({
         find: /^@docx-pages\/core\/testing$/,
         replacement: resolveSrc("core/src/testing/index.ts"),
       },
+      // The plumbing under the library's own promise. The package's `exports`
+      // does not offer it, so only this repository can reach it at all.
+      {
+        find: /^@docx-pages\/core\/internal$/,
+        replacement: resolveSrc("core/src/internal.ts"),
+      },
       { find: /^@docx-pages\/core$/, replacement: resolveSrc("core/src/index.ts") },
       { find: /^@docx-pages\/render$/, replacement: resolveSrc("render/src/index.ts") },
       { find: /^@docx-pages\/viewer$/, replacement: resolveSrc("viewer/src/index.ts") },

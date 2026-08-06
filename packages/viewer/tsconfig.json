@@ -5,8 +5,16 @@
     "jsx": "react-jsx",
     "types": [],
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "paths": {
+      "@docx-pages/core/internal": ["../core/src/internal.ts"],
+      "@docx-pages/core/testing": ["../core/src/testing/index.ts"]
+    }
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }]
+  "references": [
+    {
+      "path": "../core"
+    }
+  ]
 }

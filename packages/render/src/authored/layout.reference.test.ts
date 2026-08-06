@@ -3,15 +3,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
-  blockParagraphs,
   layOutDocument,
   openDocx,
-  readBlocks,
-  readStyleTable,
   type LaidOutDocument,
   type MetricsResolver,
   type ParagraphBox,
 } from "@docx-pages/core";
+import { blockParagraphs, readBlocks, readStyleTable } from "@docx-pages/core/internal";
 
 import { readImagePlacements } from "../pdf/placements.js";
 import { answeringParagraphs } from "./answers.js";
