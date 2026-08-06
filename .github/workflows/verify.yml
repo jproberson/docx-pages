@@ -54,8 +54,10 @@ jobs:
         run: |
           mkdir -p /tmp/packed
           cd packages/core && pnpm pack --pack-destination /tmp/packed && cd -
+          cd packages/fonts && pnpm pack --pack-destination /tmp/packed && cd -
           cd packages/viewer && pnpm pack --pack-destination /tmp/packed && cd -
           ! tar -xzOf /tmp/packed/docx-pages-viewer-*.tgz package/package.json | grep -q "workspace:"
+          ! tar -xzOf /tmp/packed/docx-pages-fonts-*.tgz package/package.json | grep -q "workspace:"
 
       # React and its types are the consumer's to bring, which is what a peer
       # dependency means, so the check brings them as a consumer would.
@@ -71,12 +73,20 @@ jobs:
         run: |
           cd /tmp/consumer
           cat > check.mjs <<'EOF'
-          import { layOutDocument, openDocx, substitutingMetrics } from "@docx-pages/core";
+          import { bestEffortMetrics, layOutDocument, openDocx, substitutingMetrics } from "@docx-pages/core";
+          import { defaultFacesFromDisk } from "@docx-pages/fonts/node";
           import { Document, Page } from "@docx-pages/viewer";
 
           const missing = Object.entries({
-            layOutDocument, openDocx, substitutingMetrics, Document, Page,
+            bestEffortMetrics, layOutDocument, openDocx, substitutingMetrics, defaultFacesFromDisk, Document, Page,
           }).filter(([, value]) => value === undefined);
+
+          // The pack is only a pack if the installed tarball carries the files.
+          const defaults = await defaultFacesFromDisk();
+          const unread = defaults.faces.filter((face) => face.advances.kind !== "advances");
+          if (defaults.faces.length !== 20 || unread.length > 0) {
+            throw new Error(`the installed font pack read ${defaults.faces.length} faces, ${unread.length} without widths`);
+          }
 
           if (missing.length > 0) {
             throw new Error(`installed but not exported: ${missing.map(([n]) => n).join(", ")}`);

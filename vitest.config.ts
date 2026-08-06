@@ -20,6 +20,8 @@ export const config = defineConfig({
         replacement: resolveSrc("core/src/internal.ts"),
       },
       { find: /^@docx-pages\/core$/, replacement: resolveSrc("core/src/index.ts") },
+      { find: /^@docx-pages\/fonts\/node$/, replacement: resolveSrc("fonts/src/node.ts") },
+      { find: /^@docx-pages\/fonts$/, replacement: resolveSrc("fonts/src/index.ts") },
       { find: /^@docx-pages\/render$/, replacement: resolveSrc("render/src/index.ts") },
       { find: /^@docx-pages\/viewer$/, replacement: resolveSrc("viewer/src/index.ts") },
     ],

@@ -1,0 +1,39 @@
+{
+  "name": "@docx-pages/fonts",
+  "description": "Freely redistributable faces whose metrics twin the ones documents usually name, for laying out without the real fonts.",
+  "version": "1.0.0",
+  "license": "(MIT AND OFL-1.1)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "fonts",
+    "!dist/**/*.test.*",
+    "!src/**/*.test.*"
+  ],
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@docx-pages/core": "workspace:*"
+  },
+  "keywords": [
+    "docx",
+    "word",
+    "fonts",
+    "metric-compatible",
+    "carlito",
+    "caladea",
+    "liberation"
+  ]
+}

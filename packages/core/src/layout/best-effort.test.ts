@@ -21,6 +21,9 @@ const DEFAULTS: FaceDefaults = {
   sansSerif: "Twin Sans",
   serif: "Twin Serif",
   monospace: "Twin Mono",
+  // Word's own last resort is a serif whatever the name suggested; the fixture
+  // pack keeps a sans there so the tests read which rule answered off the name.
+  lastResort: "Twin Sans",
 };
 
 const ask = (name: string) => ({ name, bold: false, italic: false });

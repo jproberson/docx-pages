@@ -15,8 +15,12 @@ import {
  * `twins` maps a lowercased document name to the pack face whose advances match
  * it glyph for glyph, so a page laid out on one breaks its lines where the named
  * face would have. The shape names answer for everything else, chosen by the
- * classification the document itself carries for the face (`readFaceShapes`),
- * and `sansSerif` answers last of all, for a name nothing classifies.
+ * classification the document itself carries for the face (`readFaceShapes`).
+ *
+ * `lastResort` answers for a name nothing classifies. Word's own last resort is
+ * Cambria, a serif, whatever the name suggested (see `WORD_FALLBACK_FACES`), so
+ * a pack that wants to land where Word lands names Cambria's twin here rather
+ * than a sans.
  */
 export type FaceDefaults = {
   readonly faces: readonly SuppliedFace[];
@@ -24,6 +28,7 @@ export type FaceDefaults = {
   readonly sansSerif: string;
   readonly serif: string;
   readonly monospace: string;
+  readonly lastResort: string;
 };
 
 export type BestEffortMetrics = SubstitutingMetrics & {
@@ -66,16 +71,16 @@ export function bestEffortMetrics(
 
   const behind = (request: { readonly name: string }): readonly string[] => {
     const key = normalise(request.name);
-    const names = [defaults.twins[key], shapeName(shapes.get(key)), defaults.sansSerif];
+    const names = [defaults.twins[key], shapeName(shapes.get(key)), defaults.lastResort];
     return [...new Set(names.filter((name): name is string => name !== undefined))];
   };
 
   const under = substitutingMetrics(all, behind);
 
-  // The box of last resort is the sans default's, for the one case where the face
-  // that answered was built by hand and does not say what its own box advances.
+  // The box of last resort, for the one case where the face that answered was
+  // built by hand and does not say what its own box advances.
   const lastResort = lookupFontMetrics(
-    { name: defaults.sansSerif, bold: false, italic: false },
+    { name: defaults.lastResort, bold: false, italic: false },
     defaults.faces,
   );
   const lastResortBox =
