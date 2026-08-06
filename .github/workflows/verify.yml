@@ -74,6 +74,7 @@ jobs:
           cd /tmp/consumer
           cat > check.mjs <<'EOF'
           import { bestEffortMetrics, layOutDocument, openDocx, substitutingMetrics } from "@docx-pages/core";
+          import { PACK_FACES } from "@docx-pages/fonts";
           import { defaultFacesFromDisk } from "@docx-pages/fonts/node";
           import { Document, Page } from "@docx-pages/viewer";
 
@@ -84,8 +85,8 @@ jobs:
           // The pack is only a pack if the installed tarball carries the files.
           const defaults = await defaultFacesFromDisk();
           const unread = defaults.faces.filter((face) => face.advances.kind !== "advances");
-          if (defaults.faces.length !== 20 || unread.length > 0) {
-            throw new Error(`the installed font pack read ${defaults.faces.length} faces, ${unread.length} without widths`);
+          if (defaults.faces.length !== PACK_FACES.length || unread.length > 0) {
+            throw new Error(`the installed font pack read ${defaults.faces.length} of ${PACK_FACES.length} faces, ${unread.length} without widths`);
           }
 
           if (missing.length > 0) {

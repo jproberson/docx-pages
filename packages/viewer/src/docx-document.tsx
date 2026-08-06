@@ -14,7 +14,16 @@ import {
   type SuppliedFace,
   type Unhonoured,
 } from "@docx-pages/core";
-import { fontUrl, METRIC_TWINS, PACK_FACES, type PackFace } from "@docx-pages/fonts";
+import {
+  fontUrl,
+  LAST_RESORT_DEFAULT,
+  METRIC_TWINS,
+  MONOSPACE_DEFAULT,
+  PACK_FACES,
+  SANS_SERIF_DEFAULT,
+  SERIF_DEFAULT,
+  type PackFace,
+} from "@docx-pages/fonts";
 
 import { imageResolver, type ImageResolver } from "./images.js";
 import { Document, type FrameStyle } from "./page.js";
@@ -90,7 +99,7 @@ const loadPack = (): Promise<readonly PackEntry[]> => {
           italic: face.italic,
           metrics: read.metrics,
           advances: read.advances,
-          sansSerif: read.sansSerif,
+          sansSerif: face.sansSerif ?? read.sansSerif,
         },
       };
     }),
@@ -169,10 +178,10 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
           ({
             faces: (pack ?? []).map((entry) => entry.supplied),
             twins: METRIC_TWINS,
-            sansSerif: "Liberation Sans",
-            serif: "Liberation Serif",
-            monospace: "Liberation Mono",
-            lastResort: "Caladea",
+            sansSerif: SANS_SERIF_DEFAULT,
+            serif: SERIF_DEFAULT,
+            monospace: MONOSPACE_DEFAULT,
+            lastResort: LAST_RESORT_DEFAULT,
           } satisfies FaceDefaults);
 
         const supplied = (fonts ?? []).map(suppliedFrom);

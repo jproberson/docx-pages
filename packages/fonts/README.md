@@ -16,9 +16,10 @@ const layout = layOutDocument(pkg, faces); // every stand-in comes back out of f
 ```
 
 A document naming a face with no twin falls to a default of the shape the
-document's own font table gives the name, and a name nothing classifies falls
-to Caladea, because Word's own last resort for a name it cannot place is
-Cambria.
+document's own font table gives the name: Open Sans for a sans, carried for its
+looks rather than its widths, since a name with no twin gets no right widths
+from anyone. A name nothing classifies falls to Caladea, because Word's own
+last resort for a name it cannot place is Cambria.
 
 The font files keep their own licenses, committed beside them under `fonts/`.
 

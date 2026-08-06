@@ -48,6 +48,18 @@ describe("the default pack", () => {
     }
   });
 
+  it("answers an unknown sans name with Open Sans, marked as the sans it is", async () => {
+    const defaults = await defaultFacesFromDisk();
+    const faces = bestEffortMetrics([], defaults, new Map([["housemade sans", "sans-serif"]]));
+
+    const found = faces.metricsFor({ name: "Housemade Sans", bold: false, italic: false });
+    expect(found.kind).toBe("found");
+    expect(faces.substitutions().map((each) => each.used.name)).toStrictEqual(["Open Sans"]);
+    // The file's own PANOSE bytes misstate the face; the pack corrects them, so
+    // a character borrowed for it goes through the sans chain.
+    expect(defaults.faces.find((face) => face.name === "Open Sans")?.sansSerif).toBe(true);
+  });
+
   it("answers for every name the twin table promises", async () => {
     const defaults = await defaultFacesFromDisk();
 
