@@ -17,5 +17,19 @@ samples/
 # and which `docs/gaps.md` tells the reader to run.
 /corpus/
 
+# No document of anyone's, wherever it is put. Everything that writes one writes it
+# under `samples/`, so this catches only a mistake: a document dropped at the root
+# to look at, or a tool told to write outside its own directory. Nothing of these
+# kinds has ever been committed and none ever should be, so the rule costs nothing.
+# The authored documents are generated rather than kept, and the font files the
+# fonts package ships are deliberately not named here.
+*.docx
+*.doc
+*.dotx
+*.rtf
+*.pdf
+*.emf
+*.wmf
+
 # Working notes, not part of the library.
 BRIEF.md
