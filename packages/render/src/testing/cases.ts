@@ -71,13 +71,16 @@ export type ReferenceCase = {
   // as any other: it says this document must draw none either.
   readonly renderedImagesPt: readonly PointRect[] | null;
   readonly renderedPageIndexes: readonly number[] | null;
-  // How many pictures this project places that Word's own output draws nothing
-  // for, and how many Word drew that nothing here stands on. Left out, both are
-  // none: a picture drawn out of nowhere, or one silently dropped, cannot pass
-  // unnoticed. Where a picture is drawn in the wrong place there is no count at
-  // all, since the two are paired and that is never allowed.
-  readonly picturesWordDidNotDraw: number;
-  readonly picturesWeDidNotDraw: number;
+  // A picture and an image are not the same population, and these count where the
+  // two do not meet.
+  //
+  // How many pictures this project places that Word's pdf holds no image for,
+  // because Word drew them as vector: a logo as paths, or a metafile replayed.
+  // Both sides draw them, in the same place, as the raster says; it is the reader
+  // that cannot see them, since it follows only the images a page paints.
+  readonly picturesWordDrewWithoutAnImage: number;
+  // How many images Word's pdf holds that are no picture of the document's at all.
+  readonly imagesWordDrewOutsideAPicture: number;
   // How many laid-out text lines are expected to land where Word drew the same
   // line, within textTolerancePt. Neither the text nor its position is recorded
   // here; both are read from the document and Word's own output at run time.
@@ -316,8 +319,10 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     disjointFloatPairs: list("disjointFloatPairs", readPair),
     renderedImagesPt: measuredList("renderedImagesPt", readRect),
     renderedPageIndexes: measuredList("renderedPageIndexes", readIndex),
-    picturesWordDidNotDraw: optionalNumber(source, "picturesWordDidNotDraw", where) ?? 0,
-    picturesWeDidNotDraw: optionalNumber(source, "picturesWeDidNotDraw", where) ?? 0,
+    picturesWordDrewWithoutAnImage:
+      optionalNumber(source, "picturesWordDrewWithoutAnImage", where) ?? 0,
+    imagesWordDrewOutsideAPicture:
+      optionalNumber(source, "imagesWordDrewOutsideAPicture", where) ?? 0,
     textLinesMatched: optionalNumber(source, "textLinesMatched", where),
     textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
     textRunsMatched: optionalNumber(source, "textRunsMatched", where),

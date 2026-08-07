@@ -108,10 +108,11 @@ const agrees = (one: Box, other: Box, tolerancePt: number): boolean =>
 const spell = (box: Box): string =>
   `${box.widthPt.toFixed(1)}x${box.heightPt.toFixed(1)} at ${box.leftPt.toFixed(1)},${box.topPt.toFixed(1)}`;
 
-// A picture Word drew and one of ours are either a pair or they are not, and the
-// three answers are held apart: a pair standing in different places is a fault
-// whatever the document, while one side having nothing to pair with is a fault
-// only where the document has not already said to expect it.
+// A picture of ours and an image of Word's are either a pair or they are not, and
+// the three answers are held apart: a pair standing in different places is a fault
+// whatever the document, while one side having nothing to pair with says only that
+// the two are not the same population, and the document counts how far apart they
+// are known to be.
 type Pairing = {
   readonly misplaced: readonly string[];
   readonly onlyWord: readonly string[];
@@ -196,14 +197,14 @@ describe.skipIf(CASES.length === 0)(
           expect((await pairingOf(compared)).misplaced).toStrictEqual([]);
         });
 
-        it("draws no picture Word drew nothing for", async () => {
+        it("pairs every picture with an image but the ones Word drew as vector", async () => {
           const { onlyOurs } = await pairingOf(compared);
-          expect(onlyOurs.length).toBe(compared.each.picturesWordDidNotDraw);
+          expect(onlyOurs.length).toBe(compared.each.picturesWordDrewWithoutAnImage);
         });
 
-        it("leaves out no picture Word drew", async () => {
+        it("pairs every image with a picture but the ones that are no picture", async () => {
           const { onlyWord } = await pairingOf(compared);
-          expect(onlyWord.length).toBe(compared.each.picturesWeDidNotDraw);
+          expect(onlyWord.length).toBe(compared.each.imagesWordDrewOutsideAPicture);
         });
       });
     }
