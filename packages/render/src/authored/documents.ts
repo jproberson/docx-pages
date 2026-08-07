@@ -5,6 +5,7 @@ import {
   compatibilityDocument,
   drawingDocument,
   keepingDocument,
+  linedRowsDocument,
   numberingDocument,
   sectionFlowDocument,
   sectionsDocument,
@@ -366,6 +367,28 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Paragraphs held to the one after them",
       asks: "whether w:keepNext moves a paragraph onto the page its next one landed on, and how far back a run of them pulls",
       bytes: buildAuthoredDocx({ body: keepingDocument() }),
+    },
+    {
+      id: "lined-rows",
+      title: "The line drawn between two rows",
+      asks: "whether a border takes room of its own between two rows, on top of the margins either side of it",
+      // Eighteen of these are rows of the cases lined at a point and at three,
+      // which Word's report puts 0.55 to 0.8pt below where its own pdf draws them.
+      // Every one of the document's 150 drawn lines lands where the pdf has it,
+      // which is the oracle for a position and the one this document was written to
+      // read.
+      paragraphsPlaced: 193,
+      bytes: buildAuthoredDocx({ body: linedRowsDocument() }),
+    },
+    {
+      id: "legacy-lined-rows",
+      title: "The same lines in a document that declares no compatibility mode",
+      asks: "whether declaring 15 is what puts a row's border on top of its margin",
+      paragraphsPlaced: 193,
+      bytes: buildAuthoredDocx({
+        body: linedRowsDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
     },
     {
       id: "tearing",

@@ -118,9 +118,9 @@ describe("resolveCellBorders", () => {
       [[NOTHING, NOTHING]],
       tableBorders(`${edge("top", 8, "FFC000")}${edge("left", 8, "FFC000")}`),
     );
-    expect(row?.[0]?.left?.color).toBe("#FFC000");
-    expect(row?.[1]?.left).toBeNull();
-    expect(row?.[1]?.top?.color).toBe("#FFC000");
+    expect(row?.[0]?.drawn.left?.color).toBe("#FFC000");
+    expect(row?.[1]?.drawn.left).toBeNull();
+    expect(row?.[1]?.drawn.top?.color).toBe("#FFC000");
   });
 
   it("gives it the table's inside line between two of them", () => {
@@ -128,8 +128,8 @@ describe("resolveCellBorders", () => {
       [[NOTHING, NOTHING]],
       tableBorders(`<w:insideV w:val="single" w:sz="8" w:color="FFC000"/>`),
     );
-    expect(row?.[0]?.right?.color).toBe("#FFC000");
-    expect(row?.[1]?.left?.color).toBe("#FFC000");
+    expect(row?.[0]?.drawn.right?.color).toBe("#FFC000");
+    expect(row?.[1]?.drawn.left?.color).toBe("#FFC000");
   });
 
   it("lets the wider of two neighbours draw the line between them", () => {
@@ -137,8 +137,8 @@ describe("resolveCellBorders", () => {
       [[cellBorders(edge("right", 8, "FF0000")), cellBorders(edge("left", 24, "0070C0"))]],
       NO_TABLE_BORDERS,
     );
-    expect(row?.[0]?.right?.color).toBe("#0070C0");
-    expect(row?.[1]?.left?.color).toBe("#0070C0");
+    expect(row?.[0]?.drawn.right?.color).toBe("#0070C0");
+    expect(row?.[1]?.drawn.left?.color).toBe("#0070C0");
   });
 
   it("gives two of the same width to the cell on the left", () => {
@@ -146,15 +146,36 @@ describe("resolveCellBorders", () => {
       [[cellBorders(edge("right", 12, "FF0000")), cellBorders(edge("left", 12, "0070C0"))]],
       NO_TABLE_BORDERS,
     );
-    expect(row?.[0]?.right?.color).toBe("#FF0000");
+    expect(row?.[0]?.drawn.right?.color).toBe("#FF0000");
   });
 
+  // The line is drawn and no room is left for it, which is not the same answer:
+  // Word draws one between two rows where only the upper of them asks, and stands
+  // them exactly as far apart as two rows with no line at all.
   it("draws the line where one side asks for none and the other asks for one", () => {
     const [row] = resolveCellBorders(
       [[cellBorders(`<w:right w:val="nil"/>`), cellBorders(edge("left", 12, "0070C0"))]],
       NO_TABLE_BORDERS,
     );
-    expect(row?.[0]?.right?.color).toBe("#0070C0");
+    expect(row?.[0]?.drawn.right?.color).toBe("#0070C0");
+    expect(row?.[0]?.agreed.right).toBeNull();
+    expect(row?.[1]?.agreed.left).toBeNull();
+  });
+
+  it("leaves room for a line both sides asked for", () => {
+    const rows = resolveCellBorders(
+      [[NOTHING], [NOTHING]],
+      tableBorders(`<w:insideH w:val="single" w:sz="24" w:color="7030A0"/>`),
+    );
+    expect(rows[0]?.[0]?.agreed.bottom?.widthPt).toBe(3);
+    expect(rows[1]?.[0]?.agreed.top?.widthPt).toBe(3);
+  });
+
+  // Nothing stands on the other side of the table's own edge, so what the cell
+  // asked for there is agreed by default.
+  it("leaves room for the line round the outside of the table", () => {
+    const [row] = resolveCellBorders([[NOTHING]], tableBorders(edge("top", 24, "7030A0")));
+    expect(row?.[0]?.agreed.top?.widthPt).toBe(3);
   });
 
   it("lets a cell asking for none rub out the table's own edge", () => {
@@ -162,7 +183,7 @@ describe("resolveCellBorders", () => {
       [[cellBorders(`<w:left w:val="nil"/>`)]],
       tableBorders(edge("left", 8, "FFC000")),
     );
-    expect(row?.[0]?.left).toBeNull();
+    expect(row?.[0]?.drawn.left).toBeNull();
   });
 
   it("shares the line between two rows with both of them", () => {
@@ -170,8 +191,8 @@ describe("resolveCellBorders", () => {
       [[NOTHING], [cellBorders(edge("top", 24, "7030A0"))]],
       tableBorders(`<w:insideH w:val="single" w:sz="4" w:color="FFC000"/>`),
     );
-    expect(rows[0]?.[0]?.bottom?.color).toBe("#7030A0");
-    expect(rows[1]?.[0]?.top?.color).toBe("#7030A0");
+    expect(rows[0]?.[0]?.drawn.bottom?.color).toBe("#7030A0");
+    expect(rows[1]?.[0]?.drawn.top?.color).toBe("#7030A0");
   });
 });
 

@@ -13,6 +13,7 @@ import {
   SIDES,
   type Border,
   type Borders,
+  type CellBorders,
 } from "../docx/borders.js";
 import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js";
 import type { NumberSuffix } from "../docx/numbering.js";
@@ -400,9 +401,9 @@ function measureTable(
 
   const first = borders[0] ?? [];
   const last = borders[borders.length - 1] ?? [];
-  const outerTopPt = halfOf(first.map((cell) => cell.top));
-  const outerBottomPt = halfOf(last.map((cell) => cell.bottom));
-  const outerLeftPt = halfOf(borders.map((row) => row[0]?.left ?? null));
+  const outerTopPt = halfOf(first.map((cell) => cell.agreed.top));
+  const outerBottomPt = halfOf(last.map((cell) => cell.agreed.bottom));
+  const outerLeftPt = halfOf(borders.map((row) => row[0]?.drawn.left ?? null));
 
   // An old document's indent is measured to the text rather than to the table, so
   // the first column's own margin stands outside the indent instead of inside it
@@ -410,7 +411,7 @@ function measureTable(
   const openingCell = block.rows[0]?.cells[0];
   const insetPt =
     measuresTheIndentToTheText(context.settings) && openingCell !== undefined
-      ? -leftMarginOf(openingCell, block.insets, first[0] ?? NO_BORDERS)
+      ? -leftMarginOf(openingCell, block.insets, first[0]?.drawn ?? NO_BORDERS)
       : outerLeftPt;
 
   const boxes: ParagraphBox[] = [];
@@ -481,15 +482,18 @@ type MeasuredCell = {
 // holds every cell in it off the top wall, and the largest bottom margin adds to
 // the row under all of them.
 //
-// A border is not room on top of that but room of its own: the text clears the
-// half of the line that falls inside the cell, and where the margin already holds
-// it further off than that the border asks for nothing. Case h's rows, held off
-// their walls by 2.75pt and lined with a quarter point, come out the height they
-// came out with no borders read at all; the same rows with a 6pt line and no
-// margin clear the whole 3pt of it.
+// **A border is room on top of the margin rather than instead of it.** The half of
+// the line that falls inside the cell is cleared, and then the margin is cleared
+// after it, so two rows lined with 6pt and held off their walls by 5 stand 36pt
+// apart and not 30. Measured on 2026-08-07 by the authored `lined-rows` document
+// over widths from half a point to six at two margins, and all eleven cases are the
+// margins either side plus the whole of the line between them.
+//
+// What was here before took the larger of the two, which is right only where one of
+// them is nought, and every table in a real document is out by a line a row for it.
 function measureRow(
   row: TableRow,
-  borders: readonly Borders[],
+  borders: readonly CellBorders[],
   context: Context,
   topPt: number,
   frame: Frame,
@@ -497,14 +501,10 @@ function measureRow(
   table: { readonly gridTwips: readonly number[] },
 ): StackMeasurement {
   const measured: MeasuredCell[] = [];
-  const topMarginPt = Math.max(
-    rowMarginPt(row, insets, "topTwips"),
-    halfOf(borders.map((of) => of.top)),
-  );
-  const bottomMarginPt = Math.max(
-    rowMarginPt(row, insets, "bottomTwips"),
-    halfOf(borders.map((of) => of.bottom)),
-  );
+  const topMarginPt =
+    rowMarginPt(row, insets, "topTwips") + halfOf(borders.map((of) => of.agreed.top));
+  const bottomMarginPt =
+    rowMarginPt(row, insets, "bottomTwips") + halfOf(borders.map((of) => of.agreed.bottom));
   let contentHeightPt = 0;
   let leftPt = frame.leftPt;
 
@@ -515,7 +515,7 @@ function measureRow(
 
   for (const [at, cell] of row.cells.entries()) {
     const widthPt = cellWidthPt(cell) ?? columnWidthPt(table.gridTwips, at) ?? frame.widthPt;
-    const own = borders[at] ?? NO_BORDERS;
+    const own = borders[at]?.drawn ?? NO_BORDERS;
     const leftMarginPt = leftMarginOf(cell, insets, own);
     const rightMarginPt = Math.max(
       twipsToPoints(cell.margins.rightTwips ?? insets.rightTwips),

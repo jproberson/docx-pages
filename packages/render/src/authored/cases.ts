@@ -46,6 +46,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   wrapping: { lines: 7, runs: 7, numbers: 0 },
   numbering: { lines: 10, runs: 10, numbers: 7 },
   pages: { lines: 24, runs: 24, numbers: 0 },
+  // Fifteen cases of four rows and two cells, and the line either side of each
+  // table: 150 lines in both documents, since the compatibility mode changes
+  // nothing about any of them.
+  "lined-rows": { lines: 150, runs: 150, numbers: 0 },
+  "legacy-lined-rows": { lines: 150, runs: 150, numbers: 0 },
   // Every line of all eight cases, the fillers holding them down the page
   // included: a case is nine lines of its own and the row it asks about.
   tearing: { lines: 154, runs: 154, numbers: 0 },

@@ -5,8 +5,9 @@ import {
   openDocx,
   substitutingMetrics,
   WORD_FALLBACK_FACES,
+  type LaidOutPage,
 } from "@docx-pages/core";
-import { readTextPlacements } from "../pdf/text.js";
+import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
 import { corpusFaces } from "./faces.js";
 import { renderedPath } from "./render.js";
 import { documentsIn, identityOf } from "./sweep.js";
@@ -31,7 +32,55 @@ import { documentsIn, identityOf } from "./sweep.js";
 //
 // Run it as:
 //   DOCX_PAGES_CORPUS=... tsx --tsconfig packages/render/tsconfig.json \
-//     packages/render/src/corpus/inspect.ts <id>
+//     packages/render/src/corpus/inspect.ts <id> [page]
+//
+// Without a page it reads the first one that disagrees about anything, which is
+// almost always the one wanted: a long document agrees about its opening pages and
+// the fault is wherever the agreement stops.
+// One of our lines beside the item Word drew the same text as, on the same page.
+// `off` is how far apart the two are, or null where Word drew that text nowhere on
+// the page: the second is a line we broke somewhere Word did not, and reads
+// differently from a line that is merely in the wrong place.
+type Reading = {
+  readonly leftPt: number;
+  readonly baselinePt: number;
+  readonly characters: number;
+  readonly drawn: TextPlacement | null;
+  readonly off: number | null;
+};
+
+function linesOn(page: LaidOutPage, drawn: readonly TextPlacement[]): readonly Reading[] {
+  const readings: Reading[] = [];
+  for (const box of page.body) {
+    for (const line of box.lines) {
+      const text = line.line.segments
+        .map((segment) => (segment.kind === "text" ? segment.text : ""))
+        .join("")
+        .trim();
+      if (text === "") continue;
+
+      const near =
+        drawn.find(
+          (item) => item.pageIndex === page.index && item.text.trim().startsWith(text.slice(0, 12)),
+        ) ?? null;
+      readings.push({
+        leftPt: line.leftPt,
+        baselinePt: line.baselinePt,
+        characters: text.length,
+        drawn: near,
+        off:
+          near === null
+            ? null
+            : Math.max(
+                Math.abs(line.leftPt - near.leftPt),
+                Math.abs(line.baselinePt - near.baselinePt),
+              ),
+      });
+    }
+  }
+  return readings;
+}
+
 async function main(): Promise<void> {
   const wanted = process.argv[2] ?? "";
 
@@ -78,49 +127,47 @@ async function main(): Promise<void> {
     for (const [what, count] of [...ours].sort((a, b) => b[1] - a[1]).slice(0, 6)) {
       process.stdout.write(`  ${String(count).padStart(4)}  ${what}\n`);
     }
-    process.stdout.write("\nlines per page: ours vs Word's\n");
-    for (const page of laid.pages) {
-      let mine = 0;
-      for (const box of page.body)
-        for (const line of box.lines)
-          if (line.line.segments.some((s) => s.kind === "text" && s.text.trim() !== "")) mine += 1;
-      const theirs = drawn.filter((d) => d.pageIndex === page.index && d.text.trim() !== "").length;
+    // Which page to read is the whole of the skill here, and a twelve page document
+    // agrees about its first page and disagrees about its eighth. So the tally comes
+    // first, page by page, and the lines follow for whichever page is asked for.
+    const readings = laid.pages.map((page) => linesOn(page, drawn));
+
+    process.stdout.write("\nlines placed, page by page\n");
+    for (const [at, lines] of readings.entries()) {
+      const placed = lines.filter((line) => line.off !== null && Math.abs(line.off) <= 1).length;
+      const lost = lines.filter((line) => line.off === null).length;
       process.stdout.write(
-        `  page ${String(page.index + 1)}: ours ${String(mine)}, Word's ${String(theirs)}\n`,
+        `  page ${String(at + 1).padStart(2)}: ${String(placed).padStart(3)} of ${String(lines.length).padStart(3)} placed` +
+          (lost === 0 ? "" : `, ${String(lost)} Word drew nowhere on it`) +
+          `  cells ${String(laid.pages[at]?.cells.length ?? 0)}\n`,
       );
     }
-    for (const page of laid.pages.slice(0, 1)) {
-      process.stdout.write(`\ncells on page 1: ${String(page.cells.length)}\n`);
-      for (const cell of page.cells.slice(0, 6)) {
-        process.stdout.write(
-          `  cell at ${cell.leftPt.toFixed(1)},${cell.topPt.toFixed(1)} ${cell.widthPt.toFixed(1)}x${cell.heightPt.toFixed(1)}\n`,
-        );
-      }
-    }
-    process.stdout.write(
-      "\nours (page, left, baseline, chars)  |  Word's nearest by text length\n",
+
+    // The page asked for, or the first one that disagrees about anything, since
+    // that is the one worth reading and finding it by eye is the tedious half.
+    const asked = Number(process.argv[3] ?? Number.NaN);
+    const firstOff = readings.findIndex((lines) =>
+      lines.some((line) => line.off === null || Math.abs(line.off) > 1),
     );
-    for (const page of laid.pages.slice(0, 2)) {
-      for (const box of page.body.slice(0, 12)) {
-        for (const line of box.lines) {
-          const text = line.line.segments
-            .map((s) => (s.kind === "text" ? s.text : ""))
-            .join("")
-            .trim();
-          if (text === "") continue;
-          const theirs = drawn.filter(
-            (d) => d.pageIndex === page.index && d.text.trim().startsWith(text.slice(0, 12)),
-          );
-          const near = theirs[0];
-          process.stdout.write(
-            `  p${String(page.index + 1)} ${line.leftPt.toFixed(1).padStart(6)} ${line.baselinePt.toFixed(1).padStart(7)} ${String(text.length).padStart(4)}ch  |  ` +
-              (near === undefined
-                ? "not found"
-                : `${near.leftPt.toFixed(1).padStart(6)} ${near.baselinePt.toFixed(1).padStart(7)}   dx ${(line.leftPt - near.leftPt).toFixed(1)}  dy ${(line.baselinePt - near.baselinePt).toFixed(1)}`) +
-              "\n",
-          );
-        }
-      }
+    const at = Number.isFinite(asked) ? asked - 1 : firstOff;
+    const page = laid.pages[at];
+    if (page === undefined) return;
+
+    process.stdout.write(`\npage ${String(at + 1)}, line by line\n`);
+    for (const cell of page.cells) {
+      process.stdout.write(
+        `  cell at ${cell.leftPt.toFixed(1)},${cell.topPt.toFixed(1)} ${cell.widthPt.toFixed(1)}x${cell.heightPt.toFixed(1)}\n`,
+      );
+    }
+    process.stdout.write("  ours (left, baseline, chars)  |  Word's, by the text\n");
+    for (const line of readings[at] ?? []) {
+      process.stdout.write(
+        `  ${line.leftPt.toFixed(1).padStart(7)} ${line.baselinePt.toFixed(1).padStart(7)} ${String(line.characters).padStart(4)}ch  |  ` +
+          (line.drawn === null
+            ? "not found"
+            : `${line.drawn.leftPt.toFixed(1).padStart(7)} ${line.drawn.baselinePt.toFixed(1).padStart(7)}   dx ${(line.leftPt - line.drawn.leftPt).toFixed(1)}  dy ${(line.baselinePt - line.drawn.baselinePt).toFixed(1)}`) +
+          "\n",
+      );
     }
     return;
   }

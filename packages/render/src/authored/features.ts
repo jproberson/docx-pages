@@ -687,6 +687,118 @@ export function keepingDocument(): string {
   ].join("");
 }
 
+// Whether the line drawn between two rows takes room of its own, on top of the
+// margins the cells either side of it hold their text off the wall by.
+//
+// What is built says it does not: the text clears the half of the line that falls
+// inside the cell, and a margin already holding it further off than that leaves the
+// border asking for nothing. That was read off tables of one row, where the
+// question never comes up. A real document of twelve pages drifts about a point a
+// row down every table in it, and its cells are held off their walls by 5pt and
+// lined with one, which is exactly where the two readings differ.
+//
+// Every line here is told to be 20pt exactly and every row holds one, so the
+// distance from one row to the next is the whole of the answer, and each case is
+// four rows so that three of those distances are read rather than one. Each case
+// opens a page of its own, since a break between two rows makes a nonsense of the
+// distance across it.
+export function linedRowsDocument(): string {
+  const CELL_TWIPS = 2880;
+  const LINE_PT = 20;
+
+  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+
+  const around = (eighths: number): string =>
+    eighths === 0
+      ? ""
+      : `<w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"]
+          .map(
+            (side) =>
+              `<w:${side} w:val="single" w:sz="${String(eighths)}" w:space="0" w:color="FF0000"/>`,
+          )
+          .join("")}</w:tblBorders>`;
+
+  const margins = (twips: number): string =>
+    `<w:tblCellMar>
+      <w:top w:w="${String(twips)}" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>
+      <w:bottom w:w="${String(twips)}" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
+    </w:tblCellMar>`;
+
+  const cell = (content: string, properties = ""): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/>${properties}</w:tcPr>${content}</w:tc>`;
+
+  const line = (name: string): string => paragraph(exactly, run(name));
+
+  const table = (name: string, eighths: number, marginTwips: number, own = ""): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(CELL_TWIPS * 2)}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/>${margins(marginTwips)}${around(eighths)}</w:tblPr>
+      <w:tblGrid><w:gridCol w:w="${String(CELL_TWIPS)}"/><w:gridCol w:w="${String(CELL_TWIPS)}"/></w:tblGrid>
+      ${Array.from(
+        { length: 4 },
+        (_, at) =>
+          `<w:tr>${cell(line(`${name}${String(at + 1)} left`), own)}${cell(line(`${name}${String(at + 1)} right`))}</w:tr>`,
+      ).join("")}</w:tbl>`;
+
+  // A line of its own either side of each table, so that where the table starts and
+  // where it ends are read as well as the distance from row to row.
+  const block = (name: string, eighths: number, marginTwips: number, own = ""): string =>
+    paragraph(`<w:pageBreakBefore/>${exactly}`, run(`case ${name}`)) +
+    table(name, eighths, marginTwips, own) +
+    paragraph(exactly, run(`${name} after`));
+
+  const NIL_TOP =
+    `<w:tcBorders><w:top w:val="nil"/>` +
+    `<w:bottom w:val="single" w:sz="2" w:space="0" w:color="FF0000"/></w:tcBorders>`;
+
+  const SIX_POINTS = `<w:tcBorders>${["top", "bottom"]
+    .map((side) => `<w:${side} w:val="single" w:sz="48" w:space="0" w:color="0070C0"/>`)
+    .join("")}</w:tcBorders>`;
+
+  return [
+    // No line at all, at each margin, which is what the rest read against.
+    block("a", 0, 0),
+    block("b", 0, 100),
+    // A line and no margin, where every reading agrees: what falls inside the cell
+    // is all there is to clear, and it is the same room either way.
+    block("c", 8, 0),
+    block("d", 48, 0),
+    // A line and a margin wider than half of it, which is where the readings part.
+    // 5pt of margin against a 1pt line is 30pt a row if the line asks for nothing,
+    // 31 if the whole of it stands between the rows.
+    block("e", 8, 100),
+    block("f", 24, 100),
+    // And the same against a 6pt line: 30pt a row, 32 if each row clears the whole
+    // line rather than half of it, 36 if the line stands between them.
+    block("g", 48, 100),
+    // A line only the first cell of each row asks for, which says whether the room
+    // one cell's line takes is the row's or its own.
+    block("h", 0, 100, SIX_POINTS),
+    // Widths that are not whole points, which is what tells a floor under the room
+    // a line takes from a rounding up of it. A quarter point takes a whole one, and
+    // these three say whether one and a half does too.
+    block("i", 4, 100),
+    block("j", 12, 100),
+    block("k", 18, 100),
+    // The thinnest line a document can ask for, and the one between it and half a
+    // point. A real one-pager is lined with a quarter of a point throughout, and it
+    // is the case every other reading here has to be checked against.
+    block("l", 2, 100),
+    block("m", 6, 100),
+    // A quarter point line against the 2.75pt margin a real one-pager holds its
+    // cells off their walls by, which is the one case in the suites that reads the
+    // other way. Its rows come out a quarter point taller here than Word draws
+    // them, and this says whether the line is what that quarter point is.
+    block("n", 2, 55),
+    // The same again with the line stated the way that one-pager states it: every
+    // cell refusing a line at its top and asking for one at its foot, so the line
+    // between two rows is asked for from one side only. Read against n, this says
+    // whether a line only one of the two rows owns is still room for both.
+    block("o", 0, 55, NIL_TOP),
+    // A table is the last thing in the body, which Word will not have.
+    EMPTY,
+  ].join("");
+}
+
 // Whether a row the foot of a page falls in is torn across the break or moved
 // whole, and what a stated height, `w:cantSplit` and a row above it change.
 //

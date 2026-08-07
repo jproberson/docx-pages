@@ -1005,10 +1005,12 @@ describe("measureStack over a table's own lines", () => {
     expect(result.heightPt).toBeCloseTo(6 + ARIAL_12 + 6, 9);
   });
 
-  it("leaves nothing for a line the cell's own margin already clears", () => {
+  // The margin holds the text off the wall and the line stands inside that, so a
+  // row lined either side is its margins, its text and the whole of both lines.
+  it("adds a line to the margin the cell already asks for rather than the larger of the two", () => {
     const result = measure(linedTable(2, 144));
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
-    expect(result.heightPt).toBeCloseTo(7.2 + ARIAL_12 + 7.2 + 0.25, 9);
+    expect(result.heightPt).toBeCloseTo(7.2 + ARIAL_12 + 7.2 + 0.25 + 0.25, 9);
   });
 
   it("hands the page a rectangle for every cell, whatever its paragraphs did", () => {

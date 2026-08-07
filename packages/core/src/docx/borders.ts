@@ -144,10 +144,24 @@ export function readTableBorders(properties: XmlElement | null): TableBorders {
 // the cascade, where a cell's own side stands instead of whatever the table asks
 // for at that edge, and then between neighbours, since the line between two cells
 // is one line and both of them have something to say about it.
+// A cell's lines: the one drawn along each of its sides, and the one it and its
+// neighbour both asked for.
+//
+// They are not the same line. **A side that refuses a line its neighbour asks for
+// is still drawn one, and leaves no room for it**: measured on 2026-08-07 by the
+// authored `lined-rows` document, where four rows each refusing a line at their top
+// and asking for one at their foot stand exactly as far apart as four rows with no
+// lines at all, and Word draws the line between every pair of them all the same. So
+// the drawn line is the wider of the two asks and the room is what both agreed to.
+export type CellBorders = {
+  readonly drawn: Borders;
+  readonly agreed: Borders;
+};
+
 export function resolveCellBorders(
   rows: readonly (readonly StatedBorders[])[],
   table: TableBorders,
-): readonly (readonly Borders[])[] {
+): readonly (readonly CellBorders[])[] {
   const cascaded = rows.map((cells, row) =>
     cells.map((own, column) => ({
       top: instead(own.top, row === 0 ? table.top : table.insideHorizontal),
@@ -157,12 +171,29 @@ export function resolveCellBorders(
     })),
   );
 
+  // The edge of the table has no neighbour to agree with, so what the cell asked
+  // for there is the whole of the answer.
+  const agreedWith = (neighbour: Border | null | undefined, own: Border | null): Border | null =>
+    neighbour === undefined
+      ? own
+      : neighbour === null || own === null
+        ? null
+        : strongerBorder(neighbour, own);
+
   return cascaded.map((cells, row) =>
     cells.map((each, column) => ({
-      top: strongerBorder(cascaded[row - 1]?.[column]?.bottom ?? null, each.top),
-      bottom: strongerBorder(each.bottom, cascaded[row + 1]?.[column]?.top ?? null),
-      left: strongerBorder(cells[column - 1]?.right ?? null, each.left),
-      right: strongerBorder(each.right, cells[column + 1]?.left ?? null),
+      drawn: {
+        top: strongerBorder(cascaded[row - 1]?.[column]?.bottom ?? null, each.top),
+        bottom: strongerBorder(each.bottom, cascaded[row + 1]?.[column]?.top ?? null),
+        left: strongerBorder(cells[column - 1]?.right ?? null, each.left),
+        right: strongerBorder(each.right, cells[column + 1]?.left ?? null),
+      },
+      agreed: {
+        top: agreedWith(cascaded[row - 1]?.[column]?.bottom, each.top),
+        bottom: agreedWith(cascaded[row + 1]?.[column]?.top, each.bottom),
+        left: agreedWith(cells[column - 1]?.right, each.left),
+        right: agreedWith(cells[column + 1]?.left, each.right),
+      },
     })),
   );
 }
