@@ -337,3 +337,39 @@ describe("the underline a run carries", () => {
     expect(underlineOf(`<w:rStyle w:val="Hyperlink"/><w:u w:val="none"/>`)).toBe(false);
   });
 });
+
+// A paragraph inside a table reads the table's own style between the document's
+// defaults and its own. Where a document leaves `Normal` empty and states its
+// spacing in `docDefaults`, which is what Word writes, the table style is the only
+// thing between the two and it decides the height of every row.
+describe("a paragraph inside a table", () => {
+  const TABLE_STYLE = `<w:style w:type="table" w:styleId="TableGrid">
+      <w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>
+    </w:style>`;
+  const DEFAULTS = `<w:docDefaults><w:pPrDefault><w:pPr>
+      <w:spacing w:after="160" w:line="259" w:lineRule="auto"/>
+    </w:pPr></w:pPrDefault></w:docDefaults>`;
+
+  const frameIn = (tableStyleId: string | null) => {
+    const pkg = openDocx(
+      buildDocx({
+        "word/document.xml": wordDocument(`<w:p><w:r><w:t>a</w:t></w:r></w:p>`),
+        "word/styles.xml": `<?xml version="1.0"?><w:styles xmlns:w="${W_NS}">${DEFAULTS}${TABLE_STYLE}</w:styles>`,
+      }),
+    );
+    const styles = readStyleTable(pkg);
+    const paragraph = readParagraphs(pkg)[0];
+    if (paragraph === undefined) throw new Error("no paragraph");
+    return resolveParagraphFrame(paragraph, styles, tableStyleId);
+  };
+
+  it("keeps the document's own defaults outside a table", () => {
+    expect(frameIn(null).spaceAfterTwips).toBe(160);
+    expect(frameIn(null).lineTwips).toBe(259);
+  });
+
+  it("takes the table style's spacing over the document's defaults inside one", () => {
+    expect(frameIn("TableGrid").spaceAfterTwips).toBe(0);
+    expect(frameIn("TableGrid").lineTwips).toBe(240);
+  });
+});

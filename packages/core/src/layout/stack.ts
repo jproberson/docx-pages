@@ -217,6 +217,9 @@ type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "width
   // A page break inside a cell is no break at all, and a cell is the only place
   // that has to know it.
   readonly inCell: boolean;
+  // The style of the table a cell's text stands in, which that text reads between
+  // the document's defaults and its own style. Null anywhere but inside a cell.
+  readonly tableStyleId: string | null;
 };
 
 type Frame = {
@@ -246,6 +249,7 @@ export function measureStack(input: MeasureStackInput): StackMeasurement {
     numbers: numbered.numbers,
     settings: input.settings ?? DEFAULT_SETTINGS,
     inCell: false,
+    tableStyleId: null,
   };
   return measureBlocks(input.blocks, context, input.originPt, {
     leftPt: input.leftPt,
@@ -339,7 +343,8 @@ const opensPage = (
   context: Context,
 ): boolean =>
   !context.inCell &&
-  (above?.endsPage === true || resolveParagraphFrame(paragraph, context.styles).pageBreakBefore);
+  (above?.endsPage === true ||
+    resolveParagraphFrame(paragraph, context.styles, context.tableStyleId).pageBreakBefore);
 
 // Half the twip a legacy document's anchors are rounded to, which is as far over
 // the paragraph above an object can come to stand by that rounding alone. An
@@ -399,9 +404,13 @@ function measureTable(
     widthPt: frame.widthPt,
   };
 
+  // Everything inside the table reads the table's own style, which the paragraphs
+  // in its cells sit under.
+  const inTable: Context = { ...context, tableStyleId: block.styleId };
+
   let top = topPt + outerTopPt;
   for (const [at, row] of block.rows.entries()) {
-    const measured = measureRow(row, borders[at] ?? [], context, top, rowFrame, block.insets);
+    const measured = measureRow(row, borders[at] ?? [], inTable, top, rowFrame, block.insets);
     if (measured.kind === "blocked") return measured;
     boxes.push(...measured.boxes);
     cells.push(...measured.cells);
@@ -621,7 +630,7 @@ function measureParagraph(
   neighbours: Neighbours,
   standing: Standing,
 ): ParagraphMeasurement {
-  const paragraphMark = resolveParagraphMark(paragraph, context.styles);
+  const paragraphMark = resolveParagraphMark(paragraph, context.styles, context.tableStyleId);
   const marks: readonly ParagraphMark[] = [
     paragraphMark,
     ...resolveRunMarks(paragraph, context.styles),
@@ -639,7 +648,7 @@ function measureParagraph(
     markHeight = Math.max(markHeight, height.value);
   }
 
-  const paragraphFrame = resolveParagraphFrame(paragraph, context.styles);
+  const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.tableStyleId);
   const runs = flowing(readRuns(paragraph, context.styles), context.inCell);
   const insets = insetsOf(paragraphFrame);
   const number = context.numbers.get(paragraph.index);
@@ -725,7 +734,11 @@ function paintOf(
   if (fillColor === null && SIDES.every((side) => borders[side] === null)) return null;
 
   const joins = (other: Paragraph | null): boolean =>
-    other !== null && sameBorders(borders, resolveParagraphFrame(other, context.styles).borders);
+    other !== null &&
+    sameBorders(
+      borders,
+      resolveParagraphFrame(other, context.styles, context.tableStyleId).borders,
+    );
 
   return {
     ...across,
@@ -802,7 +815,7 @@ function ownSpacingPt(
 // what it already put between the two.
 function roomBelowPt(above: Paragraph | null, below: Paragraph, context: Context): number {
   if (above === null) return 0;
-  const frame = resolveParagraphFrame(above, context.styles);
+  const frame = resolveParagraphFrame(above, context.styles, context.tableStyleId);
   return ownSpacingPt(above, frame, context, { above: null, below }).afterPt;
 }
 

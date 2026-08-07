@@ -111,8 +111,6 @@ type StyleDefinition = {
   readonly mark: PartialMark;
   readonly frame: PartialFrame;
   readonly numbering: PartialNumbering;
-  // A table style says nothing about a paragraph's own frame; what it carries
-  // here is the lines round the table it is set on.
   readonly tableBorders: TableBorders;
 };
 
@@ -448,6 +446,33 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
   };
 }
 
+// A paragraph inside a table reads the table's own style as well, between the
+// document's defaults and its own style. Word's hierarchy puts a table style below
+// a paragraph style and above the defaults, and the difference is not academic:
+// where a document leaves `Normal` empty and states its spacing in `docDefaults`,
+// which is what Word itself writes, the table style is the only thing standing
+// between the two and it decides the height of every row.
+//
+// Measured against Word's own pdf of a real document: `TableGrid` asks for no space
+// after a paragraph and single line spacing, `docDefaults` for 8pt and 1.08, and
+// leaving the table style out made every row 23.0pt tall against the 13.9pt Word
+// drew. The error accumulates down the page, so nothing below the first row lands.
+const framesOver = (table: StyleTable, tableStyleId: string | null): PartialFrame => {
+  let resolved = table.docDefaultsFrame;
+  for (const style of styleChain(table, tableStyleId ?? undefined)) {
+    resolved = mergeFrames(resolved, style.frame);
+  }
+  return resolved;
+};
+
+const marksOver = (table: StyleTable, tableStyleId: string | null): PartialMark => {
+  let resolved = table.docDefaults;
+  for (const style of styleChain(table, tableStyleId ?? undefined)) {
+    resolved = merge(resolved, style.mark);
+  }
+  return resolved;
+};
+
 function styleChain(table: StyleTable, styleId: string | undefined): readonly StyleDefinition[] {
   const chain: StyleDefinition[] = [];
   const seen = new Set<string>();
@@ -497,16 +522,23 @@ function markOf(resolved: PartialMark): ParagraphMark {
   };
 }
 
-function paragraphMarkOf(paragraph: Paragraph, table: StyleTable): PartialMark {
-  let resolved = table.docDefaults;
+function paragraphMarkOf(
+  paragraph: Paragraph,
+  table: StyleTable,
+  tableStyleId: string | null,
+): PartialMark {
+  let resolved = marksOver(table, tableStyleId);
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = merge(resolved, style.mark);
   }
   return merge(resolved, readMark(firstNamed(paragraph.element, W_NS, "pPr"), table.themeFonts));
 }
 
-export const resolveParagraphMark = (paragraph: Paragraph, table: StyleTable): ParagraphMark =>
-  markOf(paragraphMarkOf(paragraph, table));
+export const resolveParagraphMark = (
+  paragraph: Paragraph,
+  table: StyleTable,
+  tableStyleId: string | null = null,
+): ParagraphMark => markOf(paragraphMarkOf(paragraph, table, tableStyleId));
 
 // The number is drawn in the paragraph's own mark except where its level says
 // otherwise, which is how a bullet ends up in a symbol face at the text's size.
@@ -515,7 +547,9 @@ export const resolveNumberMark = (
   table: StyleTable,
   level: NumberingLevel,
 ): ParagraphMark =>
-  markOf(merge(paragraphMarkOf(paragraph, table), readMark(level.properties, table.themeFonts)));
+  markOf(
+    merge(paragraphMarkOf(paragraph, table, null), readMark(level.properties, table.themeFonts)),
+  );
 
 function runStyleChain(table: StyleTable, run: XmlElement): readonly StyleDefinition[] {
   const rPr = firstNamed(run, W_NS, "rPr");
@@ -534,8 +568,12 @@ export const resolveRunMarks = (
   table: StyleTable,
 ): readonly ParagraphMark[] => resolveRuns(paragraph, table).map((marked) => marked.mark);
 
-export function resolveRuns(paragraph: Paragraph, table: StyleTable): readonly MarkedRun[] {
-  let inherited = table.docDefaults;
+export function resolveRuns(
+  paragraph: Paragraph,
+  table: StyleTable,
+  tableStyleId: string | null = null,
+): readonly MarkedRun[] {
+  let inherited = marksOver(table, tableStyleId);
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     inherited = merge(inherited, style.mark);
   }
@@ -650,8 +688,12 @@ export function styleIdOf(paragraph: Paragraph, table: StyleTable): string | und
 
 // A list level's own indents sit above the style's and below the paragraph's, so
 // a bulleted paragraph is indented without losing an indent it sets itself.
-export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): ParagraphFrame {
-  let resolved = table.docDefaultsFrame;
+export function resolveParagraphFrame(
+  paragraph: Paragraph,
+  table: StyleTable,
+  tableStyleId: string | null = null,
+): ParagraphFrame {
+  let resolved = framesOver(table, tableStyleId);
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = mergeFrames(resolved, style.frame);
   }
