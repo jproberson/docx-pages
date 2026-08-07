@@ -6,6 +6,7 @@ import {
   drawingDocument,
   keepingDocument,
   numberingDocument,
+  sectionFlowDocument,
   sectionsDocument,
   pageDocument,
   spacingDocument,
@@ -350,6 +351,13 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       asks: "which section a paragraph's own properties govern, and what a break's type describes",
       refuses: "nothing here reads a section but the last, so the pages are the last one's",
       bytes: buildAuthoredDocx({ body: sectionsDocument() }),
+    },
+    {
+      id: "section-flow",
+      title: "Where the text of each section sits down the page",
+      asks: "what a continuous break does with the top margin of the section it opens",
+      refuses: "nothing here reads a section but the last, so the pages are the last one's",
+      bytes: buildAuthoredDocx({ body: sectionFlowDocument() }),
     },
     {
       id: "keeping",

@@ -529,6 +529,55 @@ export function sectionsDocument(): string {
   ].join("");
 }
 
+// Where a section's text sits down the page, which the `sections` document cannot
+// say: every margin in that one is the same at the top, so the question of whether
+// a section's own top margin reaches its text never arises there.
+//
+// Two things are asked. **What a continuous break does with the top margin of the
+// section it opens**, since that section opens no page and there is no top of one
+// for the margin to be measured from: either the text carries straight on under the
+// line above it, or the margin puts it somewhere of its own. And **whether a
+// section opening a page keeps its own top margin there**, which is the plain case
+// and is worth pinning beside the other.
+//
+// Read off Word's own pdf, as `sections` is, and for the same reason.
+export function sectionFlowDocument(): string {
+  const HALF_INCH = 720;
+  const TWO_INCHES = 2880;
+  const THREE_INCHES = 4320;
+
+  const sectionProperties = (topTwips: number, type: string): string =>
+    `<w:sectPr>` +
+    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="${String(topTwips)}" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
+    `</w:sectPr>`;
+
+  const closes = (name: string, topTwips: number, type: string): string =>
+    paragraph(sectionProperties(topTwips, type), run(name));
+
+  const line = (name: string): string => paragraph("", run(name));
+
+  return [
+    // Half an inch down, which is where every authored page starts.
+    line("one a"),
+    closes("one b", HALF_INCH, ""),
+    // Three inches down, and continuous. Text carrying straight on under "one b"
+    // says the margin is not reached at all; text three inches down says it is.
+    line("two a"),
+    closes("two b", THREE_INCHES, "continuous"),
+    // Two inches down, opening a page of its own, where there is a top of a page
+    // for a margin to be measured from.
+    line("three a"),
+    closes("three b", TWO_INCHES, "nextPage"),
+    // And the body's own, which every authored document keeps half an inch down,
+    // so its text reads against the first section's rather than against a margin
+    // of its own.
+    line("four a"),
+    line("four b"),
+  ].join("");
+}
+
 // Whether `w:keepNext` moves a paragraph onto the page its next one landed on,
 // and how far back a run of them pulls.
 //
