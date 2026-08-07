@@ -938,6 +938,105 @@ export function linedRowsDocument(): string {
   ].join("");
 }
 
+// How tall a row asking for a height taller than its text comes out, and whether
+// the line between two such rows takes room on top of what they asked for.
+//
+// `lined-rows` settled what a border costs a row measured by its own text: the half
+// falling inside the cell is cleared, and the margin is cleared after it. It says
+// nothing about a row that states a height, because the height it settled is the
+// one the text asks for.
+//
+// A three page document in the wild is 1.2pt out by its last row and the whole of
+// that is at the two row boundaries above it. Every row of it states a
+// `w:trHeight` taller than its text, and every row of it comes out here at exactly
+// the number stated. Word's rows are a fraction taller, which is the size of the
+// line between them.
+//
+// Each case is four rows of two cells with one 20pt line each, so a row's height is
+// the distance from one repeat to the next rather than a difference of two rounded
+// answers, and a line of its own stands either side of the table so where it starts
+// and where it ends are read too. Every stated height is well above what the text
+// needs, except in the one case written to say that a stated height is a floor.
+export function statedRowHeightsDocument(): string {
+  const CELL_TWIPS = 2880;
+  const LINE_PT = 20;
+
+  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+
+  const around = (eighths: number): string =>
+    eighths === 0
+      ? ""
+      : `<w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"]
+          .map(
+            (side) =>
+              `<w:${side} w:val="single" w:sz="${String(eighths)}" w:space="0" w:color="FF0000"/>`,
+          )
+          .join("")}</w:tblBorders>`;
+
+  // An authored document declares no table style, so a table stating no margins is
+  // held off its walls by nothing at all.
+  const margins = (twips: number): string =>
+    `<w:tblCellMar>
+      <w:top w:w="${String(twips)}" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>
+      <w:bottom w:w="${String(twips)}" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
+    </w:tblCellMar>`;
+
+  const cell = (content: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+
+  const line = (name: string): string => paragraph(exactly, run(name));
+
+  type Case = {
+    readonly name: string;
+    readonly heightPt: number;
+    readonly rule: "atLeast" | "exact";
+    readonly eighths: number;
+    readonly marginTwips: number;
+  };
+
+  const table = (of: Case): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(CELL_TWIPS * 2)}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/>${margins(of.marginTwips)}${around(of.eighths)}</w:tblPr>
+      <w:tblGrid><w:gridCol w:w="${String(CELL_TWIPS)}"/><w:gridCol w:w="${String(CELL_TWIPS)}"/></w:tblGrid>
+      ${Array.from(
+        { length: 4 },
+        (_, at) =>
+          `<w:tr><w:trPr><w:trHeight w:val="${String(of.heightPt * 20)}"${of.rule === "exact" ? ` w:hRule="exact"` : ""}/></w:trPr>` +
+          `${cell(line(`${of.name}${String(at + 1)} left`))}${cell(line(`${of.name}${String(at + 1)} right`))}</w:tr>`,
+      ).join("")}</w:tbl>`;
+
+  const block = (of: Case): string =>
+    paragraph(`<w:pageBreakBefore/>${exactly}`, run(`case ${of.name}`)) +
+    table(of) +
+    paragraph(exactly, run(`${of.name} after`));
+
+  const ASKED_PT = 60;
+
+  return [
+    // A stated height and no line at all, which the rest read against.
+    block({ name: "a", heightPt: ASKED_PT, rule: "atLeast", eighths: 0, marginTwips: 0 }),
+    // The same with a margin, which says whether a margin is inside the height a row
+    // asked for or on top of it.
+    block({ name: "b", heightPt: ASKED_PT, rule: "atLeast", eighths: 0, marginTwips: 100 }),
+    // A line at a point and at six, against no margin. Rows 60pt apart say the
+    // stated height is the whole of the row; 61 and 66 say the line stands on top of
+    // it, and 60.5 and 63 say half of it does.
+    block({ name: "c", heightPt: ASKED_PT, rule: "atLeast", eighths: 8, marginTwips: 0 }),
+    block({ name: "d", heightPt: ASKED_PT, rule: "atLeast", eighths: 48, marginTwips: 0 }),
+    // The same two with a margin the line has to be cleared before, which is what
+    // `lined-rows` found a row measured by its text does.
+    block({ name: "e", heightPt: ASKED_PT, rule: "atLeast", eighths: 8, marginTwips: 100 }),
+    block({ name: "f", heightPt: ASKED_PT, rule: "atLeast", eighths: 48, marginTwips: 100 }),
+    // A height under what the text needs, so the text wins and the case says that a
+    // stated height is a floor rather than the answer.
+    block({ name: "g", heightPt: 10, rule: "atLeast", eighths: 48, marginTwips: 100 }),
+    // And a height stated exactly, which is a row that cannot grow for anything.
+    block({ name: "h", heightPt: ASKED_PT, rule: "exact", eighths: 48, marginTwips: 100 }),
+    // A table is the last thing in the body, which Word will not have.
+    EMPTY,
+  ].join("");
+}
+
 // Whether a row the foot of a page falls in is torn across the break or moved
 // whole, and what a stated height, `w:cantSplit` and a row above it change.
 //

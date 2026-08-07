@@ -547,7 +547,7 @@ function measureRow(
   }
 
   const heldPt = topMarginPt + contentHeightPt + bottomMarginPt;
-  const heightPt = rowHeightPt(row, heldPt);
+  const heightPt = rowHeightPt(row, contentHeightPt, topMarginPt + bottomMarginPt);
   // A row told exactly how tall to be leaves its cells whatever room is left over
   // once it has held them off its walls, and Word draws what does not fit anyway.
   const roomPt = Math.max(0, heightPt - topMarginPt - bottomMarginPt);
@@ -597,12 +597,26 @@ function rowMarginPt(row: TableRow, insets: TableInsets, side: "topTwips" | "bot
   return twipsToPoints(Math.max(insets[side], ...twips));
 }
 
-// A stated height is a floor under the row until the row says it is exact, and
-// then it is the whole of the row however much its cells hold.
-function rowHeightPt(row: TableRow, heldPt: number): number {
-  if (row.height === null) return heldPt;
+// **A stated height is a floor under the text and not under the row.** What the row
+// asks for stands instead of what its cells hold, and the margins holding them off
+// its walls are then cleared on top of that, the half of the line between two rows
+// that falls inside each of them included.
+//
+// Measured on 2026-08-07 by the authored `stated-row-heights` document, which asks
+// for 60pt a row against 20pt of text. Rows held off their walls by 5pt stand 70.08
+// apart and rows lined at six points stand 66, and rows that are both stand 76.08:
+// the stated height, the two margins and the whole of the line between them. Taking
+// the larger of the stated height and the whole room the row held cost a real
+// three page document a fraction of a point at every row boundary in it.
+//
+// A row saying it is exact is the whole of the row however much its cells hold,
+// which is what was measured for a torn row and is not what that document draws:
+// Word gave such a row the stated height and one margin on top of it, and what that
+// margin is measured from has not been asked.
+function rowHeightPt(row: TableRow, contentHeightPt: number, marginsPt: number): number {
+  if (row.height === null) return marginsPt + contentHeightPt;
   const askedPt = twipsToPoints(row.height.twips);
-  return row.height.exact ? askedPt : Math.max(heldPt, askedPt);
+  return row.height.exact ? askedPt : marginsPt + Math.max(contentHeightPt, askedPt);
 }
 
 // **A cell that states no width of its own is as wide as the column it stands in.**

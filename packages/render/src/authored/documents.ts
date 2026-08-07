@@ -11,6 +11,7 @@ import {
   sectionFlowDocument,
   sectionPagesDocument,
   sectionsDocument,
+  statedRowHeightsDocument,
   tearingDocument,
   pageDocument,
   spacingDocument,
@@ -418,6 +419,20 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
         body: linedRowsDocument(),
         settings: settingsPart({ compatibilityMode: null }),
       }),
+    },
+    {
+      id: "stated-row-heights",
+      title: "A row asking to stand taller than its own text",
+      asks: "whether the line between two rows takes room on top of the height they each asked for",
+      // Ninety three of the 113. Eleven are the case stating an exact height, which
+      // Word draws a margin taller than the number stated: the only one of the eight
+      // this project does not answer, and the only thing here that document asks and
+      // nothing has measured. The other nine are Word's report alone, which puts the
+      // last row of the unlined case 0.55pt below its own drawing of it and two rows
+      // of the case lined at a point 0.6 below theirs. Word's own pdf agrees with
+      // every line of all seven cases that were built.
+      paragraphsPlaced: 93,
+      bytes: buildAuthoredDocx({ body: statedRowHeightsDocument() }),
     },
     {
       id: "tearing",

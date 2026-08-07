@@ -84,6 +84,12 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // shorter here and everything below them stands too high.
   borders: { lines: 104, runs: 104, numbers: 0, placed: 97, runsPlaced: 102 },
   "section-pages": { lines: 18, runs: 12, numbers: 0, placed: 12 },
+  // Eighty lines: eight cases of a marker, four rows of two cells and a line under
+  // the table. The seven left over are the rows of the case stating an exact height
+  // and the line beneath it, which Word draws a margin taller than the number stated
+  // and nothing here has asked what that margin is measured from. Every line of the
+  // other seven cases lands where Word drew it.
+  "stated-row-heights": { lines: 80, runs: 80, numbers: 0, placed: 73 },
   // Eighteen lines out of twenty two paragraphs: the four closing a section with
   // nothing in them draw no ink at all, which is the whole of what the document is
   // asking about. Every drawn line of it lands where Word drew it, which is worth
