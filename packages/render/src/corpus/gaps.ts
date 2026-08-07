@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { featuresIn, type DocumentCensus } from "./census.js";
 
@@ -131,4 +132,9 @@ function main(): void {
   );
 }
 
-if (process.argv[1]?.endsWith("gaps.js") === true) main();
+// Compared against this module's own path: a guard naming the built `.js` never
+// fires under tsx, which is how these are run, and the sweep then does nothing at
+// all and says nothing about it.
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
