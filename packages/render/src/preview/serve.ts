@@ -4,7 +4,9 @@ import { extname, join, normalize, resolve } from "node:path";
 
 const ROOT = resolve("samples");
 const PORT = Number(process.env["DOCX_PAGES_PREVIEW_PORT"] ?? 8787);
-const START = "/preview/index.html";
+// Which page `/` lands on. `pnpm check` writes its own beside the suite's, so the
+// server is told which of the two it is being started for.
+const START = process.env["DOCX_PAGES_PREVIEW_START"] ?? "/preview/index.html";
 
 const TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
