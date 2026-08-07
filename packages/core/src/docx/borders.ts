@@ -140,10 +140,6 @@ export function readTableBorders(properties: XmlElement | null): TableBorders {
   };
 }
 
-// The lines round every cell of a table, each settled twice over: first through
-// the cascade, where a cell's own side stands instead of whatever the table asks
-// for at that edge, and then between neighbours, since the line between two cells
-// is one line and both of them have something to say about it.
 // A cell's lines: the one drawn along each of its sides, and the one it and its
 // neighbour both asked for.
 //
@@ -151,12 +147,22 @@ export function readTableBorders(properties: XmlElement | null): TableBorders {
 // is still drawn one, and leaves no room for it**: measured on 2026-08-07 by the
 // authored `lined-rows` document, where four rows each refusing a line at their top
 // and asking for one at their foot stand exactly as far apart as four rows with no
-// lines at all, and Word draws the line between every pair of them all the same. So
-// the drawn line is the wider of the two asks and the room is what both agreed to.
+// lines at all, and Word draws the line between every pair of them all the same.
+//
+// **What two sides asking for different widths agree to is a guess.** Every case
+// measured has the two the same, since a table states one `w:insideH` and both its
+// neighbours take it; the wider is taken here because that is the line drawn, and
+// nothing has asked Word whether the room follows the drawn line or the narrower
+// ask. A document where the two differ would settle it.
 export type CellBorders = {
   readonly drawn: Borders;
   readonly agreed: Borders;
 };
+
+// The lines round every cell of a table, each settled twice over: first through
+// the cascade, where a cell's own side stands instead of whatever the table asks
+// for at that edge, and then between neighbours, since the line between two cells
+// is one line and both of them have something to say about it.
 
 export function resolveCellBorders(
   rows: readonly (readonly StatedBorders[])[],
