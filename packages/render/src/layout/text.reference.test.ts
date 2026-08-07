@@ -59,7 +59,15 @@ const outOfSymbolPage = (text: string): string =>
       : character;
   }).join("");
 
-const normalise = (text: string): string => outOfSymbolPage(text.replace(/\s+/g, " ").trim());
+// A glyph whose face names no character for it comes back out of the pdf as a
+// nul. The one in the suite is what Word drew where a document stated a character
+// the face it named has no glyph for, which is the whole question the document
+// asking it exists for and is answered there by where each character sits. A line
+// is left to the letters either side of it.
+const UNNAMED_IN_THE_PDF = String.fromCodePoint(0);
+
+const normalise = (text: string): string =>
+  outOfSymbolPage(text.replaceAll(UNNAMED_IN_THE_PDF, "").replace(/\s+/g, " ").trim());
 
 // The header and the footer are drawn again on every page, so every page holds
 // their boxes as well as its own.
@@ -89,31 +97,52 @@ type Run = {
   readonly leftPt: number;
 };
 
+// Runs line up by the characters that carry ink, since the spaces around them are
+// drawn by whichever run happens to hold them. A run opening on a space has no
+// inked character of its own to line up at, so it is left out.
+const inkOf = (text: string): string => text.replace(/\s+/g, "");
+
 // Word writes an item per run, so a line whose runs differ in face or size
 // arrives as several items in a row. The line is the shortest stretch of items
-// from some starting point that spells it out.
+// from some starting point whose ink spells it out.
+//
+// Ink, because the whitespace Word draws is not the whitespace the document
+// states. Where the faces either side differ, the space between two runs is a run
+// of its own and Word draws it as a text object showing nothing but a space:
+// `ExactShot`, a trademark mark, then a space, then the rest of the line. A tab
+// is drawn as a space as well, one stretched to the width of the gap it opened,
+// though the line it lands on holds no character for it at all. Spelling a line
+// out of what carries ink is what the runs of it are already lined up by, and it
+// asks the one question Word's own breaking answers: which characters landed
+// here.
 function itemsFor(
   text: string,
   drawn: readonly TextPlacement[],
   taken: ReadonlySet<TextPlacement>,
 ): readonly TextPlacement[] | null {
-  for (const [start] of drawn.entries()) {
+  const wanted = inkOf(text);
+  for (const [start, first] of drawn.entries()) {
+    // A stretch starts where a line does, at ink: one starting at a space could
+    // begin by claiming the space the line above ended on.
+    if (inkOf(first.text) === "") continue;
     let joined = "";
+    let reached = first.leftPt;
     for (const [end, item] of drawn.slice(start).entries()) {
       if (taken.has(item)) break;
+      // Word draws a line from its own start towards its end, so an item standing
+      // left of the one before it is on some other line however the two read
+      // together. Without this a line ending in the same letters another begins
+      // with is spelled out of the two of them, and lands on neither.
+      if (item.leftPt < reached) break;
+      reached = item.leftPt;
       joined += item.text;
-      const spelled = normalise(joined);
-      if (spelled === text) return drawn.slice(start, start + end + 1);
-      if (!text.startsWith(spelled)) break;
+      const spelled = inkOf(normalise(joined));
+      if (spelled === wanted) return drawn.slice(start, start + end + 1);
+      if (!wanted.startsWith(spelled)) break;
     }
   }
   return null;
 }
-
-// Runs line up by the characters that carry ink, since the spaces around them are
-// drawn by whichever run happens to hold them. A run opening on a space has no
-// inked character of its own to line up at, so it is left out.
-const inkOf = (text: string): string => text.replace(/\s+/g, "");
 
 function startsOf(runs: readonly Run[]): ReadonlyMap<number, number> {
   const found = new Map<number, number>();
@@ -141,9 +170,7 @@ async function laidOut({ each, metricsFor }: Compared): Promise<{
   const layout = layOutDocument(readReferenceDocument(each), metricsFor());
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
 
-  const drawn = (
-    await readTextPlacements(new Uint8Array(readFileSync(each.renderedPath ?? "")))
-  ).filter((item) => normalise(item.text) !== "");
+  const drawn = await readTextPlacements(new Uint8Array(readFileSync(each.renderedPath ?? "")));
 
   return { layout, drawn };
 }

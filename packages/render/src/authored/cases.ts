@@ -36,7 +36,11 @@ type Drawn = {
 };
 
 const DRAWN: Readonly<Record<string, Drawn>> = {
-  tabs: { lines: 13, runs: 37, numbers: 0 },
+  // Every line, tabs and all. Word draws a tab as a space stretched to the width
+  // of the gap it opened, though the line holds no character for it, which is why
+  // a line here is spelled out of what carries ink rather than of every character
+  // drawn on it.
+  tabs: { lines: 16, runs: 42, numbers: 0 },
   tables: { lines: 27, runs: 27, numbers: 0 },
   spacing: { lines: 26, runs: 26, numbers: 0 },
   wrapping: { lines: 7, runs: 7, numbers: 0 },
@@ -52,13 +56,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Four lines a case: one naming it and three beside the object.
   "wrap-sides": { lines: 28, runs: 28, numbers: 0 },
   "legacy-wrap-sides": { lines: 28, runs: 28, numbers: 0 },
-  // Twenty-one of the twenty-four lines, and the three left out are the ones Word
-  // drew in pieces around a space of its own: an item carrying no ink is dropped
-  // here before the lines are lined up, and a line whose middle is a space can
-  // then no longer be spelled out of what is left. That is the reading and not the
-  // layout, which the whole-point answers of the other suite put where Word put
-  // them.
-  "unmapped-characters": { lines: 21, runs: 21, numbers: 0 },
+  // Every line, including the three Word drew in pieces around a space of its own
+  // and the one where it drew a glyph the pdf can put no character to. What each
+  // of those characters is remains the other suite's question, asked of where the
+  // letters either side of it sit.
+  "unmapped-characters": { lines: 24, runs: 26, numbers: 0 },
   // Every line but the seven under the wave borders, which Word draws neither at
   // the width they state nor at any width read off it: the rows they line come out
   // shorter here and everything below them stands too high.
