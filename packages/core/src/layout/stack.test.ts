@@ -279,11 +279,28 @@ describe("measureStack over text", () => {
     expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12, 9);
   });
 
-  it("stands a line held open by a tab alone at the height of the run holding it", () => {
+  // Nothing a line carries but white raises it: what holds such a line open is the
+  // paragraph's own mark, whatever the run the white is written in asks for.
+  it("stands a line held open by a tab alone at its paragraph mark's height", () => {
     const body = `<w:p><w:pPr><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>
       <w:r><w:rPr><w:sz w:val="48"/></w:rPr><w:tab/></w:r></w:p>`;
 
-    expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
+    expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12, 9);
+  });
+
+  it("stands a line holding one space at its paragraph mark's height", () => {
+    const body = `<w:p><w:pPr><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>
+      <w:r><w:rPr><w:sz w:val="48"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r></w:p>`;
+
+    expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12, 9);
+  });
+
+  it("leaves a space between two words out of the height of the line it sits on", () => {
+    const wide = `<w:r><w:rPr><w:sz w:val="48"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>`;
+    const body = `<w:p><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>aa</w:t></w:r>
+      ${wide}<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>bb</w:t></w:r></w:p>`;
+
+    expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12, 9);
   });
 
   it("keeps an empty paragraph at its mark's height", () => {

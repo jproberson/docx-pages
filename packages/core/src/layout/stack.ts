@@ -671,6 +671,12 @@ function measureParagraph(
     ...resolveRunMarks(paragraph, context.styles),
   ];
 
+  // **What holds a line open with nothing measured on it is the paragraph's own
+  // mark**, and not the tallest thing the paragraph is written in: a line holding
+  // one 24pt space, or one 24pt tab, comes out at the 12pt mark behind it. Measured
+  // on 2026-08-07 by the authored `trailing-space` document. Every run's mark is
+  // still asked for its height, since a face this machine cannot answer for blocks
+  // the document whether or not its run ends up on a line.
   let markHeight = 0;
   for (const mark of marks) {
     const height = heightOf(mark, context.metricsFor);
@@ -680,7 +686,7 @@ function measureParagraph(
         blocker: blockerFor(mark, context.part, paragraph.index),
       };
     }
-    markHeight = Math.max(markHeight, height.value);
+    if (mark === paragraphMark) markHeight = height.value;
   }
 
   const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.tableStyleId);

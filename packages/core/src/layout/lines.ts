@@ -499,12 +499,16 @@ class LineBuilder {
     };
   }
 
+  // **A space is measured across and never up.** Word takes its width from the
+  // face it is written in and its height from nothing at all, wherever on the line
+  // it falls: measured on 2026-08-07 by the authored `trailing-space` document,
+  // where a 24pt space came out the height of the 12pt mark behind it in front of
+  // the text, at the end of it and between two of its words alike.
   space(fragments: readonly Fragment[]): Taken {
     if (this.empty && this.wrapped) return TAKEN;
     for (const fragment of fragments) {
       this.pending.push(startingAt(segmentOf(fragment), this.committedPt + this.pendingPt));
       this.pendingPt += fragment.widthPt;
-      this.raise(fragment.ascentPt, fragment.heightPt - fragment.ascentPt, fragment.heightPt);
     }
     return TAKEN;
   }

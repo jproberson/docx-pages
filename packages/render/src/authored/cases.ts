@@ -49,6 +49,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Every line of all eight cases, the fillers holding them down the page
   // included: a case is nine lines of its own and the row it asks about.
   tearing: { lines: 154, runs: 154, numbers: 0 },
+  // Twenty lines out of thirty two paragraphs: the twelve holding nothing but a
+  // space or a tab draw no ink at all, which is the whole of what the document is
+  // asking about and the reason Word's report is the oracle for it. The three runs
+  // over twenty lines are the word each side of the wide space in case c.
+  "trailing-space": { lines: 20, runs: 23, numbers: 0 },
   // Three lines a case, five where the paragraph above the object holds three,
   // and two where it holds none at all. Two of them stand beside the narrow
   // object, which is centred in the column and wrapped on its largest side, so

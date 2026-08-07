@@ -13,6 +13,7 @@ import {
   spacingDocument,
   tableDocument,
   tableIndentDocument,
+  trailingSpaceDocument,
   unmappedCharacterDocument,
   unmappedInTextFaceDocument,
   wrappingDocument,
@@ -378,6 +379,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // where the pdf has it.
       paragraphsPlaced: 160,
       bytes: buildAuthoredDocx({ body: tearingDocument() }),
+    },
+    {
+      id: "trailing-space",
+      title: "A space at the end of a line",
+      asks: "whether a space raises the line it stands on, and how tall a paragraph holding only spaces is",
+      bytes: buildAuthoredDocx({ body: trailingSpaceDocument() }),
     },
     {
       id: "pages",

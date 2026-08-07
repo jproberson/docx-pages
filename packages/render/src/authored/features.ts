@@ -785,6 +785,56 @@ export function tearingDocument(): string {
   ].join("");
 }
 
+// Whether a space raises the line it stands on, and how tall a paragraph holding
+// nothing but spaces comes out.
+//
+// Nothing here is told how tall to be: the height being asked about is the
+// distance from one repeat of a case to the next, which is why each is written
+// three times. Every run in a case is 24pt against the 12pt every paragraph mark
+// keeps, so a line that took the run's height stands twice as tall as one that did
+// not and no rounding is in the way. Each case opens a page of its own so that a
+// break can never fall between two repeats and turn a height into nonsense.
+export function trailingSpaceDocument(): string {
+  const BIG = `<w:sz w:val="48"/><w:szCs w:val="48"/>`;
+  const TAB = `<w:r><w:rPr>${BIG}</w:rPr><w:tab/></w:r>`;
+
+  const big = (value: string): string => run(value, BIG);
+  const plain = (value: string): string => run(value);
+
+  const block = (name: string, repeat: (at: number) => string): readonly string[] => [
+    paragraph(`<w:pageBreakBefore/>`, run(`case ${name}`)),
+    ...Array.from({ length: 3 }, (_, at) => repeat(at + 1)),
+  ];
+
+  const named = (name: string, at: number): string => `${name}0${String(at)}`;
+
+  return [
+    // A space and nothing else, which is the case a real document met: either the
+    // run it is written in raises the line or the paragraph mark is the whole of
+    // what is left to measure.
+    ...block("a", () => paragraph("", big(" "))),
+    // The same space at the end of a line that has text in front of it, which says
+    // whether what matters is the space being all there is or the space being last.
+    ...block("b", (at) => paragraph("", plain(named("b", at)) + big(" "))),
+    // A space between two words, which no line ends at.
+    ...block("c", (at) => paragraph("", plain(named("c", at)) + big(" ") + plain("zz"))),
+    // A space in front of the text rather than behind it.
+    ...block("d", (at) => paragraph("", big(" ") + plain(named("d", at)))),
+    // Two of them together, since a run of spaces may not answer as one does.
+    ...block("e", () => paragraph("", big("  "))),
+    // A tab alone, which is already measured to hold the line open at the tallest
+    // mark the paragraph has. It is here so that a space answering otherwise is
+    // read against something rather than guessed at.
+    ...block("f", () => paragraph("", TAB)),
+    // Text in the same run, which has to raise the line however the spaces answer.
+    ...block("g", (at) => paragraph("", big(named("g", at)))),
+    // Nothing at all, under a mark of its own that is the big size, which is the
+    // one case where the mark is the only thing there is to measure.
+    ...block("h", () => paragraph(`<w:rPr>${BIG}</w:rPr>`, "")),
+    EMPTY,
+  ].join("");
+}
+
 // Where the text goes when a document breaks its own pages.
 //
 // Every paragraph here is told exactly how tall to be, so where one landed is
