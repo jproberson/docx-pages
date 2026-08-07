@@ -84,6 +84,10 @@ export type ReferenceCase = {
   // How many laid-out text lines are expected to land where Word drew the same
   // line, within textTolerancePt. Neither the text nor its position is recorded
   // here; both are read from the document and Word's own output at run time.
+  //
+  // Held to exactly rather than as a least. A count allowed to run over hides the
+  // one line that stopped agreeing behind the one that started, and leaves the
+  // number standing for a document it no longer describes.
   readonly textLinesMatched: number | null;
   readonly textLinesPlaced: number | null;
   // How many of the runs a line is made of are expected to be found in Word's own

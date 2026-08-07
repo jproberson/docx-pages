@@ -283,24 +283,24 @@ describe.skipIf(CASES.length === 0)(
       describe(each.id, () => {
         it("breaks paragraphs into the lines Word broke them into", async () => {
           const { matched } = await comparisonOf(compared);
-          expect(matched).toBeGreaterThanOrEqual(each.textLinesMatched ?? 0);
+          expect(matched).toBe(each.textLinesMatched ?? 0);
         });
 
         it("puts those lines where Word put them, on the page Word put them on", async () => {
           const { placed } = await comparisonOf(compared);
-          expect(placed).toBeGreaterThanOrEqual(each.textLinesPlaced ?? 0);
+          expect(placed).toBe(each.textLinesPlaced ?? 0);
         });
 
         it("starts each of a line's runs where Word started it", async () => {
           const { runsMatched, runsPlaced } = await comparisonOf(compared);
-          expect(runsMatched).toBeGreaterThanOrEqual(each.textRunsMatched ?? 0);
-          expect(runsPlaced).toBeGreaterThanOrEqual(each.textRunsPlaced ?? 0);
+          expect(runsMatched).toBe(each.textRunsMatched ?? 0);
+          expect(runsPlaced).toBe(each.textRunsPlaced ?? 0);
         });
 
         it("puts a list's number where Word put it", async () => {
           const { numbersMatched, numbersPlaced } = await comparisonOf(compared);
-          expect(numbersMatched).toBeGreaterThanOrEqual(each.numbersMatched ?? 0);
-          expect(numbersPlaced).toBeGreaterThanOrEqual(each.numbersPlaced ?? 0);
+          expect(numbersMatched).toBe(each.numbersMatched ?? 0);
+          expect(numbersPlaced).toBe(each.numbersPlaced ?? 0);
         });
       });
     }

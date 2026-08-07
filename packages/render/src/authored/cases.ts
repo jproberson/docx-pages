@@ -28,8 +28,9 @@ type Drawn = {
   readonly runs: number;
   readonly numbers: number;
   // How many of those lines and runs land where Word drew them. Short of all of
-  // them names a rule the layout has measured and does not answer, which is then
-  // a number that cannot quietly grow.
+  // them names a rule the layout has measured and does not answer. Every number
+  // here is held to exactly, so it can no more quietly grow than quietly fall:
+  // answering one line more is a rule now met and is worth saying so.
   readonly placed?: number;
   readonly runsPlaced?: number;
 };
@@ -37,7 +38,7 @@ type Drawn = {
 const DRAWN: Readonly<Record<string, Drawn>> = {
   tabs: { lines: 13, runs: 37, numbers: 0 },
   tables: { lines: 27, runs: 27, numbers: 0 },
-  spacing: { lines: 19, runs: 19, numbers: 0 },
+  spacing: { lines: 26, runs: 26, numbers: 0 },
   wrapping: { lines: 7, runs: 7, numbers: 0 },
   numbering: { lines: 10, runs: 10, numbers: 7 },
   pages: { lines: 24, runs: 24, numbers: 0 },
