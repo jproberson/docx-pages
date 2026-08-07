@@ -33,10 +33,31 @@ export type Agreement = {
   // And of the number a list draws in front of a line.
   readonly numbersMatched: number;
   readonly numbersPlaced: number;
+  // What Word drew the text at against the size the document asks for, over the
+  // lines whose text matched, taken as the middle of them. One is a drawing to
+  // compare against; anything else is a drawing of the whole page shrunk, which
+  // nothing here can be held to. Null where nothing matched.
+  readonly drawnScale: number | null;
 };
 
 const textOf = (placed: PlacedLine): string =>
   placed.line.segments.map((segment) => (segment.kind === "text" ? segment.text : "")).join("");
+
+// The size the line's own text is set in, which is the tallest of its runs: what
+// Word drew there is compared against it to see whether the two are the same
+// drawing at all.
+function sizeOf(placed: PlacedLine): number | null {
+  const sizes = placed.line.segments.flatMap((segment) =>
+    segment.kind === "text" && inkOf(segment.text) !== "" ? [segment.mark.fontSizePt] : [],
+  );
+  return sizes.length === 0 ? null : Math.max(...sizes);
+}
+
+const middleOf = (values: readonly number[]): number | null => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((one, other) => one - other);
+  return sorted[Math.floor(sorted.length / 2)] ?? null;
+};
 
 // Where the byte a symbol face shadows stands for a character Unicode already
 // names, Word says so on the way into the pdf and the character is what comes
@@ -186,6 +207,7 @@ export function agreementWith(
 ): Agreement {
   const taken = new Set<TextPlacement>();
   const elsewhere: string[] = [];
+  const scales: number[] = [];
   let lines = 0;
   let matched = 0;
   let placed = 0;
@@ -211,6 +233,10 @@ export function agreementWith(
       }
       for (const item of items) taken.add(item);
       matched += 1;
+
+      const size = sizeOf(line);
+      if (size !== null && size > 0)
+        scales.push(Math.max(...items.map((i) => i.fontSizePt)) / size);
 
       // Only where the run starts is asked of it: a superscript sits off the line's
       // own baseline, which the line itself is already pinned against.
@@ -247,5 +273,14 @@ export function agreementWith(
     matched += 1;
   }
 
-  return { lines, matched, placed, runsMatched, runsPlaced, numbersMatched, numbersPlaced };
+  return {
+    lines,
+    matched,
+    placed,
+    runsMatched,
+    runsPlaced,
+    numbersMatched,
+    numbersPlaced,
+    drawnScale: middleOf(scales),
+  };
 }

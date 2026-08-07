@@ -73,6 +73,20 @@ describe.skipIf(CASES.length === 0)(
     for (const compared of CASES) {
       const each = compared.each;
       describe(each.id, () => {
+        // Word draws a whole page shrunk where it was asked to, and every line of
+        // such a drawing is out of place before a rule is consulted. Three of the
+        // corpus came back that way, and the ranking read them as a layout wrong
+        // about everything. Asked here so that a re-export gone that way says so
+        // once rather than as a hundred lines that moved.
+        //
+        // A percent of slack, since Word writes a size to the tenth of a point and
+        // the reference documents come back at 0.994 and 1.006 for it. The shrunk
+        // ones are out by a quarter and more.
+        it("draws the text at the size the document asks for", async () => {
+          const { drawnScale } = await comparisonOf(compared);
+          expect(Math.abs((drawnScale ?? 1) - 1)).toBeLessThan(0.01);
+        });
+
         it("breaks paragraphs into the lines Word broke them into", async () => {
           const { matched } = await comparisonOf(compared);
           expect(matched).toBe(each.textLinesMatched ?? 0);

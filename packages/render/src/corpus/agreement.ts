@@ -45,6 +45,18 @@ const REPORT_PATH = process.env["DOCX_PAGES_CORPUS_AGREEMENT"] ?? "samples/corpu
 // little finer than that.
 const TOLERANCE_PT = 1;
 
+// How far the size Word drew a document's text at may stand from the size the
+// document asks for before the drawing is taken to be of another page than the one
+// laid out here. Three of the 718 came back drawn at about seven tenths, every line
+// of them in proportion, and the ranking read that as a layout wrong about
+// everything: the worst-placed document that needed no face stood in was one of
+// them, and nothing was wrong with it here at all.
+//
+// Nothing sits between the two answers. A drawing of the same page differs by up to
+// 0.6%, which is the tenth of a point Word writes a size to on a 17.5pt run; the
+// three shrunk ones are out by 25 and 28.
+const SAME_SCALE = 0.05;
+
 export type Agreed = {
   readonly id: string;
   readonly pages: number | null;
@@ -57,7 +69,9 @@ export type Agreed = {
   readonly placed: number;
   readonly runsMatched: number;
   readonly runsPlaced: number;
-  readonly outcome: "compared" | "blocked" | "threw" | "not drawn";
+  // A drawing of the same page at another size is no oracle for this one: `drawn
+  // to a scale` is the row saying so, and its counts are left out of every total.
+  readonly outcome: "compared" | "blocked" | "threw" | "not drawn" | "drawn to a scale";
   readonly detail: string;
 };
 
@@ -88,6 +102,9 @@ export async function agreementOf(bytes: Uint8Array, id: string): Promise<Agreed
     const drawn = await readTextPlacements(new Uint8Array(readFileSync(drawnPath)));
     const agreed = agreementWith(laid, drawn, TOLERANCE_PT);
 
+    const scale = agreed.drawnScale;
+    const scaled = scale !== null && Math.abs(scale - 1) > SAME_SCALE;
+
     return {
       id,
       pages: laid.pages.length,
@@ -98,8 +115,8 @@ export async function agreementOf(bytes: Uint8Array, id: string): Promise<Agreed
       placed: agreed.placed,
       runsMatched: agreed.runsMatched,
       runsPlaced: agreed.runsPlaced,
-      outcome: "compared",
-      detail: "",
+      outcome: scaled ? "drawn to a scale" : "compared",
+      detail: scaled ? `drawn at ${(scale * 100).toFixed(1)}% of the stated size` : "",
     };
   } catch (thrown) {
     return empty(id, "threw", thrown instanceof Error ? thrown.message : String(thrown));
@@ -130,6 +147,7 @@ export function reportOf(rows: readonly Agreed[]): string {
     `  blocked   ${String(rows.filter((each) => each.outcome === "blocked").length)}`,
     `  threw     ${String(rows.filter((each) => each.outcome === "threw").length)}`,
     `  not drawn ${String(rows.filter((each) => each.outcome === "not drawn").length)}`,
+    `  drawn to a scale ${String(rows.filter((each) => each.outcome === "drawn to a scale").length)}`,
     "",
     "every document compared:",
     totals(compared),
