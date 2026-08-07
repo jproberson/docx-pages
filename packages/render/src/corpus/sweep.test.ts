@@ -1,8 +1,18 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { buildAuthoredDocx } from "../authored/package.js";
 import { corpusFaces } from "./faces.js";
-import { changesBetween, summaryOf, sweepDocument, type SweptDocument } from "./sweep.js";
+import {
+  changesBetween,
+  summaryOf,
+  sweepCorpus,
+  sweepDocument,
+  type SweptDocument,
+} from "./sweep.js";
 
 const FACES = corpusFaces();
 
@@ -105,5 +115,22 @@ describe("changesBetween", () => {
       [swept({ id: "one", millis: 5000 })],
     );
     expect(changes).toStrictEqual([]);
+  });
+});
+
+// A corpus gathered from the wild holds the same document under several names, and
+// counting one of those as several documents is what weighted every share the sweep
+// ever reported.
+describe("sweepCorpus over a corpus holding the same document twice", () => {
+  it("sweeps a document once however many names it is filed under", () => {
+    const directory = mkdtempSync(join(tmpdir(), "docx-pages-corpus-"));
+    const bytes = document(`<w:p><w:r><w:t>one</w:t></w:r></w:p>`);
+    writeFileSync(join(directory, "one.docx"), bytes);
+    writeFileSync(join(directory, "again.docx"), bytes);
+    writeFileSync(join(directory, "other.docx"), document(`<w:p><w:r><w:t>two</w:t></w:r></w:p>`));
+
+    const swept = sweepCorpus(directory);
+    expect(swept).toHaveLength(2);
+    expect(new Set(swept.map((each) => each.id)).size).toBe(2);
   });
 });

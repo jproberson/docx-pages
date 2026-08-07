@@ -54,7 +54,7 @@ export type SweptDocument = {
   readonly millis: number;
 };
 
-const identityOf = (bytes: Uint8Array): string =>
+export const identityOf = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex").slice(0, 12);
 
 // Word writes a lock file beside an open document, and both macOS and Windows
@@ -157,6 +157,13 @@ export function sweepCorpus(
   // them again for each of a thousand documents is the sweep's whole cost.
   const faces = corpusFaces();
 
+  // The same document under two names is one document. A corpus gathered from the
+  // wild is full of them: the 966 files first swept here are 718 documents, and one
+  // of them is in there 24 times. Counted by the file, that document's features
+  // weigh 24 times what another's do, and every share ever read off this sweep was
+  // wrong by however many copies it happened to be looking at.
+  const already = new Set<string>();
+
   for (const [at, path] of paths.entries()) {
     // A document too big to read is still a fact about the corpus, so even reading
     // one is allowed to fail without ending the sweep.
@@ -175,6 +182,10 @@ export function sweepCorpus(
       });
       continue;
     }
+
+    const id = identityOf(bytes);
+    if (already.has(id)) continue;
+    already.add(id);
 
     swept.push(sweepDocument(bytes, faces));
     onProgress?.(at + 1, paths.length);
