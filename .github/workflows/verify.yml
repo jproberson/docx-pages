@@ -107,7 +107,7 @@ jobs:
             if (reached) throw new Error(`${shut} is reachable from outside the repository`);
           }
 
-          console.log("both packages install, export what they promise, and hide what they do not");
+          console.log("all three packages install, export what they promise, and hide what they do not");
           EOF
           node check.mjs
 

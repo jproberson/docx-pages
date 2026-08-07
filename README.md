@@ -21,7 +21,7 @@ measurement is what the tests hold on to.
 | [`@docx-pages/viewer`](packages/viewer) | React 18+ | Draws a laid-out page, or a whole `.docx` from its bytes.                                                |
 | [`@docx-pages/fonts`](packages/fonts)   | anywhere  | Freely redistributable twins of the faces documents usually name, for laying out without the real fonts. |
 
-A third package, `render`, is not published. It is the Word oracle: it drives Word
+A fourth package, `render`, is not published. It is the Word oracle: it drives Word
 over AppleScript, reads Word's own pdf back, and holds the test suites. It lives in
 this repository and consumes the library's source rather than installing it.
 
