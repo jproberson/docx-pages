@@ -84,6 +84,7 @@ const paragraphOf = (
   markTopPt: 30,
   contentBottomPt: 44,
   widowControl: true,
+  keepNext: false,
   startsPage: false,
   endsPage: false,
   contentWidthPt: options.widthPt ?? 40,

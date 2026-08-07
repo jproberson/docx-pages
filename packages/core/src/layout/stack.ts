@@ -153,9 +153,10 @@ export type ParagraphBox = {
   // by the paragraph's whole height, since the room a paragraph keeps below itself
   // never holds it back at the foot of a page.
   readonly contentBottomPt: number;
-  // What the paragraph asks of a page break running through it, which only the
-  // break itself can act on.
+  // What the paragraph asks of a page break running through it, and of one falling
+  // between it and the paragraph after it. Only the break itself can act on either.
   readonly widowControl: boolean;
+  readonly keepNext: boolean;
   // Whether the paragraph asked for a page of its own, and whether it ended on a
   // break that puts whatever follows it on one.
   readonly startsPage: boolean;
@@ -1044,6 +1045,7 @@ function layOutWholeParagraph(
       markTopPt: slot.topPt + height.seatPt,
       contentBottomPt: slot.topPt + height.heightPt,
       widowControl: paragraphFrame.widowControl,
+      keepNext: paragraphFrame.keepNext,
       startsPage: input.startsPage,
       endsPage,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
@@ -1085,6 +1087,7 @@ function layOutWholeParagraph(
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
     contentBottomPt: bottomPt,
     widowControl: paragraphFrame.widowControl,
+    keepNext: paragraphFrame.keepNext,
     startsPage: input.startsPage,
     endsPage,
     contentWidthPt: placed.reduce(

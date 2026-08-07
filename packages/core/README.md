@@ -78,7 +78,7 @@ has not got is passed over rather than refused.
 
 ```ts
 for (const entry of layout.unhonoured) {
-  entry.kind; // "character-spacing", "keep-with-next", "footnote", ...
+  entry.kind; // "keep-lines-together", "text-columns", "footnote", ...
   entry.effect; // "moves-text" or "changes-paint"
 }
 ```

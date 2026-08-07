@@ -4,6 +4,7 @@ import {
   characterSpacingDocument,
   compatibilityDocument,
   drawingDocument,
+  keepingDocument,
   numberingDocument,
   pageDocument,
   spacingDocument,
@@ -341,6 +342,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Page breaks through a paragraph's spacing",
       asks: "whether the room a paragraph asks for either side of itself holds it back at the foot of a page",
       bytes: buildAuthoredDocx({ body: breakingDocument() }),
+    },
+    {
+      id: "keeping",
+      title: "Paragraphs held to the one after them",
+      asks: "whether w:keepNext moves a paragraph onto the page its next one landed on, and how far back a run of them pulls",
+      bytes: buildAuthoredDocx({ body: keepingDocument() }),
     },
     {
       id: "pages",

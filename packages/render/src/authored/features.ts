@@ -481,6 +481,115 @@ export function breakingDocument(): string {
   ].join("");
 }
 
+// Whether `w:keepNext` moves a paragraph onto the page its next one landed on,
+// and how far back a run of them pulls.
+//
+// Every paragraph here is told exactly how tall to be, so the room left at the foot
+// of a page is arithmetic rather than a measurement. Each block is a marker naming
+// the case, eight fillers, a shim sized to leave the room the case wants, and the
+// case itself; the marker opening the next block is where the flow resumed. Unlike
+// the blocks in `breakingDocument`, each marker asks for a page of its own, since
+// half the cases here are asking whether a paragraph moved on, and a block whose
+// case moved would start partway down a page and leave the next one less room than
+// it was told to leave.
+export function keepingDocument(): string {
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const FILLERS = 8;
+  const FILLER_PT = 72;
+  const MARKER_PT = 24;
+  const BLOCK_PT = 720;
+  const LINE_PT = 24;
+
+  // Room for two of the case's lines and not for three.
+  const TWO_PT = 54;
+  // Room for one of them and not for two.
+  const ONE_PT = 30;
+
+  const KEEP = `<w:keepNext/>`;
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+  const BREAK = `<w:r><w:br/></w:r>`;
+  const PAGE_BREAK = `<w:r><w:br w:type="page"/></w:r>`;
+
+  const line = (name: string, properties = ""): string =>
+    paragraph(`${properties}${exactly(LINE_PT)}`, run(name));
+
+  const held = (name: string): string => line(name, KEEP);
+
+  const block = (name: string, leftPt: number, ...cases: readonly string[]): readonly string[] => [
+    paragraph(`${OWN_PAGE}${exactly(MARKER_PT)}`, run(name)),
+    ...Array.from({ length: FILLERS }, () => paragraph(exactly(FILLER_PT), run("filler"))),
+    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - leftPt), run("shim")),
+    ...cases,
+  ];
+
+  return [
+    // Room for the held paragraph and for the one it holds. Nothing should move,
+    // and this is what the other cases read against.
+    ...block("fits", TWO_PT, held("held"), line("next")),
+    // Room for the held paragraph alone, which is the ordinary case.
+    ...block("moved", ONE_PT, held("held"), line("next")),
+    // Three in a chain with room for the first two, which says how far back the
+    // last one pulls: the paragraph before it, or all of them.
+    ...block("chain", TWO_PT, held("chain one"), held("chain two"), line("chain three")),
+    // A pair that can never stand together, the next paragraph being a single line
+    // taller than the whole body. Word has to give up somewhere, and whether it
+    // gives up where the pair started or after moving it once is the whole of what
+    // says the rule is a loop with a stop in it rather than one look ahead.
+    ...block(
+      "never",
+      ONE_PT,
+      held("held"),
+      paragraph(exactly(BLOCK_PT + ONE_PT), run("taller than a page")),
+    ),
+    // The same pair with a chain in front of it, which is the one case where what
+    // stops the rule shows: the paragraph at the head of a chain has nowhere left
+    // to move to and the ones behind it still have.
+    ...block(
+      "never in a chain",
+      TWO_PT,
+      held("chained one"),
+      held("chained two"),
+      paragraph(exactly(BLOCK_PT + ONE_PT), run("chained taller than a page")),
+    ),
+    // A paragraph asking for a page of its own, held by the one above it. There is
+    // room here for both, so anything that moves is the two rules meeting rather
+    // than the foot of the page.
+    ...block("against a break", TWO_PT, held("held"), line("own page", OWN_PAGE)),
+    // The same meeting from the other side, the break being one the held paragraph
+    // asked for itself rather than one its next asked for.
+    ...block(
+      "against its own break",
+      TWO_PT,
+      paragraph(`${KEEP}${exactly(LINE_PT)}`, run("holds and breaks") + PAGE_BREAK),
+      line("after the break"),
+    ),
+    // A held paragraph the break runs through, whose last line therefore already
+    // stands on the page its next one landed on. Four lines with room for two,
+    // which is one more than widow control moves back, so whatever moves here is
+    // this rule. Says whether the rule is about the paragraph or about its end.
+    ...block(
+      "split",
+      TWO_PT,
+      paragraph(
+        `${KEEP}${exactly(LINE_PT)}`,
+        run("split one") +
+          BREAK +
+          run("split two") +
+          BREAK +
+          run("split three") +
+          BREAK +
+          run("split four"),
+      ),
+      line("next"),
+    ),
+    // The last paragraph of the document, holding onto nothing. Nothing follows it,
+    // which is why it is last.
+    ...block("holds nothing", ONE_PT, held("last")),
+  ].join("");
+}
+
 // Where the text goes when a document breaks its own pages.
 //
 // Every paragraph here is told exactly how tall to be, so where one landed is

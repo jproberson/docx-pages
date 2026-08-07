@@ -90,6 +90,7 @@ type PartialFrame = {
   readonly lineTwips: number | undefined;
   readonly lineRule: LineRule | undefined;
   readonly widowControl: boolean | undefined;
+  readonly keepNext: boolean | undefined;
   readonly pageBreakBefore: boolean | undefined;
   readonly contextualSpacing: boolean | undefined;
   readonly tabStops: readonly TabStopEntry[] | undefined;
@@ -145,6 +146,7 @@ const EMPTY_FRAME: PartialFrame = {
   lineTwips: undefined,
   lineRule: undefined,
   widowControl: undefined,
+  keepNext: undefined,
   pageBreakBefore: undefined,
   contextualSpacing: undefined,
   tabStops: undefined,
@@ -169,6 +171,7 @@ const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   lineTwips: over.lineTwips ?? base.lineTwips,
   lineRule: over.lineRule ?? base.lineRule,
   widowControl: over.widowControl ?? base.widowControl,
+  keepNext: over.keepNext ?? base.keepNext,
   pageBreakBefore: over.pageBreakBefore ?? base.pageBreakBefore,
   contextualSpacing: over.contextualSpacing ?? base.contextualSpacing,
   // Tab stops add to the ones already inherited rather than replacing them, which
@@ -231,6 +234,7 @@ function readFrame(container: XmlElement | null): PartialFrame {
     lineTwips: twipsAttribute(spacing, "line"),
     lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
     widowControl: onOff(pPr, "widowControl"),
+    keepNext: onOff(pPr, "keepNext"),
     pageBreakBefore: onOff(pPr, "pageBreakBefore"),
     contextualSpacing: onOff(pPr, "contextualSpacing"),
     tabStops: readTabStops(pPr),
@@ -566,6 +570,9 @@ export type ParagraphFrame = {
   // Whether Word holds the paragraph's first line off the foot of a page and its
   // last line off the top of the next one. On unless the cascade says otherwise.
   readonly widowControl: boolean;
+  // Whether Word moves the paragraph onto the page its next one begins, where the
+  // two would otherwise be split. Off unless the cascade says otherwise.
+  readonly keepNext: boolean;
   // Whether the paragraph starts a page of its own. A paragraph already standing
   // at the top of one makes no empty page to get there.
   readonly pageBreakBefore: boolean;
@@ -665,6 +672,7 @@ export function resolveParagraphFrame(paragraph: Paragraph, table: StyleTable): 
     lineTwips: resolved.lineTwips ?? null,
     lineRule: resolved.lineRule ?? "auto",
     widowControl: resolved.widowControl ?? true,
+    keepNext: resolved.keepNext ?? false,
     pageBreakBefore: resolved.pageBreakBefore ?? false,
     contextualSpacing: resolved.contextualSpacing ?? false,
     tabStops: settledStops(resolved.tabStops),

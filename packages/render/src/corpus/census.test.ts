@@ -148,12 +148,12 @@ describe("rankGaps", () => {
   it("ranks a gap no feature answers for against the whole corpus", () => {
     const ranked = rankGaps(
       [
-        { id: "aaa", asks: ["keep-with-next"] },
+        { id: "aaa", asks: ["keep-lines-together"] },
         { id: "bbb", asks: [] },
       ],
       [census("aaa", {}), census("bbb", {})],
     );
-    expect(ranked[0]).toStrictEqual({ kind: "keep-with-next", met: 1, could: 2 });
+    expect(ranked[0]).toStrictEqual({ kind: "keep-lines-together", met: 1, could: 2 });
   });
 
   it("counts a document once however many places it met a gap in", () => {
