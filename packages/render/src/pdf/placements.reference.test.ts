@@ -11,7 +11,7 @@ const CASES = referenceCases().filter((each) => each.renderedPath !== null);
 describe.skipIf(CASES.length === 0)("placements against Word output", () => {
   for (const each of CASES) {
     describe(each.id, () => {
-      it.runIf(each.renderedImagesPt.length > 0)(
+      it.runIf(each.renderedImagesPt !== null)(
         "finds every image Word drew on the first page, where Word drew it",
         async () => {
           const placements = await readImagePlacements(readRenderedPages(each));
@@ -24,16 +24,16 @@ describe.skipIf(CASES.length === 0)("placements against Word output", () => {
               heightPt: round(rect.heightPt),
             }));
 
-          expect(firstPage).toStrictEqual([...each.renderedImagesPt]);
+          expect(firstPage).toStrictEqual([...(each.renderedImagesPt ?? [])]);
         },
       );
 
-      it.runIf(each.renderedPageIndexes.length > 0)(
+      it.runIf(each.renderedPageIndexes !== null)(
         "draws images on the pages Word drew them on",
         async () => {
           const placements = await readImagePlacements(readRenderedPages(each));
           const pages = new Set(placements.map((placement) => placement.rect.pageIndex));
-          expect([...pages].sort()).toStrictEqual([...each.renderedPageIndexes]);
+          expect([...pages].sort()).toStrictEqual([...(each.renderedPageIndexes ?? [])]);
         },
       );
     });

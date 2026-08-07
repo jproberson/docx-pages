@@ -53,8 +53,10 @@ describe("readReferenceManifest", () => {
       floatsPt: [],
       inlinesPt: [],
       disjointFloatPairs: [],
-      renderedImagesPt: [],
-      renderedPageIndexes: [],
+      renderedImagesPt: null,
+      renderedPageIndexes: null,
+      picturesWordDidNotDraw: 0,
+      picturesWeDidNotDraw: 0,
       textLinesMatched: null,
       textLinesPlaced: null,
       textRunsMatched: null,
@@ -80,6 +82,13 @@ describe("readReferenceManifest", () => {
     expect(only?.bodyTopsPt).toStrictEqual([{ index: 3, topPt: 120.5 }]);
     expect(only?.disjointFloatPairs).toStrictEqual([[1, 2]]);
     expect(only?.renderedPageIndexes).toStrictEqual([0, 1]);
+  });
+
+  it("tells a measurement nobody took from one that found nothing", () => {
+    const json = `{"cases":[{"id":"a","documentPath":"/tmp/a.docx","renderedImagesPt":[]}]}`;
+    const [only] = readReferenceManifest(manifestOf(json)).cases;
+    expect(only?.renderedImagesPt).toStrictEqual([]);
+    expect(only?.renderedPageIndexes).toBeNull();
   });
 
   it("reads a font's metrics alongside where its file lives", () => {

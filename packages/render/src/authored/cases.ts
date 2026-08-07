@@ -74,6 +74,15 @@ const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
   borders: ["approximated-border"],
 };
 
+// Pictures Word's own pdf holds that nothing here stands on. Word draws a glyph
+// its face has no outline for through a bitmap font of its own making, and a
+// bitmap glyph reaches the pdf as an image: the three here are one character
+// written out three times, each 12x12 sitting on its line's baseline, and Word
+// writes the character as text in the same place as well.
+const PICTURES_ONLY_WORD_DRAWS: Readonly<Record<string, number>> = {
+  "unmapped-in-a-text-face": 3,
+};
+
 const EMPTY = {
   bodyTopPt: null,
   headerTopsPt: [],
@@ -83,8 +92,10 @@ const EMPTY = {
   floatsPt: [],
   inlinesPt: [],
   disjointFloatPairs: [],
-  renderedImagesPt: [],
-  renderedPageIndexes: [],
+  renderedImagesPt: null,
+  renderedPageIndexes: null,
+  picturesWordDidNotDraw: 0,
+  picturesWeDidNotDraw: 0,
   unrenderablePictures: 0,
   unknownDrawings: 0,
   metafileFills: null,
@@ -140,6 +151,7 @@ export function authoredCases(): readonly ReferenceCase[] {
         ...EMPTY,
         ...drawnBy(each.id),
         ...(UNHONOURED[each.id] === undefined ? {} : { unhonoured: UNHONOURED[each.id] }),
+        picturesWeDidNotDraw: PICTURES_ONLY_WORD_DRAWS[each.id] ?? 0,
         id: `authored-${each.id}`,
         documentPath,
         renderedPath: renderedPath(each.id),

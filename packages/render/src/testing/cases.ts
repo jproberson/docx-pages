@@ -66,8 +66,18 @@ export type ReferenceCase = {
   readonly floatsPt: readonly FloatOrigin[];
   readonly inlinesPt: readonly InlineOrigin[];
   readonly disjointFloatPairs: readonly (readonly [number, number])[];
-  readonly renderedImagesPt: readonly PointRect[];
-  readonly renderedPageIndexes: readonly number[];
+  // Left out, nobody measured Word's own output for images and there is nothing to
+  // compare against. Written out empty, Word drew none, which is as much an answer
+  // as any other: it says this document must draw none either.
+  readonly renderedImagesPt: readonly PointRect[] | null;
+  readonly renderedPageIndexes: readonly number[] | null;
+  // How many pictures this project places that Word's own output draws nothing
+  // for, and how many Word drew that nothing here stands on. Left out, both are
+  // none: a picture drawn out of nowhere, or one silently dropped, cannot pass
+  // unnoticed. Where a picture is drawn in the wrong place there is no count at
+  // all, since the two are paired and that is never allowed.
+  readonly picturesWordDidNotDraw: number;
+  readonly picturesWeDidNotDraw: number;
   // How many laid-out text lines are expected to land where Word drew the same
   // line, within textTolerancePt. Neither the text nor its position is recorded
   // here; both are read from the document and Word's own output at run time.
@@ -283,6 +293,14 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
       read(entry, `${where}.${key}[${String(index)}]`),
     );
 
+  // A list nobody wrote is a measurement nobody took, which nothing can be asserted
+  // against; one written out empty is a measurement that found nothing. Collapsing
+  // the two would let a document quietly stop being checked at all.
+  const measuredList = <T>(
+    key: string,
+    read: (entry: unknown, where: string) => T,
+  ): readonly T[] | null => (source[key] === undefined ? null : list(key, read));
+
   return {
     id: text(source, "id", where),
     documentPath: text(source, "documentPath", where),
@@ -296,8 +314,10 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
     floatsPt: list("floatsPt", readFloatOrigin),
     inlinesPt: list("inlinesPt", readInlineOrigin),
     disjointFloatPairs: list("disjointFloatPairs", readPair),
-    renderedImagesPt: list("renderedImagesPt", readRect),
-    renderedPageIndexes: list("renderedPageIndexes", readIndex),
+    renderedImagesPt: measuredList("renderedImagesPt", readRect),
+    renderedPageIndexes: measuredList("renderedPageIndexes", readIndex),
+    picturesWordDidNotDraw: optionalNumber(source, "picturesWordDidNotDraw", where) ?? 0,
+    picturesWeDidNotDraw: optionalNumber(source, "picturesWeDidNotDraw", where) ?? 0,
     textLinesMatched: optionalNumber(source, "textLinesMatched", where),
     textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
     textRunsMatched: optionalNumber(source, "textRunsMatched", where),
