@@ -84,6 +84,13 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // shorter here and everything below them stands too high.
   borders: { lines: 104, runs: 104, numbers: 0, placed: 97, runsPlaced: 102 },
   "section-pages": { lines: 18, runs: 12, numbers: 0, placed: 12 },
+  // Eighteen lines out of twenty two paragraphs: the four closing a section with
+  // nothing in them draw no ink at all, which is the whole of what the document is
+  // asking about. Every drawn line of it lands where Word drew it, which is worth
+  // more here than Word's own report: the report answers for a closer with the top
+  // of the paragraph above it, and gives the same answer whether the closer fits on
+  // its page or not.
+  "section-closer": { lines: 18, runs: 18, numbers: 0 },
 };
 
 // What each authored document is expected to say it passed over. A document that

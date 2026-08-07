@@ -7,6 +7,7 @@ import {
   keepingDocument,
   linedRowsDocument,
   numberingDocument,
+  sectionCloserDocument,
   sectionFlowDocument,
   sectionPagesDocument,
   sectionsDocument,
@@ -368,6 +369,20 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // paragraphs after it are one page early for the same reason and no other.
       paragraphsPlaced: 12,
       bytes: buildAuthoredDocx({ body: sectionPagesDocument() }),
+    },
+    {
+      id: "section-closer",
+      title: "The paragraph that carries a section break, at the foot of its page",
+      asks: "whether the mark of a paragraph doing nothing but closing a section takes room where there is none left",
+      // Eighteen of the twenty two, the four left over being the closers the
+      // document is about. Word's report answers for one of those with the top of
+      // the paragraph above it and from a left the text column never reaches, and
+      // gives the same answer whether the closer fits on its page or not, so it is
+      // not a place at all. Word agrees about the page of every one of the
+      // twenty two, and its own pdf puts all 18 drawn lines where this project
+      // puts them.
+      paragraphsPlaced: 18,
+      bytes: buildAuthoredDocx({ body: sectionCloserDocument() }),
     },
     {
       id: "section-flow",

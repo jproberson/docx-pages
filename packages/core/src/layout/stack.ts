@@ -758,6 +758,7 @@ function measureParagraph(
       }),
       startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
       endsPage: sectionClose?.opensAPage === true,
+      closesASection: sectionClose !== undefined,
       number: measured === null ? null : measured.number,
       bands: standing.bands,
       ahead: standing.ahead,
@@ -997,6 +998,7 @@ type LayOutParagraphInput = {
   // Whether a section break stands after the paragraph, which ends a page as a
   // break in its own text would. What the text asked for is read off the text.
   readonly endsPage: boolean;
+  readonly closesASection: boolean;
   readonly bands: readonly WrapBand[];
   readonly ahead: readonly WrapBand[];
   // What a line has room for where nothing stands beside it, which a shape that
@@ -1088,6 +1090,38 @@ function layOutWholeParagraph(
   const brokenByItsText = layOutLines(flow, input);
   const laid = brokenByItsText.lines;
   const endsPage = brokenByItsText.endsPage || input.endsPage;
+
+  // A paragraph whose whole content is the section break it carries is not laid
+  // out at all: it takes no room and holds nothing back. Measured on 2026-08-07 by
+  // the authored `section-closer` document. An empty closer offered half a line of
+  // room at the foot of a page neither moved on nor pushed the break past it, and
+  // one with ten lines of room under it left the paragraph after it exactly where
+  // the paragraph above the closer ended. A closer with text in it is an ordinary
+  // paragraph: offered the same half line it moved onto the next page and the break
+  // then opened a third.
+  //
+  // A real document closes a section with such a paragraph six points past the foot
+  // of its page, and read as an ordinary one it came out a blank page longer than
+  // Word drew it.
+  if (laid.length === 0 && input.closesASection) {
+    return {
+      index,
+      topPt: input.topPt,
+      anchorTopPt: input.anchorTopPt,
+      heightPt: 0,
+      lines: [],
+      marker: null,
+      markTopPt: input.topPt,
+      contentBottomPt: input.topPt,
+      widowControl: paragraphFrame.widowControl,
+      keepNext: paragraphFrame.keepNext,
+      startsPage: input.startsPage,
+      endsPage,
+      contentWidthPt: 0,
+      clipTo: null,
+      paint: null,
+    };
+  }
 
   // An empty paragraph is a line like any other as far as objects are concerned:
   // Word moves it out of their way even though it draws nothing there.

@@ -584,6 +584,90 @@ export function sectionPagesDocument(): string {
   ].join("");
 }
 
+// What room the paragraph carrying a section break takes at the foot of the page it
+// ends, which `section-pages` never asks: every closer in that one stands near the
+// top of a page with the whole of it below.
+//
+// A document in the wild closes a section with an empty paragraph six points past
+// the foot of its page. Read as an ordinary paragraph its mark will not fit, so it
+// moves on and the break under it then opens a second page, and the document came
+// out a blank page longer than Word drew it. So the question is whether the mark of
+// a paragraph that does nothing but carry a break is laid out at all.
+//
+// Each case opens a page of its own and is held down it by a shim told exactly how
+// tall to be, so the room left under it is arithmetic: the page is 720pt of body,
+// the marker takes 24 and the shim the rest. The page the paragraph after a closer
+// lands on is the reading, since Word's answer for a closer is not its own: an
+// empty one comes back at the top of the paragraph above it, which it reports
+// whether the closer fits or not and is therefore about neither.
+//
+// Two questions, and the first needs the closer past the foot of the page while the
+// second needs it nowhere near one. **Whether a closer moves on where its line will
+// not fit**, read off `a` against `c`. And **whether it takes room where there is
+// room**, read off `e`, whose follower stands one line lower for every line the
+// closer took.
+//
+// A break is read at the section it opens, so what decides whether a page follows a
+// closer is the type the **next** closer states. `a`, `b` and `c` each want one,
+// `d` and `e` want none, and the closer under each is what says so.
+export function sectionCloserDocument(): string {
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+  const LINE_PT = 24;
+  const BODY_PT = 720;
+
+  const sectionProperties = (type: string): string =>
+    `<w:sectPr>` +
+    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
+    `<w:cols w:space="720"/>` +
+    `</w:sectPr>`;
+
+  // `leftPt` is the room standing under the shim, which is what the closer is
+  // offered. Less than a line of it is the case that tells the two readings apart.
+  const block = (
+    name: string,
+    leftPt: number,
+    type: string,
+    closerText: string,
+  ): readonly string[] => [
+    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${name} marks`)),
+    paragraph(exactly(BODY_PT - LINE_PT - leftPt), run(`${name} shims`)),
+    paragraph(`${exactly(LINE_PT)}${sectionProperties(type)}`, closerText),
+    paragraph(exactly(LINE_PT), run(`${name} follows`)),
+  ];
+
+  const CLOSER_FITS_PT = 36;
+  const CLOSER_DOES_NOT_PT = 12;
+  // Ten lines of room under the shim, so nothing in `e` is near a page break and
+  // the only thing that can move its follower is the closer above it.
+  const ROOM_TO_SPARE_PT = 240;
+
+  return [
+    // Half a line of room and an empty closer, which is the case in the wild.
+    ...block("a", CLOSER_DOES_NOT_PT, "", ""),
+    // A line and a half of room, so the closer fits however it is read.
+    ...block("b", CLOSER_FITS_PT, "", ""),
+    // Half a line of room and a closer with text in it, which has to be drawn
+    // somewhere whatever the answer about a bare mark turns out to be.
+    ...block("c", CLOSER_DOES_NOT_PT, "", run("c closes")),
+    // Half a line of room again, and no page opening after it.
+    ...block("d", CLOSER_DOES_NOT_PT, "", ""),
+    // Room to spare and no page opening after it, so the follower stands on the
+    // closer's own page and says how much of it the closer took.
+    ...block("e", ROOM_TO_SPARE_PT, "continuous", ""),
+    // Closing nothing anyone is reading, and stating the type that keeps `d` and
+    // `e` on the pages they were already on.
+    paragraph(sectionProperties("continuous"), run("f closes")),
+    // The body's own section governs whatever follows the last closer, and Word
+    // writes a paragraph of its own there when the document offers none.
+    paragraph("", run("g closes")),
+  ].join("");
+}
+
 // Where a section's text sits down the page, which the `sections` document cannot
 // say: every margin in that one is the same at the top, so the question of whether
 // a section's own top margin reaches its text never arises there.
