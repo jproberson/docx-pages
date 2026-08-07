@@ -4,17 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   layOutDocument,
   lookupFontMetrics,
-  type LaidOutDocument,
-  type LaidOutPage,
-  type ParagraphBox,
-  type PlacedLine,
   type FaceRequest,
   type MetricsResolver,
 } from "@docx-pages/core";
 
 import { authoredCases } from "../authored/cases.js";
 import { authoredFace, authoredMetrics } from "../authored/faces.js";
-import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
+import { agreementWith, type Agreement } from "../pdf/agreement.js";
+import { readTextPlacements } from "../pdf/text.js";
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 
@@ -39,255 +36,23 @@ const CASES: readonly Compared[] = [
   ...(FACE === null ? [] : authoredCases().map((each) => ({ each, metricsFor: authoredMetrics }))),
 ].filter(({ each }) => each.renderedPath !== null && each.textLinesMatched !== null);
 
-const textOf = (placed: PlacedLine): string =>
-  placed.line.segments.map((segment) => (segment.kind === "text" ? segment.text : "")).join("");
-
-// Where the byte a symbol face shadows stands for a character Unicode already
-// names, Word says so on the way into the pdf and the character is what comes
-// back: Symbol's 0xb7 is the bullet, and arrives as one.
-const NAMED_IN_UNICODE = new Map([[0xf0b7, 0x2022]]);
-
-// A symbol face's characters reach the page through the private use page Word
-// writes them in, and come back out of the pdf in the low byte they shadow.
-const outOfSymbolPage = (text: string): string =>
-  Array.from(text, (character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    const named = NAMED_IN_UNICODE.get(codePoint);
-    if (named !== undefined) return String.fromCodePoint(named);
-    return codePoint >= 0xf020 && codePoint <= 0xf0ff
-      ? String.fromCodePoint(codePoint - 0xf000)
-      : character;
-  }).join("");
-
-// A glyph whose face names no character for it comes back out of the pdf as a
-// nul. The one in the suite is what Word drew where a document stated a character
-// the face it named has no glyph for, which is the whole question the document
-// asking it exists for and is answered there by where each character sits. A line
-// is left to the letters either side of it.
-const UNNAMED_IN_THE_PDF = String.fromCodePoint(0);
-
-const normalise = (text: string): string =>
-  outOfSymbolPage(text.replaceAll(UNNAMED_IN_THE_PDF, "").replace(/\s+/g, " ").trim());
-
-// The header and the footer are drawn again on every page, so every page holds
-// their boxes as well as its own.
-function boxesOnPage(layout: LaidOutDocument, page: LaidOutPage): readonly ParagraphBox[] {
-  const floats = [...layout.headerFloats, ...layout.footerFloats, ...page.floats];
-  const inBoxes = floats.flatMap((float) =>
-    float.content.kind === "text-box" && float.content.text !== null
-      ? [...float.content.text.boxes]
-      : [],
-  );
-  return [...layout.header, ...layout.footer, ...page.body, ...inBoxes];
-}
-
-type Comparison = {
-  readonly matched: number;
-  readonly placed: number;
-  readonly runsMatched: number;
-  readonly runsPlaced: number;
-  readonly numbersMatched: number;
-  readonly numbersPlaced: number;
-};
-
-// A stretch of text drawn in one face at one place, which is what Word writes an
-// item for and what a line is made of on our side.
-type Run = {
-  readonly text: string;
-  readonly leftPt: number;
-};
-
-// Runs line up by the characters that carry ink, since the spaces around them are
-// drawn by whichever run happens to hold them. A run opening on a space has no
-// inked character of its own to line up at, so it is left out.
-const inkOf = (text: string): string => text.replace(/\s+/g, "");
-
-// Word writes an item per run, so a line whose runs differ in face or size
-// arrives as several items in a row. The line is the shortest stretch of items
-// from some starting point whose ink spells it out.
-//
-// Ink, because the whitespace Word draws is not the whitespace the document
-// states. Where the faces either side differ, the space between two runs is a run
-// of its own and Word draws it as a text object showing nothing but a space:
-// `ExactShot`, a trademark mark, then a space, then the rest of the line. A tab
-// is drawn as a space as well, one stretched to the width of the gap it opened,
-// though the line it lands on holds no character for it at all. Spelling a line
-// out of what carries ink is what the runs of it are already lined up by, and it
-// asks the one question Word's own breaking answers: which characters landed
-// here.
-function itemsFor(
-  text: string,
-  drawn: readonly TextPlacement[],
-  taken: ReadonlySet<TextPlacement>,
-): readonly TextPlacement[] | null {
-  const wanted = inkOf(text);
-  for (const [start, first] of drawn.entries()) {
-    // A stretch starts where a line does, at ink: one starting at a space could
-    // begin by claiming the space the line above ended on.
-    if (inkOf(first.text) === "") continue;
-    let joined = "";
-    let reached = first.leftPt;
-    for (const [end, item] of drawn.slice(start).entries()) {
-      if (taken.has(item)) break;
-      // Word draws a line from its own start towards its end, so an item standing
-      // left of the one before it is on some other line however the two read
-      // together. Without this a line ending in the same letters another begins
-      // with is spelled out of the two of them, and lands on neither.
-      if (item.leftPt < reached) break;
-      reached = item.leftPt;
-      joined += item.text;
-      const spelled = inkOf(normalise(joined));
-      if (spelled === wanted) return drawn.slice(start, start + end + 1);
-      if (!wanted.startsWith(spelled)) break;
-    }
-  }
-  return null;
-}
-
-function startsOf(runs: readonly Run[]): ReadonlyMap<number, number> {
-  const found = new Map<number, number>();
-  let at = 0;
-  for (const run of runs) {
-    if (inkOf(run.text) !== "" && !/^\s/.test(run.text) && !found.has(at)) {
-      found.set(at, run.leftPt);
-    }
-    at += inkOf(run.text).length;
-  }
-  return found;
-}
-
-const runsOf = (placed: PlacedLine): readonly Run[] =>
-  placed.line.segments.flatMap((segment) =>
-    segment.kind === "text"
-      ? [{ text: outOfSymbolPage(segment.text), leftPt: placed.leftPt + segment.offsetPt }]
-      : [],
-  );
-
-async function laidOut({ each, metricsFor }: Compared): Promise<{
-  readonly layout: LaidOutDocument;
-  readonly drawn: readonly TextPlacement[];
-}> {
-  const layout = layOutDocument(readReferenceDocument(each), metricsFor());
+async function compare(compared: Compared): Promise<Agreement> {
+  const layout = layOutDocument(readReferenceDocument(compared.each), compared.metricsFor());
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
 
-  const drawn = await readTextPlacements(new Uint8Array(readFileSync(each.renderedPath ?? "")));
+  const drawn = await readTextPlacements(
+    new Uint8Array(readFileSync(compared.each.renderedPath ?? "")),
+  );
 
-  return { layout, drawn };
-}
-
-// Word's own output says both which lines it broke each paragraph into and where
-// every run of every line sat. Breaking is asked of the whole document and
-// placement of the page: a line counts as placed only when the run of items Word
-// drew with that text on that same page starts where ours does.
-async function compare(compared: Compared): Promise<Comparison> {
-  const { each } = compared;
-  const { layout, drawn } = await laidOut(compared);
-
-  const taken = new Set<TextPlacement>();
-  const elsewhere: string[] = [];
-  let matched = 0;
-  let placed = 0;
-  let runsMatched = 0;
-  let runsPlaced = 0;
-  let numbersMatched = 0;
-  let numbersPlaced = 0;
-
-  for (const page of layout.pages) {
-    const onPage = drawn.filter((item) => item.pageIndex === page.index);
-    const boxes = boxesOnPage(layout, page);
-
-    for (const line of boxes.flatMap((box) => box.lines)) {
-      const text = normalise(textOf(line));
-      if (text === "") continue;
-
-      const items = itemsFor(text, onPage, taken);
-      const found = items?.[0];
-      if (items === null || found === undefined) {
-        elsewhere.push(text);
-        continue;
-      }
-      for (const item of items) taken.add(item);
-      matched += 1;
-
-      // Only where the run starts is asked of it: a superscript sits off the
-      // line's own baseline, which the line itself is already pinned against.
-      const ours = startsOf(runsOf(line));
-      const theirs = startsOf(items);
-
-      // Where the line lies is asked of its first inked character rather than of
-      // its own start, since a tab opening the line leaves a gap ahead of the
-      // first item Word drew and the two starts are then not the same place.
-      const off = Math.max(
-        Math.abs((theirs.get(0) ?? found.leftPt) - (ours.get(0) ?? line.leftPt)),
-        Math.abs(found.baselinePt - line.baselinePt),
-      );
-      if (off <= each.textTolerancePt) placed += 1;
-
-      for (const [at, leftPt] of theirs) {
-        const mine = ours.get(at);
-        if (mine === undefined) continue;
-        runsMatched += 1;
-        if (Math.abs(mine - leftPt) <= each.textTolerancePt) runsPlaced += 1;
-      }
-    }
-
-    const numbers = compareNumbers(each, boxes, onPage);
-    numbersMatched += numbers.numbersMatched;
-    numbersPlaced += numbers.numbersPlaced;
-  }
-
-  // A line Word drew on another page was still broken the way Word broke it.
-  for (const text of elsewhere) {
-    const items = itemsFor(text, drawn, taken);
-    if (items === null) continue;
-    for (const item of items) taken.add(item);
-    matched += 1;
-  }
-
-  return { matched, placed, runsMatched, runsPlaced, numbersMatched, numbersPlaced };
-}
-
-// How near a number's line has to sit to Word's own before the number drawn there
-// can be taken for the same one.
-const SAME_LINE_PT = 3;
-
-function compareNumbers(
-  each: ReferenceCase,
-  boxes: readonly ParagraphBox[],
-  drawn: readonly TextPlacement[],
-): { readonly numbersMatched: number; readonly numbersPlaced: number } {
-  let numbersMatched = 0;
-  let numbersPlaced = 0;
-
-  for (const box of boxes) {
-    const marker = box.marker;
-    const line = box.lines[0];
-    if (marker === null || line === undefined) continue;
-
-    const text = normalise(marker.text);
-    if (text === "") continue;
-
-    const near = drawn.filter(
-      (item) =>
-        normalise(item.text) === text &&
-        Math.abs(item.baselinePt - line.baselinePt) <= SAME_LINE_PT,
-    );
-    if (near.length === 0) continue;
-    numbersMatched += 1;
-
-    const off = Math.min(...near.map((item) => Math.abs(item.leftPt - marker.leftPt)));
-    if (off <= each.textTolerancePt) numbersPlaced += 1;
-  }
-
-  return { numbersMatched, numbersPlaced };
+  return agreementWith(layout, drawn, compared.each.textTolerancePt);
 }
 
 // Every assertion below asks the same question of the same document, and laying it
 // out and reading Word's pdf again for each one is what the whole suite's time goes
 // on. Each case is compared once and the answer handed round.
-const comparisons = new Map<string, Promise<Comparison>>();
+const comparisons = new Map<string, Promise<Agreement>>();
 
-function comparisonOf(compared: Compared): Promise<Comparison> {
+function comparisonOf(compared: Compared): Promise<Agreement> {
   const found = comparisons.get(compared.each.id);
   if (found !== undefined) return found;
 
