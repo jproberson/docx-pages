@@ -16,7 +16,12 @@ const NORMAL = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocess
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr></w:style></w:styles>`;
 
-const measure = (body: string, stylesXml: string = NORMAL, widthPt = 468) => {
+const measure = (
+  body: string,
+  stylesXml: string = NORMAL,
+  widthPt = 468,
+  settings: DocumentSettings = DEFAULT_SETTINGS,
+) => {
   const pkg = openDocx(
     buildDocx({ "word/document.xml": wordDocument(body), "word/styles.xml": stylesXml }),
   );
@@ -28,11 +33,17 @@ const measure = (body: string, stylesXml: string = NORMAL, widthPt = 468) => {
     originPt: 36,
     leftPt: 72,
     widthPt,
+    settings,
   });
 };
 
-function boxesOf(body: string, stylesXml: string = NORMAL, widthPt = 468) {
-  const result = measure(body, stylesXml, widthPt);
+function boxesOf(
+  body: string,
+  stylesXml: string = NORMAL,
+  widthPt = 468,
+  settings: DocumentSettings = DEFAULT_SETTINGS,
+) {
+  const result = measure(body, stylesXml, widthPt, settings);
   if (result.kind !== "measured") throw new Error(result.blocker.kind);
   return result.boxes;
 }
@@ -339,6 +350,11 @@ describe("measureStack and the stops the document falls back on", () => {
   });
 });
 
+// Which Word a document was written for decides where a table's indent is
+// measured to, so every table below says which one it stands in.
+const MODERN: DocumentSettings = { ...DEFAULT_SETTINGS, compatibilityMode: 15 };
+const LEGACY: DocumentSettings = { ...DEFAULT_SETTINGS, compatibilityMode: null };
+
 describe("measureStack over tables", () => {
   it("gives a row the height of its tallest cell, not the sum of them", () => {
     const result = measure(table(cell(`<w:p/>`), cell(`<w:p/><w:p/><w:p/>`)));
@@ -382,7 +398,12 @@ describe("measureStack over tables", () => {
   });
 
   it("holds a cell's text off its edge by the margin Word leaves there", () => {
-    const boxes = boxesOf(table(cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)));
+    const boxes = boxesOf(
+      table(cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)),
+      NORMAL,
+      468,
+      MODERN,
+    );
     // The frame starts at 72pt and Word's own cell margin is an eighth of an inch.
     expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 5.4, 9);
   });
@@ -392,7 +413,48 @@ describe("measureStack over tables", () => {
       `<w:tblPr><w:tblInd w:w="-100" w:type="dxa"/>` +
       `<w:tblCellMar><w:left w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
     const body = `<w:tbl>${properties}<w:tr>${cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)}</w:tr></w:tbl>`;
-    expect(boxesOf(body)[0]?.lines[0]?.leftPt).toBeCloseTo(72 - 5, 9);
+    expect(boxesOf(body, NORMAL, 468, MODERN)[0]?.lines[0]?.leftPt).toBeCloseTo(72 - 5, 9);
+  });
+
+  // An old document measures the same indent to the text rather than to the
+  // table, so the cell's margin stands outside the indent instead of inside it.
+  // Word draws the table's own edge left of the page margin to put it there.
+  const indented = (indentTwips: number, marginTwips: number, settings: DocumentSettings) => {
+    const properties =
+      `<w:tblPr><w:tblInd w:w="${String(indentTwips)}" w:type="dxa"/>` +
+      `<w:tblCellMar><w:left w:w="${String(marginTwips)}" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
+    const body = `<w:tbl>${properties}<w:tr>${cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)}</w:tr></w:tbl>`;
+    return boxesOf(body, NORMAL, 468, settings)[0]?.lines[0]?.leftPt;
+  };
+
+  it("measures an old document's indent to the text in its first cell", () => {
+    expect(indented(216, 108, LEGACY)).toBeCloseTo(72 + 10.8, 9);
+    expect(indented(0, 108, LEGACY)).toBeCloseTo(72, 9);
+  });
+
+  it("measures a modern document's indent to the table's own edge", () => {
+    expect(indented(216, 108, MODERN)).toBeCloseTo(72 + 10.8 + 5.4, 9);
+    expect(indented(0, 108, MODERN)).toBeCloseTo(72 + 5.4, 9);
+  });
+
+  it("leaves an indent where it is in either where the cell asks for no margin", () => {
+    expect(indented(216, 0, LEGACY)).toBeCloseTo(72 + 10.8, 9);
+    expect(indented(216, 0, MODERN)).toBeCloseTo(72 + 10.8, 9);
+  });
+
+  it("measures an old document's indent to the first row's cell, not to each row's", () => {
+    const properties =
+      `<w:tblPr><w:tblInd w:w="216" w:type="dxa"/>` +
+      `<w:tblCellMar><w:left w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
+    const wide = `<w:tcMar><w:left w:w="288" w:type="dxa"/></w:tcMar>`;
+    const rows =
+      `<w:tr>${cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)}</w:tr>` +
+      `<w:tr>${cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`, wide)}</w:tr>`;
+    const boxes = boxesOf(`<w:tbl>${properties}${rows}</w:tbl>`, NORMAL, 468, LEGACY);
+    // The table's edge is 5.4pt left of the indent, and the second row stands its
+    // own 14.4pt off that same edge.
+    expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 10.8, 9);
+    expect(boxes[1]?.lines[0]?.leftPt).toBeCloseTo(72 + 10.8 - 5.4 + 14.4, 9);
   });
 
   it("holds every cell of a row off the top wall by the largest margin any of them asks for", () => {
@@ -414,6 +476,9 @@ describe("measureStack over tables", () => {
     const held = `<w:tcMar><w:left w:w="288" w:type="dxa"/></w:tcMar>`;
     const boxes = boxesOf(
       table(cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`, held), cell(`<w:p/>`)),
+      NORMAL,
+      468,
+      MODERN,
     );
     expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 14.4, 9);
   });

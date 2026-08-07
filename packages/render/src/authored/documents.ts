@@ -8,6 +8,7 @@ import {
   pageDocument,
   spacingDocument,
   tableDocument,
+  tableIndentDocument,
   unmappedCharacterDocument,
   unmappedInTextFaceDocument,
   wrappingDocument,
@@ -362,6 +363,21 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "The same wrapping in a document that declares one",
       asks: "whether declaring 15 is what leaves an object where the flow put it",
       bytes: buildAuthoredDocx({ body: compatibilityDocument(), picture: true }),
+    },
+    {
+      id: "legacy-table-indent",
+      title: "A table's indent in a document that declares no compatibility mode",
+      asks: "whether an indent is measured to the table's edge or to the text inside its first cell",
+      bytes: buildAuthoredDocx({
+        body: tableIndentDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
+    },
+    {
+      id: "table-indent",
+      title: "The same indents in a document that declares one",
+      asks: "whether declaring 15 is what puts the cell margin beyond the indent",
+      bytes: buildAuthoredDocx({ body: tableIndentDocument() }),
     },
     {
       id: "numbering",

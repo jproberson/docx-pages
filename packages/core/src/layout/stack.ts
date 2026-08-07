@@ -18,7 +18,12 @@ import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js"
 import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns, type TextRun } from "../docx/runs.js";
 import { W_NS } from "../docx/section.js";
-import { roundsAnchorsToTwips, DEFAULT_SETTINGS, type DocumentSettings } from "../docx/settings.js";
+import {
+  measuresTheIndentToTheText,
+  roundsAnchorsToTwips,
+  DEFAULT_SETTINGS,
+  type DocumentSettings,
+} from "../docx/settings.js";
 import {
   mergeTableBorders,
   resolveNumberMark,
@@ -377,10 +382,19 @@ function measureTable(
   const outerBottomPt = halfOf(last.map((cell) => cell.bottom));
   const outerLeftPt = halfOf(borders.map((row) => row[0]?.left ?? null));
 
+  // An old document's indent is measured to the text rather than to the table, so
+  // the first column's own margin stands outside the indent instead of inside it
+  // and the table's edge moves left by the whole of it.
+  const openingCell = block.rows[0]?.cells[0];
+  const insetPt =
+    measuresTheIndentToTheText(context.settings) && openingCell !== undefined
+      ? -leftMarginOf(openingCell, block.insets, first[0] ?? NO_BORDERS)
+      : outerLeftPt;
+
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
   const rowFrame = {
-    leftPt: frame.leftPt + twipsToPoints(block.insets.indentTwips) + outerLeftPt,
+    leftPt: frame.leftPt + twipsToPoints(block.insets.indentTwips) + insetPt,
     widthPt: frame.widthPt,
   };
 
@@ -395,6 +409,11 @@ function measureTable(
 
   return { kind: "measured", boxes, cells, heightPt: top + outerBottomPt - topPt };
 }
+
+// How far a cell holds its text off its own left wall: the margin it asks for, or
+// the room its border needs where that is the wider of the two.
+const leftMarginOf = (cell: TableCell, insets: TableInsets, borders: Borders): number =>
+  Math.max(twipsToPoints(cell.margins.leftTwips ?? insets.leftTwips), halfOf([borders.left]));
 
 // How far a line drawn along an edge reaches to either side of it, which is the
 // room the cells on both sides of it have to leave.
@@ -464,10 +483,7 @@ function measureRow(
   for (const [at, cell] of row.cells.entries()) {
     const widthPt = cellWidthPt(cell) ?? frame.widthPt;
     const own = borders[at] ?? NO_BORDERS;
-    const leftMarginPt = Math.max(
-      twipsToPoints(cell.margins.leftTwips ?? insets.leftTwips),
-      halfOf([own.left]),
-    );
+    const leftMarginPt = leftMarginOf(cell, insets, own);
     const rightMarginPt = Math.max(
       twipsToPoints(cell.margins.rightTwips ?? insets.rightTwips),
       halfOf([own.right]),

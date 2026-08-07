@@ -40,6 +40,20 @@ const legacy = roundsAnchorsToTwips;
 // an alignment, and every one of the four flipped sides with the setting.
 export const takesTheRightOnEqualSides = legacy;
 
+// A table's indent is measured to the leading edge of the text in its first cell
+// in a document declaring no compatibility mode, and to the table's own edge in
+// one declaring 15. So an old document's table hangs its first column's margin and
+// border outside the indent, and outside the page margin altogether where it asks
+// for no indent at all.
+//
+// Measured with the same body written both ways, at indents under, over and equal
+// to the cell margin they stand against, and again with no margin at all: in the
+// old form the text landed on the indent to the twip every time and the table's
+// edge moved to put it there, whatever margin the cell asked for. Where two rows
+// ask for different margins the table still has one edge, and it is the first
+// row's cell that decides it.
+export const measuresTheIndentToTheText = legacy;
+
 // A document declaring no compatibility mode does not keep text off the right of
 // an object wrapped on its left: the line takes the run of free space beside the
 // object as though the wrap named both sides. Measured with an object flush to the

@@ -948,6 +948,92 @@ export function compatibilityDocument(): string {
     .join("");
 }
 
+// Where a table's own indent puts it, and what the cell's margin then does to
+// that. The same body is written twice, once declaring 15 and once declaring
+// nothing, so the difference between the two is the setting and nothing else.
+//
+// The two answers this can come out as are a whole cell margin apart: an indent
+// measured to the table's edge holds the text off the margin by the indent and
+// the cell margin both, and one measured to the cell's text holds it off by the
+// indent alone, which leaves the table's own edge hanging outside the margin
+// where a case states no indent at all.
+//
+// So every case says both. Its text says where the text went, and its border says
+// where the edge went, and each case states an indent against a cell margin the
+// indent is under, over or exactly equal to. The last two state no margin at all:
+// with nothing to swallow the indent, the two answers are the same, which is what
+// says the margin is what the difference is made of.
+export function tableIndentDocument(): string {
+  const CELL_TWIPS = 2880;
+
+  const cases = [
+    { indent: 0, margin: 108 },
+    { indent: 54, margin: 108 },
+    { indent: 108, margin: 108 },
+    { indent: 720, margin: 108 },
+    { indent: 0, margin: 0 },
+    { indent: 720, margin: 0 },
+  ];
+
+  // A cell margin of its own on the cell rather than on the table, since a real
+  // document states both and only this says which of the two an indent is
+  // measured against.
+  const OWN_MARGIN_TWIPS = 288;
+
+  const named = (indent: number, margin: number): string => `i${String(indent)} m${String(margin)}`;
+
+  const own = (twips: number): string =>
+    `<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="${String(twips)}" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="${String(twips)}" w:type="dxa"/></w:tcMar>`;
+
+  const indented = (indent: number, margin: number, own: string, name: string): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(CELL_TWIPS)}" w:type="dxa"/>
+      <w:tblInd w:w="${String(indent)}" w:type="dxa"/>
+      <w:tblCellMar>
+        <w:top w:w="0" w:type="dxa"/><w:left w:w="${String(margin)}" w:type="dxa"/>
+        <w:bottom w:w="0" w:type="dxa"/><w:right w:w="${String(margin)}" w:type="dxa"/>
+      </w:tblCellMar>
+      <w:tblBorders><w:left w:val="single" w:sz="8" w:space="0" w:color="C00000"/></w:tblBorders></w:tblPr>
+      <w:tblGrid><w:gridCol w:w="${String(CELL_TWIPS)}"/></w:tblGrid>
+      <w:tr><w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/>${own}
+        <w:tcBorders><w:left w:val="single" w:sz="8" w:space="0" w:color="C00000"/></w:tcBorders></w:tcPr>
+        ${paragraph("", run(name))}</w:tc></w:tr></w:tbl>`;
+
+  return [
+    paragraph("", run("above")),
+    ...cases.flatMap(({ indent, margin }) => [
+      indented(indent, margin, "", named(indent, margin)),
+      paragraph("", run("between")),
+    ]),
+    // The same indent again with the cell stating a margin of its own, which is
+    // wider than the table's and is what the text should stand off if a cell's
+    // own margin is what the indent is measured against.
+    indented(108, 108, own(OWN_MARGIN_TWIPS), `i108 own${String(OWN_MARGIN_TWIPS)}`),
+    paragraph("", run("between")),
+    // Two rows whose cells state different margins of their own. A table has one
+    // edge and the rows disagree about how far their text stands off it, so which
+    // of them the indent is measured against is what this says.
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(CELL_TWIPS)}" w:type="dxa"/>
+      <w:tblInd w:w="108" w:type="dxa"/>
+      <w:tblCellMar>
+        <w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>
+        <w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
+      </w:tblCellMar>
+      <w:tblBorders><w:left w:val="single" w:sz="8" w:space="0" w:color="C00000"/></w:tblBorders></w:tblPr>
+      <w:tblGrid><w:gridCol w:w="${String(CELL_TWIPS)}"/></w:tblGrid>
+      ${[0, OWN_MARGIN_TWIPS]
+        .map(
+          (twips) =>
+            `<w:tr><w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/>${own(twips)}
+              <w:tcBorders><w:left w:val="single" w:sz="8" w:space="0" w:color="C00000"/></w:tcBorders></w:tcPr>
+              ${paragraph("", run(`i108 row${String(twips)}`))}</w:tc></w:tr>`,
+        )
+        .join("")}</w:tbl>`,
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
 // As wide as the text column, so the object leaves no room beside it, and short
 // enough that a case and the object it holds fit on one page.
 const COLUMN_PT = RIGHT_PT - LEFT_PT;

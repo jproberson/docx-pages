@@ -61,6 +61,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // of those characters is remains the other suite's question, asked of where the
   // letters either side of it sit.
   "unmapped-characters": { lines: 24, runs: 26, numbers: 0 },
+  // Nine tables and the nine lines between them, in both documents: an indent is
+  // measured to the text in an old document and to the table's edge in a modern
+  // one, and every case of it now lands where Word drew it either way.
+  "legacy-table-indent": { lines: 18, runs: 18, numbers: 0 },
+  "table-indent": { lines: 18, runs: 18, numbers: 0 },
   // Every line but the seven under the wave borders, which Word draws neither at
   // the width they state nor at any width read off it: the rows they line come out
   // shorter here and everything below them stands too high.

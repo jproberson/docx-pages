@@ -132,11 +132,6 @@ const AGREED: Readonly<Record<string, Agreed>> = {
   // as a stroked zigzag rather than as a filled rectangle: nothing of one reaches
   // this comparison at all.
   "authored-borders": { lines: 124, fills: 7 },
-  // Every horizontal line of the one table, and none of the vertical ones: the
-  // table stands about 2.7pt right of where Word puts it, which is the same gap
-  // its text has always had ([[a-document-from-outside-the-family]]). The fills
-  // are white on white and miss by the same distance.
-  h: { lines: 48, fills: 0 },
 };
 
 type Agreement = {
