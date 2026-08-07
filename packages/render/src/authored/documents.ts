@@ -6,6 +6,7 @@ import {
   drawingDocument,
   keepingDocument,
   numberingDocument,
+  sectionsDocument,
   pageDocument,
   spacingDocument,
   tableDocument,
@@ -342,6 +343,13 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Page breaks through a paragraph's spacing",
       asks: "whether the room a paragraph asks for either side of itself holds it back at the foot of a page",
       bytes: buildAuthoredDocx({ body: breakingDocument() }),
+    },
+    {
+      id: "sections",
+      title: "A document made of more than one section",
+      asks: "which section a paragraph's own properties govern, and what a break's type describes",
+      refuses: "nothing here reads a section but the last, so the pages are the last one's",
+      bytes: buildAuthoredDocx({ body: sectionsDocument() }),
     },
     {
       id: "keeping",

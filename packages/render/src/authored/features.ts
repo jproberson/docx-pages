@@ -481,6 +481,54 @@ export function breakingDocument(): string {
   ].join("");
 }
 
+// What a section break does, and which section's page the text either side of one
+// is drawn on.
+//
+// Two things are unknown and neither is worth guessing. **Which section a
+// `w:sectPr` on a paragraph governs**: the paragraph's own, or the one after it.
+// And **what `w:type` describes**: how the section holding it begins, or how the
+// one after it does. The spec is read both ways.
+//
+// Every section here keeps a left margin of its own and every paragraph says which
+// section wrote it, so where a line is drawn across the page answers the first
+// question and which page it lands on answers the second. **Read off Word's own
+// pdf**, not its report: the report gives a paragraph's position from its own text
+// boundary, which is the same number whatever the margin is.
+export function sectionsDocument(): string {
+  // Far enough apart that no rounding puts a line under the wrong one, and none of
+  // them the 36pt the body's own section keeps.
+  const ONE_INCH = 1440;
+  const TWO_INCHES = 2880;
+  const THREE_INCHES = 4320;
+
+  const sectionProperties = (leftTwips: number, type: string): string =>
+    `<w:sectPr>` +
+    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="${String(leftTwips)}" w:header="720" w:footer="720" w:gutter="0"/>` +
+    `</w:sectPr>`;
+
+  // The paragraph carrying section properties is the last of whichever section they
+  // turn out to govern, which is what this document is for.
+  const closes = (name: string, leftTwips: number, type: string): string =>
+    paragraph(sectionProperties(leftTwips, type), run(name));
+
+  const line = (name: string): string => paragraph("", run(name));
+
+  return [
+    line("one opens"),
+    closes("one closes", ONE_INCH, ""),
+    line("two opens"),
+    closes("two closes", TWO_INCHES, "continuous"),
+    line("three opens"),
+    closes("three closes", THREE_INCHES, "nextPage"),
+    // The last section is the body's own, at the 36pt margin the rest of the suite
+    // uses, so a line drawn there is one no paragraph's properties reached.
+    line("four opens"),
+    line("four closes"),
+  ].join("");
+}
+
 // Whether `w:keepNext` moves a paragraph onto the page its next one landed on,
 // and how far back a run of them pulls.
 //

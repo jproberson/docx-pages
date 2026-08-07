@@ -11116,6 +11116,60 @@
       ],
       "characters": [],
       "shapes": []
+    },
+    "sections": {
+      "paragraphs": [
+        {
+          "index": 1,
+          "page": 1,
+          "topPt": 36.299999,
+          "leftPt": 0
+        },
+        {
+          "index": 2,
+          "page": 1,
+          "topPt": 50.799999,
+          "leftPt": 0
+        },
+        {
+          "index": 3,
+          "page": 1,
+          "topPt": 65.349998,
+          "leftPt": 0
+        },
+        {
+          "index": 4,
+          "page": 1,
+          "topPt": 79.849998,
+          "leftPt": 0
+        },
+        {
+          "index": 5,
+          "page": 2,
+          "topPt": 36.299999,
+          "leftPt": 0
+        },
+        {
+          "index": 6,
+          "page": 2,
+          "topPt": 50.799999,
+          "leftPt": 0
+        },
+        {
+          "index": 7,
+          "page": 3,
+          "topPt": 36.299999,
+          "leftPt": 0
+        },
+        {
+          "index": 8,
+          "page": 3,
+          "topPt": 50.799999,
+          "leftPt": 0
+        }
+      ],
+      "characters": [],
+      "shapes": []
     }
   }
 }
