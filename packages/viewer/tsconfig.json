@@ -7,6 +7,7 @@
     "rootDir": "src",
     "outDir": "dist",
     "paths": {
+      "@docx-pages/core": ["../core/src/index.ts"],
       "@docx-pages/core/internal": ["../core/src/internal.ts"],
       "@docx-pages/core/testing": ["../core/src/testing/index.ts"]
     }
