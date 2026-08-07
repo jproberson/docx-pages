@@ -76,10 +76,12 @@ jobs:
           import { bestEffortMetrics, layOutDocument, openDocx, substitutingMetrics } from "@docx-pages/core";
           import { PACK_FACES } from "@docx-pages/fonts";
           import { defaultFacesFromDisk } from "@docx-pages/fonts/node";
-          import { Document, Page } from "@docx-pages/viewer";
+          import { Document, DocxDocument, Page } from "@docx-pages/viewer";
+          import { DocxDocument as PackedDocxDocument } from "@docx-pages/viewer/pack";
 
           const missing = Object.entries({
-            bestEffortMetrics, layOutDocument, openDocx, substitutingMetrics, defaultFacesFromDisk, Document, Page,
+            bestEffortMetrics, layOutDocument, openDocx, substitutingMetrics, defaultFacesFromDisk,
+            Document, DocxDocument, Page, PackedDocxDocument,
           }).filter(([, value]) => value === undefined);
 
           // The pack is only a pack if the installed tarball carries the files.
@@ -110,6 +112,47 @@ jobs:
           console.log("all three packages install, export what they promise, and hide what they do not");
           EOF
           node check.mjs
+
+      # The whole point of the split: a project that supplies its own faces
+      # installs the viewer without the pack's megabytes. Nothing the root entry
+      # reaches may name `@docx-pages/fonts`, and no test inside the workspace
+      # can tell, because there the pack is always resolvable.
+      - name: Install the viewer without the font pack
+        run: |
+          mkdir -p /tmp/lean && cd /tmp/lean
+          npm init -y > /dev/null
+          npm pkg set type=module
+          npm install /tmp/packed/docx-pages-core-*.tgz /tmp/packed/docx-pages-viewer-*.tgz react react-dom > /dev/null
+
+          # An optional peer is not installed for you. If that changes, the rest
+          # of this step proves nothing, so fail rather than pass quietly.
+          test ! -d node_modules/@docx-pages/fonts
+
+          cat > lean.mjs <<'EOF'
+          import { Document, DocxDocument, Page, imageResolver } from "@docx-pages/viewer";
+
+          const missing = Object.entries({ Document, DocxDocument, Page, imageResolver })
+            .filter(([, value]) => value === undefined);
+          if (missing.length > 0) {
+            throw new Error(`the root entry lost ${missing.map(([n]) => n).join(", ")} without the pack`);
+          }
+
+          // And the pack entry is the one thing that does need it: it must fail
+          // for the plain reason rather than resolve to something half-wired.
+          let reached = false;
+          try {
+            await import("@docx-pages/viewer/pack");
+            reached = true;
+          } catch (error) {
+            if (error.code !== "ERR_MODULE_NOT_FOUND") throw error;
+          }
+          if (reached) {
+            throw new Error("@docx-pages/viewer/pack resolved with no @docx-pages/fonts installed");
+          }
+
+          console.log("the viewer draws without the pack, and only its pack entry asks for one");
+          EOF
+          node lean.mjs
 
       - name: Resolve their types from outside the workspace
         run: |

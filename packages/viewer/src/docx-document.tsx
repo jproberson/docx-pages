@@ -15,16 +15,6 @@ import {
   type SuppliedFace,
   type Unhonoured,
 } from "@docx-pages/core";
-import {
-  fontUrl,
-  LAST_RESORT_DEFAULT,
-  METRIC_TWINS,
-  MONOSPACE_DEFAULT,
-  PACK_FACES,
-  SANS_SERIF_DEFAULT,
-  SERIF_DEFAULT,
-  type PackFace,
-} from "@docx-pages/fonts";
 
 import { imageResolver, type ImageResolver } from "./images.js";
 import { Document, type FrameStyle } from "./page.js";
@@ -50,62 +40,27 @@ export type DocxRenderReport = {
 
 export type DocxDocumentProps = {
   readonly source: Uint8Array | ArrayBuffer;
+  // What answers for a face the document names that `fonts` does not supply.
+  // Nothing here reaches for a font of its own: this module names no font
+  // package, so a consumer supplying its own faces never installs one.
+  // `@docx-pages/viewer/pack` fills this in from `@docx-pages/fonts`.
+  readonly defaults: FaceDefaults;
+  // Bytes for the faces `defaults` measures with, so a face stood in for is
+  // painted with the very bytes it was measured with. A default face whose
+  // bytes are missing is measured here and painted by whatever the browser
+  // finds, which is the one way a page is right in its geometry and wrong on
+  // the screen.
+  readonly defaultBytes?: readonly DocxFont[];
   // Faces supplied for exactness. Every face the document names that is not
-  // here falls to the pack's twins and defaults, and the report says which.
+  // here falls to `defaults`, and the report says which.
   readonly fonts?: readonly DocxFont[];
-  // Stands in for the pack, for a runtime whose fetch cannot reach the pack's
-  // own files: hand `defaultFacesFromDisk()` in from `@docx-pages/fonts/node`.
-  readonly defaults?: FaceDefaults;
   readonly onReport?: (report: DocxRenderReport) => void;
-  // What to draw for a document even best effort cannot lay out, which with the
-  // pack in reach is a malformed file rather than a missing font.
+  // What to draw for a document even best effort cannot lay out, which with a
+  // full set of defaults in reach is a malformed file rather than a missing font.
   readonly blocked?: (reason: unknown) => ReactElement | null;
   readonly scale?: number;
   readonly frames?: FrameStyle;
   readonly className?: string;
-};
-
-type PackEntry = {
-  readonly face: PackFace;
-  readonly bytes: Uint8Array;
-  readonly supplied: SuppliedFace;
-};
-
-// The pack is fetched once per page, not once per document.
-let packOnce: Promise<readonly PackEntry[]> | null = null;
-
-const loadPack = (): Promise<readonly PackEntry[]> => {
-  packOnce ??= Promise.all(
-    PACK_FACES.map(async (face) => {
-      const url = fontUrl(face);
-      // A dev server that prebundles its dependencies moves this module into a
-      // deps cache, away from the files it resolves beside itself. Vite's is the
-      // one met so far, and the way out is configuration, so say so.
-      if (url.href.includes("/.vite/")) {
-        throw new Error(
-          `the font pack was prebundled away from its own files (${url.href}); add optimizeDeps: { exclude: ["@docx-pages/viewer", "@docx-pages/fonts"] } to vite.config`,
-        );
-      }
-      const response = await fetch(url);
-      if (!response.ok)
-        throw new Error(`the font at ${url.href} came back ${String(response.status)}`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      const read = readFontFile(bytes);
-      return {
-        face,
-        bytes,
-        supplied: {
-          name: face.name,
-          bold: face.bold,
-          italic: face.italic,
-          metrics: read.metrics,
-          advances: read.advances,
-          sansSerif: face.sansSerif ?? read.sansSerif,
-        },
-      };
-    }),
-  );
-  return packOnce;
 };
 
 const suppliedFrom = (font: DocxFont): SuppliedFace => {
@@ -144,6 +99,14 @@ function offerToBrowser(name: string, bold: boolean, italic: boolean, bytes: Uin
   });
 }
 
+const sameFace = (
+  font: DocxFont,
+  want: { readonly name: string; readonly bold: boolean; readonly italic: boolean },
+): boolean =>
+  font.name.trim().toLowerCase() === want.name.trim().toLowerCase() &&
+  (font.bold ?? false) === want.bold &&
+  (font.italic ?? false) === want.italic;
+
 type Shown =
   | { readonly state: "opening" }
   | { readonly state: "blocked"; readonly reason: unknown }
@@ -156,107 +119,86 @@ type Shown =
 
 /**
  * Draws a `.docx` from its bytes alone: opens it, resolves every face it names
- * through whatever `fonts` supplies and the pack's twins behind that, lays it
- * out, and paints it with the same bytes it was measured with. Never quiet:
- * `onReport` receives every stand-in, borrowed character, missing glyph and
- * unread feature, and a page drawn over any of them is not the page Word would
- * draw.
+ * through whatever `fonts` supplies and `defaults` behind that, lays it out, and
+ * paints it with the same bytes it was measured with. Never quiet: `onReport`
+ * receives every stand-in, borrowed character, missing glyph and unread feature,
+ * and a page drawn over any of them is not the page Word would draw.
  *
  * Exactness is `fonts`: a face supplied there is used as given, and a document
  * whose faces are all supplied lays out as `layOutDocument` would have laid it
- * out with no pack at all.
+ * out with no defaults consulted at all.
+ *
+ * The faces themselves are the caller's to bring. For the pack's, import this
+ * component from `@docx-pages/viewer/pack` instead, which is the only module
+ * here that names `@docx-pages/fonts`.
  */
 export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
   const [shown, setShown] = useState<Shown>({ state: "opening" });
-  const { source, fonts, defaults, onReport, blocked } = props;
+  const { source, fonts, defaults, defaultBytes, onReport, blocked } = props;
 
+  // Laying out is synchronous once the faces are in hand, which is the whole
+  // reason the pack lives behind `@docx-pages/viewer/pack`: fetching it was the
+  // only thing here that ever had to be waited for.
   useEffect(() => {
-    let stale = false;
+    try {
+      const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
+      const pkg = openDocx(bytes);
 
-    const open = async (): Promise<void> => {
-      try {
-        const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
-        const pkg = openDocx(bytes);
+      const supplied = (fonts ?? []).map(suppliedFrom);
+      const faces = bestEffortMetrics(supplied, defaults, readFaceShapes(pkg));
+      const layout = layOutDocument(pkg, faces);
 
-        const pack = defaults === undefined ? await loadPack() : null;
-        const packDefaults: FaceDefaults =
-          defaults ??
-          ({
-            faces: (pack ?? []).map((entry) => entry.supplied),
-            twins: METRIC_TWINS,
-            sansSerif: SANS_SERIF_DEFAULT,
-            serif: SERIF_DEFAULT,
-            monospace: MONOSPACE_DEFAULT,
-            lastResort: LAST_RESORT_DEFAULT,
-          } satisfies FaceDefaults);
-
-        const supplied = (fonts ?? []).map(suppliedFrom);
-        const faces = bestEffortMetrics(supplied, packDefaults, readFaceShapes(pkg));
-        const layout = layOutDocument(pkg, faces);
-        if (stale) return;
-
-        if (layout.kind !== "laid-out") {
-          setShown({ state: "blocked", reason: layout.blocker });
-          return;
-        }
-
-        for (const [at, font] of (fonts ?? []).entries()) {
-          const face = supplied[at];
-          if (face !== undefined) offerToBrowser(face.name, face.bold, face.italic, font.bytes);
-        }
-        for (const substitution of faces.substitutions()) {
-          const entry = pack?.find(
-            (each) =>
-              each.face.name === substitution.used.name &&
-              each.face.bold === substitution.used.bold &&
-              each.face.italic === substitution.used.italic,
-          );
-          if (entry !== undefined && substitution.requested.name !== "") {
-            offerToBrowser(
-              substitution.requested.name,
-              substitution.requested.bold,
-              substitution.requested.italic,
-              entry.bytes,
-            );
-          }
-        }
-        for (const entry of pack ?? []) {
-          offerToBrowser(entry.face.name, entry.face.bold, entry.face.italic, entry.bytes);
-        }
-
-        onReport?.({
-          substitutions: faces.substitutions(),
-          fallbackCharacters: faces.fallbackCharacters(),
-          missingGlyphs: faces.missingGlyphs(),
-          unhonoured: layout.unhonoured,
-        });
-
-        // Runs in a symbol face that was stood in for are drawn as what their
-        // positions mean; one whose real face was supplied draws as written.
-        const aliasedFaces = new Set(
-          faces
-            .substitutions()
-            .filter((each) => isAliasedSymbolFace(each.requested.name))
-            .map((each) => each.requested.name.trim().toLowerCase()),
-        );
-        setShown({
-          state: "shown",
-          layout,
-          imageUrl: imageResolver(pkg, faces.metricsFor),
-          aliasSymbolFaces: aliasedFaces.size > 0 ? aliasedFaces : null,
-        });
-      } catch (error) {
-        if (!stale) setShown({ state: "blocked", reason: error });
+      if (layout.kind !== "laid-out") {
+        setShown({ state: "blocked", reason: layout.blocker });
+        return;
       }
-    };
 
-    void open();
-    return () => {
-      stale = true;
-    };
+      for (const [at, font] of (fonts ?? []).entries()) {
+        const face = supplied[at];
+        if (face !== undefined) offerToBrowser(face.name, face.bold, face.italic, font.bytes);
+      }
+      for (const substitution of faces.substitutions()) {
+        const stood = (defaultBytes ?? []).find((each) => sameFace(each, substitution.used));
+        if (stood !== undefined && substitution.requested.name !== "") {
+          offerToBrowser(
+            substitution.requested.name,
+            substitution.requested.bold,
+            substitution.requested.italic,
+            stood.bytes,
+          );
+        }
+      }
+      for (const each of defaultBytes ?? []) {
+        offerToBrowser(each.name, each.bold ?? false, each.italic ?? false, each.bytes);
+      }
+
+      onReport?.({
+        substitutions: faces.substitutions(),
+        fallbackCharacters: faces.fallbackCharacters(),
+        missingGlyphs: faces.missingGlyphs(),
+        unhonoured: layout.unhonoured,
+      });
+
+      // Runs in a symbol face that was stood in for are drawn as what their
+      // positions mean; one whose real face was supplied draws as written.
+      const aliasedFaces = new Set(
+        faces
+          .substitutions()
+          .filter((each) => isAliasedSymbolFace(each.requested.name))
+          .map((each) => each.requested.name.trim().toLowerCase()),
+      );
+      setShown({
+        state: "shown",
+        layout,
+        imageUrl: imageResolver(pkg, faces.metricsFor),
+        aliasSymbolFaces: aliasedFaces.size > 0 ? aliasedFaces : null,
+      });
+    } catch (error) {
+      setShown({ state: "blocked", reason: error });
+    }
     // The report callback is deliberately not a dependency: a new closure for
     // the same bytes is not a new document.
-  }, [source, fonts, defaults]);
+  }, [source, fonts, defaults, defaultBytes]);
 
   if (shown.state === "opening") return null;
   if (shown.state === "blocked") {

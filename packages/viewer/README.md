@@ -7,31 +7,73 @@ The layout decides where everything goes; this package only paints it. Every
 position it draws to is one core computed against Word, so the component's job is
 to put a glyph where it was told and get out of the way.
 
+## Which of the two you want
+
+The faces are the whole question. A document names faces, and something has to
+answer for the ones you cannot ship, so this package has two entries and they
+differ only in what answers.
+
 ```
-npm install @docx-pages/viewer
+npm install @docx-pages/viewer @docx-pages/fonts   # let the pack answer
+npm install @docx-pages/viewer                     # answer for them yourself
 ```
 
-That brings `@docx-pages/core` and `@docx-pages/fonts` with it. The font pack is
-most of what gets installed, around 7.7 MiB of it, because it carries the face
-files themselves.
+`@docx-pages/fonts` is an optional peer, so the second install really does leave
+it out, and nothing the root entry reaches names it. The pack carries font files
+and is around 7.7 MiB; the viewer without it bundles to a couple of hundred
+kilobytes.
 
-## Drawing a document
+## Letting the pack answer
 
 ```tsx
-import { DocxDocument } from "@docx-pages/viewer";
+import { DocxDocument } from "@docx-pages/viewer/pack";
 
 <DocxDocument source={bytes} onReport={(report) => console.log(report.substitutions)} />;
 ```
 
-That is the whole consumer. `DocxDocument` opens the bytes, resolves every face
-the document names, lays it out, and paints it with the same bytes it measured
-with, so what is drawn is the face the widths came from.
+That is the whole consumer. It opens the bytes, falls back to a metric twin for
+every face the document names that you have not supplied, lays it out, and paints
+it with the same bytes it measured with.
+
+## Answering for the faces yourself
+
+The root entry is the same component with nothing behind it, so it asks you what
+to fall back to. `defaults` is a `FaceDefaults` from core: the faces to fall back
+through, the twin each name maps to, and the shape defaults behind that.
+
+```tsx
+import { DocxDocument } from "@docx-pages/viewer";
+
+<DocxDocument
+  source={bytes}
+  fonts={[{ name: "Calibri", bytes: calibri }]}
+  defaults={{
+    faces: myFaces,
+    twins: { calibri: "My Sans" },
+    sansSerif: "My Sans",
+    serif: "My Serif",
+    monospace: "My Mono",
+    lastResort: "My Serif",
+  }}
+  defaultBytes={[{ name: "My Sans", bytes: mySans }]}
+/>;
+```
+
+`defaultBytes` is what the browser paints the fallbacks with. Leave it out and a
+stood-in face is measured here and painted by whatever the browser finds, which
+is the one way a page is right in its geometry and wrong on the screen.
+
+## Supplying the real faces
+
+Either entry takes `fonts`, and that is what exactness means: a face handed in
+there is used as given, and a document whose faces are all supplied is laid out
+as if nothing were behind it. Bold and italic are separate faces, each with its
+own bytes and its own `bold`/`italic` flags.
 
 ## It is never quiet about a stand-in
 
-A face the document names that nothing supplies falls to a metric twin out of
-`@docx-pages/fonts`, and a page drawn over one is no longer the page Word would
-draw. `onReport` says so, after every layout:
+A page drawn over a fallback is no longer the page Word would draw. `onReport`
+says so, after every layout:
 
 - `substitutions` names every face another one answered for. Lines drawn in it
   may break where Word did not break them.
@@ -45,25 +87,14 @@ draw. `onReport` says so, after every layout:
 
 An application that shows a page can show what was doubtful about it.
 
-## Supplying the real faces
-
-Exactness is the `fonts` prop. A face handed in there is used as given, and a
-document whose faces are all supplied is laid out as if there were no pack at
-all:
-
-```tsx
-<DocxDocument source={bytes} fonts={[{ name: "Calibri", bytes: calibri }]} />
-```
-
-Bold and italic are separate faces, each with its own bytes and its own
-`bold`/`italic` flags.
-
-## Off a disk rather than a fetch
+## Under node, and under a dev server
 
 The pack finds its files beside its own module and reaches them with `fetch`,
-which node will not do for a `file:` url. Under node, hand the defaults in:
+which node will not do for a `file:` url. Under node, read them off the disk and
+hand them to the root entry:
 
 ```tsx
+import { DocxDocument } from "@docx-pages/viewer";
 import { defaultFacesFromDisk } from "@docx-pages/fonts/node";
 
 <DocxDocument source={bytes} defaults={await defaultFacesFromDisk()} />;
@@ -79,14 +110,15 @@ optimizeDeps: {
 }
 ```
 
-`vite build` needs nothing. Without it the component reports a blocker saying
-exactly this.
+`vite build` needs nothing, and neither does the root entry, which has no files
+to be moved away from. Without it `@docx-pages/viewer/pack` reports a blocker
+saying exactly this.
 
 ## Drawing a layout laid out by hand
 
 `Document` paints a layout somebody else made, which is what a caller wanting to
-choose the faces itself, or to lay out once and paint many times, reaches for. It
-needs the resolver the pictures come out of as well as the layout:
+lay out once and paint many times reaches for. It needs the resolver the pictures
+come out of as well as the layout:
 
 ```tsx
 import { bestEffortMetrics, layOutDocument, openDocx, readFaceShapes } from "@docx-pages/core";
@@ -102,9 +134,7 @@ if (layout.kind !== "laid-out") throw new Error(JSON.stringify(layout.blocker));
 ```
 
 Nothing registers the faces with the browser on this path, which `DocxDocument`
-does for itself. A face the CSS cannot load is drawn in whatever the browser
-substitutes, at the widths core measured, which is the one way a page can be
-right in its geometry and wrong on the screen.
+does for itself.
 
 `Page` takes the same props and one page besides, for a viewer paginating by
 hand:
@@ -132,5 +162,5 @@ for looking at a page beside Word's own and seeing which box a difference is in;
 
 ## Licence
 
-MIT. The font pack it installs is separately licensed, part of it under the
-SIL Open Font License; see `@docx-pages/fonts`.
+MIT. `@docx-pages/fonts`, if you install it, carries font files under their own
+licences, part of them the SIL Open Font License.

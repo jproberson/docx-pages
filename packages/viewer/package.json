@@ -1,13 +1,17 @@
 {
   "name": "@docx-pages/viewer",
   "description": "React components that draw a page laid out by @docx-pages/core.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./pack": {
+      "types": "./dist/pack.d.ts",
+      "default": "./dist/pack.js"
     }
   },
   "files": [
@@ -22,18 +26,24 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@docx-pages/core": "workspace:*",
-    "@docx-pages/fonts": "workspace:*"
+    "@docx-pages/core": "workspace:*"
   },
   "devDependencies": {
+    "@docx-pages/fonts": "workspace:*",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "peerDependencies": {
+    "@docx-pages/fonts": "^0.2.0",
     "react": ">=18",
     "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@docx-pages/fonts": {
+      "optional": true
+    }
   },
   "keywords": [
     "docx",

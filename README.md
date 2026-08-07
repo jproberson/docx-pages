@@ -15,11 +15,11 @@ measurement is what the tests hold on to.
 
 ## The packages
 
-| Package                                 | Runs on   | What it is                                                                                               |
-| --------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------- |
-| [`@docx-pages/core`](packages/core)     | anywhere  | Reads the package, lays it out, plays metafiles. Touches no disk and no network.                         |
-| [`@docx-pages/viewer`](packages/viewer) | React 18+ | Draws a laid-out page, or a whole `.docx` from its bytes.                                                |
-| [`@docx-pages/fonts`](packages/fonts)   | anywhere  | Freely redistributable twins of the faces documents usually name, for laying out without the real fonts. |
+| Package                                 | Runs on   | What it is                                                                                                                                                     |
+| --------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@docx-pages/core`](packages/core)     | anywhere  | Reads the package, lays it out, plays metafiles. Touches no disk and no network.                                                                               |
+| [`@docx-pages/viewer`](packages/viewer) | React 18+ | Draws a laid-out page, or a whole `.docx` from its bytes.                                                                                                      |
+| [`@docx-pages/fonts`](packages/fonts)   | anywhere  | Freely redistributable twins of the faces documents usually name, for laying out without the real fonts. Optional: only `@docx-pages/viewer/pack` asks for it. |
 
 A fourth package, `render`, is not published. It is the Word oracle: it drives Word
 over AppleScript, reads Word's own pdf back, and holds the test suites. It lives in
@@ -28,11 +28,11 @@ this repository and consumes the library's source rather than installing it.
 ## Using it
 
 ```
-npm install @docx-pages/core @docx-pages/viewer
+npm install @docx-pages/viewer @docx-pages/fonts
 ```
 
 ```tsx
-import { DocxDocument } from "@docx-pages/viewer";
+import { DocxDocument } from "@docx-pages/viewer/pack";
 
 <DocxDocument source={bytes} onReport={(report) => console.log(report.substitutions)} />;
 ```
@@ -46,6 +46,11 @@ the shape the document's own font table gives it. Nothing is quiet about any of
 this: `onReport` names every face stood in for, every character borrowed from
 another face, and every character nothing could draw. Supply the real fonts
 through the `fonts` prop and none of it happens.
+
+`@docx-pages/fonts` is an optional peer of the viewer, and the `/pack` entry above
+is the only one that asks for it. A project supplying its own faces installs the
+viewer alone, imports `DocxDocument` from `@docx-pages/viewer`, and states what to
+fall back to itself; the pack's megabytes never enter its bundle.
 
 Underneath, for a caller drawing by hand or running without React:
 

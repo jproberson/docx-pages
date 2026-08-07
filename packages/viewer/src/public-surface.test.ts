@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import * as viewer from "./index.js";
+import * as pack from "./pack.js";
 
 // What `@docx-pages/viewer` promises anyone who installs it. The same argument as
 // core's list, and a much shorter one: a component that draws a `.docx` from its
@@ -22,5 +23,15 @@ describe("the public surface of @docx-pages/viewer", () => {
       .sort();
 
     expect(found).toStrictEqual([...VIEWER_SURFACE].sort());
+  });
+});
+
+describe("the public surface of @docx-pages/viewer/pack", () => {
+  it("offers the same component with the pack already behind it", () => {
+    const found = Object.keys(pack)
+      .filter((name) => name !== "default")
+      .sort();
+
+    expect(found).toStrictEqual(["DocxDocument"]);
   });
 });
