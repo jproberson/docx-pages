@@ -5,7 +5,9 @@ import {
   openDocx,
   substitutingMetrics,
   WORD_FALLBACK_FACES,
+  type LaidOutDocument,
   type LaidOutPage,
+  type ParagraphBox,
 } from "@docx-pages/core";
 import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
 import { corpusFaces } from "./faces.js";
@@ -45,13 +47,36 @@ type Reading = {
   readonly leftPt: number;
   readonly baselinePt: number;
   readonly characters: number;
+  // Whether the line stands in a text box rather than in the flow, since a page
+  // whose text is all in boxes reads as an empty page otherwise.
+  readonly inABox: boolean;
   readonly drawn: TextPlacement | null;
   readonly off: number | null;
 };
 
-function linesOn(page: LaidOutPage, drawn: readonly TextPlacement[]): readonly Reading[] {
+// The lines a page draws. Text inside a text box is drawn by the box rather than
+// by the flow, so a page built out of boxes holds no body line at all: four of the
+// six documents this tool was pointed at came back with nothing on their first
+// page, and the page was full. The comparison the score is read off has always
+// counted these; only this had not.
+function boxesOn(layout: LaidOutDocument, page: LaidOutPage): readonly ParagraphBox[] {
+  const floats = [...layout.headerFloats, ...layout.footerFloats, ...page.floats];
+  const inBoxes = floats.flatMap((float) =>
+    float.content.kind === "text-box" && float.content.text !== null
+      ? [...float.content.text.boxes]
+      : [],
+  );
+  return [...page.body, ...inBoxes];
+}
+
+function linesOn(
+  layout: LaidOutDocument,
+  page: LaidOutPage,
+  drawn: readonly TextPlacement[],
+): readonly Reading[] {
   const readings: Reading[] = [];
-  for (const box of page.body) {
+  const bodyBoxes = new Set(page.body);
+  for (const box of boxesOn(layout, page)) {
     for (const line of box.lines) {
       const text = line.line.segments
         .map((segment) => (segment.kind === "text" ? segment.text : ""))
@@ -67,6 +92,7 @@ function linesOn(page: LaidOutPage, drawn: readonly TextPlacement[]): readonly R
         leftPt: line.leftPt,
         baselinePt: line.baselinePt,
         characters: text.length,
+        inABox: !bodyBoxes.has(box),
         drawn: near,
         off:
           near === null
@@ -130,7 +156,7 @@ async function main(): Promise<void> {
     // Which page to read is the whole of the skill here, and a twelve page document
     // agrees about its first page and disagrees about its eighth. So the tally comes
     // first, page by page, and the lines follow for whichever page is asked for.
-    const readings = laid.pages.map((page) => linesOn(page, drawn));
+    const readings = laid.pages.map((page) => linesOn(laid, page, drawn));
 
     process.stdout.write("\nlines placed, page by page\n");
     for (const [at, lines] of readings.entries()) {
@@ -159,7 +185,7 @@ async function main(): Promise<void> {
         `  cell at ${cell.leftPt.toFixed(1)},${cell.topPt.toFixed(1)} ${cell.widthPt.toFixed(1)}x${cell.heightPt.toFixed(1)}\n`,
       );
     }
-    process.stdout.write("  ours (left, baseline, chars)  |  Word's, by the text\n");
+    process.stdout.write("  ours (left, baseline, chars, box)  |  Word's, by the text\n");
     for (const line of readings[at] ?? []) {
       process.stdout.write(
         `  ${line.leftPt.toFixed(1).padStart(7)} ${line.baselinePt.toFixed(1).padStart(7)} ${String(line.characters).padStart(4)}ch  |  ` +
