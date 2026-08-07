@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { authoredDocuments } from "./documents.js";
 import {
@@ -86,4 +87,8 @@ function main(): void {
   process.stdout.write(`${MEASURED_PATH}: ${String(documents)} documents\n`);
 }
 
-if (process.argv[1]?.endsWith("measure.js") === true) main();
+// Named `measure.js`, this guard never fired under tsx and the run did nothing at
+// all, quietly. The entry is compared against this module's own path instead.
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

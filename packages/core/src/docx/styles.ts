@@ -16,6 +16,7 @@ import {
   type NumberingTable,
 } from "./numbering.js";
 import { paragraphRuns } from "./paragraphs.js";
+import { TWIPS_PER_POINT } from "../layout/units.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
 import { attribute, childrenNamed, firstNamed, type XmlElement } from "./xml.js";
@@ -44,6 +45,10 @@ export type ParagraphMark = {
   readonly raisePt: number;
   // Null where the run leaves its colour to whatever it is drawn on.
   readonly color: string | null;
+  // Extra width laid after every character of the run, the last one included:
+  // `abcdef` at five points ran 33pt to 63pt, which is six characters' worth
+  // rather than five gaps'. Negative tightens.
+  readonly characterSpacingPt: number;
 };
 
 type PartialMark = {
@@ -54,6 +59,7 @@ type PartialMark = {
   readonly underline: boolean | undefined;
   readonly verticalAlign: VerticalAlign | undefined;
   readonly color: string | undefined;
+  readonly characterSpacingTwentieths: number | undefined;
 };
 
 // What a stop does with the text that follows a tab reaching it: a left stop
@@ -126,6 +132,7 @@ const EMPTY: PartialMark = {
   underline: undefined,
   verticalAlign: undefined,
   color: undefined,
+  characterSpacingTwentieths: undefined,
 };
 
 const EMPTY_FRAME: PartialFrame = {
@@ -282,6 +289,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   underline: over.underline ?? base.underline,
   verticalAlign: over.verticalAlign ?? base.verticalAlign,
   color: over.color ?? base.color,
+  characterSpacingTwentieths: over.characterSpacingTwentieths ?? base.characterSpacingTwentieths,
 });
 
 // An on/off property is on when it is there without a value, so only an explicit
@@ -347,7 +355,18 @@ function readMark(
     underline: underlineOf(rPr),
     verticalAlign: verticalAlignOf(rPr),
     color: colorOf(rPr),
+    characterSpacingTwentieths: characterSpacingOf(rPr),
   };
+}
+
+// Inside `pPr` the same name is the room above and below a paragraph, which is
+// read elsewhere and states no `w:val` at all.
+function characterSpacingOf(rPr: XmlElement): number | undefined {
+  const element = firstNamed(rPr, W_NS, "spacing");
+  const value = element === null ? undefined : attribute(element, W_NS, "val");
+  if (value === undefined) return undefined;
+  const twentieths = Number(value);
+  return Number.isFinite(twentieths) ? twentieths : undefined;
 }
 
 // An underline is not a toggle: it names the kind of line to draw, and the
@@ -470,6 +489,7 @@ function markOf(resolved: PartialMark): ParagraphMark {
     underline: resolved.underline ?? false,
     raisePt: raiseOf(resolved.verticalAlign, declaredPt),
     color: resolved.color ?? null,
+    characterSpacingPt: (resolved.characterSpacingTwentieths ?? 0) / TWIPS_PER_POINT,
   };
 }
 

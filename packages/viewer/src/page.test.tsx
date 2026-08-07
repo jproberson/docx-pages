@@ -27,6 +27,7 @@ const MARK: ParagraphMark = {
   underline: false,
   raisePt: 0,
   color: null,
+  characterSpacingPt: 0,
 };
 
 const EMPTY_BODY: TextBoxBody = {

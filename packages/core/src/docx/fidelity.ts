@@ -50,7 +50,6 @@ export type UnhonouredKind =
   | "keep-with-next"
   | "keep-lines-together"
   | "character-kerning"
-  | "character-spacing"
   | "capitals"
   | "raised-or-lowered-text"
   | "hidden-text"
@@ -82,7 +81,6 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   "keep-with-next": "moves-text",
   "keep-lines-together": "moves-text",
   "character-kerning": "moves-text",
-  "character-spacing": "moves-text",
   capitals: "moves-text",
   "raised-or-lowered-text": "moves-text",
   // Hidden text is measured and drawn here as any other run, so it takes room
@@ -172,10 +170,6 @@ function unhonouredBy(
       return toggled(element) ? "keep-lines-together" : null;
     case "kern":
       return numbered(element) > 0 ? "character-kerning" : null;
-    // Inside run properties `w:spacing` is the room between letters; a paragraph's
-    // own `w:spacing`, which is read, states no `w:val` at all.
-    case "spacing":
-      return parent?.name === "rPr" && numbered(element) !== 0 ? "character-spacing" : null;
     case "caps":
     case "smallCaps":
       return toggled(element) ? "capitals" : null;

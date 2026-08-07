@@ -29,16 +29,22 @@ describe("readUnhonoured", () => {
     expect(reportOf(`<w:p><w:r><w:t>plain</w:t></w:r></w:p>`)).toStrictEqual([]);
   });
 
-  it("names a run's kerning, its letter spacing and its capitals", () => {
-    const marks = `<w:kern w:val="16"/><w:spacing w:val="20"/><w:caps/>`;
+  it("names a run's kerning and its capitals", () => {
+    const marks = `<w:kern w:val="16"/><w:caps/>`;
     expect(kinds(reportOf(`<w:p><w:r><w:rPr>${marks}</w:rPr><w:t>a</w:t></w:r></w:p>`))).toContain(
       "character-kerning",
     );
     expect(kinds(reportOf(`<w:p><w:r><w:rPr>${marks}</w:rPr><w:t>a</w:t></w:r></w:p>`))).toContain(
-      "character-spacing",
-    );
-    expect(kinds(reportOf(`<w:p><w:r><w:rPr>${marks}</w:rPr><w:t>a</w:t></w:r></w:p>`))).toContain(
       "capitals",
+    );
+  });
+
+  // Letter spacing is measured and laid out rather than passed over, so a run
+  // asking for it is asking for what it gets and the report says nothing.
+  it("says nothing about a run's letter spacing, which is honoured", () => {
+    const spaced = `<w:spacing w:val="20"/>`;
+    expect(reportOf(`<w:p><w:r><w:rPr>${spaced}</w:rPr><w:t>a</w:t></w:r></w:p>`)).toStrictEqual(
+      [],
     );
   });
 

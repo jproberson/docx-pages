@@ -11,6 +11,7 @@ const MARK = {
   underline: false,
   raisePt: 0,
   color: null,
+  characterSpacingPt: 0,
 } as const;
 
 const line = (topPt: number, heightPt: number, text: string): PlacedLine => ({

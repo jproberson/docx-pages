@@ -59,6 +59,7 @@ const mark = (fontSizePt = 10, name = "Even Sans"): ParagraphMark => ({
   underline: false,
   raisePt: 0,
   color: null,
+  characterSpacingPt: 0,
 });
 
 const runOf = (text: string, at: ParagraphMark = mark()): TextRun => ({
@@ -467,6 +468,7 @@ describe("breakLines", () => {
       underline: false,
       raisePt: 0,
       color: null,
+      characterSpacingPt: 0,
     };
     const result = breakLines({
       runs: [runOf("abc", unnamed)],

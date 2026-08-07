@@ -261,7 +261,10 @@ class Measurer {
         return null;
       }
 
-      widthPt += advanceWidthPt(drawn.advance, drawn.metrics, mark.fontSizePt);
+      // A space takes the spacing as a letter does. A tab never reaches here:
+      // it leaves no segment behind, and ends at its stop regardless.
+      widthPt +=
+        advanceWidthPt(drawn.advance, drawn.metrics, mark.fontSizePt) + mark.characterSpacingPt;
 
       // The fragment already stands on its own face, so only a borrowed character
       // can raise it.

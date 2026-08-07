@@ -96,8 +96,8 @@ drawn wrongly: it is what a document asks for that nothing here answers, whether
 not it showed.
 
 The ones worth knowing before you start, every one of them named in the report
-rather than passed over quietly: character spacing, kerning and `keep-with-next`
-are read from the document and not yet acted on; a footnote takes no room at the
+rather than passed over quietly: kerning and `keep-with-next` are read from the
+document and not yet acted on; a footnote takes no room at the
 foot of its page; only the last section's geometry is read, so a document that
 changes page size or margins part way through lays the rest out on the wrong
 page; and a cell spanning its neighbours is laid out at its own width.

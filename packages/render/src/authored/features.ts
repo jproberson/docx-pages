@@ -208,8 +208,59 @@ export function spacingDocument(): string {
 // The style the contextual run above shares, so that Word has a kind to compare.
 export const SPACING_STYLES = `<w:style w:type="paragraph" w:styleId="Listed"><w:name w:val="Listed"/></w:style>`;
 
-// Where a line starts and ends when an object wraps beside it, and whether a line
-// narrowed by one is broken again at the narrower width.
+// What `w:spacing` in a run's properties does to where each character sits.
+//
+// Five points, so that every answer stands clear of the whole point Word rounds
+// its own to: over six characters the two readings of the first question are
+// thirty points apart.
+export function characterSpacingDocument(): string {
+  const spaced = (twentieths: number): string => `<w:spacing w:val="${String(twentieths)}"/>`;
+  const WIDE = spaced(100);
+  const TIGHT = spaced(-20);
+  const STOP = `<w:tabs><w:tab w:val="left" w:pos="2880"/></w:tabs>`;
+  const TABBED = "<w:r><w:tab/></w:r>";
+
+  // After every character, or only in the gaps between them? The paragraph mark
+  // sits at the end of the text, so a trailing gap is the whole difference; the
+  // right aligned pair asks the same from the other end, where a trailing gap
+  // pushes the visible text one gap further left.
+  const lands = [
+    paragraph("", run("abcdef")),
+    paragraph("", run("abcdef", WIDE)),
+    paragraph(`<w:jc w:val="right"/>`, run("abcdef")),
+    paragraph(`<w:jc w:val="right"/>`, run("abcdef", WIDE)),
+  ];
+
+  // Whether a space takes it, and whether a tab does. The stop is what makes the
+  // tab readable: text after it starts at the stop if the tab took no gap.
+  const between = [
+    paragraph("", run("ab cd")),
+    paragraph("", run("ab cd", WIDE)),
+    paragraph(STOP, run("ab") + TABBED + run("cd")),
+    paragraph(STOP, run("ab", WIDE) + TABBED + run("cd", WIDE)),
+    paragraph(STOP, run("ab", WIDE) + TABBED + run("cd")),
+  ];
+
+  // The unspaced line says what the stretch is worth on its own, so the spaced
+  // one says whether it was worked out over the widened text or the bare text.
+  const justified = [
+    paragraph(`<w:jc w:val="both"/>`, run(FLOW)),
+    paragraph(`<w:jc w:val="both"/>`, run(FLOW, WIDE)),
+  ];
+
+  // Where one reading stops and the other starts: whether the last character of
+  // a spaced run carries a gap into the plain text after it.
+  const boundary = [
+    paragraph("", run("abc") + run("def")),
+    paragraph("", run("abc", WIDE) + run("def")),
+    paragraph("", run("abc", TIGHT) + run("def")),
+  ];
+
+  const condensed = [paragraph("", run("abcdef", TIGHT))];
+
+  return [...lands, ...between, ...justified, ...boundary, ...condensed, EMPTY].join("");
+}
+
 export function wrappingDocument(): string {
   const wrapping = (id: number, wrap: string, widthEmu: number, heightEmu: number): string =>
     `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>

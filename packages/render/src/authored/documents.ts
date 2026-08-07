@@ -1,6 +1,7 @@
 import {
   bordersDocument,
   breakingDocument,
+  characterSpacingDocument,
   compatibilityDocument,
   drawingDocument,
   numberingDocument,
@@ -257,6 +258,13 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Spacing between and within paragraphs",
       asks: "where a line sits under each line rule, and what contextual spacing closes up",
       bytes: buildAuthoredDocx({ body: spacingDocument(), extraStyles: SPACING_STYLES }),
+    },
+    {
+      id: "character-spacing",
+      title: "Spacing between the characters of a run",
+      asks: "where the extra width lands, whether a space and a tab take it, and what justification makes of it",
+      measuresCharacters: true,
+      bytes: buildAuthoredDocx({ body: characterSpacingDocument() }),
     },
     {
       id: "wrapping",

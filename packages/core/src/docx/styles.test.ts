@@ -48,6 +48,7 @@ describe("resolveParagraphMark", () => {
       underline: false,
       raisePt: 0,
       color: null,
+      characterSpacingPt: 0,
     });
   });
 
@@ -61,6 +62,7 @@ describe("resolveParagraphMark", () => {
       underline: false,
       raisePt: 0,
       color: null,
+      characterSpacingPt: 0,
     });
   });
 
@@ -86,6 +88,7 @@ describe("resolveParagraphMark", () => {
       underline: false,
       raisePt: 0,
       color: null,
+      characterSpacingPt: 0,
     });
   });
 
@@ -102,6 +105,7 @@ describe("resolveParagraphMark", () => {
       underline: false,
       raisePt: 0,
       color: null,
+      characterSpacingPt: 0,
     });
   });
 
@@ -118,6 +122,7 @@ describe("resolveParagraphMark", () => {
       underline: false,
       raisePt: 0,
       color: null,
+      characterSpacingPt: 0,
     });
   });
 
@@ -164,6 +169,7 @@ describe("resolveParagraphMark", () => {
       underline: false,
       raisePt: 0,
       color: null,
+      characterSpacingPt: 0,
     });
   });
 
