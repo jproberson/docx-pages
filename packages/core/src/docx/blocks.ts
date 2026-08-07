@@ -79,6 +79,9 @@ export type Block =
   | {
       readonly kind: "table";
       readonly rows: readonly TableRow[];
+      // The columns the table is drawn on, which is where a cell that states no
+      // width of its own gets one. Empty where the table declares no grid.
+      readonly gridTwips: readonly number[];
       readonly insets: TableInsets;
       readonly borders: TableBorders;
       // The table style the borders above stand in front of, which the styles
@@ -135,10 +138,22 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
   return {
     kind: "table",
     rows,
+    gridTwips: gridColumns(element),
     insets: tableInsets(element),
     borders: readTableBorders(properties),
     styleId: style === null ? null : (attribute(style, W_NS, "val") ?? null),
   };
+}
+
+// The widths of `w:tblGrid`, which is what a table is drawn on: a cell asking for
+// no width of its own is as wide as the column it stands in.
+function gridColumns(element: XmlElement): readonly number[] {
+  const grid = firstNamed(element, W_NS, "tblGrid");
+  if (grid === null) return [];
+  return grid.children
+    .filter((child) => child.namespace === W_NS && child.name === "gridCol")
+    .map((column) => Number(attribute(column, W_NS, "w") ?? Number.NaN))
+    .filter((twips) => Number.isFinite(twips));
 }
 
 // A height with no rule under it is a floor, which is what Word makes of one.

@@ -427,7 +427,9 @@ function measureTable(
 
   let top = topPt + outerTopPt;
   for (const [at, row] of block.rows.entries()) {
-    const measured = measureRow(row, borders[at] ?? [], inTable, top, rowFrame, block.insets);
+    const measured = measureRow(row, borders[at] ?? [], inTable, top, rowFrame, block.insets, {
+      gridTwips: block.gridTwips,
+    });
     if (measured.kind === "blocked") return measured;
     boxes.push(...measured.boxes);
     cells.push(...measured.cells);
@@ -492,6 +494,7 @@ function measureRow(
   topPt: number,
   frame: Frame,
   insets: TableInsets,
+  table: { readonly gridTwips: readonly number[] },
 ): StackMeasurement {
   const measured: MeasuredCell[] = [];
   const topMarginPt = Math.max(
@@ -511,7 +514,7 @@ function measureRow(
   const untornRows: UntornRow[] = [];
 
   for (const [at, cell] of row.cells.entries()) {
-    const widthPt = cellWidthPt(cell) ?? frame.widthPt;
+    const widthPt = cellWidthPt(cell) ?? columnWidthPt(table.gridTwips, at) ?? frame.widthPt;
     const own = borders[at] ?? NO_BORDERS;
     const leftMarginPt = leftMarginOf(cell, insets, own);
     const rightMarginPt = Math.max(
@@ -596,6 +599,15 @@ function rowHeightPt(row: TableRow, heldPt: number): number {
   if (row.height === null) return heldPt;
   const askedPt = twipsToPoints(row.height.twips);
   return row.height.exact ? askedPt : Math.max(heldPt, askedPt);
+}
+
+// **A cell that states no width of its own is as wide as the column it stands in.**
+// The grid is what a table is drawn on and a `w:tcW` is the cell's own preference
+// over it, so a table stating a grid and no cell widths at all, which a real
+// document does, had every column as wide as the whole text frame before this.
+function columnWidthPt(gridTwips: readonly number[], at: number): number | null {
+  const twips = gridTwips[at];
+  return twips === undefined ? null : twipsToPoints(twips);
 }
 
 function cellWidthPt(cell: TableCell): number | null {

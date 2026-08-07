@@ -553,6 +553,30 @@ describe("measureStack over tables", () => {
     expect(rowsThatRefuse(asked, cell(`<w:p/><w:p/>`))).toStrictEqual([]);
   });
 
+  // The grid is what a table is drawn on, and a cell that states no width of its
+  // own stands in the column it falls in rather than filling the frame.
+  const acrossTheGrid = (grid: string, cells: string): readonly number[] => {
+    const body = `<w:tbl>${grid}<w:tr>${cells}</w:tr></w:tbl>`;
+    const result = measure(body);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    return result.cells.map((each) => each.widthPt);
+  };
+
+  const GRID = `<w:tblGrid><w:gridCol w:w="1440"/><w:gridCol w:w="2880"/></w:tblGrid>`;
+
+  it("stands a cell that states no width in the column the grid gives it", () => {
+    expect(acrossTheGrid(GRID, cell(`<w:p/>`) + cell(`<w:p/>`))).toStrictEqual([72, 144]);
+  });
+
+  it("keeps a cell's own stated width in front of the grid's", () => {
+    const own = `<w:tcW w:w="4320" w:type="dxa"/>`;
+    expect(acrossTheGrid(GRID, cell(`<w:p/>`, own) + cell(`<w:p/>`))).toStrictEqual([216, 144]);
+  });
+
+  it("gives a cell the whole frame where the table declares no grid at all", () => {
+    expect(acrossTheGrid("", cell(`<w:p/>`) + cell(`<w:p/>`))).toStrictEqual([468, 468]);
+  });
+
   it("names the paragraph a row opens with, which is where the break is decided", () => {
     const asked = `<w:trPr><w:trHeight w:val="1440"/></w:trPr>`;
     const body = `<w:p/><w:tbl><w:tr>${asked}${cell(`<w:p/>`)}${cell(`<w:p/>`)}</w:tr></w:tbl>`;
