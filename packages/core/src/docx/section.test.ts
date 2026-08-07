@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { isDocxPagesError, DocxPagesError } from "../errors.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
-import { openDocx } from "./package.js";
-import { readSectionGeometry } from "./section.js";
+import { openDocx, partXml } from "./package.js";
+import { endsASection, readSectionGeometry, readSections, W_NS } from "./section.js";
+import { descendantsNamed, firstNamed, type XmlElement } from "./xml.js";
 
 const LETTER_SECTION = `
   <w:p/>
@@ -103,5 +104,73 @@ describe("openDocx", () => {
 
     if (!(thrown instanceof DocxPagesError)) throw new Error("expected a DocxPagesError");
     expect(thrown.code).toBe("docx-unreadable");
+  });
+});
+
+// A document is as many sections as it has `w:sectPr` elements: one on a paragraph
+// ends the section that paragraph closes, and the body's own governs the text after
+// the last of those.
+describe("readSections", () => {
+  const sectionsOf = (bodyXml: string) =>
+    readSections(openDocx(buildDocx({ "word/document.xml": wordDocument(bodyXml) })));
+
+  const ending = (properties: string): string =>
+    `<w:p><w:pPr><w:sectPr>${properties}</w:sectPr></w:pPr></w:p>`;
+
+  it("reads the one section of a document that has only the body's own", () => {
+    const sections = sectionsOf(LETTER_SECTION);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.geometry.widthTwips).toBe(12240);
+  });
+
+  it("reads every section in the order they run, the body's own last", () => {
+    const sections = sectionsOf(`${ending(`<w:pgSz w:w="15840" w:h="12240"/>`)}${LETTER_SECTION}`);
+    expect(sections.map((each) => each.geometry.widthTwips)).toStrictEqual([15840, 12240]);
+  });
+
+  // Word writes no type at all for the commonest break, so one saying nothing is
+  // one that starts a page.
+  it("reads the break a section stands on, and calls one that says nothing a page", () => {
+    const sections = sectionsOf(
+      `${ending(`<w:type w:val="continuous"/>`)}${ending("")}${LETTER_SECTION}`,
+    );
+    expect(sections.map((each) => each.breakKind)).toStrictEqual([
+      "continuous",
+      "nextPage",
+      "nextPage",
+    ]);
+  });
+
+  it("reads how many columns a section runs its text in, and answers one for silence", () => {
+    const sections = sectionsOf(`${ending(`<w:cols w:num="3"/>`)}${LETTER_SECTION}`);
+    expect(sections.map((each) => each.columns)).toStrictEqual([3, 1]);
+  });
+
+  it("gives the last section's page to a reader asking for the document's", () => {
+    const body = `${ending(`<w:pgSz w:w="15840" w:h="12240"/>`)}${LETTER_SECTION}`;
+    expect(
+      readSectionGeometry(openDocx(buildDocx({ "word/document.xml": wordDocument(body) }))),
+    ).toStrictEqual(sectionsOf(body).at(-1)?.geometry);
+  });
+});
+
+describe("endsASection", () => {
+  const firstParagraphOf = (xml: string): XmlElement => {
+    const root = partXml(
+      openDocx(buildDocx({ "word/document.xml": wordDocument(xml + LETTER_SECTION) })),
+      "word/document.xml",
+    );
+    const body = firstNamed(root, W_NS, "body");
+    const paragraph = descendantsNamed(body ?? root, W_NS, "p")[0];
+    if (paragraph === undefined) throw new Error("the body holds no paragraph");
+    return paragraph;
+  };
+
+  it("says a paragraph carrying section properties closes a section", () => {
+    expect(endsASection(firstParagraphOf(`<w:p><w:pPr><w:sectPr/></w:pPr></w:p>`))).toBe(true);
+  });
+
+  it("says an ordinary paragraph closes none", () => {
+    expect(endsASection(firstParagraphOf(`<w:p><w:r><w:t>a</w:t></w:r></w:p>`))).toBe(false);
   });
 });
