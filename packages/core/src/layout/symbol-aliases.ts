@@ -20,20 +20,20 @@
 
 const WINGDINGS: ReadonlyMap<number, string> = new Map([
   [0x20, " "], // a space in a symbol run is still a space
-  [0x6c, "●"], // the filled circle bullet
+  [0x6c, "●"],
   [0x6d, "❍"],
-  [0x6e, "■"], // the filled square
+  [0x6e, "■"],
   [0x6f, "❑"],
   [0x70, "❒"],
-  [0x75, "◆"], // the diamond
+  [0x75, "◆"],
   [0x76, "❖"],
-  [0xa7, "▪"], // the small square, Word's stock square bullet
+  [0xa7, "▪"], // Word's stock square bullet
   [0xa8, "□"],
-  [0xd8, "➢"], // the arrowhead bullet
+  [0xd8, "➢"],
   [0xdc, "➔"],
-  [0xfc, "✓"], // check
-  [0xfd, "☒"], // ballot box with x
-  [0xfe, "☑"], // ballot box with check
+  [0xfc, "✓"],
+  [0xfd, "☒"],
+  [0xfe, "☑"],
 ]);
 
 // Adobe's Symbol encoding, which the Symbol face keeps: Latin positions hold
