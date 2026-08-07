@@ -529,6 +529,61 @@ export function sectionsDocument(): string {
   ].join("");
 }
 
+// Which page a section opens on, asked of every `w:type` there is.
+//
+// The `sections` document says a continuous break opens no page and a `nextPage`
+// one does, and it cannot be held to that: every section in it keeps a margin of
+// its own, so nothing here can lay it out and the answer sits in prose. Every
+// section here is the page the body's own section is, to the twip, so the only
+// thing a page number can be about is the break, and the document lays out the
+// moment the break is read.
+//
+// A section's `w:type` says how that section begins against the one before it, so
+// the type asked about goes on the section whose opening is being watched. The
+// first section's own type is therefore about nothing, and says `continuous` to
+// say so, which is what the documents in the wild that raised this question write
+// there.
+//
+// The three types nothing has measured are at the end, so that a page they turn
+// out to open and this project does not costs the answers after it and no others.
+export function sectionPagesDocument(): string {
+  // The body's own page, written out again: a section stating anything else would
+  // be asking a second question and there is no way to lay it out yet.
+  const sectionProperties = (type: string): string =>
+    `<w:sectPr>` +
+    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
+    `<w:cols w:space="720"/>` +
+    `</w:sectPr>`;
+
+  const closes = (name: string, type: string): string =>
+    paragraph(sectionProperties(type), run(`${name} closes`));
+
+  const opens = (name: string): string => paragraph("", run(`${name} opens`));
+
+  const section = (name: string, type: string): readonly string[] => [
+    opens(name),
+    closes(name, type),
+  ];
+
+  return [
+    ...section("one", "continuous"),
+    // Stating no type at all, which is what a document writes far more often than
+    // it writes `nextPage`, and the case a three page document in the wild turns on.
+    ...section("two", ""),
+    ...section("three", "continuous"),
+    ...section("four", "nextPage"),
+    ...section("five", "continuous"),
+    ...section("six", "nextColumn"),
+    ...section("seven", "evenPage"),
+    ...section("eight", "oddPage"),
+    // The last section is the body's own, which states no type either.
+    opens("nine"),
+    paragraph("", run("nine closes")),
+  ].join("");
+}
+
 // Where a section's text sits down the page, which the `sections` document cannot
 // say: every margin in that one is the same at the top, so the question of whether
 // a section's own top margin reaches its text never arises there.

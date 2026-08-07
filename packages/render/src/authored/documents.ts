@@ -8,6 +8,7 @@ import {
   linedRowsDocument,
   numberingDocument,
   sectionFlowDocument,
+  sectionPagesDocument,
   sectionsDocument,
   tearingDocument,
   pageDocument,
@@ -354,6 +355,19 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       asks: "which section a paragraph's own properties govern, and what a break's type describes",
       refuses: "nothing here reads a section but the last, so the pages are the last one's",
       bytes: buildAuthoredDocx({ body: sectionsDocument() }),
+    },
+    {
+      id: "section-pages",
+      title: "Which page each section of a document opens on",
+      asks: "which of the break types a section states opens a page, and which carries on down the one it is already on",
+      // Twelve of the eighteen: every section opens the page Word opened it on
+      // until the one asking for an even page, which Word gave page 6 from page 4
+      // and this project gives page 5. A break reaching for a page of a parity
+      // leaves a blank one behind where the next page is the wrong one, and a page
+      // holding nothing is a page this project cannot make yet. The three
+      // paragraphs after it are one page early for the same reason and no other.
+      paragraphsPlaced: 12,
+      bytes: buildAuthoredDocx({ body: sectionPagesDocument() }),
     },
     {
       id: "section-flow",

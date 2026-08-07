@@ -83,6 +83,7 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // the width they state nor at any width read off it: the rows they line come out
   // shorter here and everything below them stands too high.
   borders: { lines: 104, runs: 104, numbers: 0, placed: 97, runsPlaced: 102 },
+  "section-pages": { lines: 18, runs: 12, numbers: 0, placed: 12 },
 };
 
 // What each authored document is expected to say it passed over. A document that

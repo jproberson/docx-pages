@@ -18,7 +18,7 @@ import {
 import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js";
 import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns, type TextRun } from "../docx/runs.js";
-import { W_NS } from "../docx/section.js";
+import { W_NS, type SectionClose } from "../docx/section.js";
 import {
   measuresTheIndentToTheText,
   roundsAnchorsToTwips,
@@ -222,6 +222,10 @@ export type MeasureStackInput = {
   // reaches that paragraph: every line from there on has to sit clear of them.
   readonly bandsFor?: BandResolver;
   readonly settings?: DocumentSettings;
+  // The paragraphs closing a section, and what each one's break does. Only the
+  // body has any: a `w:sectPr` inside a cell governs the story in that cell and
+  // closes no section, and a header has none at all.
+  readonly sectionsClosed?: ReadonlyMap<number, SectionClose>;
 };
 
 export type BandResolver = (paragraph: Paragraph, topPt: number) => readonly WrapBand[];
@@ -705,6 +709,7 @@ function measureParagraph(
   const runs = flowing(readRuns(paragraph, context.styles), context.inCell);
   const insets = insetsOf(paragraphFrame);
   const number = context.numbers.get(paragraph.index);
+  const sectionClose = context.sectionsClosed?.get(paragraph.index);
   const widthPt =
     context.wraps === false
       ? Number.POSITIVE_INFINITY
@@ -752,6 +757,7 @@ function measureParagraph(
         rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
       }),
       startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
+      endsPage: sectionClose?.opensAPage === true,
       number: measured === null ? null : measured.number,
       bands: standing.bands,
       ahead: standing.ahead,
@@ -988,6 +994,9 @@ type LayOutParagraphInput = {
   readonly paint: ParagraphPaint | null;
   readonly number: MeasuredNumber | null;
   readonly startsPage: boolean;
+  // Whether a section break stands after the paragraph, which ends a page as a
+  // break in its own text would. What the text asked for is read off the text.
+  readonly endsPage: boolean;
   readonly bands: readonly WrapBand[];
   readonly ahead: readonly WrapBand[];
   // What a line has room for where nothing stands beside it, which a shape that
@@ -1076,7 +1085,9 @@ function layOutWholeParagraph(
   // first line and below the last.
   const abovePt = borderRoomPt(paint?.borders.top ?? null);
   const belowPt = borderRoomPt(paint?.borders.bottom ?? null);
-  const { lines: laid, endsPage } = layOutLines(flow, input);
+  const brokenByItsText = layOutLines(flow, input);
+  const laid = brokenByItsText.lines;
+  const endsPage = brokenByItsText.endsPage || input.endsPage;
 
   // An empty paragraph is a line like any other as far as objects are concerned:
   // Word moves it out of their way even though it draws nothing there.

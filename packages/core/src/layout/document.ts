@@ -10,7 +10,12 @@ import {
   withSubstitutedFaces,
   type Unhonoured,
 } from "../docx/fidelity.js";
-import { readSectionGeometry, type SectionGeometry } from "../docx/section.js";
+import {
+  readSectionGeometry,
+  sectionsClosedBy,
+  type SectionClose,
+  type SectionGeometry,
+} from "../docx/section.js";
 import {
   honoursAWrapOnTheLeft,
   readDocumentSettings,
@@ -312,6 +317,28 @@ type StoryFrame = {
   readonly widthPt: number;
 };
 
+// Which of the body's paragraphs close a section, named by the index the stack
+// knows each one as. Only a paragraph standing in the body itself closes one, so
+// the blocks are read at their own level and no further.
+function sectionsClosedIn(
+  pkg: DocxPackage,
+  blocks: readonly Block[],
+): ReadonlyMap<number, SectionClose> {
+  const paragraphs = blocks.flatMap((block) =>
+    block.kind === "paragraph" ? [block.paragraph] : [],
+  );
+  const closes = sectionsClosedBy(
+    pkg,
+    paragraphs.map((each) => each.element),
+  );
+  return new Map(
+    paragraphs.flatMap((each) => {
+      const close = closes.get(each.element);
+      return close === undefined ? [] : [[each.index, close] as const];
+    }),
+  );
+}
+
 const EMPTY_STORY: Story = {
   kind: "measured",
   part: null,
@@ -440,6 +467,7 @@ export function layOutDocument(
     part: MAIN_DOCUMENT_PART,
     originPt: bodyTopPt,
     bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
+    sectionsClosed: sectionsClosedIn(pkg, bodyBlocks),
   });
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };

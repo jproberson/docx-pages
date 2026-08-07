@@ -104,9 +104,59 @@ export function readSections(pkg: DocxPackage): readonly DocumentSection[] {
 // Only a paragraph standing in the body itself can be: one inside a table cell
 // carries them for the story in that cell and ends nothing.
 export const endsASection = (paragraph: XmlElement): boolean => {
-  const properties = firstNamed(paragraph, W_NS, "pPr");
-  return properties !== null && firstNamed(properties, W_NS, "sectPr") !== null;
+  return sectionClosedBy(paragraph) !== null;
 };
+
+const sectionClosedBy = (paragraph: XmlElement): XmlElement | null => {
+  const properties = firstNamed(paragraph, W_NS, "pPr");
+  return properties === null ? null : firstNamed(properties, W_NS, "sectPr");
+};
+
+// What the break a paragraph carries does to the page under it.
+export type SectionClose = {
+  // Whether a page opens after the paragraph. That is the type stated by the
+  // section beginning under it and never the one stated by the section it closes.
+  readonly opensAPage: boolean;
+};
+
+// Every paragraph of the body closing a section, and what its break does.
+//
+// A break is read at the section it opens rather than at the one it closes: a
+// section's `w:type` says how that section begins against the one before it, so
+// the type deciding a break is the one stated by the section under it. The last
+// paragraph carrying section properties is followed by the body's own section,
+// which is the final one and states a type like any other.
+//
+// Measured on 2026-08-07 by the authored `section-pages` document, whose every
+// section is the same page to the twip so that only the break can move a page.
+// Of the five types, only `continuous` carries on down the page already open.
+// `nextPage` and a section stating no type at all each open one, and so does
+// `nextColumn` where the section runs in a single column. `evenPage` and
+// `oddPage` open one too, and leave a blank page behind where the page they
+// reach for is not the next one: the section after a page 4 asking for an even
+// page opened page 6.
+export function sectionsClosedBy(
+  pkg: DocxPackage,
+  bodyParagraphs: readonly XmlElement[],
+): ReadonlyMap<XmlElement, SectionClose> {
+  const body = firstNamed(partXml(pkg, MAIN_DOCUMENT_PART), W_NS, "body");
+  const closers = bodyParagraphs.filter(endsASection);
+  const closes = new Map<XmlElement, SectionClose>();
+
+  for (const [at, closer] of closers.entries()) {
+    const next = closers[at + 1];
+    const opening =
+      next === undefined
+        ? body === null
+          ? null
+          : firstNamed(body, W_NS, "sectPr")
+        : sectionClosedBy(next);
+    closes.set(closer, {
+      opensAPage: opening !== null && breakOf(opening) !== "continuous",
+    });
+  }
+  return closes;
+}
 
 function breakOf(section: XmlElement): SectionBreak {
   const stated = firstNamed(section, W_NS, "type");
