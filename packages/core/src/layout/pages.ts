@@ -1,4 +1,4 @@
-import type { ParagraphBox, PlacedCell } from "./stack.js";
+import type { ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
 
 export type PageStack = {
   readonly index: number;
@@ -10,6 +10,8 @@ export type BreakStackInput = {
   // A stack measured from `topPt` with no bottom, as `measureStack` produces it.
   readonly boxes: readonly ParagraphBox[];
   readonly cells: readonly PlacedCell[];
+  // The rows a break may not run through, which move whole instead.
+  readonly untornRows?: readonly UntornRow[];
   readonly topPt: number;
   readonly bottomPt: number;
 };
@@ -76,6 +78,12 @@ function breakOnce(
     return true;
   };
 
+  // The row each paragraph opens, where that row refuses to be torn. Only its
+  // first paragraph carries one, since that is the last moment the whole row can
+  // still be moved.
+  const opening = new Map<number, UntornRow>();
+  for (const row of input.untornRows ?? []) opening.set(row.opensAt, row);
+
   // Whether the paragraph before this one ended on a page break, which draws no
   // line of its own and so has nothing here to be seen at.
   let broken = false;
@@ -86,6 +94,13 @@ function breakOnce(
     const carriedForward = moved.has(box.index) && !moved.has(input.boxes[place - 1]?.index ?? -1);
     if (broken || box.startsPage || carriedForward) leave(box.lines[0]?.topPt ?? box.topPt);
     broken = box.endsPage;
+
+    // A row that will not come apart is decided here, at the paragraph that opens
+    // it: what does not fit below moves whole. Moved, its top stands at the top of
+    // a page, and a row still too tall for a whole page is then torn where any
+    // other would be, which is what Word did with one it was told not to split.
+    const row = opening.get(box.index);
+    if (row !== undefined && overflows(row.topPt, row.bottomPt - row.topPt)) leave(row.topPt);
 
     // A paragraph with nothing in it is judged by the room its mark stands in, as
     // one with lines is judged by its lines: the room it keeps below itself hangs

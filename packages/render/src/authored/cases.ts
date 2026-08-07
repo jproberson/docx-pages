@@ -46,6 +46,9 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   wrapping: { lines: 7, runs: 7, numbers: 0 },
   numbering: { lines: 10, runs: 10, numbers: 7 },
   pages: { lines: 24, runs: 24, numbers: 0 },
+  // Every line of all eight cases, the fillers holding them down the page
+  // included: a case is nine lines of its own and the row it asks about.
+  tearing: { lines: 154, runs: 154, numbers: 0 },
   // Three lines a case, five where the paragraph above the object holds three,
   // and two where it holds none at all. Two of them stand beside the narrow
   // object, which is centred in the column and wrapped on its largest side, so

@@ -494,6 +494,7 @@ export function layOutDocument(
   const broken = breakStack({
     boxes: bodyStack.boxes,
     cells: bodyStack.cells,
+    untornRows: bodyStack.untornRows,
     topPt: bodyTopPt,
     bottomPt: bodyBottomPt,
   });

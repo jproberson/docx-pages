@@ -46,7 +46,6 @@ export type UnhonouredKind =
   | "text-columns"
   | "merged-cells"
   | "table-style-conditional-formatting"
-  | "unsplittable-row"
   | "keep-lines-together"
   | "character-kerning"
   | "capitals"
@@ -76,7 +75,6 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // beside it resolve their borders against the wrong neighbour.
   "merged-cells": "moves-text",
   "table-style-conditional-formatting": "changes-paint",
-  "unsplittable-row": "moves-text",
   "keep-lines-together": "moves-text",
   "character-kerning": "moves-text",
   capitals: "moves-text",
@@ -160,8 +158,6 @@ function unhonouredBy(
       return "merged-cells";
     case "tblStylePr":
       return "table-style-conditional-formatting";
-    case "cantSplit":
-      return toggled(element) ? "unsplittable-row" : null;
     case "keepLines":
       return toggled(element) ? "keep-lines-together" : null;
     case "kern":

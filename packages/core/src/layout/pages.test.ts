@@ -441,3 +441,70 @@ describe("breakStack over the cells of a table", () => {
     expect(pages[1]?.cells).toStrictEqual([cellAt(100, 20)]);
   });
 });
+
+// A row that will not come apart is moved whole to the page under it, and one
+// still too tall for a whole page is torn there. Measured on 2026-08-07 by the
+// authored `tearing` document.
+describe("breakStack over a row a break may not run through", () => {
+  const untorn = (topPt: number, bottomPt: number, opensAt: number) => ({
+    topPt,
+    bottomPt,
+    opensAt,
+  });
+
+  it("tears a row nothing has spoken for, as it does any other run of lines", () => {
+    const pages = breakStack({
+      boxes: stack([[20], [20], [20], [20]], 100),
+      cells: [cellAt(140, 40)],
+      topPt: 100,
+      bottomPt: 160,
+    });
+
+    expect(linesOn(pages[0])).toStrictEqual([1, 1, 1]);
+    expect(linesOn(pages[1])).toStrictEqual([1]);
+  });
+
+  it("moves one that refuses whole, and takes its cells with it", () => {
+    const pages = breakStack({
+      boxes: stack([[20], [20], [20], [20]], 100),
+      cells: [cellAt(140, 40)],
+      untornRows: [untorn(140, 180, 2)],
+      topPt: 100,
+      bottomPt: 160,
+    });
+
+    expect(linesOn(pages[0])).toStrictEqual([1, 1]);
+    expect(linesOn(pages[1])).toStrictEqual([1, 1]);
+    expect(pages[0]?.cells).toStrictEqual([]);
+    expect(pages[1]?.cells).toStrictEqual([cellAt(100, 40)]);
+  });
+
+  it("leaves one alone that fits where it stands", () => {
+    const pages = breakStack({
+      boxes: stack([[20], [20], [20], [20]], 100),
+      cells: [cellAt(140, 40)],
+      untornRows: [untorn(140, 180, 2)],
+      topPt: 100,
+      bottomPt: 180,
+    });
+
+    expect(pages).toHaveLength(1);
+    expect(linesOn(pages[0])).toStrictEqual([1, 1, 1, 1]);
+  });
+
+  // Moved once, its top stands at the top of a page and there is nowhere left to
+  // move it to, so the break falls through it as it would through anything else.
+  it("tears one no page has room for, once it has been moved", () => {
+    const pages = breakStack({
+      boxes: stack([[20], [20], [20], [20], [20]], 100),
+      cells: [cellAt(120, 80)],
+      untornRows: [untorn(120, 200, 1)],
+      topPt: 100,
+      bottomPt: 160,
+    });
+
+    expect(linesOn(pages[0])).toStrictEqual([1]);
+    expect(linesOn(pages[1])).toStrictEqual([1, 1, 1]);
+    expect(linesOn(pages[2])).toStrictEqual([1]);
+  });
+});

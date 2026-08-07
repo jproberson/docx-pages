@@ -687,6 +687,104 @@ export function keepingDocument(): string {
   ].join("");
 }
 
+// Whether a row the foot of a page falls in is torn across the break or moved
+// whole, and what a stated height, `w:cantSplit` and a row above it change.
+//
+// Every paragraph here is told exactly how tall to be, so the room left under the
+// last filler is arithmetic: each case opens a page of its own, seven fillers and a
+// shim fill it down to 102pt from the foot, and the case's table starts there. That
+// leaves room for four of its 24pt lines with six points to spare, so nothing here
+// is decided at a boundary.
+//
+// Every line names itself rather than repeating a word, so that Word's own drawing
+// of one can be paired with ours by its text.
+export function tearingDocument(): string {
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const FILLERS = 7;
+  const FILLER_PT = 72;
+  const MARKER_PT = 24;
+  const BLOCK_PT = 720;
+  const LINE_PT = 24;
+  // Room for four of the case's lines and not for five.
+  const ROOM_PT = 102;
+
+  // The whole width of the text column, so a line in a cell breaks where a line
+  // outside one would.
+  const WIDTH = 10800;
+
+  const cell = (content: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(WIDTH)}" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+
+  const row = (properties: string, content: string): string =>
+    `<w:tr>${properties === "" ? "" : `<w:trPr>${properties}</w:trPr>`}${cell(content)}</w:tr>`;
+
+  // An authored document declares no table style, so a table that states no cell
+  // margins is held off its walls by nothing at all. Above and below they are
+  // nought here, which is what makes a row exactly as tall as its lines.
+  const table = (rows: string): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(WIDTH)}" w:type="dxa"/><w:tblCellMar>
+      <w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
+    </w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="${String(WIDTH)}"/></w:tblGrid>${rows}</w:tbl>`;
+
+  const named = (name: string, at: number): string => `${name} ${String(at).padStart(2, "0")}`;
+
+  const lines = (name: string, from: number, to: number, linePt = LINE_PT): string =>
+    Array.from({ length: to - from + 1 }, (_, at) =>
+      paragraph(exactly(linePt), run(named(name, from + at))),
+    ).join("");
+
+  const block = (name: string, content: string): readonly string[] => [
+    paragraph(`<w:pageBreakBefore/>${exactly(MARKER_PT)}`, run(`case ${name}`)),
+    ...Array.from({ length: FILLERS }, (_, at) =>
+      paragraph(exactly(FILLER_PT), run(`${name} fill ${String(at + 1)}`)),
+    ),
+    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - ROOM_PT), run(`${name} shim`)),
+    content,
+  ];
+
+  // A line taller than the ones above, chosen so that neither the room left at the
+  // foot of the page nor the whole body is a whole number of them.
+  const TALL_PT = 32;
+
+  return [
+    // A row of six lines with room for four, saying whether the four stay.
+    ...block("a", table(row("", lines("a", 1, 6)))),
+    // The same row told it may not be torn, which is the answer to read the first
+    // against: a case that moves here and stays there says the oracle can tell the
+    // two apart at all.
+    ...block("b", table(row(`<w:cantSplit/>`, lines("b", 1, 6)))),
+    // A row holding two lines and asking to be 150pt tall, so what does not fit is
+    // the height it stated rather than anything drawn. Says which of the two the
+    // break is measured against.
+    ...block("c", table(row(`<w:trHeight w:val="3000"/>`, lines("c", 1, 2)))),
+    // A row that does not fit under one that does, which says whether what moves is
+    // the row or the table it is in.
+    ...block("d", table(row("", lines("d", 1, 2)) + row("", lines("d", 3, 8)))),
+    // A row of 768pt, which no page has room for whole. Word has to tear this one
+    // somewhere, and where says whether a row that will not fit is moved first: 22
+    // of its lines fill a page of their own, and three of them fit in the room left
+    // here.
+    ...block("e", table(row("", lines("e", 1, 24, TALL_PT)))),
+    // A row asking to be 150pt tall and holding 144pt, so that the height it stated
+    // and the text in it disagree about nothing but which is the taller. Read
+    // against c, this says whether a stated height rules the break even where the
+    // text alone would have been torn.
+    ...block("f", table(row(`<w:trHeight w:val="3000"/>`, lines("f", 1, 6)))),
+    // The same six lines under a stated height of 48pt, which the room left has
+    // room for and the text has not. Says whether it is the larger of the two the
+    // break is measured against or the stated one whatever it says.
+    ...block("g", table(row(`<w:trHeight w:val="960"/>`, lines("g", 1, 6)))),
+    // A row that may not be torn and that no page has room for whole, which is the
+    // one case where the two answers cannot both be had.
+    ...block("h", table(row(`<w:cantSplit/>`, lines("h", 1, 24, TALL_PT)))),
+    // A table is the last thing in the body, which Word will not have.
+    EMPTY,
+  ].join("");
+}
+
 // Where the text goes when a document breaks its own pages.
 //
 // Every paragraph here is told exactly how tall to be, so where one landed is

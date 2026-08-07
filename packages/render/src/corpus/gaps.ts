@@ -27,7 +27,6 @@ const RANKING_PATH = process.env["DOCX_PAGES_CORPUS_GAPS"] ?? "samples/corpus/ga
 const FEATURE_OF: Readonly<Record<string, string>> = {
   "merged-cells": "table-cells",
   "table-style-conditional-formatting": "tables",
-  "unsplittable-row": "table-rows",
   "text-columns": "multiple-columns",
   "column-break": "column-breaks",
   footnote: "notes",

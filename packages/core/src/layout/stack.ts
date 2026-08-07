@@ -183,11 +183,25 @@ export type PlacedCell = {
   readonly borders: Borders;
 };
 
+// A row a page break is not allowed to run through, which moves whole to the page
+// under it instead. Word tears an ordinary row at a line, so what is listed here is
+// the two rows that refuse: one saying `w:cantSplit`, and one asking to be taller
+// than its own text needs, whose empty foot is what will not come apart.
+//
+// `opensAt` is the first paragraph in it, which is where the break has to be
+// decided: by the time a later one is reached the page it stands on is settled.
+export type UntornRow = {
+  readonly topPt: number;
+  readonly bottomPt: number;
+  readonly opensAt: number;
+};
+
 export type StackMeasurement =
   | {
       readonly kind: "measured";
       readonly boxes: readonly ParagraphBox[];
       readonly cells: readonly PlacedCell[];
+      readonly untornRows: readonly UntornRow[];
       readonly heightPt: number;
     }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
@@ -265,6 +279,7 @@ function measureBlocks(
 ): StackMeasurement {
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
+  const untornRows: UntornRow[] = [];
   let top = originPt;
   // The objects met so far, which grows as the stack walks forward: every line
   // from an object's own paragraph on has to sit clear of it.
@@ -325,11 +340,12 @@ function measureBlocks(
     if (measured.kind === "blocked") return measured;
     boxes.push(...measured.boxes);
     cells.push(...measured.cells);
+    untornRows.push(...measured.untornRows);
     anchoredAtPt = null;
     top += measured.heightPt;
   }
 
-  return { kind: "measured", boxes, cells, heightPt: top - originPt };
+  return { kind: "measured", boxes, cells, untornRows, heightPt: top - originPt };
 }
 
 const bandsOf = (paragraph: Paragraph, topPt: number, context: Context): readonly WrapBand[] =>
@@ -399,6 +415,7 @@ function measureTable(
 
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
+  const untornRows: UntornRow[] = [];
   const rowFrame = {
     leftPt: frame.leftPt + twipsToPoints(block.insets.indentTwips) + insetPt,
     widthPt: frame.widthPt,
@@ -414,10 +431,11 @@ function measureTable(
     if (measured.kind === "blocked") return measured;
     boxes.push(...measured.boxes);
     cells.push(...measured.cells);
+    untornRows.push(...measured.untornRows);
     top += measured.heightPt;
   }
 
-  return { kind: "measured", boxes, cells, heightPt: top + outerBottomPt - topPt };
+  return { kind: "measured", boxes, cells, untornRows, heightPt: top + outerBottomPt - topPt };
 }
 
 // How far a cell holds its text off its own left wall: the margin it asks for, or
@@ -443,6 +461,7 @@ type MeasuredCell = {
   // The cells of a table inside this one, which move with its content rather
   // than with the row.
   readonly inner: readonly PlacedCell[];
+  readonly innerUntorn: readonly UntornRow[];
   readonly heightPt: number;
   readonly leftPt: number;
   readonly widthPt: number;
@@ -489,6 +508,7 @@ function measureRow(
   // A cell is measured from its own origin and only then moved down to the row, so
   // the page coordinates a wrapping object stands in cannot reach inside one.
   const inCell: Context = { ...context, bandsFor: () => [], inCell: true };
+  const untornRows: UntornRow[] = [];
 
   for (const [at, cell] of row.cells.entries()) {
     const widthPt = cellWidthPt(cell) ?? frame.widthPt;
@@ -508,6 +528,7 @@ function measureRow(
       align: cell.verticalAlign,
       boxes: of.boxes,
       inner: of.cells,
+      innerUntorn: of.untornRows,
       heightPt: of.heightPt,
       leftPt,
       widthPt,
@@ -518,7 +539,8 @@ function measureRow(
     leftPt += widthPt;
   }
 
-  const heightPt = rowHeightPt(row, topMarginPt + contentHeightPt + bottomMarginPt);
+  const heldPt = topMarginPt + contentHeightPt + bottomMarginPt;
+  const heightPt = rowHeightPt(row, heldPt);
   // A row told exactly how tall to be leaves its cells whatever room is left over
   // once it has held them off its walls, and Word draws what does not fit anyway.
   const roomPt = Math.max(0, heightPt - topMarginPt - bottomMarginPt);
@@ -535,6 +557,8 @@ function measureRow(
         : null;
     for (const box of cell.boxes) boxes.push({ ...shiftBox(box, offset), clipTo });
     for (const inner of cell.inner) cells.push({ ...inner, topPt: inner.topPt + offset });
+    for (const inner of cell.innerUntorn)
+      untornRows.push({ ...inner, topPt: inner.topPt + offset, bottomPt: inner.bottomPt + offset });
     cells.push({
       leftPt: cell.leftPt,
       topPt,
@@ -545,7 +569,18 @@ function measureRow(
     });
   }
 
-  return { kind: "measured", boxes, cells, heightPt };
+  // Word tears an ordinary row at a line, and refuses two: one saying so, and one
+  // standing taller than its own text, whose empty foot has no line to be torn at.
+  // Both were measured on 2026-08-07 by the authored `tearing` document: a row
+  // asking to be 150pt tall with 48pt of text in it moved whole where 102pt was
+  // left, and so did the same row with 144pt of text, while a row asking to be
+  // 48pt tall with 144pt of text in it was torn like any other.
+  const opensAt = boxes[0]?.index;
+  if (opensAt !== undefined && (row.cantSplit || heightPt > heldPt + EPSILON)) {
+    untornRows.push({ topPt, bottomPt: topPt + heightPt, opensAt });
+  }
+
+  return { kind: "measured", boxes, cells, untornRows, heightPt };
 }
 
 // The largest margin any cell in the row asks for at that side, which is what

@@ -203,12 +203,17 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
         for (const expected of each.measured.paragraphs) {
           const answer = answers[expected.index - 1];
           const ours = placed.get(answer?.paragraph ?? -1);
-          if (answer === undefined || ours === undefined) {
+          // Word answers for two ends at once, so the page is read off the
+          // paragraph whose end it is about and the position off the paragraph
+          // whose start it is. The two are the same paragraph everywhere but the
+          // last of a cell, which reports its row's origin.
+          const ends = placed.get(answer?.endsAt ?? -1);
+          if (answer === undefined || ours === undefined || ends === undefined) {
             off.push(`paragraph ${String(expected.index)} was not laid out`);
             continue;
           }
           if (
-            ours.page === expected.page &&
+            ends.page === expected.page &&
             Math.abs(ours.topPt - expected.topPt) <= PARAGRAPH_TOLERANCE_PT &&
             (!answer.comparesLeft ||
               Math.abs(ours.leftPt - expected.leftPt) <= PARAGRAPH_TOLERANCE_PT)
@@ -217,7 +222,7 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
             continue;
           }
           off.push(
-            `paragraph ${String(expected.index)} at ${ours.topPt.toFixed(2)},${ours.leftPt.toFixed(2)} on page ${String(ours.page)}; Word says ${String(expected.topPt)},${String(expected.leftPt)} on page ${String(expected.page)}`,
+            `paragraph ${String(expected.index)} at ${ours.topPt.toFixed(2)},${ours.leftPt.toFixed(2)} on page ${String(ends.page)}; Word says ${String(expected.topPt)},${String(expected.leftPt)} on page ${String(expected.page)}`,
           );
         }
 

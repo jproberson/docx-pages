@@ -129,7 +129,13 @@ describe("measureStack", () => {
   it("measures an empty document as zero height", () => {
     const result = measure(``);
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
-    expect(result).toStrictEqual({ kind: "measured", boxes: [], cells: [], heightPt: 0 });
+    expect(result).toStrictEqual({
+      kind: "measured",
+      boxes: [],
+      cells: [],
+      untornRows: [],
+      heightPt: 0,
+    });
   });
 });
 
@@ -498,6 +504,44 @@ describe("measureStack over tables", () => {
     const result = measure(body);
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
     expect(result.heightPt).toBeCloseTo(14.4, 9);
+  });
+
+  // Which rows a page break may not be torn through, measured on 2026-08-07 by the
+  // authored `tearing` document. A row is torn at a line like anything else unless
+  // it says it may not be, or it stands taller than its own text: the empty foot a
+  // stated height opens under the last line has no line in it to be torn at.
+  const rowsThatRefuse = (properties: string, cells: string): readonly number[] => {
+    const result = measure(`<w:tbl><w:tr>${properties}${cells}</w:tr></w:tbl>`);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    return result.untornRows.map((row) => row.bottomPt - row.topPt);
+  };
+
+  it("speaks for no ordinary row", () => {
+    expect(rowsThatRefuse("", cell(`<w:p/><w:p/>`))).toStrictEqual([]);
+  });
+
+  it("speaks for a row saying it may not be split", () => {
+    const rows = rowsThatRefuse(`<w:trPr><w:cantSplit/></w:trPr>`, cell(`<w:p/><w:p/>`));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toBeCloseTo(27.6, 1);
+  });
+
+  it("speaks for a row asking to stand taller than its own text", () => {
+    const asked = `<w:trPr><w:trHeight w:val="1440"/></w:trPr>`;
+    expect(rowsThatRefuse(asked, cell(`<w:p/>`))).toStrictEqual([72]);
+  });
+
+  it("leaves a row whose text overflows the height it asked for to be torn", () => {
+    const asked = `<w:trPr><w:trHeight w:val="144"/></w:trPr>`;
+    expect(rowsThatRefuse(asked, cell(`<w:p/><w:p/>`))).toStrictEqual([]);
+  });
+
+  it("names the paragraph a row opens with, which is where the break is decided", () => {
+    const asked = `<w:trPr><w:trHeight w:val="1440"/></w:trPr>`;
+    const body = `<w:p/><w:tbl><w:tr>${asked}${cell(`<w:p/>`)}${cell(`<w:p/>`)}</w:tr></w:tbl>`;
+    const result = measure(body);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.untornRows[0]?.opensAt).toBe(1);
   });
 
   // Word ignores a break inside a cell outright: not a page, and not even the line

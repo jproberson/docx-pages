@@ -25,6 +25,13 @@ import { readAnchors } from "@docx-pages/core/internal";
 export type Answer = {
   // The paragraph of ours whose place Word is reporting.
   readonly paragraph: number;
+  // The paragraph of ours whose page Word is reporting, which is not always the
+  // same one: Word answers for a paragraph's start and for its active end at once,
+  // and where the two ends fell in different places the answer mixes them. The
+  // last paragraph of a cell reports the row's origin and its own page, so a row a
+  // break was torn through answers from the page it opened on with the page it
+  // finished on.
+  readonly endsAt: number;
   // Whether the horizontal answer is measured from anywhere this project knows.
   readonly comparesLeft: boolean;
 };
@@ -55,17 +62,23 @@ function walk(blocks: readonly Block[], answers: Answer[], endingAnswer: number 
     if (block.kind === "paragraph") {
       const index = block.paragraph.index;
       const answering = index === last ? (endingAnswer ?? index) : index;
-      answers.push({ paragraph: answering, comparesLeft: endingAnswer === null });
+      answers.push({ paragraph: answering, endsAt: index, comparesLeft: endingAnswer === null });
       continue;
     }
 
     for (const row of block.rows) {
-      const opener = firstParagraphIndex(row.cells.flatMap((cell) => cell.blocks));
+      const cells = row.cells.flatMap((cell) => cell.blocks);
+      const opener = firstParagraphIndex(cells);
       for (const cell of row.cells) walk(cell.blocks, answers, opener);
-      // The mark that ends a row stands where the row's text starts. A row with
-      // nothing in it to answer for still counts, so that the answers after it
-      // stay lined up with the paragraphs they are about.
-      answers.push({ paragraph: opener ?? -1, comparesLeft: false });
+      // The mark that ends a row stands where the row's text starts, and ends where
+      // the row's last paragraph does. A row with nothing in it to answer for still
+      // counts, so that the answers after it stay lined up with the paragraphs they
+      // are about.
+      answers.push({
+        paragraph: opener ?? -1,
+        endsAt: lastParagraphIndex(cells) ?? -1,
+        comparesLeft: false,
+      });
     }
   }
 }

@@ -49,6 +49,8 @@ export type RowHeight = {
 export type TableRow = {
   readonly cells: readonly TableCell[];
   readonly height: RowHeight | null;
+  // Whether the row refuses to be torn by a page break, and moves whole instead.
+  readonly cantSplit: boolean;
 };
 
 // How far a table sits from the edge of the text it is laid out in, and how far
@@ -126,7 +128,7 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
         fillColor: readShading(properties),
       });
     }
-    rows.push({ cells, height: rowHeight(tr) });
+    rows.push({ cells, height: rowHeight(tr), cantSplit: refusesToSplit(tr) });
   }
   const properties = firstNamed(element, W_NS, "tblPr");
   const style = properties === null ? null : firstNamed(properties, W_NS, "tblStyle");
@@ -148,6 +150,15 @@ function rowHeight(row: XmlElement): RowHeight | null {
   const twips = Number(attribute(height, W_NS, "val") ?? Number.NaN);
   if (!Number.isFinite(twips)) return null;
   return { twips, exact: attribute(height, W_NS, "hRule") === "exact" };
+}
+
+// `w:cantSplit` is on where it is stated without a value, as every toggle is.
+function refusesToSplit(row: XmlElement): boolean {
+  const properties = firstNamed(row, W_NS, "trPr");
+  const stated = properties === null ? null : firstNamed(properties, W_NS, "cantSplit");
+  if (stated === null) return false;
+  const value = attribute(stated, W_NS, "val");
+  return value !== "0" && value !== "false" && value !== "off";
 }
 
 function cellMargins(cell: XmlElement): CellMargins {

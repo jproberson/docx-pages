@@ -8,6 +8,7 @@ import {
   numberingDocument,
   sectionFlowDocument,
   sectionsDocument,
+  tearingDocument,
   pageDocument,
   spacingDocument,
   tableDocument,
@@ -364,6 +365,19 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Paragraphs held to the one after them",
       asks: "whether w:keepNext moves a paragraph onto the page its next one landed on, and how far back a run of them pulls",
       bytes: buildAuthoredDocx({ body: keepingDocument() }),
+    },
+    {
+      id: "tearing",
+      title: "A table row the foot of a page falls in",
+      asks: "whether a row too tall for the room left is torn across the break or moved whole",
+      // Four of these are the eighth and seventeenth line of the two rows written
+      // in 32pt lines, which Word answers for 0.55pt below where its own pdf draws
+      // them. The answers climb a twentieth of a point a line down those rows and
+      // fall back every ninth, which is a grid the report is rounded to rather than
+      // anything the layout did: every one of the document's 154 drawn lines lands
+      // where the pdf has it.
+      paragraphsPlaced: 160,
+      bytes: buildAuthoredDocx({ body: tearingDocument() }),
     },
     {
       id: "pages",
