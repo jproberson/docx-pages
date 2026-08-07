@@ -129,6 +129,13 @@ export function parseXml(source: string): XmlElement | null {
 
 // An empty namespace means an unprefixed attribute, which XML puts in no namespace
 // at all rather than in the element's default one.
+// Whether an element that is a toggle is on. Word writes one bare to turn it on,
+// so an element with no value at all counts, and only an explicit off turns it off.
+export const toggledOn = (element: XmlElement, namespace: string): boolean => {
+  const value = attribute(element, namespace, "val");
+  return value !== "0" && value !== "false" && value !== "off";
+};
+
 export const attribute = (
   element: XmlElement,
   namespace: string,

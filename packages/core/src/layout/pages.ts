@@ -10,7 +10,6 @@ export type BreakStackInput = {
   // A stack measured from `topPt` with no bottom, as `measureStack` produces it.
   readonly boxes: readonly ParagraphBox[];
   readonly cells: readonly PlacedCell[];
-  // The rows a break may not run through, which move whole instead.
   readonly untornRows?: readonly UntornRow[];
   readonly topPt: number;
   readonly bottomPt: number;
@@ -78,9 +77,8 @@ function breakOnce(
     return true;
   };
 
-  // The row each paragraph opens, where that row refuses to be torn. Only its
-  // first paragraph carries one, since that is the last moment the whole row can
-  // still be moved.
+  // Keyed by the paragraph a row opens with, which is the last moment the whole of
+  // it can still be moved.
   const opening = new Map<number, UntornRow>();
   for (const row of input.untornRows ?? []) opening.set(row.opensAt, row);
 

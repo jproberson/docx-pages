@@ -7,7 +7,7 @@ import {
 } from "./borders.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
-import { attribute, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, firstNamed, toggledOn, type XmlElement } from "./xml.js";
 
 export const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
@@ -49,7 +49,6 @@ export type RowHeight = {
 export type TableRow = {
   readonly cells: readonly TableCell[];
   readonly height: RowHeight | null;
-  // Whether the row refuses to be torn by a page break, and moves whole instead.
   readonly cantSplit: boolean;
 };
 
@@ -79,8 +78,7 @@ export type Block =
   | {
       readonly kind: "table";
       readonly rows: readonly TableRow[];
-      // The columns the table is drawn on, which is where a cell that states no
-      // width of its own gets one. Empty where the table declares no grid.
+      // Empty where the table declares no grid of its own.
       readonly gridTwips: readonly number[];
       readonly insets: TableInsets;
       readonly borders: TableBorders;
@@ -145,8 +143,6 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
   };
 }
 
-// The widths of `w:tblGrid`, which is what a table is drawn on: a cell asking for
-// no width of its own is as wide as the column it stands in.
 function gridColumns(element: XmlElement): readonly number[] {
   const grid = firstNamed(element, W_NS, "tblGrid");
   if (grid === null) return [];
@@ -167,13 +163,10 @@ function rowHeight(row: XmlElement): RowHeight | null {
   return { twips, exact: attribute(height, W_NS, "hRule") === "exact" };
 }
 
-// `w:cantSplit` is on where it is stated without a value, as every toggle is.
 function refusesToSplit(row: XmlElement): boolean {
   const properties = firstNamed(row, W_NS, "trPr");
   const stated = properties === null ? null : firstNamed(properties, W_NS, "cantSplit");
-  if (stated === null) return false;
-  const value = attribute(stated, W_NS, "val");
-  return value !== "0" && value !== "false" && value !== "off";
+  return stated !== null && toggledOn(stated, W_NS);
 }
 
 function cellMargins(cell: XmlElement): CellMargins {
