@@ -139,23 +139,47 @@ export function sectionsClosedBy(
   pkg: DocxPackage,
   bodyParagraphs: readonly XmlElement[],
 ): ReadonlyMap<XmlElement, SectionClose> {
-  const body = firstNamed(partXml(pkg, MAIN_DOCUMENT_PART), W_NS, "body");
-  const closers = bodyParagraphs.filter(endsASection);
   const closes = new Map<XmlElement, SectionClose>();
+  const sections = bodySections(pkg, bodyParagraphs);
 
-  for (const [at, closer] of closers.entries()) {
-    const next = closers[at + 1];
-    const opening =
-      next === undefined
-        ? body === null
-          ? null
-          : firstNamed(body, W_NS, "sectPr")
-        : sectionClosedBy(next);
-    closes.set(closer, {
-      opensAPage: opening !== null && breakOf(opening) !== "continuous",
-    });
+  for (const [at, section] of sections.entries()) {
+    const under = sections[at + 1];
+    if (section.endsAt === null || under === undefined) continue;
+    closes.set(section.endsAt, { opensAPage: under.breakKind !== "continuous" });
   }
   return closes;
+}
+
+// One of the body's own sections, and the paragraph it ends at. The final section
+// ends at nothing: the body's own `w:sectPr` governs whatever follows the last
+// paragraph carrying one.
+export type BodySection = DocumentSection & {
+  readonly endsAt: XmlElement | null;
+};
+
+// The body's sections in the order they run, read off the paragraphs standing in
+// the body itself rather than off every `w:sectPr` in the part: one inside a table
+// cell governs the story in that cell and closes no section of the body's.
+export function bodySections(
+  pkg: DocxPackage,
+  bodyParagraphs: readonly XmlElement[],
+): readonly BodySection[] {
+  const body = firstNamed(partXml(pkg, MAIN_DOCUMENT_PART), W_NS, "body");
+  const own = body === null ? null : firstNamed(body, W_NS, "sectPr");
+  const closers = bodyParagraphs.filter(endsASection);
+
+  const of = (element: XmlElement, endsAt: XmlElement | null): BodySection => ({
+    geometry: geometryOf(element),
+    breakKind: breakOf(element),
+    columns: columnsOf(element),
+    endsAt,
+  });
+
+  const sections = closers.flatMap((closer) => {
+    const properties = sectionClosedBy(closer);
+    return properties === null ? [] : [of(properties, closer)];
+  });
+  return own === null ? sections : [...sections, of(own, null)];
 }
 
 function breakOf(section: XmlElement): SectionBreak {

@@ -11,8 +11,10 @@ import {
   type Unhonoured,
 } from "../docx/fidelity.js";
 import {
+  bodySections,
   readSectionGeometry,
   sectionsClosedBy,
+  type BodySection,
   type SectionClose,
   type SectionGeometry,
 } from "../docx/section.js";
@@ -30,6 +32,7 @@ import {
   shiftBoxes,
   shiftCells,
   type BandResolver,
+  type Frame,
   type LayoutBlocker,
   type MetricsResolver,
   type ParagraphBox,
@@ -373,6 +376,45 @@ function sectionsClosedIn(
   );
 }
 
+// Which section each of the body's own blocks stands in. A section runs up to and
+// including the paragraph carrying its properties, so the section advances after
+// that block rather than at it.
+function sectionOfEachBlock(
+  pkg: DocxPackage,
+  blocks: readonly Block[],
+): ReadonlyMap<Block, BodySection> {
+  const paragraphs = blocks.flatMap((block) =>
+    block.kind === "paragraph" ? [block.paragraph] : [],
+  );
+  const sections = bodySections(
+    pkg,
+    paragraphs.map((each) => each.element),
+  );
+
+  const standing = new Map<Block, BodySection>();
+  let at = 0;
+  for (const block of blocks) {
+    const section = sections[at] ?? sections[sections.length - 1];
+    if (section === undefined) break;
+    standing.set(block, section);
+    if (block.kind === "paragraph" && block.paragraph.element === section.endsAt) at += 1;
+  }
+  return standing;
+}
+
+// Where a section's text runs across the page. A continuous section changes this
+// partway down a page, which is the whole of what one does that a page break does
+// not: two sections an inch apart in their left margins were drawn on one page, at
+// 72pt and at 144pt.
+const frameOfSection = (section: BodySection): Frame => ({
+  leftPt: twipsToPoints(section.geometry.margin.leftTwips),
+  widthPt: twipsToPoints(
+    section.geometry.widthTwips -
+      section.geometry.margin.leftTwips -
+      section.geometry.margin.rightTwips,
+  ),
+});
+
 const EMPTY_STORY: Story = {
   kind: "measured",
   part: null,
@@ -497,6 +539,7 @@ export function layOutDocument(
     footer.part === null ? marginBottomPt : Math.min(marginBottomPt, footerTopPt);
 
   const bodyBlocks = readBlocks(pkg);
+  const bodySectionOf = sectionOfEachBlock(pkg, bodyBlocks);
   const bodyStack = measureStack({
     ...frame,
     blocks: bodyBlocks,
@@ -504,6 +547,10 @@ export function layOutDocument(
     originPt: bodyTopPt,
     bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
     sectionsClosed: sectionsClosedIn(pkg, bodyBlocks),
+    frameOf: (block) => {
+      const section = bodySectionOf.get(block);
+      return section === undefined ? undefined : frameOfSection(section);
+    },
   });
 
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };

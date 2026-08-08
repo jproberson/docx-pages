@@ -241,6 +241,10 @@ export type MeasureStackInput = {
   // body has any: a `w:sectPr` inside a cell governs the story in that cell and
   // closes no section, and a header has none at all.
   readonly sectionsClosed?: ReadonlyMap<number, SectionClose>;
+  // The frame a block of the body's own stands in, where its section states one of
+  // its own. A story is one frame from top to bottom until a section break changes
+  // it partway down, and a block inside a table cell is framed by the cell.
+  readonly frameOf?: (block: Block) => Frame | undefined;
 };
 
 export type BandResolver = (paragraph: Paragraph, topPt: number) => readonly WrapBand[];
@@ -256,7 +260,9 @@ type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "width
   readonly tableStyleId: string | null;
 };
 
-type Frame = {
+// Where a story's text runs across the page, which a section break can change
+// partway down the body.
+export type Frame = {
   readonly leftPt: number;
   readonly widthPt: number;
 };
@@ -295,7 +301,7 @@ function measureBlocks(
   blocks: readonly Block[],
   context: Context,
   originPt: number,
-  frame: Frame,
+  storyFrame: Frame,
 ): StackMeasurement {
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
@@ -310,6 +316,7 @@ function measureBlocks(
   let anchoredAtPt: number | null = null;
 
   for (const [at, block] of blocks.entries()) {
+    const frame = context.inCell ? storyFrame : (context.frameOf?.(block) ?? storyFrame);
     if (block.kind === "paragraph") {
       const { paragraph } = block;
       const neighbours = {
