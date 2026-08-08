@@ -492,6 +492,58 @@ describe("breakStack over a row a break may not run through", () => {
     expect(linesOn(pages[0])).toStrictEqual([1, 1, 1, 1]);
   });
 
+  // A document states its page size and margins per section, so what a page keeps
+  // for the body is the section's rather than the document's. **A page belongs to
+  // the section whose text opened it**, which is what these hold: the section a
+  // paragraph stands in decides the page that paragraph opens and nothing about the
+  // page it was already standing on.
+  describe("where the sections make different pages", () => {
+    const roomier = (from: number) => (box: ParagraphBox) =>
+      box.index < from ? { topPt: 100, bottomPt: 160 } : { topPt: 40, bottomPt: 300 };
+
+    it("opens a page at the top the section running on to it keeps", () => {
+      const pages = breakStack({
+        cells: [],
+        boxes: stack([[20], [20], [20], [20], [20]], 100),
+        topPt: 100,
+        bottomPt: 160,
+        bodyOf: roomier(3),
+      });
+
+      expect(pages.map(indexesOn)).toStrictEqual([
+        [0, 1, 2],
+        [3, 4],
+      ]);
+      expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(40);
+    });
+
+    it("holds a page to the foot the section that opened it keeps", () => {
+      const pages = breakStack({
+        cells: [],
+        boxes: stack([[20], [20], [20], [20], [20]], 100),
+        topPt: 100,
+        bottomPt: 160,
+        bodyOf: roomier(2),
+      });
+
+      expect(pages.map(indexesOn)).toStrictEqual([
+        [0, 1, 2],
+        [3, 4],
+      ]);
+    });
+
+    it("says which paragraph opened each page", () => {
+      const pages = breakStack({
+        cells: [],
+        boxes: stack([[20], [20], [20], [20], [20]], 100),
+        topPt: 100,
+        bottomPt: 160,
+      });
+
+      expect(pages.map((page) => page.openedBy)).toStrictEqual([0, 3]);
+    });
+  });
+
   // Moved once, its top stands at the top of a page and there is nowhere left to
   // move it to, so the break falls through it as it would through anything else.
   it("tears one no page has room for, once it has been moved", () => {

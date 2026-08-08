@@ -1,9 +1,19 @@
 import type { AnchoredObject, ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
 
+// The run of a page the body's text may stand in: where it begins under the
+// header, and where the footer or the bottom margin ends it.
+export type PageBody = {
+  readonly topPt: number;
+  readonly bottomPt: number;
+};
+
 export type PageStack = {
   readonly index: number;
   readonly boxes: readonly ParagraphBox[];
   readonly cells: readonly PlacedCell[];
+  // The paragraph whose text opened the page, which is what says which section
+  // made it. Null on a page no paragraph reached.
+  readonly openedBy: number | null;
 };
 
 export type BreakStackInput = {
@@ -14,6 +24,23 @@ export type BreakStackInput = {
   readonly anchoredObjects?: readonly AnchoredObject[];
   readonly topPt: number;
   readonly bottomPt: number;
+  // What the section a paragraph stands in keeps for the body, where the sections
+  // of a document make different pages. `topPt` and `bottomPt` are what a document
+  // of one section keeps and what this falls back to.
+  //
+  // **A page belongs to the section whose text opened it**, so a page is asked for
+  // once, of the paragraph that opens it, and holds what it answered to its foot: a
+  // continuous section beginning partway down a page is drawn on the page it found,
+  // and makes only the pages its own text runs on to.
+  readonly bodyOf?: (box: ParagraphBox) => PageBody;
+};
+
+// Where a page started in the stack, what it keeps for the body, and the paragraph
+// whose text opened it.
+type Opening = {
+  readonly shiftPt: number;
+  readonly body: PageBody;
+  readonly openedBy: number | null;
 };
 
 // A paragraph asking to stand with the one after it moves onto the page that one
@@ -49,32 +76,42 @@ function breakOnce(
   input: BreakStackInput,
   moved: ReadonlySet<number>,
 ): { readonly pages: readonly PageStack[]; readonly split: number | null } {
+  const everyPage: PageBody = { topPt: input.topPt, bottomPt: input.bottomPt };
+  const bodyOf = (box: ParagraphBox | undefined): PageBody =>
+    box === undefined ? everyPage : (input.bodyOf?.(box) ?? everyPage);
+
   const pages: ParagraphBox[][] = [[]];
-  // Where in the stack each page started, which is what the cells are cut by
-  // once the text has said where the pages fall.
-  const shifts: number[] = [0];
+  const first = input.boxes[0];
+  // What the page being filled keeps for the body, which is what the paragraph that
+  // opened it asked for.
+  let body = bodyOf(first);
   let shiftPt = 0;
+  // Where in the stack each page started and what it kept, which is what the cells
+  // are cut by once the text has said where the pages fall.
+  const opened: Opening[] = [{ shiftPt, body, openedBy: first?.index ?? null }];
 
   const put = (box: ParagraphBox): void => {
     pages[pages.length - 1]?.push(box);
   };
 
-  const open = (): void => {
-    shifts.push(shiftPt);
+  const open = (next: PageBody, openedBy: number): void => {
+    body = next;
+    opened.push({ shiftPt, body, openedBy });
     pages.push([]);
   };
 
   const overflows = (topPt: number, heightPt: number): boolean =>
-    topPt - shiftPt + heightPt > input.bottomPt && topPt - shiftPt > input.topPt;
+    topPt - shiftPt + heightPt > body.bottomPt && topPt - shiftPt > body.topPt;
 
   // The page is left where the break asked, so what comes after it starts again at
-  // the body's top. A break with nothing left to move makes no page: a paragraph
-  // asking for one of its own while already standing at the top of one stays where
-  // it is, which is what keeps the first paragraph of a document off page two.
-  const leave = (topPt: number): boolean => {
-    if (topPt - shiftPt <= input.topPt) return false;
-    shiftPt = topPt - input.topPt;
-    open();
+  // the top of the page the paragraph opening it makes. A break with nothing left to
+  // move makes no page: a paragraph asking for one of its own while already standing
+  // at the top of one stays where it is, which is what keeps the first paragraph of
+  // a document off page two.
+  const leave = (topPt: number, next: PageBody, openedBy: number): boolean => {
+    if (topPt - shiftPt <= body.topPt) return false;
+    shiftPt = topPt - next.topPt;
+    open(next, openedBy);
     return true;
   };
 
@@ -99,8 +136,13 @@ function breakOnce(
   let split: number | null = null;
 
   for (const [place, box] of input.boxes.entries()) {
+    // What a page this paragraph opens keeps for the body, which is its own
+    // section's and not the page it may be standing at the foot of.
+    const opens = bodyOf(box);
     const carriedForward = moved.has(box.index) && !moved.has(input.boxes[place - 1]?.index ?? -1);
-    if (broken || box.startsPage || carriedForward) leave(box.lines[0]?.topPt ?? box.topPt);
+    if (broken || box.startsPage || carriedForward) {
+      leave(box.lines[0]?.topPt ?? box.topPt, opens, box.index);
+    }
     broken = box.endsPage;
 
     // A row that will not come apart is decided here, at the paragraph that opens
@@ -108,7 +150,9 @@ function breakOnce(
     // a page, and a row still too tall for a whole page is then torn where any
     // other would be, which is what Word did with one it was told not to split.
     const row = opening.get(box.index);
-    if (row !== undefined && overflows(row.topPt, row.bottomPt - row.topPt)) leave(row.topPt);
+    if (row !== undefined && overflows(row.topPt, row.bottomPt - row.topPt)) {
+      leave(row.topPt, opens, box.index);
+    }
 
     // **An object text wraps round moves to the page under it when it will not fit
     // in the room left, and takes the paragraph anchoring it with it.** Measured on
@@ -133,7 +177,7 @@ function breakOnce(
     // not fit even standing at its paragraph's own top.
     const objects = anchoring.get(box.index);
     if (objects?.some((each) => overflowsHighest(each, box, overflows)) === true) {
-      leave(box.topPt);
+      leave(box.topPt, opens, box.index);
     }
 
     // A paragraph with nothing in it is judged by the room its mark stands in, as
@@ -141,8 +185,8 @@ function breakOnce(
     // past the foot of the page rather than moving it on.
     if (box.lines.length === 0) {
       if (overflows(box.topPt, box.contentBottomPt - box.topPt)) {
-        shiftPt = box.topPt - input.topPt;
-        open();
+        shiftPt = box.topPt - opens.topPt;
+        open(opens, box.index);
       }
       put(partOf(box, 0, 0, shiftPt));
     } else {
@@ -165,10 +209,10 @@ function breakOnce(
 
         // The lines between the cut and the line that overflowed are on the next
         // page now, so they are looked at again from there.
-        const cut = asked ? at : cutFor(box, { from, at, shiftPt, topPt: input.topPt });
+        const cut = asked ? at : cutFor(box, { from, at, shiftPt, topPt: opens.topPt });
         if (cut > from) put(partOf(box, from, cut, shiftPt));
-        shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - input.topPt;
-        open();
+        shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - opens.topPt;
+        open(opens, box.index);
         from = cut;
         at = cut + 1;
       }
@@ -194,7 +238,8 @@ function breakOnce(
     pages: pages.map((boxes, index) => ({
       index,
       boxes,
-      cells: cellsOn(input, shifts, index),
+      cells: cellsOn(input, opened, index),
+      openedBy: opened[index]?.openedBy ?? null,
     })),
     split,
   };
@@ -245,15 +290,17 @@ function overflowsAtItsStart(
 // started in the stack and where the next page did.
 function cellsOn(
   input: BreakStackInput,
-  shifts: readonly number[],
+  opened: readonly Opening[],
   index: number,
 ): readonly PlacedCell[] {
-  const shiftPt = shifts[index] ?? 0;
-  const fromPt = input.topPt + shiftPt;
-  const next = shifts[index + 1];
+  const page = opened[index];
+  if (page === undefined) return [];
+  const { shiftPt, body } = page;
+  const fromPt = body.topPt + shiftPt;
+  const next = opened[index + 1];
   const toPt = Math.min(
-    next === undefined ? Number.POSITIVE_INFINITY : input.topPt + next,
-    fromPt + (input.bottomPt - input.topPt),
+    next === undefined ? Number.POSITIVE_INFINITY : next.body.topPt + next.shiftPt,
+    fromPt + (body.bottomPt - body.topPt),
   );
 
   return input.cells.flatMap((cell) => {

@@ -152,7 +152,7 @@ const layoutWith = (
   footerFloats,
   headerInlines: [],
   footerInlines: [],
-  pages: [{ index: 0, body, cells, floats, inlines: [] }],
+  pages: [{ index: 0, geometry: LETTER, body, cells, floats, inlines: [] }],
 });
 
 // A block of colour cut to a rectangle, a rule and a run of text, which is what a

@@ -557,8 +557,10 @@ export function Page(props: PageProps): ReactElement {
     aliasSymbolFaces = null,
     className,
   } = props;
-  const widthPt = twipsToPoints(layout.page.widthTwips);
-  const heightPt = twipsToPoints(layout.page.heightTwips);
+  // Each page is the size the section whose text opened it asked for, which a
+  // document of more than one section can change partway down.
+  const widthPt = twipsToPoints(page.geometry.widthTwips);
+  const heightPt = twipsToPoints(page.geometry.heightTwips);
 
   return (
     <div

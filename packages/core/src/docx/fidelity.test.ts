@@ -24,6 +24,28 @@ const reportOf = (body: string, parts: Readonly<Record<string, string>> = {}) =>
 const kinds = (report: readonly Unhonoured[]): readonly string[] =>
   report.map((entry) => entry.kind);
 
+// The same document with a header of its own, which is what the last section still
+// answers for on every page.
+const withAHeader = (body: string) =>
+  readUnhonoured(
+    openDocx(
+      buildDocx({
+        "word/document.xml": `<?xml version="1.0"?>
+          <w:document xmlns:w="${WORDPROCESSING_NS}" xmlns:r="${R_NS}"><w:body>${body}
+            <w:sectPr><w:headerReference w:type="default" r:id="rId1"/>
+              <w:pgSz w:w="12240" w:h="15840"/></w:sectPr>
+          </w:body></w:document>`,
+        "word/header1.xml": `<?xml version="1.0"?>
+          <w:hdr xmlns:w="${WORDPROCESSING_NS}"><w:p/></w:hdr>`,
+        "word/_rels/document.xml.rels": `<?xml version="1.0"?>
+          <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+            <Relationship Id="rId1" Target="header1.xml"
+              Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"/>
+          </Relationships>`,
+      }),
+    ),
+  );
+
 describe("readUnhonoured", () => {
   it("says nothing about a document holding only what is read", () => {
     expect(reportOf(`<w:p><w:r><w:t>plain</w:t></w:r></w:p>`)).toStrictEqual([]);
@@ -73,16 +95,18 @@ describe("readUnhonoured", () => {
     ]);
   });
 
-  // What a second section costs is a second page, not the break itself: one that
-  // changes only a header or a column count leaves the geometry alone and reading
-  // the last section loses nothing.
-  it("counts a second section only where it makes a different page", () => {
+  // Each page is made by the section whose text opened it, so a second page size
+  // costs the body nothing. What is still read from the last section alone is the
+  // header and the footer, drawn at its margins on every page, so a second page is
+  // worth naming only where there is one of those to put in the wrong place.
+  it("counts a second page only where a header stands to be drawn on it", () => {
     const wide = `<w:sectPr><w:pgSz w:w="15840" w:h="12240"/></w:sectPr>`;
     const same = `<w:p><w:pPr>${SECTION}</w:pPr></w:p>`;
     const differing = `<w:p><w:pPr>${wide}</w:pPr></w:p>`;
-    expect(kinds(reportOf(differing))).toStrictEqual(["more-than-one-section"]);
-    expect(reportOf(same)).toStrictEqual([]);
-    expect(reportOf(`<w:p/>`)).toStrictEqual([]);
+    expect(reportOf(differing)).toStrictEqual([]);
+    expect(kinds(withAHeader(differing))).toStrictEqual(["more-than-one-section"]);
+    expect(withAHeader(same)).toStrictEqual([]);
+    expect(withAHeader(`<w:p/>`)).toStrictEqual([]);
   });
 
   it("says nothing about a break that changes only the columns", () => {

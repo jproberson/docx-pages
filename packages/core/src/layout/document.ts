@@ -38,7 +38,7 @@ import {
   type ParagraphBox,
   type PlacedCell,
 } from "./stack.js";
-import { breakStack, type PageStack } from "./pages.js";
+import { breakStack, type PageBody, type PageStack } from "./pages.js";
 import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
@@ -49,6 +49,10 @@ import type { BandSide, OutlinePoint, WrapBand } from "./wrapping.js";
 // broken up: a page is the run of it that fitted between the two.
 export type LaidOutPage = {
   readonly index: number;
+  // The page the section whose text opened this one makes. Page size and margins
+  // are stated per section, so they belong to the page rather than to the document:
+  // a document whose sections differ draws its pages at more than one size.
+  readonly geometry: SectionGeometry;
   readonly body: readonly ParagraphBox[];
   readonly cells: readonly PlacedCell[];
   readonly floats: readonly PlacedFloat[];
@@ -402,6 +406,33 @@ function sectionOfEachBlock(
   return standing;
 }
 
+// Which section each of the body's paragraphs stands in, by the index the stack
+// knows it as. The indices run in document order through a table's cells as well as
+// over the body's own paragraphs, so a section takes in every index from the block
+// it opens at up to the block the next section opens at.
+function sectionAtEachParagraph(
+  blocks: readonly Block[],
+  sectionOf: ReadonlyMap<Block, BodySection>,
+): (index: number) => BodySection | undefined {
+  const opens: { readonly index: number; readonly section: BodySection }[] = [];
+  for (const block of blocks) {
+    const section = sectionOf.get(block);
+    const index = blockParagraphs([block])[0]?.index;
+    if (section === undefined || index === undefined) continue;
+    if (opens[opens.length - 1]?.section === section) continue;
+    opens.push({ index, section });
+  }
+
+  return (index) => {
+    let found: BodySection | undefined = undefined;
+    for (const each of opens) {
+      if (each.index > index) break;
+      found = each.section;
+    }
+    return found;
+  };
+}
+
 // Where a section's text runs across the page. A continuous section changes this
 // partway down a page, which is the whole of what one does that a page break does
 // not: two sections an inch apart in their left margins were drawn on one page, at
@@ -467,10 +498,19 @@ export function layOutDocument(
   const theme = readTheme(pkg);
   const settings = readDocumentSettings(pkg);
   const headerTopPt = twipsToPoints(page.margin.headerTwips);
-  const pageHeightPt = twipsToPoints(page.heightTwips);
   const leftPt = twipsToPoints(page.margin.leftTwips);
   const widthPt = twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
   const frame: StoryFrame = { styles, metricsFor, settings, leftPt, widthPt };
+
+  const bodyBlocks = readBlocks(pkg);
+  const bodySectionOf = sectionOfEachBlock(pkg, bodyBlocks);
+  const sectionAt = sectionAtEachParagraph(bodyBlocks, bodySectionOf);
+  const geometryAt = (index: number | null): SectionGeometry =>
+    (index === null ? undefined : sectionAt(index)?.geometry) ?? page;
+  // The page the body opens on, which the first section makes and not the last.
+  // The whole stack is measured from its top, and every page after the first is
+  // shifted back to the top of its own.
+  const openingPage = geometryAt(blockParagraphs(bodyBlocks)[0]?.index ?? null);
 
   const floatFrame = (
     part: string | null,
@@ -501,15 +541,20 @@ export function layOutDocument(
       headerTopPt,
       bandsIn(floatFrame(headerPart, headerTopPt, marginTopPt)),
     );
-  const bodyTopUnder = (story: StoryMeasurement): number =>
-    Math.max(
-      twipsToPoints(page.margin.topTwips),
-      headerTopPt + (story.kind === "blocked" ? 0 : story.heightPt),
-    );
-
   const firstPass = measureHeader(twipsToPoints(page.margin.topTwips));
   if (firstPass.kind === "blocked") return firstPass;
-  const bodyTopPt = bodyTopUnder(firstPass);
+
+  // Where a section's own page starts the body: under the header standing at the
+  // distance that section keeps for one, or at its top margin, whichever is lower.
+  // The header itself is measured once, against the document's own page, so the
+  // room it takes is the same on every page and only the margins move.
+  const bodyTopOf = (geometry: SectionGeometry): number =>
+    Math.max(
+      twipsToPoints(geometry.margin.topTwips),
+      twipsToPoints(geometry.margin.headerTwips) + firstPass.heightPt,
+    );
+
+  const bodyTopPt = bodyTopOf(openingPage);
   const header = measureHeader(bodyTopPt);
   if (header.kind === "blocked") return header;
 
@@ -526,20 +571,37 @@ export function layOutDocument(
     bandsIn(floatFrame(footerPart, 0, bodyTopPt)),
   );
   if (measuredFooter.kind === "blocked") return measuredFooter;
-  const footerTopPt =
-    pageHeightPt - twipsToPoints(page.margin.footerTwips) - measuredFooter.heightPt;
+
+  // Where a section's own page hangs the footer, which is as far above the bottom
+  // edge as that section keeps for one. The footer itself is measured once, against
+  // the document's own page.
+  const footerTopOf = (geometry: SectionGeometry): number =>
+    twipsToPoints(geometry.heightTwips) -
+    twipsToPoints(geometry.margin.footerTwips) -
+    measuredFooter.heightPt;
+
+  const footerTopPt = footerTopOf(page);
   const footer: Story = {
     ...measuredFooter,
     boxes: shiftBoxes(measuredFooter.boxes, footerTopPt),
     cells: shiftCells(measuredFooter.cells, footerTopPt),
   };
 
-  const marginBottomPt = pageHeightPt - twipsToPoints(page.margin.bottomTwips);
-  const bodyBottomPt =
-    footer.part === null ? marginBottomPt : Math.min(marginBottomPt, footerTopPt);
+  // What a page a section opens keeps for the body of the text. Page size and
+  // margins are stated per section, so a document whose sections differ breaks each
+  // page against the geometry of the one whose text opened it.
+  const bodyOfSection = (geometry: SectionGeometry): PageBody => {
+    const marginBottomPt =
+      twipsToPoints(geometry.heightTwips) - twipsToPoints(geometry.margin.bottomTwips);
+    return {
+      topPt: bodyTopOf(geometry),
+      bottomPt:
+        footer.part === null ? marginBottomPt : Math.min(marginBottomPt, footerTopOf(geometry)),
+    };
+  };
 
-  const bodyBlocks = readBlocks(pkg);
-  const bodySectionOf = sectionOfEachBlock(pkg, bodyBlocks);
+  const bodyBottomPt = bodyOfSection(openingPage).bottomPt;
+
   const bodyStack = measureStack({
     ...frame,
     blocks: bodyBlocks,
@@ -609,6 +671,7 @@ export function layOutDocument(
     anchoredObjects: bodyStack.anchoredObjects,
     topPt: bodyTopPt,
     bottomPt: bodyBottomPt,
+    bodyOf: (box) => bodyOfSection(geometryAt(box.index)),
   });
   const bodyDrawings = pageBoxes(broken).map((boxOf) =>
     drawingsFor(
@@ -656,6 +719,7 @@ export function layOutDocument(
     footerCells: footer.cells,
     pages: broken.map((each) => ({
       index: each.index,
+      geometry: geometryAt(each.openedBy),
       body: each.boxes,
       cells: each.cells,
       floats: pageFloats[each.index] ?? [],

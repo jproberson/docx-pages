@@ -67,8 +67,9 @@ export type UnhonouredKind =
   | "missing-glyph";
 
 const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
-  // Only the last section's geometry is read, so a document that changes page
-  // size, margins or columns part way through lays the rest out on the wrong page.
+  // The header and the footer are read from the last section alone, so a document
+  // that changes page size or margins part way through draws them at the wrong
+  // height on every page the last section did not make.
   "more-than-one-section": "moves-text",
   "text-columns": "moves-text",
   // A cell spanning its neighbours is laid out at its own width, and the cells
@@ -243,7 +244,7 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
       found,
       resolvePart: (relationshipId) => relationships.get(relationshipId)?.part ?? null,
     });
-    countSections(root, part, found);
+    countSections(root, part, found, parts.length > 1);
   }
 
   // A style's conditional formats and the settings' own switches belong to no part
@@ -291,14 +292,23 @@ function walk(node: XmlElement, paragraphIndex: number | null, reading: Reading)
   }
 }
 
-// Word lays a document out under the section its text ends in, and this project
-// reads the last one alone. What that costs is not the second section but a second
-// *page*: a break that changes only a header or a column count leaves the geometry
-// alone, and reading the last section then loses nothing at all. Measured over a
-// corpus of real documents, a section break that changes the page is far and away
-// the common case, but the ones that do not are numerous enough to be worth not
-// crying wolf over.
-function countSections(root: XmlElement, part: string, found: Found[]): void {
+// Every page is now broken and drawn against the geometry of the section whose
+// text opened it, so a second page size or a second set of margins costs the body
+// nothing. What is still read from the last section alone is the header and the
+// footer: they are measured once, against that page, and drawn at its margins on
+// every page of the document.
+//
+// So what is named here is a second *page* with a header or a footer to put in the
+// wrong place. A break that changes only a column count leaves the geometry alone
+// and is named elsewhere, and a document that draws neither header nor footer has
+// nothing left standing in for it.
+function countSections(
+  root: XmlElement,
+  part: string,
+  found: Found[],
+  drawsAHeaderOrFooter: boolean,
+): void {
+  if (!drawsAHeaderOrFooter) return;
   const pages = new Set(allNamed(root, "sectPr").map(pageGeometrySignature));
   for (let at = 1; at < pages.size; at += 1) {
     found.push({ kind: "more-than-one-section", place: { part, paragraphIndex: null } });
