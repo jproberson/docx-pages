@@ -584,22 +584,31 @@ class LineBuilder {
 }
 
 // How far a paragraph has been broken: which unit is next, what is left of a word
-// the line above cut in two, whether that line ended by filling up, and whether it
-// ended at a page break.
+// the line above cut in two, whether that line ended by filling up, whether it
+// ended at a page break, and whether a line break opened a line that nothing has
+// been put on yet.
 type Cursor = {
   readonly at: number;
   readonly rest: readonly Fragment[] | null;
   readonly wrapped: boolean;
   readonly index: number;
   readonly startsPage: boolean;
+  readonly opened: boolean;
 };
 
-const START: Cursor = { at: 0, rest: null, wrapped: false, index: 0, startsPage: false };
+const START: Cursor = {
+  at: 0,
+  rest: null,
+  wrapped: false,
+  index: 0,
+  startsPage: false,
+  opened: false,
+};
 
-// The line a page break leaves behind it where nothing stood on it. A break holds
-// the room its line takes on the page it is leaving, which an ordinary line break
-// does not, so this one is handed back rather than stepped over. It is measured
-// from the paragraph's own mark, as any other line with nothing on it is.
+// The line a break leaves behind it where nothing stood on it. **Every break opens
+// a line under it, and that line stands whether anything is written on it or not**,
+// so this is handed back rather than stepped over. It is measured from the
+// paragraph's own mark, as any other line with nothing on it is.
 const EMPTY_LINE: TextLine = {
   segments: [],
   widthPt: 0,
@@ -669,7 +678,13 @@ function fillLine(
   if (cursor.rest !== null) {
     const took = builder.word(cursor.rest, cutting);
     if (took.kind === "full") {
-      return filledAt(builder, { ...cursor, rest: took.rest, wrapped: true, startsPage: false });
+      return filledAt(builder, {
+        ...cursor,
+        rest: took.rest,
+        wrapped: true,
+        startsPage: false,
+        opened: false,
+      });
     }
   }
 
@@ -680,16 +695,25 @@ function fillLine(
 
     // A break ends the line it is on wherever it stands, and the line under it
     // starts with whatever gap follows rather than losing it.
+    //
+    // **The line it opens stands whether anything is written on it or not.**
+    // Measured on 2026-08-08 by the authored `breaks-in-a-paragraph` document, over
+    // eight cases written out three times: a paragraph came out one line taller for
+    // every break in it, wherever the breaks stood, and one holding a break and
+    // nothing else came out two lines tall.
     if (unit.kind === "break") {
       const line = builder.finish();
       return {
-        line: line ?? (unit.endsPage ? EMPTY_LINE : null),
+        line: line ?? EMPTY_LINE,
         cursor: {
           at,
           rest: null,
           wrapped: false,
           index: cursor.index,
           startsPage: unit.endsPage,
+          // A page break carries its ask to the page under it rather than to a line
+          // of its own, and a paragraph ending on one draws nothing more.
+          opened: !unit.endsPage,
         },
       };
     }
@@ -705,14 +729,25 @@ function fillLine(
         wrapped: true,
         index: cursor.index,
         startsPage: false,
+        opened: false,
       });
     }
   }
 
   const line = builder.finish();
-  return line === null
-    ? null
-    : { line, cursor: { at, rest: null, wrapped: false, index: cursor.index, startsPage: false } };
+  const spent: Cursor = {
+    at,
+    rest: null,
+    wrapped: false,
+    index: cursor.index,
+    startsPage: false,
+    opened: false,
+  };
+  // Nothing left to write, and a break that opened a line for it: the line is
+  // handed back empty, which is what makes a paragraph ending in a break one line
+  // taller than its text.
+  if (line === null) return cursor.opened ? { line: EMPTY_LINE, cursor: spent } : null;
+  return { line, cursor: spent };
 }
 
 const filledAt = (builder: LineBuilder, cursor: Cursor): Filled => ({

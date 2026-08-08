@@ -17387,6 +17387,258 @@
       "characters": [],
       "shapes": []
     },
+    "breaks-in-a-paragraph": {
+      "paragraphs": [
+        {
+          "index": 1,
+          "page": 1,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 2,
+          "page": 1,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 3,
+          "page": 1,
+          "topPt": 84.099998,
+          "leftPt": 0.0
+        },
+        {
+          "index": 4,
+          "page": 1,
+          "topPt": 108.300003,
+          "leftPt": 0.0
+        },
+        {
+          "index": 5,
+          "page": 1,
+          "topPt": 131.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 6,
+          "page": 2,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 7,
+          "page": 2,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 8,
+          "page": 2,
+          "topPt": 108.300003,
+          "leftPt": 0.0
+        },
+        {
+          "index": 9,
+          "page": 2,
+          "topPt": 156.100006,
+          "leftPt": 0.0
+        },
+        {
+          "index": 10,
+          "page": 2,
+          "topPt": 203.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 11,
+          "page": 3,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 12,
+          "page": 3,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 13,
+          "page": 3,
+          "topPt": 108.300003,
+          "leftPt": 0.0
+        },
+        {
+          "index": 14,
+          "page": 3,
+          "topPt": 156.100006,
+          "leftPt": 0.0
+        },
+        {
+          "index": 15,
+          "page": 3,
+          "topPt": 203.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 16,
+          "page": 4,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 17,
+          "page": 4,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 18,
+          "page": 4,
+          "topPt": 131.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 19,
+          "page": 4,
+          "topPt": 203.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 20,
+          "page": 4,
+          "topPt": 275.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 21,
+          "page": 5,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 22,
+          "page": 5,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 23,
+          "page": 5,
+          "topPt": 108.300003,
+          "leftPt": 0.0
+        },
+        {
+          "index": 24,
+          "page": 5,
+          "topPt": 156.100006,
+          "leftPt": 0.0
+        },
+        {
+          "index": 25,
+          "page": 5,
+          "topPt": 203.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 26,
+          "page": 6,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 27,
+          "page": 6,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 28,
+          "page": 6,
+          "topPt": 131.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 29,
+          "page": 6,
+          "topPt": 203.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 30,
+          "page": 6,
+          "topPt": 275.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 31,
+          "page": 7,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 32,
+          "page": 7,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 33,
+          "page": 7,
+          "topPt": 156.100006,
+          "leftPt": 0.0
+        },
+        {
+          "index": 34,
+          "page": 7,
+          "topPt": 252.300003,
+          "leftPt": 0.0
+        },
+        {
+          "index": 35,
+          "page": 7,
+          "topPt": 347.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 36,
+          "page": 8,
+          "topPt": 36.299999,
+          "leftPt": 0.0
+        },
+        {
+          "index": 37,
+          "page": 8,
+          "topPt": 59.900002,
+          "leftPt": 0.0
+        },
+        {
+          "index": 38,
+          "page": 8,
+          "topPt": 108.300003,
+          "leftPt": 0.0
+        },
+        {
+          "index": 39,
+          "page": 8,
+          "topPt": 156.100006,
+          "leftPt": 0.0
+        },
+        {
+          "index": 40,
+          "page": 8,
+          "topPt": 203.899994,
+          "leftPt": 0.0
+        },
+        {
+          "index": 41,
+          "page": 8,
+          "topPt": 228.100006,
+          "leftPt": 0.0
+        }
+      ],
+      "characters": [],
+      "shapes": []
+    },
     "objects-and-the-footer": {
       "paragraphs": [
         {

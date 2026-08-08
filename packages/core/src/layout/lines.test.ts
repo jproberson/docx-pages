@@ -245,8 +245,36 @@ describe("breakLines", () => {
     expect(pagesOf([PAGE])).toStrictEqual({ texts: [""], starts: [false], endsPage: true });
   });
 
-  it("steps over the line a line break ends with nothing on it, as ever", () => {
-    expect(pagesOf([NEW_LINE])).toStrictEqual({ texts: [], starts: [], endsPage: false });
+  // **Every break opens a line under it, and that line stands whether anything is
+  // written on it or not.** Measured on 2026-08-08 by the authored
+  // `breaks-in-a-paragraph` document: over eight cases written out three times, a
+  // paragraph came out one line taller for every break in it, wherever the breaks
+  // stood, and one holding a break and nothing else came out two lines tall.
+  //
+  // Two corpus documents of one converted template turn on it, at 7 of 45 lines
+  // placed and 6 of 43: one writes two breaks in a row in the middle of a paragraph,
+  // the other ends a paragraph with one, and everything below either was a line too
+  // high.
+  it("opens a line under a line break with nothing on it", () => {
+    expect(pagesOf([NEW_LINE])).toStrictEqual({
+      texts: ["", ""],
+      starts: [false, false],
+      endsPage: false,
+    });
+  });
+
+  it("opens a line under a break with nothing after it", () => {
+    expect(pagesOf([{ kind: "text", text: "ab" }, NEW_LINE])).toStrictEqual({
+      texts: ["ab", ""],
+      starts: [false, false],
+      endsPage: false,
+    });
+  });
+
+  it("leaves a line with nothing on it between two breaks together", () => {
+    expect(
+      pagesOf([{ kind: "text", text: "ab" }, NEW_LINE, NEW_LINE, { kind: "text", text: "cd" }]),
+    ).toStrictEqual({ texts: ["ab", "", "cd"], starts: [false, false, false], endsPage: false });
   });
 
   // Nothing follows the break to be put on the next page, so the paragraph itself

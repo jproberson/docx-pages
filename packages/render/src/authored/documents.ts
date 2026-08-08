@@ -1,6 +1,7 @@
 import {
   bordersDocument,
   breakingDocument,
+  breaksInAParagraphDocument,
   characterSpacingDocument,
   columnsDocument,
   compatibilityDocument,
@@ -291,6 +292,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "An anchored object whose foot falls past the bottom of its page",
       asks: "whether such an object hangs where it was put, moves to the next page on its own, or takes the paragraph anchoring it with it",
       bytes: buildAuthoredDocx({ body: objectsPastTheFootDocument() }),
+    },
+    {
+      id: "breaks-in-a-paragraph",
+      title: "A break with nothing on the line it opens",
+      asks: "whether a break at the end of a paragraph, or a second one after it, still opens a line",
+      bytes: buildAuthoredDocx({ body: breaksInAParagraphDocument() }),
     },
     {
       id: "objects-and-the-footer",

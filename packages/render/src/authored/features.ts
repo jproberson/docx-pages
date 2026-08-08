@@ -570,6 +570,60 @@ export const STATED_FOOTER = paragraph(
   run("the footer"),
 );
 
+// What a break does to the line under it when there is nothing on that line.
+//
+// Two corpus documents of one converted template are 7 of 45 and 6 of 43 lines
+// placed, and both are wrong from the first break down: one writes two breaks in a
+// row in the middle of a paragraph and Word draws an empty line between them, the
+// other ends a paragraph with a break and Word gives that break a line of its own.
+// This project drew neither, since a line with nothing on it was no line at all.
+//
+// Every case is a paragraph told exactly how tall its lines are and written out three
+// times, so the height it turned out to be is the distance from one repeat to the
+// next rather than a difference of two rounded answers. Each repeat marks itself,
+// since two lines of the same words cannot be told apart in a rendering.
+export function breaksInAParagraphDocument(): string {
+  const LINE_PT = 24;
+
+  const exactly = (pt: number): string =>
+    `<w:spacing w:before="0" w:after="0" w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+  const BREAK = `<w:r><w:br/></w:r>`;
+
+  const CASES: readonly (readonly [name: string, content: (mark: string) => string])[] = [
+    // One line and no break at all, which every height below is read against.
+    ["plain", (mark) => run(`${mark} one`)],
+    // A break between two runs of text, which is the case that has always drawn two
+    // lines.
+    ["between", (mark) => run(`${mark} one`) + BREAK + run(`${mark} two`)],
+    // A break with nothing after it but the paragraph's own mark.
+    ["trailing", (mark) => run(`${mark} one`) + BREAK],
+    // Two of them, which leaves no line for the second to end.
+    ["two trailing", (mark) => run(`${mark} one`) + BREAK + BREAK],
+    // A break with nothing in front of it.
+    ["leading", (mark) => BREAK + run(`${mark} one`)],
+    // Two breaks between two runs of text, which is what the first of the two corpus
+    // documents holds.
+    ["two between", (mark) => run(`${mark} one`) + BREAK + BREAK + run(`${mark} two`)],
+    // And three, in case what a second break opens a third does not.
+    ["three between", (mark) => run(`${mark} one`) + BREAK + BREAK + BREAK + run(`${mark} two`)],
+    // A paragraph holding a break and nothing else.
+    ["only a break", () => BREAK],
+  ];
+
+  const block = ([name, content]: readonly [string, (mark: string) => string]): string => {
+    const mark = name.replace(/[^a-z]/g, "");
+    return (
+      paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${mark} marks`)) +
+      [1, 2, 3].map((at) => paragraph(exactly(LINE_PT), content(`${mark}${String(at)}`))).join("") +
+      paragraph(exactly(LINE_PT), run(`${mark} follows`))
+    );
+  };
+
+  return [...CASES.map(block), EMPTY].join("");
+}
+
 export function wrappingDocument(): string {
   const wrapping = (id: number, wrap: string, widthEmu: number, heightEmu: number): string =>
     `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>

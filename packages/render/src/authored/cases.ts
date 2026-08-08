@@ -103,6 +103,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // the document was written for: where a box that was drawn up rather than moved
   // came to rest is the whole of what half of it asks.
   "objects-and-the-footer": { lines: 192, runs: 192, numbers: 0 },
+  // Eight cases of a marker, the case written out three times and a line under it.
+  // The lines the breaks open draw no ink at all, which is the whole of what the
+  // document asks, so what is counted here is what is left: 46 of the 8 cases' own
+  // lines and the marks either side of them.
+  "breaks-in-a-paragraph": { lines: 46, runs: 46, numbers: 0 },
   // Every line of all eleven cases: a marker, four rows of two cells and a line
   // under the table. Word's own pdf is the oracle this document is read by, since
   // its report puts the last row of four of the cases 0.55 to 0.7pt below where its
