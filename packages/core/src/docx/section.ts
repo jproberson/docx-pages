@@ -31,11 +31,25 @@ const BREAKS: readonly SectionBreak[] = [
   "nextColumn",
 ];
 
+// How a section divides its frame between its columns. Word writes one of two
+// things: a count and one gap for every column, or a width and a gap for each
+// column in turn. Every one of the sixteen corpus documents that hold columns
+// writes the second, and none of their columns is the same width as its neighbour.
+export type SectionColumns = {
+  // How many columns the section's text runs in. One unless it says otherwise.
+  readonly count: number;
+  // The width and the gap after each, where the section stated them; empty where
+  // it asked for equal widths and left them to be divided.
+  readonly widthsTwips: readonly number[];
+  readonly gapsTwips: readonly number[];
+  // The gap a section of equal columns keeps between all of them.
+  readonly spaceTwips: number;
+};
+
 export type DocumentSection = {
   readonly geometry: SectionGeometry;
   readonly breakKind: SectionBreak;
-  // How many columns the section's text runs in. One unless it says otherwise.
-  readonly columns: number;
+  readonly columns: SectionColumns;
 };
 
 const AT = "core/docx/section.readSectionGeometry";
@@ -188,11 +202,35 @@ function breakOf(section: XmlElement): SectionBreak {
   return BREAKS.find((each) => each === value) ?? "nextPage";
 }
 
-function columnsOf(section: XmlElement): number {
+const ONE_COLUMN: SectionColumns = {
+  count: 1,
+  widthsTwips: [],
+  gapsTwips: [],
+  spaceTwips: 0,
+};
+
+function columnsOf(section: XmlElement): SectionColumns {
   const columns = firstNamed(section, W_NS, "cols");
-  if (columns === null) return 1;
+  if (columns === null) return ONE_COLUMN;
+
   const stated = Number(attribute(columns, W_NS, "num") ?? "1");
-  return Number.isFinite(stated) && stated >= 1 ? Math.floor(stated) : 1;
+  const count = Number.isFinite(stated) && stated >= 1 ? Math.floor(stated) : 1;
+  const each = columns.children.filter((child) => child.namespace === W_NS && child.name === "col");
+  const number = (element: XmlElement, name: string): number => {
+    const value = Number(attribute(element, W_NS, name) ?? Number.NaN);
+    return Number.isFinite(value) ? value : 0;
+  };
+
+  // A section asking for equal widths is divided rather than read, whatever widths
+  // it wrote beside the request.
+  const divided = attribute(columns, W_NS, "equalWidth") === "0" && each.length >= count;
+
+  return {
+    count,
+    widthsTwips: divided ? each.slice(0, count).map((column) => number(column, "w")) : [],
+    gapsTwips: divided ? each.slice(0, count).map((column) => number(column, "space")) : [],
+    spaceTwips: number(columns, "space"),
+  };
 }
 
 const noSection = (): DocxPagesError =>

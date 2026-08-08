@@ -21,6 +21,12 @@ import { readAnchors } from "@docx-pages/core/internal";
 // where a line an object narrowed began: Word reports nought for a line it drew
 // three hundred points across. So a story holding anything text wraps round is not
 // compared on the left at all, and the pdf answers for those too.
+//
+// **A document of more than one column is another of those**, and for the same
+// reason: Word measures a paragraph's left from its own column's boundary, so a
+// right-aligned line closing a 252pt column comes back at 226.9 whichever column it
+// stands in. There is nothing there to compare against, and the pdf says where every
+// column of the `columns` document was drawn to the hundredth of a point.
 
 export type Answer = {
   // The paragraph of ours whose place Word is reporting.
@@ -36,10 +42,13 @@ export type Answer = {
   readonly comparesLeft: boolean;
 };
 
-export function answeringParagraphs(blocks: readonly Block[]): readonly Answer[] {
+export function answeringParagraphs(
+  blocks: readonly Block[],
+  runsInColumns = false,
+): readonly Answer[] {
   const answers: Answer[] = [];
   walk(blocks, answers, null);
-  if (!wrapsText(blocks)) return answers;
+  if (!runsInColumns && !wrapsText(blocks)) return answers;
   return answers.map((answer) => ({ ...answer, comparesLeft: false }));
 }
 

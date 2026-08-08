@@ -137,6 +137,7 @@ type PartResolver = (relationshipId: string) => string | null;
 function unhonouredBy(
   element: XmlElement,
   parent: XmlElement | null,
+  paragraph: XmlElement | null,
   resolvePart: PartResolver,
 ): UnhonouredKind | null {
   // A drawing answers for itself, by the same reader the layout uses: whatever
@@ -174,8 +175,14 @@ function unhonouredBy(
     case "footnoteReference":
     case "endnoteReference":
       return "footnote";
+    // A column break is honoured where it stands alone in its paragraph or opens
+    // one, which is where every one of the 25 in the corpus stands. One with text of
+    // its own paragraph in front of it is a place inside a block, and the division
+    // into columns is made between them.
     case "br":
-      return attribute(element, W_NS, "type") === "column" ? "column-break" : null;
+      return attribute(element, W_NS, "type") === "column" && drawnBefore(element, paragraph)
+        ? "column-break"
+        : null;
     case "tab":
       return attribute(element, W_NS, "val") === "bar" ? "bar-tab-stop" : null;
     case "highlight":
@@ -196,13 +203,35 @@ function unhonouredBy(
     case "titlePg":
     case "evenAndOddHeaders":
       return toggled(element) ? "alternate-first-or-even-page" : null;
+    // Columns were built on 2026-08-08, so a section running its text in more than
+    // one of them no longer stands in for anything on its own.
     case "cols":
-      return numbered(element) > 1 || Number(attribute(element, W_NS, "num") ?? 1) > 1
-        ? "text-columns"
-        : null;
+      return null;
     default:
       return null;
   }
+}
+
+// Whether the paragraph holding a break has drawn anything before it. Word's own
+// runs are read rather than the paragraph's, since a break in the second run of a
+// paragraph is what this is looking for.
+function drawnBefore(element: XmlElement, paragraph: XmlElement | null): boolean {
+  if (paragraph === null) return false;
+  let seen = false;
+  let reached = false;
+  const walk = (node: XmlElement): void => {
+    for (const child of node.children) {
+      if (reached) return;
+      if (child === element) {
+        reached = true;
+        return;
+      }
+      if (child.namespace === W_NS && child.name === "t" && child.text !== "") seen = true;
+      walk(child);
+    }
+  };
+  walk(paragraph);
+  return seen;
 }
 
 // A border names its pattern in `w:val`, and only inside one of the elements that
@@ -274,9 +303,15 @@ type Reading = {
 // A text box's own content is laid out from its frame rather than from the part's
 // flow, and its paragraphs are numbered inside it, so what is met in one answers
 // for the paragraph that anchors it.
-function walk(node: XmlElement, paragraphIndex: number | null, reading: Reading): void {
+function walk(
+  node: XmlElement,
+  paragraphIndex: number | null,
+  reading: Reading,
+  paragraph: XmlElement | null = null,
+): void {
   for (const child of node.children) {
-    const kind = unhonouredBy(child, node, reading.resolvePart);
+    const standing = reading.paragraphs.has(child) ? child : paragraph;
+    const kind = unhonouredBy(child, node, standing, reading.resolvePart);
     const index = reading.paragraphs.get(child) ?? paragraphIndex;
     if (kind !== null) {
       reading.found.push({ kind, place: { part: reading.part, paragraphIndex: index } });
@@ -284,7 +319,7 @@ function walk(node: XmlElement, paragraphIndex: number | null, reading: Reading)
     // A text box's own content is laid out and counts; the fallback beside a
     // drawing is the copy Word itself ignores, and is passed over here too.
     if (child.namespace === MC_NS && child.name === "Fallback") continue;
-    walk(child, index, reading);
+    walk(child, index, reading, standing);
   }
 }
 

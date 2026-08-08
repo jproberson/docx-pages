@@ -214,8 +214,8 @@ describe("breakLines", () => {
     }
   }
 
-  const PAGE: RunPiece = { kind: "break", endsPage: true };
-  const NEW_LINE: RunPiece = { kind: "break", endsPage: false };
+  const PAGE: RunPiece = { kind: "break", endsPage: true, endsColumn: false };
+  const NEW_LINE: RunPiece = { kind: "break", endsPage: false, endsColumn: false };
 
   it("carries the text after a page break onto a page of its own", () => {
     expect(
@@ -252,7 +252,7 @@ describe("breakLines", () => {
   it("ends a line where the run asks for a break", () => {
     const run = piecesRun([
       { kind: "text", text: "ab" },
-      { kind: "break", endsPage: false },
+      { kind: "break", endsPage: false, endsColumn: false },
       { kind: "text", text: "cd" },
     ]);
 

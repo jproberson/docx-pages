@@ -8,8 +8,9 @@ export type RunPiece =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "tab" }
   // A break ends the line it stands on, and one of type "page" starts the line
-  // under it on a page of its own.
-  | { readonly kind: "break"; readonly endsPage: boolean }
+  // under it on a page of its own. One of type "column" sends the rest of its
+  // paragraph to the top of the next column, whatever room is left below it.
+  | { readonly kind: "break"; readonly endsPage: boolean; readonly endsColumn: boolean }
   | { readonly kind: "drawing"; readonly widthEmu: number; readonly heightEmu: number };
 
 export type TextRun = {
@@ -53,7 +54,11 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
       continue;
     }
     if (child.namespace === W_NS && child.name === "br") {
-      into.push({ kind: "break", endsPage: attribute(child, W_NS, "type") === "page" });
+      into.push({
+        kind: "break",
+        endsPage: attribute(child, W_NS, "type") === "page",
+        endsColumn: attribute(child, W_NS, "type") === "column",
+      });
       continue;
     }
     if (child.namespace === WP_NS && child.name === "inline") {

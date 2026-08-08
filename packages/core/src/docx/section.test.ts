@@ -142,8 +142,27 @@ describe("readSections", () => {
   });
 
   it("reads how many columns a section runs its text in, and answers one for silence", () => {
-    const sections = sectionsOf(`${ending(`<w:cols w:num="3"/>`)}${LETTER_SECTION}`);
-    expect(sections.map((each) => each.columns)).toStrictEqual([3, 1]);
+    const sections = sectionsOf(`${ending(`<w:cols w:num="3" w:space="720"/>`)}${LETTER_SECTION}`);
+    expect(sections.map((each) => each.columns.count)).toStrictEqual([3, 1]);
+    expect(sections[0]?.columns.spaceTwips).toBe(720);
+    expect(sections[0]?.columns.widthsTwips).toStrictEqual([]);
+  });
+
+  it("reads the width and the gap of each column where the section states them", () => {
+    const stated =
+      `<w:cols w:num="2" w:space="720" w:equalWidth="0">` +
+      `<w:col w:w="4441" w:space="1416"/><w:col w:w="6343"/></w:cols>`;
+    const sections = sectionsOf(`${ending(stated)}${LETTER_SECTION}`);
+    expect(sections[0]?.columns.widthsTwips).toStrictEqual([4441, 6343]);
+    expect(sections[0]?.columns.gapsTwips).toStrictEqual([1416, 0]);
+  });
+
+  // A section asking for equal widths is divided rather than read, whatever widths
+  // Word left beside the request.
+  it("divides a section asking for equal widths rather than reading the widths it wrote", () => {
+    const stated = `<w:cols w:num="2" w:space="720"><w:col w:w="4441"/><w:col w:w="6343"/></w:cols>`;
+    const sections = sectionsOf(`${ending(stated)}${LETTER_SECTION}`);
+    expect(sections[0]?.columns.widthsTwips).toStrictEqual([]);
   });
 
   it("gives the last section's page to a reader asking for the document's", () => {

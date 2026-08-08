@@ -120,6 +120,14 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Two pages of a continuous section's own text past the page it opened on, and
   // the two lines of the body's own section under them.
   "overflowing-section": { lines: 66, runs: 66, numbers: 0 },
+  // Six cases of a marker, the lines of every column and a right-aligned line closing
+  // each, which is what says how wide a column is.
+  //
+  // Three of the 63 are the two rules measured and not built. Case d puts a column
+  // break between two runs of one paragraph, which is a place inside a block and not
+  // between two; case f fills both columns of a page and runs on to the next, and a
+  // column run measured here has no page to run on to.
+  columns: { lines: 63, runs: 64, numbers: 0, placed: 60, runsPlaced: 60 },
   // Seven cases of a marker, four cells and the lines the table left standing, which
   // the last case writes long enough to reach past the table and take two lines each.
   //
@@ -149,6 +157,9 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
 const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
   // A bar stop draws a line down the page, which nothing here draws.
   tabs: ["bar-tab-stop"],
+  // The one column break of the six cases that stands between two runs of one
+  // paragraph, which is a place inside a block rather than between two.
+  columns: ["column-break"],
   // The wave borders, which are drawn as plain lines of the stated width.
   borders: ["approximated-border"],
 };

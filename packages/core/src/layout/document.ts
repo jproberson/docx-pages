@@ -38,6 +38,7 @@ import {
   type ParagraphBox,
   type PlacedCell,
 } from "./stack.js";
+import { columnsAcross } from "./columns.js";
 import { breakStack, type PageBody, type PageStack } from "./pages.js";
 import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
@@ -617,9 +618,15 @@ export function layOutDocument(
     originPt: bodyTopPt,
     bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
     sectionsClosed: sectionsClosedIn(pkg, bodyBlocks),
+    bodyHeightPt: bodyBottomPt - bodyTopPt,
     frameOf: (block) => {
       const section = bodySectionOf.get(block);
       return section === undefined ? undefined : frameOfSection(section);
+    },
+    columnsOf: (block) => {
+      const section = bodySectionOf.get(block);
+      if (section === undefined) return [];
+      return columnsAcross(section.columns, frameOfSection(section));
     },
   });
 

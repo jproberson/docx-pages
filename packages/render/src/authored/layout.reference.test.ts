@@ -122,6 +122,15 @@ function leftOfEachParagraph(pkg: DocxPackage): (index: number) => number {
   return (index) => lefts.get(index) ?? LEFT_PT;
 }
 
+// Whether any section of the document runs its text in more than one column, which
+// is what makes Word's own answer for a paragraph's left unreadable here.
+function runsInColumns(pkg: DocxPackage): boolean {
+  return bodySections(
+    pkg,
+    blockParagraphs(readBlocks(pkg)).map((each) => each.element),
+  ).some((section) => section.columns.count > 1);
+}
+
 function placedBoxes(layout: LaidOutDocument): ReadonlyMap<number, ParagraphBox> {
   const found = new Map<number, ParagraphBox>();
   for (const page of layout.pages) {
@@ -234,7 +243,7 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
       it("puts every paragraph where Word put it, on the page Word put it on", () => {
         const pkg = openDocx(each.bytes);
         const placed = placedParagraphs(layoutOf(each.bytes), leftOfEachParagraph(pkg));
-        const answers = answeringParagraphs(readBlocks(pkg));
+        const answers = answeringParagraphs(readBlocks(pkg), runsInColumns(pkg));
         const off: string[] = [];
         let agreed = 0;
 

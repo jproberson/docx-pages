@@ -1,3 +1,4 @@
+import { blockParagraphs } from "../docx/blocks.js";
 import type {
   Block,
   CellVerticalAlign,
@@ -52,6 +53,7 @@ import {
 } from "./lines.js";
 import { nextTabStop, tabStopsPt } from "./tab-stops.js";
 import { twipsToPoints } from "./units.js";
+import type { Column } from "./columns.js";
 import { fitLine, type LineSlot, type WrapBand } from "./wrapping.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
@@ -250,6 +252,16 @@ export type MeasureStackInput = {
   // its own. A story is one frame from top to bottom until a section break changes
   // it partway down, and a block inside a table cell is framed by the cell.
   readonly frameOf?: (block: Block) => Frame | undefined;
+  // Where the columns of the section a block stands in run across that frame. One
+  // column, which is what all but sixteen of the corpus documents keep, answers
+  // with the frame itself and takes the same path it always did.
+  readonly columnsOf?: (block: Block) => readonly Column[];
+  // How tall the body's text is, which is how tall a column that fills rather than
+  // evens out may be. Measuring is one column with no pages in it, so the foot of a
+  // page cannot be read off the stack's own top: a section that fills its columns is
+  // one that opens a page, and its own top is the body's. Left out, a column runs on
+  // for ever, which is what every story that is not the body does.
+  readonly bodyHeightPt?: number;
 };
 
 export type BandResolver = (paragraph: Paragraph, topPt: number) => readonly WrapBand[];
@@ -260,6 +272,9 @@ type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "width
   // A page break inside a cell is no break at all, and a cell is the only place
   // that has to know it.
   readonly inCell: boolean;
+  // Whether these blocks are one column of a section's run, whose own column breaks
+  // have already been spent dividing it.
+  readonly inColumn: boolean;
   // The style of the table a cell's text stands in, which that text reads between
   // the document's defaults and its own style. Null anywhere but inside a cell.
   readonly tableStyleId: string | null;
@@ -294,6 +309,7 @@ export function measureStack(input: MeasureStackInput): StackMeasurement {
     numbers: numbered.numbers,
     settings: input.settings ?? DEFAULT_SETTINGS,
     inCell: false,
+    inColumn: false,
     tableStyleId: null,
   };
   return measureBlocks(input.blocks, context, input.originPt, {
@@ -320,8 +336,38 @@ function measureBlocks(
   // the one above it was dropped past one of them.
   let anchoredAtPt: number | null = null;
 
+  // The last block of a run of columns already laid out, which the walk below skips
+  // past: a column run is measured whole, since every column of it starts at the
+  // same top and the run is as tall as the tallest.
+  let laidOutTo = -1;
+
   for (const [at, block] of blocks.entries()) {
+    if (at <= laidOutTo) continue;
     const frame = context.inCell ? storyFrame : (context.frameOf?.(block) ?? storyFrame);
+
+    const columns = context.inCell ? [] : (context.columnsOf?.(block) ?? []);
+    if (columns.length > 1) {
+      const run = columnRunFrom(blocks, at, context);
+      const measured = measureColumnRun(
+        run.blocks,
+        context,
+        top,
+        columns,
+        context.bodyHeightPt ?? Number.POSITIVE_INFINITY,
+        run.balanced,
+      );
+      if (measured.kind === "blocked") return measured;
+      boxes.push(...measured.boxes);
+      cells.push(...measured.cells);
+      untornRows.push(...measured.untornRows);
+      anchoredObjects.push(...measured.anchoredObjects);
+      standing = [];
+      anchoredAtPt = null;
+      laidOutTo = run.endsAt;
+      top += measured.heightPt;
+      continue;
+    }
+
     if (block.kind === "paragraph") {
       const { paragraph } = block;
       const neighbours = {
@@ -414,6 +460,219 @@ function measureBlocks(
     heightPt: top - originPt,
   };
 }
+
+// The blocks a section's columns hold: everything from the block opening the run up
+// to and including the paragraph that closes the section.
+function columnRunFrom(
+  blocks: readonly Block[],
+  from: number,
+  context: Context,
+): { readonly blocks: readonly Block[]; readonly endsAt: number; readonly balanced: boolean } {
+  for (let at = from; at < blocks.length; at += 1) {
+    const block = blocks[at];
+    const close =
+      block !== undefined && block.kind === "paragraph"
+        ? context.sectionsClosed?.get(block.paragraph.index)
+        : undefined;
+    if (close !== undefined) {
+      return { blocks: blocks.slice(from, at + 1), endsAt: at, balanced: !close.opensAPage };
+    }
+  }
+  // The body's own last section closes no paragraph, and Word leaves its columns
+  // ragged: it is the one section whose break opens no page of anything.
+  return { blocks: blocks.slice(from), endsAt: blocks.length - 1, balanced: false };
+}
+
+// **A column is a page-height run of the text, and every column of a section starts
+// at the same top.** Measured on 2026-08-07 by the authored `columns` document, and
+// built on 2026-08-08.
+//
+// Two things divide a section between its columns, and the second is the one the
+// corpus turns on.
+//
+// **A column fills to the foot of the text and the next one starts at the top**,
+// which is what a section closed by a break that opens a page does: fourteen lines
+// in two columns filled both columns of one page and put the last two in the first
+// column of the next.
+//
+// **A section closed by a continuous break has its columns evened out** instead:
+// four lines in two columns that hold twelve were drawn two and two, not four and
+// none. **29 of the 30 column sections in the corpus are closed that way.** Evening
+// them out is the same fill asked of the shortest column that still holds the run,
+// which is what the search below looks for.
+//
+// **A break of the section's own says where a column starts whatever the heights
+// say.** 23 of the 30 carry enough of them to divide the run outright, and every one
+// of those 25 breaks either stands alone in its paragraph or opens one, so the
+// division falls between two blocks. **A break between two runs of one paragraph is
+// measured and not built**: it costs the authored document's fourth case and nothing
+// in the wild.
+//
+// The run is as tall as its tallest column, which is where the text under it carries
+// on: Word started the section below a balanced one under the taller of its two.
+function measureColumnRun(
+  blocks: readonly Block[],
+  context: Context,
+  topPt: number,
+  columns: readonly Column[],
+  heightPt: number,
+  balanced: boolean,
+): StackMeasurement {
+  // A column's own frame stands instead of the section's, and the breaks that
+  // divided the run are places between blocks now rather than pieces of text.
+  // A column's own frame stands instead of the section's, and nothing inside a
+  // column run asks for the columns again.
+  const inColumn: Context = {
+    ...context,
+    inColumn: true,
+    frameOf: () => undefined,
+    columnsOf: () => [],
+  };
+
+  const forced = new Set<number>();
+  for (const [at, block] of blocks.entries()) {
+    if (at > 0 && opensAColumn(block, inColumn)) forced.add(at);
+  }
+
+  if (!balanced) {
+    const filled = fillColumns(blocks, inColumn, topPt, columns, forced, heightPt);
+    return filled.kind === "blocked" ? filled : filled.measured;
+  }
+
+  // Evening the columns out is the same fill asked of the shortest column that still
+  // holds the whole run, and the heights worth asking for are the ones the run's own
+  // blocks make.
+  const whole = fillColumns(blocks, inColumn, topPt, columns, forced, Number.POSITIVE_INFINITY);
+  if (whole.kind === "blocked") return whole;
+
+  // The shortest that works is wanted, so the candidates are tried from the shortest
+  // up and the first one that holds the run is the answer.
+  const candidates = [...new Set(whole.bottomsPt)].sort((one, other) => one - other);
+  for (const candidate of candidates) {
+    const filled = fillColumns(blocks, inColumn, topPt, columns, forced, candidate);
+    if (filled.kind === "blocked") return filled;
+    // The last column holds whatever is over, so a height every block found a column
+    // at is not yet a height the columns were evened to: the tallest of them has to
+    // come in under it as well.
+    if (!filled.whole || filled.measured.heightPt > candidate + EPSILON) continue;
+    return filled.measured;
+  }
+  return whole.measured;
+}
+
+type ColumnFill =
+  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker }
+  | {
+      readonly kind: "filled";
+      readonly measured: Extract<StackMeasurement, { readonly kind: "measured" }>;
+      // Whether every block of the run found a column, which is what says a height
+      // is tall enough to be worth evening out at.
+      readonly whole: boolean;
+      // How far below the run's top each block reached, which are the heights a
+      // column could be cut to.
+      readonly bottomsPt: readonly number[];
+    };
+
+// The blocks dealt into the columns, each column measured in its own frame and every
+// one of them starting at the run's own top. A block that will not fit in the room
+// left opens the next column, and one carrying a break of its own opens one whatever
+// room is left.
+function fillColumns(
+  blocks: readonly Block[],
+  context: Context,
+  topPt: number,
+  columns: readonly Column[],
+  forced: ReadonlySet<number>,
+  heightPt: number,
+): ColumnFill {
+  const blockOf = new Map<number, number>();
+  for (const [at, block] of blocks.entries()) {
+    for (const paragraph of blockParagraphs([block])) blockOf.set(paragraph.index, at);
+  }
+
+  const boxes: ParagraphBox[] = [];
+  const cells: PlacedCell[] = [];
+  const untornRows: UntornRow[] = [];
+  const bottomsPt: number[] = [];
+  let tallestPt = 0;
+  let from = 0;
+
+  for (const [at, column] of columns.entries()) {
+    if (from >= blocks.length) break;
+    const measured = measureBlocks(blocks.slice(from), context, topPt, column);
+    if (measured.kind === "blocked") return measured;
+
+    const last = at === columns.length - 1;
+    const cut = last
+      ? blocks.length
+      : cutColumnAt(measured.boxes, blockOf, forced, topPt, heightPt);
+
+    if (cut >= blocks.length) {
+      boxes.push(...measured.boxes);
+      cells.push(...measured.cells);
+      untornRows.push(...measured.untornRows);
+      for (const box of measured.boxes) bottomsPt.push(box.topPt + box.heightPt - topPt);
+      tallestPt = Math.max(tallestPt, measured.heightPt);
+      from = blocks.length;
+      break;
+    }
+
+    const kept = measureBlocks(blocks.slice(from, cut), context, topPt, column);
+    if (kept.kind === "blocked") return kept;
+    boxes.push(...kept.boxes);
+    cells.push(...kept.cells);
+    untornRows.push(...kept.untornRows);
+    for (const box of measured.boxes) bottomsPt.push(box.topPt + box.heightPt - topPt);
+    tallestPt = Math.max(tallestPt, kept.heightPt);
+    from = cut;
+  }
+
+  return {
+    kind: "filled",
+    measured: {
+      kind: "measured",
+      boxes,
+      cells,
+      untornRows,
+      anchoredObjects: [],
+      heightPt: tallestPt,
+    },
+    whole: from >= blocks.length,
+    bottomsPt,
+  };
+}
+
+// The first block of the run that belongs in the next column: the one carrying a
+// break of its own, or the one whose foot passed the height the column was given.
+// The block a column opens with always stays, however tall it is, since a column
+// that carries nothing forward never ends.
+function cutColumnAt(
+  boxes: readonly ParagraphBox[],
+  blockOf: ReadonlyMap<number, number>,
+  forced: ReadonlySet<number>,
+  topPt: number,
+  heightPt: number,
+): number {
+  let opened: number | null = null;
+  for (const box of boxes) {
+    const place = blockOf.get(box.index);
+    if (place === undefined) continue;
+    if (opened === null) opened = place;
+    if (place === opened) continue;
+    if (forced.has(place)) return place;
+    if (box.topPt + box.heightPt > topPt + heightPt + EPSILON) return place;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+// Where a paragraph carries a break asking for the next column. Every one of the 25
+// in the corpus either stands alone in its paragraph or opens one, so a break is a
+// place between two blocks rather than inside one.
+const opensAColumn = (block: Block, context: Context): boolean =>
+  block.kind === "paragraph" &&
+  readRuns(block.paragraph, context.styles).some((run) =>
+    run.pieces.some((piece) => piece.kind === "break" && piece.endsColumn),
+  );
 
 const bandsOf = (paragraph: Paragraph, topPt: number, context: Context): readonly WrapBand[] =>
   context.bandsFor === undefined ? [] : context.bandsFor(paragraph, topPt);
@@ -875,7 +1134,7 @@ function measureParagraph(
   }
 
   const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.tableStyleId);
-  const runs = flowing(readRuns(paragraph, context.styles), context.inCell);
+  const runs = flowing(readRuns(paragraph, context.styles), context.inCell, context.inColumn);
   const insets = insetsOf(paragraphFrame);
   const number = context.numbers.get(paragraph.index);
   const sectionClose = context.sectionsClosed?.get(paragraph.index);
@@ -942,11 +1201,14 @@ function measureParagraph(
 // Word ignores a page break inside a cell outright: the text either side of one
 // comes out on the same line and the row stands where it always did. Dropping the
 // piece is what says so, since a break left in place would still end its line.
-function flowing(runs: readonly TextRun[], inCell: boolean): readonly TextRun[] {
-  if (!inCell) return runs;
+function flowing(runs: readonly TextRun[], inCell: boolean, inColumn: boolean): readonly TextRun[] {
+  if (!inCell && !inColumn) return runs;
   return runs.map((run) => ({
     ...run,
-    pieces: run.pieces.filter((piece) => piece.kind !== "break" || !piece.endsPage),
+    pieces: run.pieces.filter(
+      (piece) =>
+        piece.kind !== "break" || !((inCell && piece.endsPage) || (inColumn && piece.endsColumn)),
+    ),
   }));
 }
 

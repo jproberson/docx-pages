@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { readBlocks } from "../docx/blocks.js";
+import type { SectionColumns } from "../docx/section.js";
 import { openDocx } from "../docx/package.js";
 import { DEFAULT_SETTINGS, type DocumentSettings } from "../docx/settings.js";
 import { readStyleTable } from "../docx/styles.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { buildFace } from "../testing/build-font.js";
+import { columnsAcross } from "./columns.js";
 import { lookupFontMetrics } from "./font-metrics.js";
 import { measureStack, type BandResolver, type ParagraphBox } from "./stack.js";
 import type { WrapBand } from "./wrapping.js";
@@ -1020,6 +1022,71 @@ const walls = (twips: number) =>
 
 const linedTable = (eighths: number, marginTwips = 0) =>
   `<w:tbl>${walls(marginTwips)}<w:tr>${cell(`<w:p/>`, lined(eighths))}</w:tr></w:tbl>`;
+
+// Word's own answers, measured by the authored `columns` document. The frame here
+// runs from 72 to 540 and every line is told to be exactly 24pt tall, so where a
+// paragraph lands is arithmetic: two columns with 36pt between them are 216pt each,
+// drawn at 72 and at 324.
+describe("measureStack over a section of more than one column", () => {
+  const LINE_PT = 24;
+  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const line = (name: string) =>
+    `<w:p><w:pPr>${exactly}</w:pPr><w:r><w:t>${name}</w:t></w:r></w:p>`;
+  const opensAColumn = (name: string) =>
+    `<w:p><w:pPr>${exactly}</w:pPr><w:r><w:br w:type="column"/><w:t>${name}</w:t></w:r></w:p>`;
+
+  const TWO: SectionColumns = { count: 2, widthsTwips: [], gapsTwips: [], spaceTwips: 720 };
+
+  const inColumns = (body: string, columns: SectionColumns, bodyHeightPt: number) => {
+    const pkg = openDocx(
+      buildDocx({ "word/document.xml": wordDocument(body), "word/styles.xml": NORMAL }),
+    );
+    const blocks = readBlocks(pkg);
+    const across = columnsAcross(columns, { leftPt: 72, widthPt: 468 });
+    const result = measureStack({
+      blocks,
+      styles: readStyleTable(pkg),
+      metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+      part: "word/document.xml",
+      originPt: 36,
+      leftPt: 72,
+      widthPt: 468,
+      bodyHeightPt,
+      columnsOf: () => across,
+    });
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    return result;
+  };
+
+  const placed = (result: { readonly boxes: readonly ParagraphBox[] }) =>
+    result.boxes.map((box) => `${String(box.lines[0]?.leftPt ?? -1)},${String(box.topPt)}`);
+
+  it("fills a column to the foot of the text and starts the next at the top", () => {
+    const result = inColumns([line("a"), line("b"), line("c")].join(""), TWO, LINE_PT * 2);
+    expect(placed(result)).toStrictEqual(["72,36", "72,60", "324,36"]);
+  });
+
+  it("is as tall as its tallest column, which is where the text under it goes on", () => {
+    const result = inColumns([line("a"), line("b"), line("c")].join(""), TWO, LINE_PT * 2);
+    expect(result.heightPt).toBeCloseTo(LINE_PT * 2, 9);
+  });
+
+  it("sends a paragraph asking for a column to the top of the next one", () => {
+    const result = inColumns([line("a"), opensAColumn("b"), line("c")].join(""), TWO, LINE_PT * 6);
+    expect(placed(result)).toStrictEqual(["72,36", "324,36", "324,60"]);
+  });
+
+  it("takes a section stating its own column widths at its word", () => {
+    const stated: SectionColumns = {
+      count: 2,
+      widthsTwips: [3600, 6480],
+      gapsTwips: [720, 0],
+      spaceTwips: 0,
+    };
+    const result = inColumns([line("a"), opensAColumn("b")].join(""), stated, LINE_PT * 6);
+    expect(placed(result)).toStrictEqual(["72,36", "288,36"]);
+  });
+});
 
 // Word's own answers, measured by the authored `positioned-table` document. The
 // frame here runs from 72 to 540 and the stack starts at 36, so a table an inch off

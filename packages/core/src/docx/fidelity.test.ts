@@ -114,11 +114,28 @@ describe("readUnhonoured", () => {
     expect(reportOf(`<w:p><w:pPr>${columns}</w:pPr></w:p>`)).toStrictEqual([]);
   });
 
-  it("names columns only where the section asks for more than one", () => {
+  // Columns were built on 2026-08-08, so a section running its text in more than one
+  // of them stands in for nothing on its own.
+  it("says nothing about a section that runs its text in more than one column", () => {
     const columns = (num: string) =>
       `<w:p><w:pPr><w:sectPr><w:cols w:num="${num}"/></w:sectPr></w:pPr></w:p>`;
-    expect(kinds(reportOf(columns("2")))).toContain("text-columns");
-    expect(kinds(reportOf(columns("1")))).not.toContain("text-columns");
+    expect(kinds(reportOf(columns("2")))).not.toContain("text-columns");
+  });
+
+  // A column break is honoured where it stands alone in its paragraph or opens one,
+  // which is where every one of the 25 in the corpus stands. One with text of its
+  // own paragraph in front of it is a place inside a block and not between two.
+  it("names a column break only where its paragraph has already drawn something", () => {
+    const alone = `<w:p><w:r><w:br w:type="column"/></w:r></w:p>`;
+    const opening = `<w:p><w:r><w:br w:type="column"/><w:t>after</w:t></w:r></w:p>`;
+    const inside = `<w:p><w:r><w:t>before</w:t></w:r><w:r><w:br w:type="column"/></w:r></w:p>`;
+    // A break in a run of its own with the paragraph's text in the run after it,
+    // which is where twelve of the corpus put one.
+    const ahead = `<w:p><w:r><w:br w:type="column"/></w:r><w:r><w:t>after</w:t></w:r></w:p>`;
+    expect(kinds(reportOf(alone))).not.toContain("column-break");
+    expect(kinds(reportOf(opening))).not.toContain("column-break");
+    expect(kinds(reportOf(ahead))).not.toContain("column-break");
+    expect(kinds(reportOf(inside))).toContain("column-break");
   });
 
   it("names a merged cell, wherever the merge is stated", () => {

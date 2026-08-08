@@ -439,8 +439,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "columns",
       title: "Text running in more than one column",
       asks: "where a section's columns stand across the page, and when its text leaves one for the next",
-      refuses:
-        "nothing here lays a column out, so every line of it is drawn in a frame the whole page wide",
+      // Sixty two of the sixty three. The one left over is case d, whose column break
+      // stands between two runs of one paragraph: that is a place inside a block and
+      // the division into columns is made between them, so the whole paragraph goes
+      // to the next column where Word leaves the first half of it behind. Every
+      // column break in the corpus stands alone in its paragraph or opens one.
+      paragraphsPlaced: 62,
       bytes: buildAuthoredDocx({ body: columnsDocument() }),
     },
     {
