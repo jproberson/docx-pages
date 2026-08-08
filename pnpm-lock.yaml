@@ -51,6 +51,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/pdf:
+    dependencies:
+      '@docx-pages/core':
+        specifier: workspace:*
+        version: link:../core
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+
   packages/render:
     dependencies:
       '@docx-pages/core':
