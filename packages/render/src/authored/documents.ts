@@ -5,6 +5,7 @@ import {
   columnsDocument,
   compatibilityDocument,
   drawingDocument,
+  insignificantSpaceDocument,
   keepingDocument,
   linedRowsDocument,
   numberingDocument,
@@ -408,6 +409,18 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A run raised or lowered off its own baseline",
       asks: "how far off the baseline w:position draws a run, and whether the line grows to hold it",
       bytes: buildAuthoredDocx({ body: raisedTextDocument() }),
+    },
+    {
+      id: "insignificant-space",
+      title: "Whitespace at the edge of a run that did not ask to keep it",
+      asks: "whether Word keeps the space at the edge of a w:t that states no xml:space",
+      // Not compared line by line against Word's own drawing, which is the one
+      // document here that cannot be: Word draws an item of its own wherever the
+      // formatting changes, and the cases that put a bold run beside a plain one draw
+      // a line in two pieces where this project draws it in one. Word's report
+      // answers for every paragraph of it, and where a line broke is pinned in
+      // `lines.test.ts` instead.
+      bytes: buildAuthoredDocx({ body: insignificantSpaceDocument() }),
     },
     {
       id: "positioned-table",

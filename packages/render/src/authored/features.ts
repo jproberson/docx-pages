@@ -2676,3 +2676,111 @@ export function unmappedInTextFaceDocument(): string {
     ])
     .join("");
 }
+
+// Whether the whitespace at the edge of a `w:t` survives when the run does not ask
+// for it with `xml:space="preserve"`.
+//
+// This project drops it, on the reading that whitespace at the edge of an element is
+// what xml leaves insignificant and `xml:space` is what asks for it back. **The worst
+// placed document in the corpus says otherwise**: it writes a heading as a run
+// holding `Protocolo de demostración`, a run holding one bare space, and a run
+// holding the rest, and Word breaks the line at that space while this project has
+// nothing to break at and carries an unbreakable 287pt word off the end of the line.
+// Every line of the document below it is then in the wrong place.
+//
+// **953 of the corpus `w:t` elements over 113 documents hold whitespace at an edge
+// without asking for it**, and 3469 more over four documents hold nothing else at
+// all, so what Word does here is worth asking properly.
+//
+// Every case is right-aligned, so where the line starts says how wide it is and a
+// space either side of the question is worth 12pt of it: the runs are at 48pt and a
+// space there is nearly four points, which no rounding reaches. Each case is written
+// out three times, and each stands on a page of its own. **Read off Word's own pdf**,
+// which is where the line was drawn; Word's report answers nought for the left of a
+// right-aligned line.
+export function insignificantSpaceDocument(): string {
+  const BIG = `<w:sz w:val="96"/><w:szCs w:val="96"/>`;
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+
+  // A run whose text is written exactly as given, with no request to keep the
+  // whitespace at its edges. `run` above always asks, which is the whole of what
+  // this document is about.
+  const bare = (value: string): string => `<w:r><w:rPr>${BIG}</w:rPr><w:t>${value}</w:t></w:r>`;
+  const kept = (value: string): string =>
+    `<w:r><w:rPr>${BIG}</w:rPr><w:t xml:space="preserve">${value}</w:t></w:r>`;
+
+  const RIGHT = `<w:jc w:val="right"/>`;
+
+  // Each repeat carries a mark of its own, since two lines drawn with the same text
+  // cannot be told apart in a pdf and the comparison would be guessing which was
+  // which. The mark is written at the end of the last word, so it moves every case's
+  // line by the same amount and the widths still differ by the space alone.
+  const marked = (at: number): string => "x".repeat(at + 1);
+
+  const block = (name: string, content: string): readonly string[] => [
+    paragraph(OWN_PAGE, run(`${name} above`)),
+    ...Array.from({ length: 3 }, (_, at) => paragraph(RIGHT, content + bare(marked(at)))),
+  ];
+
+  // The same runs at a size two words of which overflow the room the paragraph is
+  // narrowed to, so where the line broke is the answer rather than how wide it was.
+  const SMALL = `<w:sz w:val="48"/><w:szCs w:val="48"/>`;
+  const NARROW = `<w:ind w:right="7200"/>`;
+
+  const bare24 = (value: string): string => `<w:r><w:rPr>${SMALL}</w:rPr><w:t>${value}</w:t></w:r>`;
+  const kept24 = (value: string): string =>
+    `<w:r><w:rPr>${SMALL}</w:rPr><w:t xml:space="preserve">${value}</w:t></w:r>`;
+  const bold24 = (value: string): string =>
+    `<w:r><w:rPr><w:b/>${SMALL}</w:rPr><w:t>${value}</w:t></w:r>`;
+  const EMPTY_RUN = `<w:r></w:r>`;
+
+  const narrow = (name: string, content: string): readonly string[] => [
+    paragraph(OWN_PAGE, run(`${name} above`)),
+    ...Array.from({ length: 3 }, (_, at) => paragraph(NARROW, content + bare24(marked(at)))),
+  ];
+
+  return [
+    // The two ends of the answer, so every case below is read against a width rather
+    // than against a font's own numbers: no space at all, and one that asked to stay.
+    ...block("none", bare("aaaa") + bare("bbbb")),
+    ...block("asked", kept("aaaa ") + bare("bbbb")),
+    // A space at the end of a run that did not ask to keep it, which is the commonest
+    // of the three in the wild.
+    ...block("trailing", bare("aaaa ") + bare("bbbb")),
+    // And at the start of the run after it.
+    ...block("leading", bare("aaaa") + bare(" bbbb")),
+    // A run holding nothing but the space, which is the case the worst-placed
+    // document in the corpus turns on.
+    ...block("alone", bare("aaaa") + bare(" ") + bare("bbbb")),
+    // The same run asking to keep it, which is what the case above is read against.
+    ...block("alone asked", bare("aaaa") + kept(" ") + bare("bbbb")),
+
+    // And where a line has to break, since dropping the space is only half the
+    // question: the document in the wild breaks exactly where its dropped space was,
+    // and either the space survived after all or a run boundary is a place a line may
+    // break. These four are narrowed to 180pt, which one twelve-letter word at 24pt
+    // fills and two overflow.
+    ...narrow("break in one run", bare24("aaaaaaaaaaaabbbbbbbbbbbb")),
+    ...narrow("break at a boundary", bare24("aaaaaaaaaaaa") + bare24("bbbbbbbbbbbb")),
+    ...narrow("break at a bare space", bare24("aaaaaaaaaaaa ") + bare24("bbbbbbbbbbbb")),
+    ...narrow("break at an asked space", kept24("aaaaaaaaaaaa ") + bare24("bbbbbbbbbbbb")),
+    // The same two, with the runs formatted differently either side of the boundary,
+    // which is what the document in the wild holds: its space is Times New Roman
+    // between two runs of Arial bold. Either a boundary between runs that are not
+    // written alike is a place a line may break, or that document's space survived
+    // where these did not.
+    ...narrow("break at a bold boundary", bold24("aaaaaaaaaaaa") + bare24("bbbbbbbbbbbb")),
+    ...narrow(
+      "break at a bold bare space",
+      bold24("aaaaaaaaaaaa") + bare24(" ") + bold24("bbbbbbbbbbbb"),
+    ),
+    // The document in the wild writes an empty run between the space and the text
+    // after it, which is the last thing about its shape these cases do not have.
+    ...narrow("break at an empty run", bold24("aaaaaaaaaaaa") + EMPTY_RUN + bold24("bbbbbbbbbbbb")),
+    ...narrow(
+      "break at a space and an empty run",
+      bold24("aaaaaaaaaaaa") + bare24(" ") + EMPTY_RUN + bold24("bbbbbbbbbbbb"),
+    ),
+    EMPTY,
+  ].join("");
+}

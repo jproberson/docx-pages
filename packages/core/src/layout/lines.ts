@@ -753,6 +753,14 @@ const startingAt = (segment: LineSegment, offsetPt: number): LineSegment =>
 
 // A word with no line of its own to fit on is cut at the character that overflows,
 // and never before the first one, so a narrow column still makes progress.
+//
+// **The cut falls at the character wherever the word came from**, and a word written
+// in more than one run is one word. This used to send a whole fragment to the next
+// line as soon as it did not fit, which put the cut at the boundary between two runs:
+// measured on 2026-08-08 by the authored `insignificant-space` document, Word cut
+// `aaaaaaaaaaaa` and `bbbbbbbbbbbb` written as two runs in exactly the place it cut
+// the same twenty four characters written as one, and this project cut at the twelfth
+// wherever the runs were divided.
 function splitFragments(
   fragments: readonly Fragment[],
   availablePt: number,
@@ -763,10 +771,6 @@ function splitFragments(
   let filled = 0;
 
   for (const fragment of fragments) {
-    if (taken > 0 && filled + fragment.widthPt > availablePt + EPSILON) {
-      tail.push(fragment);
-      continue;
-    }
     if (tail.length > 0) {
       tail.push(fragment);
       continue;

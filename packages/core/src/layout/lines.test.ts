@@ -191,6 +191,24 @@ describe("breakLines", () => {
     expect(linesOf([runOf("ab")], 1).map(textOf)).toStrictEqual(["a", "b"]);
   });
 
+  // Word cuts a word too long for its line in the same place whether it was written
+  // as one run or as several: measured on 2026-08-08 by the authored
+  // `insignificant-space` document, where twenty four characters written as two runs
+  // of twelve were cut at the fifteenth exactly as the same characters written as
+  // one. This project used to send a whole run to the next line as soon as it did
+  // not fit, which put the cut at the boundary between two runs.
+  it("cuts a word written in more than one run where the character overflows", () => {
+    const lines = linesOf([runOf("abcd"), runOf("efgh")], 20);
+
+    expect(lines.map(textOf)).toStrictEqual(["abcd", "efgh"]);
+  });
+
+  it("cuts inside a later run rather than at the boundary in front of it", () => {
+    const lines = linesOf([runOf("abcd"), runOf("efgh")], 30);
+
+    expect(lines.map(textOf)).toStrictEqual(["abcdef", "gh"]);
+  });
+
   // Which of a paragraph's lines a page break put at the head of a page, and
   // whether the paragraph ran out on one. The lines alone cannot say: a break the
   // paragraph ends on draws nothing, so what it asks of the page is on the flow.
