@@ -6,6 +6,11 @@ export type XmlElement = {
   readonly attributes: ReadonlyMap<string, string>;
   readonly children: readonly XmlElement[];
   readonly text: string;
+  // Whether the whitespace written inside this element is the text's own, which
+  // `xml:space` states for an element and everything under it until something
+  // nearer states otherwise. A document may say it once on its own root and never
+  // again, and one in the corpus does.
+  readonly preservesSpace: boolean;
 };
 
 const ATTRIBUTE_KEY = ":@";
@@ -88,13 +93,20 @@ function qualifyAttributes(
 const isElementTag = (key: string): boolean =>
   key !== ATTRIBUTE_KEY && key !== TEXT_KEY && !key.startsWith("?") && !key.startsWith("!");
 
-function convert(node: RawNode, inherited: ReadonlyMap<string, string>): XmlElement | null {
+function convert(
+  node: RawNode,
+  inherited: ReadonlyMap<string, string>,
+  preserved: boolean,
+): XmlElement | null {
   const tag = Object.keys(node).find(isElementTag);
   if (tag === undefined) return null;
 
   const declared = rawAttributes(node);
   const namespaces = bindNamespaces(declared, inherited);
   const [prefix, local] = splitName(tag);
+
+  const stated = declared.get("xml:space");
+  const preservesSpace = stated === undefined ? preserved : stated === "preserve";
 
   const body = node[tag];
   const children: XmlElement[] = [];
@@ -103,7 +115,7 @@ function convert(node: RawNode, inherited: ReadonlyMap<string, string>): XmlElem
     for (const child of body) {
       const value = child[TEXT_KEY];
       if (typeof value === "string") text += value;
-      const converted = convert(child, namespaces);
+      const converted = convert(child, namespaces, preservesSpace);
       if (converted !== null) children.push(converted);
     }
   }
@@ -114,6 +126,7 @@ function convert(node: RawNode, inherited: ReadonlyMap<string, string>): XmlElem
     attributes: qualifyAttributes(declared, namespaces),
     children,
     text,
+    preservesSpace,
   };
 }
 
@@ -121,7 +134,7 @@ export function parseXml(source: string): XmlElement | null {
   const parsed: unknown = parser.parse(source);
   if (!isNodeArray(parsed)) return null;
   for (const node of parsed) {
-    const element = convert(node, new Map());
+    const element = convert(node, new Map(), false);
     if (element !== null) return element;
   }
   return null;

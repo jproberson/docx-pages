@@ -23,12 +23,12 @@ export type TextRun = {
 // whitespace around it, so it stays whether or not the run asks for it.
 const INSIGNIFICANT = /^[ \t\r\n]+|[ \t\r\n]+$/g;
 
-// Whitespace at the edges of a w:t is insignificant unless the run asks for it,
-// which is why Word writes xml:space wherever a space has to survive.
-function textOf(element: XmlElement): string {
-  const preserved = attribute(element, "", "space") === "preserve";
-  return preserved ? element.text : element.text.replace(INSIGNIFICANT, "");
-}
+// Whitespace at the edges of a w:t is insignificant unless something asks for it,
+// which is why Word writes xml:space wherever a space has to survive. It need not be
+// the w:t that asks: the attribute stands for everything under the element stating
+// it, and a document in the corpus states it once on its own root.
+const textOf = (element: XmlElement): string =>
+  element.preservesSpace ? element.text : element.text.replace(INSIGNIFICANT, "");
 
 function extentOf(inline: XmlElement): RunPiece {
   const extent = firstNamed(inline, WP_NS, "extent");

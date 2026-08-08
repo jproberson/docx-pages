@@ -2922,6 +2922,24 @@ export function insignificantSpaceDocument(): string {
     ...Array.from({ length: 3 }, (_, at) => paragraph(NARROW, content + bare24(marked(at)))),
   ];
 
+  // Room enough for the word two halves make but not for it beside what stands in
+  // front of it, which is the case in the wild and the one the narrow cases above
+  // cannot ask: their two halves make a word too long for any line at all, so Word
+  // cut it wherever it overflowed and where the runs divided never came into it.
+  const ROOMIER = `<w:ind w:right="4000"/>`;
+
+  const roomier = (name: string, content: string): readonly string[] => [
+    paragraph(OWN_PAGE, run(`${name} above`)),
+    ...Array.from({ length: 3 }, (_, at) => paragraph(ROOMIER, content + bare24(marked(at)))),
+  ];
+
+  // The nine letters and the two in front of the long word are what leaves the room
+  // too small for it, and the word itself is 21 letters over the two runs, which one
+  // line of its own holds.
+  const AHEAD = "aaaaaaaaa bb ";
+  const HALF = "cccccccccccc";
+  const REST = "eeeeeeeee fff";
+
   return [
     // The two ends of the answer, so every case below is read against a width rather
     // than against a font's own numbers: no space at all, and one that asked to stay.
@@ -2963,6 +2981,33 @@ export function insignificantSpaceDocument(): string {
     ...narrow(
       "break at a space and an empty run",
       bold24("aaaaaaaaaaaa") + bare24(" ") + EMPTY_RUN + bold24("bbbbbbbbbbbb"),
+    ),
+
+    // The same boundary where the word the two halves make fits on a line of its own.
+    // Three answers are open and they are three different lines: the space survived
+    // and the line ends where it was, it was dropped and the whole word moved down,
+    // or it was dropped and the word was cut wherever it overflowed. **The
+    // worst-placed document in the corpus turns on this**: Word ends its heading's
+    // first line exactly at such a boundary, which the cases above say it has no
+    // reason to.
+    ...roomier(
+      "room for the word alone, at a bare space",
+      bold24(AHEAD + HALF) + bare24(" ") + EMPTY_RUN + bold24(REST),
+    ),
+    // The same with nothing between the two halves at all, which says what becomes of
+    // a word that fits a line of its own and not the room left.
+    ...roomier("room for the word alone, at a boundary", bold24(AHEAD + HALF) + bold24(REST)),
+    // And with the space asking to stay, which is the line the first of the three
+    // answers would draw.
+    ...roomier(
+      "room for the word alone, at an asked space",
+      bold24(AHEAD + HALF) + kept24(" ") + EMPTY_RUN + bold24(REST),
+    ),
+    // The bare space written like the runs it stands between, since the one in the
+    // wild is not: it names a face of its own and neither of the others.
+    ...roomier(
+      "room for the word alone, at a bold bare space",
+      bold24(AHEAD + HALF) + bold24(" ") + EMPTY_RUN + bold24(REST),
     ),
     EMPTY,
   ].join("");

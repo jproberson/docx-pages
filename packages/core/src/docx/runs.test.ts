@@ -10,9 +10,13 @@ const NORMAL = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocess
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr></w:style></w:styles>`;
 
-function runsOf(body: string, stylesXml: string = NORMAL): readonly TextRun[] {
+function runsOf(
+  body: string,
+  stylesXml: string = NORMAL,
+  documentXml: string = wordDocument(body),
+): readonly TextRun[] {
   const pkg = openDocx(
-    buildDocx({ "word/document.xml": wordDocument(body), "word/styles.xml": stylesXml }),
+    buildDocx({ "word/document.xml": documentXml, "word/styles.xml": stylesXml }),
   );
   const paragraph = readParagraphs(pkg)[0];
   if (paragraph === undefined) throw new Error("expected a paragraph");
@@ -50,6 +54,26 @@ describe("readRuns", () => {
     const body = `<w:p><w:r><w:t>  \u00a0a\u00a0  </w:t></w:r></w:p>`;
 
     expect(textOf(runsOf(body))).toBe("\u00a0a\u00a0");
+  });
+
+  // **`xml:space` is inherited, and Word reads it from wherever it is stated.** The
+  // worst-placed document in the corpus states `preserve` on `w:document` itself and
+  // on no `w:t` anywhere, and its bare spaces survive: Word ends a heading's line at
+  // one of them, and draws that line whole again when the attribute is taken off the
+  // root and nothing else is touched.
+  const statingSpace = (body: string, space: string): string =>
+    wordDocument(body).replace("<w:document ", `<w:document xml:space="${space}" `);
+
+  it("keeps whitespace a document preserves for the whole of itself", () => {
+    const body = `<w:p><w:r><w:t> a </w:t></w:r></w:p>`;
+
+    expect(textOf(runsOf(body, NORMAL, statingSpace(body, "preserve")))).toBe(" a ");
+  });
+
+  it("drops whitespace where the nearer statement is the default", () => {
+    const body = `<w:p><w:r><w:t xml:space="default"> a </w:t></w:r></w:p>`;
+
+    expect(textOf(runsOf(body, NORMAL, statingSpace(body, "preserve")))).toBe("a");
   });
 
   it("joins several text pieces inside one run", () => {

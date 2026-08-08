@@ -144,6 +144,9 @@ export type AuthoredParts = {
   readonly numbering?: string;
   // Whether the document carries the picture part its drawings point at.
   readonly picture?: boolean;
+  // Whether the document states on its own root that the whitespace under it is the
+  // text's own. A document in the wild states it there and on no `w:t` at all.
+  readonly preservesSpace?: boolean;
 };
 
 export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
@@ -155,7 +158,7 @@ export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
       )
     : PAGE;
   const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document ${DOCUMENT_NAMESPACES}>
+<w:document ${DOCUMENT_NAMESPACES}${parts.preservesSpace === true ? ` xml:space="preserve"` : ""}>
   <w:body>${parts.body}${page}</w:body>
 </w:document>`;
 

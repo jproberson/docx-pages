@@ -431,6 +431,15 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       bytes: buildAuthoredDocx({ body: insignificantSpaceDocument() }),
     },
     {
+      id: "preserved-space",
+      title: "The same document stating on its own root that whitespace is the text's own",
+      asks: "whether Word reads xml:space from wherever it is stated rather than from the w:t alone",
+      // The one thing this document says differently from the one above, and the
+      // reason it exists: the worst-placed document in the corpus states `preserve`
+      // on `w:document` and on no `w:t` anywhere.
+      bytes: buildAuthoredDocx({ body: insignificantSpaceDocument(), preservesSpace: true }),
+    },
+    {
       id: "positioned-table",
       title: "A table positioned rather than flowed",
       asks: "where w:tblpPr stands a table across and down the page, and what the text it left does with the room",
