@@ -110,6 +110,16 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // of the paragraph above it, and gives the same answer whether the closer fits on
   // its page or not.
   "section-closer": { lines: 18, runs: 18, numbers: 0 },
+  // The three documents whose sections make different pages, and the oracle they
+  // were written to be read by: each line of them is drawn where its own section's
+  // margins put it, which Word's report cannot say at all. The report answers for a
+  // paragraph's left from its own section's text boundary, so it is nought down
+  // every one of these however far across the page Word drew the line.
+  sections: { lines: 8, runs: 8, numbers: 0 },
+  "section-flow": { lines: 8, runs: 8, numbers: 0 },
+  // Two pages of a continuous section's own text past the page it opened on, and
+  // the two lines of the body's own section under them.
+  "overflowing-section": { lines: 66, runs: 66, numbers: 0 },
 };
 
 // What each authored document is expected to say it passed over. A document that

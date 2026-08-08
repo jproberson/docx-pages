@@ -18,7 +18,13 @@ export { partText, partXml } from "./docx/package.js";
 // to name it and to read an attribute off it.
 export { attribute, childrenNamed, firstNamed } from "./docx/xml.js";
 
-export { pageGeometrySignature, readSectionGeometry, W_NS } from "./docx/section.js";
+export {
+  bodySections,
+  pageGeometrySignature,
+  readSectionGeometry,
+  W_NS,
+  type BodySection,
+} from "./docx/section.js";
 
 export {
   honoursAWrapOnTheLeft,

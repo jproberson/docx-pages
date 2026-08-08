@@ -363,7 +363,6 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "sections",
       title: "A document made of more than one section",
       asks: "which section a paragraph's own properties govern, and what a break's type describes",
-      refuses: "nothing here reads a section but the last, so the pages are the last one's",
       bytes: buildAuthoredDocx({ body: sectionsDocument() }),
     },
     {
@@ -397,7 +396,6 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "overflowing-section",
       title: "A continuous section whose own text runs past the foot of its page",
       asks: "which section's page geometry a page a continuous section ran on to is made by",
-      refuses: "nothing here reads a section but the last, so the pages are the last one's",
       bytes: buildAuthoredDocx({ body: overflowingSectionDocument() }),
     },
     {

@@ -5,11 +5,18 @@ import { describe, expect, it } from "vitest";
 import {
   layOutDocument,
   openDocx,
+  twipsToPoints,
+  type DocxPackage,
   type LaidOutDocument,
   type MetricsResolver,
   type ParagraphBox,
 } from "@docx-pages/core";
-import { blockParagraphs, readBlocks, readStyleTable } from "@docx-pages/core/internal";
+import {
+  blockParagraphs,
+  bodySections,
+  readBlocks,
+  readStyleTable,
+} from "@docx-pages/core/internal";
 
 import { readImagePlacements } from "../pdf/placements.js";
 import { answeringParagraphs } from "./answers.js";
@@ -78,16 +85,41 @@ function charactersOf(bytes: Uint8Array): ReadonlyMap<string, number> {
   const pkg = openDocx(bytes);
   const styles = readStyleTable(pkg);
   const boxes = placedBoxes(layoutOf(bytes));
+  const leftOf = leftOfEachParagraph(pkg);
 
   const found = new Map<string, number>();
   for (const paragraph of blockParagraphs(readBlocks(pkg))) {
     const box = boxes.get(paragraph.index);
     if (box === undefined) continue;
-    for (const placed of characterPlacements(paragraph, box, styles, metricsFor, LEFT_PT)) {
+    const from = leftOf(paragraph.index);
+    const placements = characterPlacements(paragraph, box, styles, metricsFor, from);
+    for (const placed of placements) {
       found.set(`${String(paragraph.index + 1)}:${String(placed.index)}`, placed.leftPt);
     }
   }
   return found;
+}
+
+// Where Word measures a paragraph's horizontal answer from, which is the left of
+// its own section's text and not the document's: every paragraph of the three
+// documents whose sections keep different left margins comes back at nought,
+// wherever across the page Word drew it.
+function leftOfEachParagraph(pkg: DocxPackage): (index: number) => number {
+  const paragraphs = blockParagraphs(readBlocks(pkg));
+  const sections = bodySections(
+    pkg,
+    paragraphs.map((each) => each.element),
+  );
+
+  const lefts = new Map<number, number>();
+  let at = 0;
+  for (const paragraph of paragraphs) {
+    const section = sections[at] ?? sections[sections.length - 1];
+    if (section === undefined) break;
+    lefts.set(paragraph.index, twipsToPoints(section.geometry.margin.leftTwips));
+    if (paragraph.element === section.endsAt) at += 1;
+  }
+  return (index) => lefts.get(index) ?? LEFT_PT;
 }
 
 function placedBoxes(layout: LaidOutDocument): ReadonlyMap<number, ParagraphBox> {
@@ -112,7 +144,10 @@ function placedBoxes(layout: LaidOutDocument): ReadonlyMap<number, ParagraphBox>
 // taken from the last part of it.
 type Placed = { readonly page: number; readonly topPt: number; readonly leftPt: number };
 
-function placedParagraphs(layout: LaidOutDocument): ReadonlyMap<number, Placed> {
+function placedParagraphs(
+  layout: LaidOutDocument,
+  leftOf: (index: number) => number,
+): ReadonlyMap<number, Placed> {
   const found = new Map<number, Placed>();
 
   for (const page of layout.pages) {
@@ -120,19 +155,21 @@ function placedParagraphs(layout: LaidOutDocument): ReadonlyMap<number, Placed> 
       const already = found.get(box.index);
       found.set(
         box.index,
-        already === undefined ? placedAt(box, page.index) : { ...already, page: page.index + 1 },
+        already === undefined
+          ? placedAt(box, page.index, leftOf(box.index))
+          : { ...already, page: page.index + 1 },
       );
     }
   }
   return found;
 }
 
-function placedAt(box: ParagraphBox, pageIndex: number): Placed {
+function placedAt(box: ParagraphBox, pageIndex: number, leftPt: number): Placed {
   const line = box.lines[0];
   return {
     page: pageIndex + 1,
     topPt: line === undefined ? box.markTopPt : line.topPt + line.seatPt,
-    leftPt: (line?.leftPt ?? LEFT_PT) - LEFT_PT,
+    leftPt: (line?.leftPt ?? leftPt) - leftPt,
   };
 }
 
@@ -195,8 +232,9 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
   for (const each of CASES) {
     describe(`${each.id}: ${each.asks}`, () => {
       it("puts every paragraph where Word put it, on the page Word put it on", () => {
-        const placed = placedParagraphs(layoutOf(each.bytes));
-        const answers = answeringParagraphs(readBlocks(openDocx(each.bytes)));
+        const pkg = openDocx(each.bytes);
+        const placed = placedParagraphs(layoutOf(each.bytes), leftOfEachParagraph(pkg));
+        const answers = answeringParagraphs(readBlocks(pkg));
         const off: string[] = [];
         let agreed = 0;
 
