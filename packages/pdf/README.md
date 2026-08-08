@@ -23,20 +23,24 @@ That is the whole of it. Underneath, for a caller who has already laid a documen
 out, or who lays one out once and writes it more than once:
 
 ```ts
-import { layOutDocument, openDocx, substitutingMetrics } from "@docx-pages/core";
+import { layOutDocument, lookupFontMetrics, openDocx } from "@docx-pages/core";
 import { writePdf } from "@docx-pages/pdf";
 
 const pkg = openDocx(bytes);
-const faces = substitutingMetrics(supplied);
-const layout = layOutDocument(pkg, faces);
+const metricsFor = (request) => lookupFontMetrics(request, supplied);
+const layout = layOutDocument(pkg, metricsFor);
 if (layout.kind !== "laid-out") throw new Error(JSON.stringify(layout.blocker));
 
-const pdf = writePdf(layout, {
-  fonts,
-  imageBytes: (part) => pkg.parts.get(part),
-  metricsFor: faces.metricsFor,
-});
+const pdf = writePdf(layout, { fonts, imageBytes: (part) => pkg.parts.get(part), metricsFor });
 ```
+
+`metricsFor` is asked for as well as `fonts` because a metafile picture records
+text as a face and a string rather than as a drawing of one: playing it back
+measures it, and it is measured with whatever the layout measured with.
+
+A caller who laid the document out over stand-ins passes `aliasSymbolFaces` too,
+the same set the viewer takes, so a run written in a symbol face that was stood in
+for is drawn as what its positions mean rather than as the stand-in's own letters.
 
 ## Fonts are yours to supply, and there is no falling back
 
@@ -76,9 +80,18 @@ Named here rather than passed over quietly, which is the same bargain
   of it, including the thousands the document never draws. The output is correct
   and it is larger than it needs to be: a document in one face of Calibri carries
   the whole of Calibri. This is the one gap here that is only about size.
-- **No png.** Only jpeg is passed through. A png would have to be inflated and its
-  predictors undone to be re-encoded, or handed to an encoder this package does
-  not have. A png picture is not drawn at all.
+- **No png**, and no gif, bmp, tiff or webp. Only jpeg is passed through, because
+  only jpeg is already a compression a pdf understands. A png would have to be
+  inflated and its predictors undone before it could be written, and the others
+  would have to be encoded into something a pdf carries. None of them is drawn.
+- **No CMYK jpeg.** A four-channel jpeg is left undrawn beside the png. Word writes
+  them inverted often enough that drawing one the wrong way round is worse than
+  not drawing it, and which of the two it is cannot be told from the frame header
+  alone. Greyscale and colour jpegs, which is nearly all of them, go through.
+- **A picture nothing can draw leaves its frame empty.** It is not an error and it
+  is not a placeholder: the paint round it is still drawn, and the picture is not.
+  The viewer outlines such a frame when it is asked to; a file being written has
+  nobody to show an outline to.
 - **No encryption**, and so no permissions and no password.
 - **No transparency beyond a flat fill.** A soft mask, a blend mode or a partly
   transparent picture is drawn as though it were opaque.
