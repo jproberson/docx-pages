@@ -120,6 +120,8 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Two pages of a continuous section's own text past the page it opened on, and
   // the two lines of the body's own section under them.
   "overflowing-section": { lines: 66, runs: 66, numbers: 0 },
+  // Seven cases of four lines each, and the line inside each case's own box.
+  "space-under-a-wrap": { lines: 35, runs: 35, numbers: 0 },
 };
 
 // What each authored document is expected to say it passed over. A document that

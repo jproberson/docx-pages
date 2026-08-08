@@ -1217,9 +1217,10 @@ function layOutWholeParagraph(
       },
       paragraphFrame,
     );
-    const slot = fitLine({
+    const slot = slotFor({
       topPt: input.topPt + beforePt + abovePt,
       heightPt: height.heightPt,
+      roomAbovePt: beforePt,
       leftPt: frame.leftPt + insets.leftPt,
       rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
       widthPt: 0,
@@ -1338,8 +1339,13 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
     let taken = rest.next(roomPt);
     if (taken === null) return { lines: laid, endsPage: startsPage };
 
+    // Only the first line has room asked for above it; the rest follow the line
+    // before them.
+    const roomAbovePt = at === 0 ? input.spacing.beforePt : 0;
+    const fit = { roomAbovePt, widthPt: leastPt, leftPt: startPt, rightPt: endPt };
+
     let height = heightOfLine(taken.line, at, input);
-    let slot = slotFor(top, height.heightPt, leastPt, startPt, endPt, input.bands);
+    let slot = slotFor({ ...fit, topPt: top, heightPt: height.heightPt, bands: input.bands });
 
     for (let round = 1; round < SETTLING_ROUNDS; round += 1) {
       const narrowedPt = slot.rightPt - slot.leftPt;
@@ -1355,7 +1361,7 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
       if (settled.heightPt === height.heightPt) break;
 
       height = settled;
-      slot = slotFor(top, height.heightPt, leastPt, startPt, endPt, input.bands);
+      slot = slotFor({ ...fit, topPt: top, heightPt: height.heightPt, bands: input.bands });
     }
 
     laid.push({ line: taken.line, slot, height, startsPage });
@@ -1364,17 +1370,42 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
   }
 }
 
+type Slot = {
+  readonly topPt: number;
+  readonly heightPt: number;
+  // The room the paragraph asks for above this line, which goes through a wrap with
+  // it and is left standing above it wherever it lands.
+  readonly roomAbovePt: number;
+  readonly widthPt: number;
+  readonly leftPt: number;
+  readonly rightPt: number;
+  readonly bands: readonly WrapBand[];
+};
+
 // A line is not asked to fit whole, since it is broken again to whatever width it
 // is given: what it asks of a run of space is room for the word it has to start
 // with.
-const slotFor = (
-  topPt: number,
-  heightPt: number,
-  widthPt: number,
-  leftPt: number,
-  rightPt: number,
-  bands: readonly WrapBand[],
-): LineSlot => fitLine({ topPt, heightPt, leftPt, rightPt, widthPt, bands });
+//
+// **The room a paragraph asks for above itself goes through a wrap with its first
+// line.** What has to clear an object is the room and the line together, so a line
+// pushed past one stands that room below it rather than against it, and one whose
+// room alone reaches an object is drawn beside it as the line itself would be.
+// Measured on 2026-08-07 by the authored `space-under-a-wrap` document: a paragraph
+// asking 36pt above itself under a box whose foot is at 190 has its line at 226,
+// and one whose line stands 44pt clear of the foot of a box beside it is drawn to
+// the right of that box all the same.
+function slotFor(slot: Slot): LineSlot {
+  const { roomAbovePt } = slot;
+  const found = fitLine({
+    topPt: slot.topPt - roomAbovePt,
+    heightPt: slot.heightPt + roomAbovePt,
+    leftPt: slot.leftPt,
+    rightPt: slot.rightPt,
+    widthPt: slot.widthPt,
+    bands: slot.bands,
+  });
+  return { ...found, topPt: found.topPt + roomAbovePt };
+}
 
 const raisedBy = (line: TextLine, at: number, input: LayOutParagraphInput): number =>
   at === 0 ? liftOfNumber(input.number, line) : 0;

@@ -18,6 +18,7 @@ import {
   tearingDocument,
   pageDocument,
   spacingDocument,
+  spaceUnderAWrapDocument,
   tableDocument,
   tableIndentDocument,
   trailingSpaceDocument,
@@ -398,6 +399,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A continuous section whose own text runs past the foot of its page",
       asks: "which section's page geometry a page a continuous section ran on to is made by",
       bytes: buildAuthoredDocx({ body: overflowingSectionDocument() }),
+    },
+    {
+      id: "space-under-a-wrap",
+      title: "The room a paragraph asks for above itself, under an object that wraps",
+      asks: "whether the space before a paragraph is absorbed by the band that pushed its first line down, or kept below it",
+      bytes: buildAuthoredDocx({ body: spaceUnderAWrapDocument() }),
     },
     {
       id: "columns",

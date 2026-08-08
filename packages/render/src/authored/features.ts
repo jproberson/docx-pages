@@ -897,6 +897,113 @@ export function overflowingSectionDocument(): string {
   ].join("");
 }
 
+// What becomes of the room a paragraph asks for above itself when a wrap has
+// already pushed its first line down the page.
+//
+// Two readings, and a real document turns on them. **The room is absorbed**: the
+// line goes to the foot of the band and the space before it counted for nothing,
+// which is what this project does. Or **the room is kept**: the line goes that far
+// below the foot of the band, and a paragraph asking for ten points above itself
+// starts ten points lower than the object under which it stands.
+//
+// Two corpus documents of one template are 9.8pt out from the first object on their
+// first page all the way down, and the paragraph under that object states 211 twips
+// of space before it, which is 10.55pt. Word draws the object itself exactly where
+// this project puts it, so nothing about the object is in question: only what the
+// paragraph under it does with the room it asked for.
+//
+// Every case opens a page of its own, and every line is told exactly how tall to be,
+// so where a line lands is arithmetic: the body starts 36pt down, the marker takes
+// 24 and the anchoring paragraph is empty and takes 24 more.
+export function spaceUnderAWrapDocument(): string {
+  const LINE_PT = 24;
+  const BOX_PT = 200;
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+  const above = (pt: number, linePt: number): string =>
+    `<w:spacing w:before="${String(pt * 20)}" w:line="${String(linePt * 20)}" w:lineRule="exact"/>`;
+
+  const boxed = (id: number, name: string, heightPt: number, wrap: string, offsetPt = 0): string =>
+    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
+      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+        <wp:simplePos x="0" y="0"/>
+        <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
+        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionV>
+        <wp:extent cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/>
+        <wp:effectExtent l="0" t="0" r="0" b="0"/>
+        ${wrap}
+        <wp:docPr id="${String(id)}" name="${name}"/>
+        <wp:cNvGraphicFramePr/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr txBox="1"/>
+            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/></a:xfrm>
+              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
+            <wps:txbx><w:txbxContent>${paragraph(exactly(LINE_PT), run(`${name} boxed`))}</w:txbxContent></wps:txbx>
+            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
+          </wps:wsp></a:graphicData></a:graphic>
+      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+
+  const TOP_AND_BOTTOM = `<wp:wrapTopAndBottom/>`;
+  const SQUARE = `<wp:wrapSquare wrapText="bothSides"/>`;
+
+  type Case = {
+    readonly name: string;
+    // How tall the object is, which is where the foot of its band falls: the
+    // anchoring paragraph starts 60pt down the page and the object with it.
+    readonly heightPt: number;
+    // What the paragraph under it asks for above itself.
+    readonly abovePt: number;
+    readonly wrap: string;
+    // How far below its own paragraph the object hangs. Nought puts it over the
+    // anchoring paragraph's own line; anything past that line's foot leaves it
+    // where it is, which is how the documents in the wild write one.
+    readonly offsetPt?: number;
+  };
+
+  const block = (of: Case, id: number): string =>
+    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${of.name} marks`)) +
+    paragraph(
+      exactly(LINE_PT),
+      boxed(id, of.name, of.heightPt, of.wrap, of.offsetPt ?? 0) + run(`${of.name} anchors`),
+    ) +
+    paragraph(above(of.abovePt, LINE_PT), run(`${of.name} follows`)) +
+    paragraph(exactly(LINE_PT), run(`${of.name} after`));
+
+  const CASES: readonly Case[] = [
+    // The case in the wild: a band ending far below where the paragraph would have
+    // started, and 36pt of room asked for above it. Absorbed puts the line at 160,
+    // kept puts it at 196.
+    { name: "a", heightPt: 100, abovePt: 36, wrap: TOP_AND_BOTTOM },
+    // The same asking for nothing, which both readings put at 160.
+    { name: "b", heightPt: 100, abovePt: 0, wrap: TOP_AND_BOTTOM },
+    // A band whose foot falls between where the paragraph would have started and
+    // where its own room would have put it. Absorbed and kept differ here too, and
+    // so does taking the lower of the two: 120 for that, 136 for kept.
+    { name: "c", heightPt: 40, abovePt: 36, wrap: SQUARE },
+    // The same band and the same room, wrapped the other way, in case what the
+    // text does beside an object decides this as well.
+    { name: "d", heightPt: 100, abovePt: 36, wrap: SQUARE },
+    // A band ending above the paragraph altogether, which pushes nothing: the line
+    // stands where its own room puts it whatever the answer is, and says so.
+    { name: "e", heightPt: 12, abovePt: 36, wrap: TOP_AND_BOTTOM },
+    // The geometry of the documents in the wild, and the case the whole document is
+    // for: the object hangs below its anchoring paragraph's own line, so nothing
+    // about that line is in question, and the only thing that can move the follower
+    // is what becomes of the room it asks for. Absorbed puts its line at 190, kept
+    // puts it at 226.
+    { name: "f", heightPt: 100, abovePt: 36, wrap: TOP_AND_BOTTOM, offsetPt: 30 },
+    // A square wrap the follower's own line clears and the room above it does not,
+    // asked with room too wide for the band's foot and that room to be confused:
+    // the line stands at 144 and the band ends at 100, so a line narrowed here is
+    // one narrowed by the room it asked for.
+    { name: "g", heightPt: 40, abovePt: 60, wrap: SQUARE },
+  ];
+
+  return [...CASES.map((each, at) => block(each, at + 1)), EMPTY].join("");
+}
+
 // Where a section's columns stand across the page, and when its text leaves one of
 // them for the next. Nothing here has ever been put to Word.
 //
