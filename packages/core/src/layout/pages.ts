@@ -186,10 +186,19 @@ function breakOnce(
     // anchor, and leaving the page at that line would put the object above the top
     // of the page.
     //
-    // The room is asked for from that same top and not from where the object was
-    // put, since an object hanging below its paragraph is drawn back up to the foot
-    // of the text before anything moves. So what moves a page is an object that will
-    // not fit even standing at its paragraph's own top.
+    // The room is asked for from where the object may be drawn up to and not from
+    // where it was put, since an object hanging below its paragraph is drawn back up
+    // to the foot of the text before anything moves. **What it may be drawn up to is
+    // the foot of the line anchoring it and not the paragraph's own top**, measured
+    // on 2026-08-08 by the authored `objects-and-the-footer` document: a box hung
+    // 100pt below a 24pt line with 172pt of room under it moved, though rising to
+    // the foot of the text would have left its top 22pt below the paragraph's own.
+    // It would have left it 2pt above the foot of its line, and an object is never
+    // drawn over the line that anchors it.
+    //
+    // A paragraph answers for every object at once. The corpus template that found
+    // this anchors three to one paragraph and only the first will not fit, and Word
+    // takes the paragraph and all three on to the next page.
     const objects = anchoring.get(box.index);
     if (objects?.some((each) => overflowsHighest(each, box, overflows)) === true) {
       leave(box.topPt, opens, box.index);
@@ -270,7 +279,15 @@ const overflowsHighest = (
   object: AnchoredObject,
   box: ParagraphBox,
   overflows: (topPt: number, heightPt: number) => boolean,
-): boolean => overflows(Math.min(object.topPt, box.topPt), object.bottomPt - object.topPt);
+): boolean =>
+  overflows(Math.min(object.topPt, anchorLineFootPt(box)), object.bottomPt - object.topPt);
+
+// The foot of the line an object is anchored to, which is as high as one is ever
+// drawn. A paragraph with nothing in it anchors from the room its mark stands in.
+export const anchorLineFootPt = (box: ParagraphBox): number => {
+  const first = box.lines[0];
+  return first === undefined ? box.contentBottomPt : first.topPt + first.heightPt;
+};
 
 // Whether the paragraph asks to stand with the one after it over a break neither
 // of them asked for.

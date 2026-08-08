@@ -635,3 +635,57 @@ describe("breakStack over a row a break may not run through", () => {
     expect(linesOn(pages[2])).toStrictEqual([1]);
   });
 });
+
+// **An object text wraps round may be drawn up until its own top reaches the foot
+// of the line anchoring it, and moves the paragraph on when even that leaves it
+// past the bottom of the page.** Measured on 2026-08-08 by the authored
+// `objects-and-the-footer` document, which is where the foot it may rise to was
+// found: a box hung 100pt below its 24pt line with 172pt of room under it moved,
+// though drawing it up to the foot of the text would have left its top 22pt below
+// the paragraph's own and 2pt above the foot of its line.
+describe("an object anchored to a paragraph", () => {
+  const anchored = (topPt: number, bottomPt: number) => ({ topPt, bottomPt, anchoredAt: 1 });
+
+  // Three paragraphs of one 24pt line each from 100, so the second is anchored at
+  // 124 and the foot of its line stands at 148.
+  const three = () => stack([[24], [24], [24]], 100);
+
+  it("leaves the page where the object fits standing at the foot of its own line", () => {
+    const pages = breakStack({
+      cells: [],
+      boxes: three(),
+      anchoredObjects: [anchored(200, 340)],
+      topPt: 100,
+      bottomPt: 300,
+    });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0, 1, 2]]);
+  });
+
+  it("moves the paragraph on where the object would have to rise above its line", () => {
+    const pages = breakStack({
+      cells: [],
+      boxes: three(),
+      anchoredObjects: [anchored(200, 360)],
+      topPt: 100,
+      bottomPt: 300,
+    });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
+  });
+
+  // A paragraph answers for every object at once: of the three the corpus
+  // template anchors to one paragraph, only the first fails to fit and Word takes
+  // the whole paragraph on to the next page.
+  it("moves the paragraph on for one object of several", () => {
+    const pages = breakStack({
+      cells: [],
+      boxes: three(),
+      anchoredObjects: [anchored(200, 340), anchored(200, 360)],
+      topPt: 100,
+      bottomPt: 300,
+    });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
+  });
+});

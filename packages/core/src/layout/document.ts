@@ -39,7 +39,7 @@ import {
   type PlacedCell,
 } from "./stack.js";
 import { columnsAcross } from "./columns.js";
-import { breakStack, type PageBody, type PageStack } from "./pages.js";
+import { anchorLineFootPt, breakStack, type PageBody, type PageStack } from "./pages.js";
 import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
@@ -198,6 +198,7 @@ function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
 const placeFloatIn = (
   anchor: FloatingAnchor,
   paragraphTopPt: number,
+  lineFootPt: number,
   frame: FloatFrame,
   resolvePart: PartResolver,
 ): PlacedFloat =>
@@ -213,34 +214,34 @@ const placeFloatIn = (
       settings: frame.settings,
       sizePt: fittedSizePt(anchor, frame),
     }),
-    paragraphTopPt,
+    lineFootPt,
     frame,
   );
 
 // **An object hanging past the foot of the text is drawn up so that its own foot
-// rests there, and never higher than the paragraph anchoring it.** Measured on
-// 2026-08-07 by the authored `objects-past-the-foot` document: a box hung 74pt
-// below its paragraph with 156pt of room under it was drawn 38pt higher than it
-// asked for, its foot exactly on the bottom of the text, and the same box with
-// 100pt of room, where drawing it up that far would have taken it above its own
-// anchor, moved to the next page with the paragraph instead.
+// rests there, and never over the line anchoring it.** Measured on 2026-08-07 by
+// the authored `objects-past-the-foot` document: a box hung 74pt below its
+// paragraph with 156pt of room under it was drawn 38pt higher than it asked for,
+// its foot exactly on the bottom of the text, and the same box with 100pt of room,
+// where drawing it up that far would have taken it above its own anchor, moved to
+// the next page with the paragraph instead.
+//
+// How far up it may come is the foot of that line and not the paragraph's own top,
+// measured on 2026-08-08 by `objects-and-the-footer`: a box that would have had to
+// rise to 2pt above the foot of its line moved instead of being drawn up.
 //
 // So this and the break rule in `breakStack` are one rule read from two sides, and
-// what decides between them is whether the anchor itself leaves room: an object
-// moves on exactly when it will not fit even standing at its paragraph's own top.
+// what decides between them is whether the line itself leaves room: an object moves
+// on exactly when it will not fit even standing at the foot of its own line.
 //
 // An object wrapping nothing is not drawn up at all. It hangs where it was put,
 // however far past the foot, which the same document says over three cases.
-function drawnUpToTheFoot(
-  float: PlacedFloat,
-  paragraphTopPt: number,
-  frame: FloatFrame,
-): PlacedFloat {
+function drawnUpToTheFoot(float: PlacedFloat, lineFootPt: number, frame: FloatFrame): PlacedFloat {
   const bottomPt = frame.bottomPt;
   if (bottomPt === null || float.anchor.wrap === "none") return float;
   if (float.topPt + float.heightPt <= bottomPt) return float;
 
-  const topPt = Math.max(paragraphTopPt, bottomPt - float.heightPt);
+  const topPt = Math.max(lineFootPt, bottomPt - float.heightPt);
   return topPt >= float.topPt ? float : { ...float, topPt };
 }
 
@@ -327,7 +328,9 @@ function outlineOf(float: PlacedFloat): readonly OutlinePoint[] | undefined {
   }));
 }
 
-// Only geometry matters here, so a picture's part is left unresolved.
+// Only geometry matters here, so a picture's part is left unresolved, and the line
+// an object is anchored to has not been laid out yet: measuring is one column with
+// no foot for one to be drawn up to, so the anchor's own top stands in for it.
 const bandsIn =
   (frame: FloatFrame): BandResolver =>
   (paragraph, topPt) =>
@@ -335,7 +338,7 @@ const bandsIn =
       .filter((anchor) => anchor.wrap !== "none")
       .map((anchor) =>
         bandFor(
-          placeFloatIn(anchor, topPt, frame, () => null),
+          placeFloatIn(anchor, topPt, topPt, frame, () => null),
           frame,
         ),
       );
@@ -654,7 +657,7 @@ export function layOutDocument(
     return {
       floats: anchored.flatMap(({ paragraph, box }) =>
         readAnchors(paragraph).map((anchor) =>
-          placeFloatIn(anchor, box.anchorTopPt, floats, resolvePart),
+          placeFloatIn(anchor, box.anchorTopPt, anchorLineFootPt(box), floats, resolvePart),
         ),
       ),
       inlines: anchored.flatMap(({ paragraph, box }) =>

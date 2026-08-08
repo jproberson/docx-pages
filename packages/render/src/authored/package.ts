@@ -31,6 +31,7 @@ const OFFICE = "application/vnd.openxmlformats-officedocument.wordprocessingml";
 
 const contentTypes = (
   picture: boolean,
+  footer: boolean,
 ): string => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -40,6 +41,7 @@ const contentTypes = (
   <Override PartName="/word/styles.xml" ContentType="${OFFICE}.styles+xml"/>
   <Override PartName="/word/settings.xml" ContentType="${OFFICE}.settings+xml"/>
   <Override PartName="/word/numbering.xml" ContentType="${OFFICE}.numbering+xml"/>
+  ${footer ? `<Override PartName="/word/footer1.xml" ContentType="${OFFICE}.footer+xml"/>` : ""}
 </Types>`;
 
 const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -51,14 +53,18 @@ const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 // asked about a drawing is the room it takes rather than what is in it.
 export const PICTURE_ID = "rId4";
 
+const FOOTER_ID = "rId5";
+
 const documentRels = (
   picture: boolean,
+  footer: boolean,
 ): string => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="${R_NS}/styles" Target="styles.xml"/>
   <Relationship Id="rId2" Type="${R_NS}/settings" Target="settings.xml"/>
   <Relationship Id="rId3" Type="${R_NS}/numbering" Target="numbering.xml"/>
   ${picture ? `<Relationship Id="${PICTURE_ID}" Type="${R_NS}/image" Target="media/picture.png"/>` : ""}
+  ${footer ? `<Relationship Id="${FOOTER_ID}" Type="${R_NS}/footer" Target="footer1.xml"/>` : ""}
 </Relationships>`;
 
 // One opaque pixel, stretched to whatever extent a drawing states. Written out
@@ -127,6 +133,10 @@ const NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 export type AuthoredParts = {
   // Everything between <w:body> and its section properties.
   readonly body: string;
+  // The blocks of a footer drawn on every page, which is what makes the foot of
+  // the text a quantity of the document's rather than the margin's: Word holds the
+  // text off a footer taller than the room the margin left it.
+  readonly footer?: string;
   // Styles of the document's own, which stand beside the defaults every authored
   // document shares rather than replacing them.
   readonly extraStyles?: string;
@@ -137,20 +147,33 @@ export type AuthoredParts = {
 };
 
 export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
+  const footer = parts.footer !== undefined;
+  const page = footer
+    ? PAGE.replace(
+        "<w:sectPr>",
+        `<w:sectPr><w:footerReference w:type="default" r:id="${FOOTER_ID}"/>`,
+      )
+    : PAGE;
   const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document ${DOCUMENT_NAMESPACES}>
-  <w:body>${parts.body}${PAGE}</w:body>
+  <w:body>${parts.body}${page}</w:body>
 </w:document>`;
 
   const picture = parts.picture === true;
   return zipSync({
-    "[Content_Types].xml": strToU8(contentTypes(picture)),
+    "[Content_Types].xml": strToU8(contentTypes(picture, footer)),
     "_rels/.rels": strToU8(ROOT_RELS),
-    "word/_rels/document.xml.rels": strToU8(documentRels(picture)),
+    "word/_rels/document.xml.rels": strToU8(documentRels(picture, footer)),
     "word/document.xml": strToU8(document),
     "word/styles.xml": strToU8(STYLES.replace("<!--EXTRA-->", parts.extraStyles ?? "")),
     "word/settings.xml": strToU8(parts.settings ?? settingsPart()),
     "word/numbering.xml": strToU8(parts.numbering ?? NUMBERING),
     ...(picture ? { "word/media/picture.png": Buffer.from(PICTURE_PNG, "base64") } : {}),
+    ...(parts.footer === undefined
+      ? {}
+      : {
+          "word/footer1.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr ${DOCUMENT_NAMESPACES}>${parts.footer}</w:ftr>`),
+        }),
   });
 }

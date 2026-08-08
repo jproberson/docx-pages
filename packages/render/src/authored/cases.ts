@@ -98,6 +98,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // cannot see it either, since it answers nought for the left of any line an object
   // narrowed, so only this catches it.
   "objects-past-the-foot": { lines: 54, runs: 54, numbers: 0, placed: 53, runsPlaced: 53 },
+  // Twenty seven cases of four lines, the line inside each of the thirty nine boxes
+  // and the footer drawn on every one of the forty five pages. This is the oracle
+  // the document was written for: where a box that was drawn up rather than moved
+  // came to rest is the whole of what half of it asks.
+  "objects-and-the-footer": { lines: 192, runs: 192, numbers: 0 },
   // Every line of all eleven cases: a marker, four rows of two cells and a line
   // under the table. Word's own pdf is the oracle this document is read by, since
   // its report puts the last row of four of the cases 0.55 to 0.7pt below where its

@@ -1,4 +1,4 @@
-import { LEFT_PT, PICTURE_ID, RIGHT_PT } from "./package.js";
+import { LEFT_PT, PICTURE_ID, RIGHT_PT, TOP_PT } from "./package.js";
 
 // The bodies of the authored documents that ask about a feature of the flowing
 // text rather than about a shape. Each paragraph is written so that the rule it
@@ -386,6 +386,189 @@ export function objectsPastTheFootDocument(): string {
 
   return [...CASES.map((each, at) => block(each, at + 1)), EMPTY].join("");
 }
+
+// The same question asked of a page that draws a footer, and of a paragraph
+// anchoring more than one object.
+//
+// `objects-past-the-foot` measured both of the rules this asks about on a page
+// with no footer and one box at a time, and five corpus documents of one template
+// contradict them together: a page of anchored boxes whose foot holds a square
+// wrapped box a twentieth of a point past the top of the footer, a second that fits
+// under it, and a third wrapping nothing that hangs past the sheet, all three at one
+// anchor. Word moves that anchor to the next page. Neither measured rule moves
+// anything there: the square one has room to rise and be drawn up to the foot, and
+// the one wrapping nothing hangs where it was put however far past.
+//
+// So two things are unmeasured, and the cases below split them. **Which foot an
+// object is judged against on a page that draws a footer**: the page here keeps
+// 36pt of bottom margin and hangs a footer 24pt tall 36pt above the bottom edge, so
+// the top of the footer at 732, the bottom margin at 756 and the edge of the sheet
+// at 792 are three different answers and a box can be dropped between any two of
+// them. And **whether several objects at one anchor answer as one does**: a box
+// that cannot fit standing beside one that can, and one wrapping nothing beside a
+// square one.
+//
+// Every case is written out three times so that an answer is a rule rather than an
+// accident, and each repeat marks itself: two boxes holding the same words could
+// not be told apart in a rendering.
+export function objectsAndTheFooterDocument(): string {
+  const LINE_PT = 24;
+  const SHIM_PT = 500;
+
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+
+  const NONE = `<wp:wrapNone/>`;
+  const SQUARE = `<wp:wrapSquare wrapText="bothSides"/>`;
+
+  type Box = {
+    readonly name: string;
+    readonly wrap: string;
+    readonly widthPt: number;
+    readonly heightPt: number;
+    // Where the box stands across the column, so that two at one anchor leave the
+    // paragraph's own line a run of the frame to stand in rather than driving it
+    // under both of them and off the page for a reason that is not being asked
+    // about.
+    readonly leftPt: number;
+    readonly offsetPt: number;
+  };
+
+  const boxed = (of: Box, id: number): string =>
+    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
+      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+        <wp:simplePos x="0" y="0"/>
+        <wp:positionH relativeFrom="column"><wp:posOffset>${emu(of.leftPt)}</wp:posOffset></wp:positionH>
+        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(of.offsetPt)}</wp:posOffset></wp:positionV>
+        <wp:extent cx="${emu(of.widthPt)}" cy="${emu(of.heightPt)}"/>
+        <wp:effectExtent l="0" t="0" r="0" b="0"/>
+        ${of.wrap}
+        <wp:docPr id="${String(id)}" name="${of.name}"/>
+        <wp:cNvGraphicFramePr/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr txBox="1"/>
+            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(of.widthPt)}" cy="${emu(of.heightPt)}"/></a:xfrm>
+              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
+            <wps:txbx><w:txbxContent>${paragraph(exactly(LINE_PT), run(`${of.name} boxed`))}</w:txbxContent></wps:txbx>
+            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
+          </wps:wsp></a:graphicData></a:graphic>
+      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+
+  const square = (heightPt: number, offsetPt: number, leftPt = 0): Omit<Box, "name"> => ({
+    wrap: SQUARE,
+    widthPt: 160,
+    heightPt,
+    leftPt,
+    offsetPt,
+  });
+
+  const none = (heightPt: number, offsetPt: number, leftPt = 0): Omit<Box, "name"> => ({
+    wrap: NONE,
+    widthPt: 240,
+    heightPt,
+    leftPt,
+    offsetPt,
+  });
+
+  // The anchor's own top, which every foot below is stated against: the marker
+  // takes the first 24pt of the body and the shim the next 500.
+  const ANCHOR_PT = TOP_PT + LINE_PT + SHIM_PT;
+
+  type Case = {
+    readonly name: string;
+    readonly boxes: readonly (readonly [string, Omit<Box, "name">])[];
+  };
+
+  // A box standing at the anchor's own top and reaching down to a stated foot,
+  // since what every case here is written around is where its foot falls: the top
+  // of the footer stands at 732, the bottom margin at 756 and the edge of the sheet
+  // at 792.
+  const reachingTo = (footPt: number, leftPt = 0): Omit<Box, "name"> =>
+    square(footPt - ANCHOR_PT, 0, leftPt);
+
+  const CASES: readonly Case[] = [
+    // Short of every foot there could be, which the rest are read against.
+    { name: "a", boxes: [["", reachingTo(720)]] },
+    // Past the top of the footer and short of the bottom margin.
+    { name: "b", boxes: [["", reachingTo(740)]] },
+    // Past the bottom margin and short of the sheet.
+    { name: "c", boxes: [["", reachingTo(760)]] },
+    // Past the sheet itself.
+    { name: "d", boxes: [["", reachingTo(800)]] },
+    // A box hung 100pt below its anchor with room to rise: Word draws such a one up
+    // until its foot rests on the foot of the text, so where it comes to rest says
+    // which foot that is without a page break having to be read at all.
+    { name: "e", boxes: [["", square(150, 100)]] },
+    // A box wrapping nothing, which on a page with no footer hangs past the foot
+    // and moves nothing.
+    { name: "f", boxes: [["", none(300, 0)]] },
+    // The same box beside one that fits, which is the shape the corpus documents
+    // hold and the one the measured rules cannot explain.
+    {
+      name: "g",
+      boxes: [
+        ["square", reachingTo(720)],
+        ["none", none(300, 0, 200)],
+      ],
+    },
+    // A box that cannot fit under any foot beside one that fits under all of them,
+    // which says whether an anchor answers for its objects one at a time.
+    {
+      name: "h",
+      boxes: [
+        ["fits", reachingTo(720)],
+        ["past", reachingTo(800, 380)],
+      ],
+    },
+    // The corpus template itself: a square box hung 3pt past the top of the footer
+    // and standing 7pt short of it, a second whose foot is at 722, and one wrapping
+    // nothing whose foot is 76pt past the sheet.
+    {
+      name: "i",
+      boxes: [
+        ["rises", square(165, 10)],
+        ["fits", square(150, 12, 380)],
+        ["hangs", none(300, 8, 60)],
+      ],
+    },
+  ];
+
+  const REPEATS = [1, 2, 3];
+
+  const block = (of: Case, repeat: number, from: number): string => {
+    const mark = `${of.name}${String(repeat)}`;
+    const boxes = of.boxes.map(([what, box], at) =>
+      boxed({ ...box, name: what === "" ? mark : `${mark} ${what}` }, from + at),
+    );
+    return (
+      paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${mark} marks`)) +
+      paragraph(exactly(SHIM_PT), run(`${mark} shims`)) +
+      paragraph(exactly(LINE_PT), boxes.join("") + run(`${mark} anchors`)) +
+      paragraph(exactly(LINE_PT), run(`${mark} follows`))
+    );
+  };
+
+  let id = 1;
+  const blocks: string[] = [];
+  for (const each of CASES) {
+    for (const repeat of REPEATS) {
+      blocks.push(block(each, repeat, id));
+      id += each.boxes.length;
+    }
+  }
+
+  return [...blocks, EMPTY].join("");
+}
+
+// A footer of a stated height, so that the top of it is a number the document
+// itself states: a page 792pt tall keeping 36pt for a footer puts the top of a
+// 24pt one at 732, which is 24pt above the bottom margin.
+export const STATED_FOOTER = paragraph(
+  `<w:spacing w:line="480" w:lineRule="exact"/>`,
+  run("the footer"),
+);
 
 export function wrappingDocument(): string {
   const wrapping = (id: number, wrap: string, widthEmu: number, heightEmu: number): string =>

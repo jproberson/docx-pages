@@ -9,6 +9,7 @@ import {
   keepingDocument,
   linedRowsDocument,
   numberingDocument,
+  objectsAndTheFooterDocument,
   objectsPastTheFootDocument,
   overflowingSectionDocument,
   positionedTableDocument,
@@ -32,6 +33,7 @@ import {
   wrapSidesDocument,
   NUMBERING,
   SPACING_STYLES,
+  STATED_FOOTER,
 } from "./features.js";
 import { buildAuthoredDocx, settingsPart, FACE } from "./package.js";
 
@@ -289,6 +291,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "An anchored object whose foot falls past the bottom of its page",
       asks: "whether such an object hangs where it was put, moves to the next page on its own, or takes the paragraph anchoring it with it",
       bytes: buildAuthoredDocx({ body: objectsPastTheFootDocument() }),
+    },
+    {
+      id: "objects-and-the-footer",
+      title: "The same object on a page that draws a footer, and several at one anchor",
+      asks: "which foot an object is judged against when a footer holds the text off the bottom margin, and whether an anchor answers for its objects one at a time",
+      bytes: buildAuthoredDocx({ body: objectsAndTheFooterDocument(), footer: STATED_FOOTER }),
     },
     {
       id: "wrapping",
