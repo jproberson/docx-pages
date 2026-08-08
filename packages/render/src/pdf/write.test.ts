@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import { strFromU8 } from "fflate";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -14,7 +15,7 @@ import {
   type SuppliedFace,
 } from "@docx-pages/core";
 import { buildDocx, wordDocument, WORDPROCESSING_NS } from "@docx-pages/core/testing";
-import { writePdf, type PdfFont } from "@docx-pages/pdf";
+import { pdfOfDocx, writePdf, type PdfFont } from "@docx-pages/pdf";
 
 import { readFillPlacements } from "./fills.js";
 import { readImagePlacements } from "./placements.js";
@@ -377,5 +378,61 @@ describe("an underlined run", () => {
 
   it("leaves a run that asks for no underline unlined", async () => {
     expect(await readFillPlacements(written(laidOut(paragraph(run("plain")))))).toStrictEqual([]);
+  });
+});
+
+// The whole of the usual path in one call, as `DocxDocument` is for the viewer.
+describe("pdfOfDocx", () => {
+  const docx = (body: string): Uint8Array =>
+    buildDocx({
+      "word/document.xml": wordDocument(body + section()),
+      "word/styles.xml": STYLES,
+    });
+
+  it("opens, lays out and writes, and puts the text where laying out alone would", async () => {
+    const body = paragraph(run("through the wrapper"));
+    const wrapped = await readTextPlacements(pdfOfDocx(docx(body), { fonts }));
+    const byHand = await readTextPlacements(written(laidOut(body)));
+
+    expect(
+      wrapped.map((each) => [each.text, round(each.leftPt), round(each.baselinePt)]),
+    ).toStrictEqual(byHand.map((each) => [each.text, round(each.leftPt), round(each.baselinePt)]));
+  });
+
+  it("takes an ArrayBuffer as readily as the bytes themselves", async () => {
+    const bytes = docx(paragraph(run("either way")));
+    const buffer = bytes.slice().buffer;
+
+    expect(
+      (await readTextPlacements(pdfOfDocx(buffer, { fonts }))).map((each) => each.text),
+    ).toStrictEqual(
+      (await readTextPlacements(pdfOfDocx(bytes, { fonts }))).map((each) => each.text),
+    );
+  });
+
+  // Nothing is stood in for here: the resolver is the bare one, so a document
+  // naming a face that was not supplied is refused while it is being laid out
+  // rather than drawn in something else.
+  it("refuses a document naming a face nothing supplies", () => {
+    expect(() => pdfOfDocx(docx(paragraph(run("unsupplied"))), { fonts: [] })).toThrow(
+      /could not be laid out/,
+    );
+  });
+
+  it("writes what it is told about the file, and nothing it was not", () => {
+    const bytes = pdfOfDocx(docx(paragraph(run("titled"))), {
+      fonts,
+      metadata: { title: "A written page", producer: "docx-pages" },
+    });
+    const text = strFromU8(bytes, true);
+
+    expect(text).toContain("/Title (A written page)");
+    expect(text).toContain("/Producer (docx-pages)");
+    // Nothing here reads a clock, so the same document written twice is the same
+    // bytes rather than two files differing in when they were made.
+    expect(text).not.toContain("/CreationDate");
+    expect([...pdfOfDocx(docx(paragraph(run("twice"))), { fonts })]).toStrictEqual([
+      ...pdfOfDocx(docx(paragraph(run("twice"))), { fonts }),
+    ]);
   });
 });
