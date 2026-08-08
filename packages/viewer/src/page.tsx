@@ -2,11 +2,13 @@ import type { CSSProperties, ReactElement } from "react";
 
 import {
   aliasedSymbolText,
+  drawablesOf,
   paintOfCell,
   paintOfParagraph,
   twipsToPoints,
   type BorderStyle,
   type CropInsets,
+  type Drawable,
   type Painted,
   type PaintedFill,
   type PaintedLine,
@@ -22,7 +24,6 @@ import {
   type PlacedPaint,
 } from "@docx-pages/core";
 
-import { drawablesOf, type Drawable } from "./drawables.js";
 import type { ImageResolver } from "./images.js";
 
 export type FrameStyle = "hidden" | "outlined";

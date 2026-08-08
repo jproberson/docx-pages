@@ -38,6 +38,7 @@ const CORE_SURFACE: readonly string[] = [
   "ascentPt",
   "bestEffortMetrics",
   "drawablePicture",
+  "drawablesOf",
   "isAliasedSymbolFace",
   "emuToPoints",
   "isDocxPagesError",

@@ -1,13 +1,12 @@
-import type {
-  LaidOutDocument,
-  LaidOutPage,
-  ParagraphBox,
-  ParagraphPaint,
-  PlacedCell,
-  PlacedContent,
-  PlacedFloat,
-  PlacedInline,
-} from "@docx-pages/core";
+import type { LaidOutDocument, LaidOutPage } from "./document.js";
+import type { PlacedContent, PlacedFloat } from "./floats.js";
+import type { PlacedInline } from "./inlines.js";
+import type { ClipRect, ParagraphBox, ParagraphPaint, PlacedCell } from "./stack.js";
+
+// What a page draws and the order it draws it in, as one flat list. Layout says
+// where everything sits; this says which of it is painted over which, which is
+// the same question whatever the drawing is done with. Both backends walk this,
+// so a rule about stacking is settled here once rather than answered twice.
 
 // A paragraph's own fill and border, with the room its lines took: how far up and
 // down they reach is the paragraph's, how far across is the text area's.
@@ -34,7 +33,7 @@ export type Drawable =
       readonly boxes: readonly ParagraphBox[];
       // The rectangle the text is cut to, which a shape's own text has and the
       // text a story flowed down the page does not.
-      readonly clipTo: Rect | null;
+      readonly clipTo: ClipRect | null;
     }
   // Everything drawn behind the text of a story: the cells of its tables and the
   // fills and borders its paragraphs ask for. One layer holds them all, since they
@@ -45,13 +44,6 @@ export type Drawable =
       readonly cells: readonly PlacedCell[];
       readonly paragraphs: readonly PaintedParagraph[];
     };
-
-export type Rect = {
-  readonly leftPt: number;
-  readonly topPt: number;
-  readonly widthPt: number;
-  readonly heightPt: number;
-};
 
 const fromFloat = (float: PlacedFloat, key: string): Drawable => ({
   kind: "object",

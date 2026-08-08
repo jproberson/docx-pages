@@ -147,6 +147,13 @@ export type {
 export { layOutDocument } from "./layout/document.js";
 export type { DocumentLayout, LaidOutDocument, LaidOutPage } from "./layout/document.js";
 
+// What a page draws and in what order. A renderer that worked this out for itself
+// would be answering the stacking question a second time, and the two answers
+// would drift.
+
+export { drawablesOf } from "./layout/drawables.js";
+export type { Drawable, PaintedParagraph } from "./layout/drawables.js";
+
 export { WHOLE_FRAME } from "./docx/anchors.js";
 export type {
   AnchorOrigin,
