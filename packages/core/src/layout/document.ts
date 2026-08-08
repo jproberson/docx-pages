@@ -544,15 +544,23 @@ export function layOutDocument(
   const firstPass = measureHeader(twipsToPoints(page.margin.topTwips));
   if (firstPass.kind === "blocked") return firstPass;
 
-  // Where a section's own page starts the body: under the header standing at the
-  // distance that section keeps for one, or at its top margin, whichever is lower.
-  // The header itself is measured once, against the document's own page, so the
-  // room it takes is the same on every page and only the margins move.
-  const bodyTopOf = (geometry: SectionGeometry): number =>
-    Math.max(
-      twipsToPoints(geometry.margin.topTwips),
-      twipsToPoints(geometry.margin.headerTwips) + firstPass.heightPt,
-    );
+  // Where a section's own page starts the body: at its top margin, or under a
+  // header that reaches past it. The header itself is measured once, against the
+  // document's own page, so the room it takes is the same on every page and only
+  // the margins move.
+  //
+  // **A page that draws no header starts its body at the top margin**, however far
+  // down the page the room kept for a header would have reached. The room a header
+  // would have taken is not taken by a header that is not there, which is what the
+  // footer has always said on its own side. Four corpus documents keeping a 36pt
+  // header margin over a 1pt top margin and drawing no header had every line of
+  // them 35pt below where Word drew it, and every one of the four was read as a
+  // fault about the columns it also states.
+  const bodyTopOf = (geometry: SectionGeometry): number => {
+    const marginTopPt = twipsToPoints(geometry.margin.topTwips);
+    if (headerPart === null) return marginTopPt;
+    return Math.max(marginTopPt, twipsToPoints(geometry.margin.headerTwips) + firstPass.heightPt);
+  };
 
   const bodyTopPt = bodyTopOf(openingPage);
   const header = measureHeader(bodyTopPt);
