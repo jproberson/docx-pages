@@ -84,6 +84,20 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // shorter here and everything below them stands too high.
   borders: { lines: 104, runs: 104, numbers: 0, placed: 97, runsPlaced: 102 },
   "section-pages": { lines: 18, runs: 12, numbers: 0, placed: 12 },
+  // Fifty four lines over eleven cases: a marker, a shim, the paragraph anchoring
+  // the object, the line under it, and the object's own line, which is what says
+  // which page the object landed on. The case with no line under it is the one
+  // asking what becomes of an object anchored to the last paragraph there is.
+  //
+  // The one left over is the line under the object that was drawn up to the foot of
+  // the text, which Word puts beside the object where it now stands and this project
+  // puts beside where it was asked for. **The room a line is left is settled while
+  // the story is measured, and an object is drawn up to a foot no page has yet**:
+  // measuring is one column with no bottom, so nothing there can know how far past
+  // the foot of a page an object 2000pt down the column reaches. Word's own report
+  // cannot see it either, since it answers nought for the left of any line an object
+  // narrowed, so only this catches it.
+  "objects-past-the-foot": { lines: 54, runs: 54, numbers: 0, placed: 53, runsPlaced: 53 },
   // Eighty lines: eight cases of a marker, four rows of two cells and a line under
   // the table. The seven left over are the rows of the case stating an exact height
   // and the line beneath it, which Word draws a margin taller than the number stated

@@ -7,6 +7,7 @@ import {
   keepingDocument,
   linedRowsDocument,
   numberingDocument,
+  objectsPastTheFootDocument,
   sectionCloserDocument,
   sectionFlowDocument,
   sectionPagesDocument,
@@ -275,6 +276,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       asks: "where the extra width lands, whether a space and a tab take it, and what justification makes of it",
       measuresCharacters: true,
       bytes: buildAuthoredDocx({ body: characterSpacingDocument() }),
+    },
+    {
+      id: "objects-past-the-foot",
+      title: "An anchored object whose foot falls past the bottom of its page",
+      asks: "whether such an object hangs where it was put, moves to the next page on its own, or takes the paragraph anchoring it with it",
+      bytes: buildAuthoredDocx({ body: objectsPastTheFootDocument() }),
     },
     {
       id: "wrapping",

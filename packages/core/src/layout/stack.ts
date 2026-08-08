@@ -197,12 +197,27 @@ export type UntornRow = {
   readonly opensAt: number;
 };
 
+// The room a wrapping object takes down the page, and the paragraph anchoring it.
+// An object that will not fit in what is left below moves to the page under it and
+// takes that paragraph with it, so like a row that refuses to be torn this has to
+// be decided at the paragraph rather than at the object.
+//
+// Only an object text wraps round is listed. One wrapping nothing hangs past the
+// foot of the page and moves neither itself nor anything else, which is why the
+// band is what this is read off: a band is made for exactly the wraps that move.
+export type AnchoredObject = {
+  readonly topPt: number;
+  readonly bottomPt: number;
+  readonly anchoredAt: number;
+};
+
 export type StackMeasurement =
   | {
       readonly kind: "measured";
       readonly boxes: readonly ParagraphBox[];
       readonly cells: readonly PlacedCell[];
       readonly untornRows: readonly UntornRow[];
+      readonly anchoredObjects: readonly AnchoredObject[];
       readonly heightPt: number;
     }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
@@ -285,6 +300,7 @@ function measureBlocks(
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
   const untornRows: UntornRow[] = [];
+  const anchoredObjects: AnchoredObject[] = [];
   let top = originPt;
   // The objects met so far, which grows as the stack walks forward: every line
   // from an object's own paragraph on has to sit clear of it.
@@ -308,7 +324,15 @@ function measureBlocks(
       // break then leaves standing where nothing is beside it.
       if (opensPage(paragraph, boxes.at(-1), context)) standing = [];
       const anchorTopPt = anchoredAtPt ?? top;
-      const bands = [...standing, ...bandsOf(paragraph, anchorTopPt, context)];
+      const own = bandsOf(paragraph, anchorTopPt, context);
+      const bands = [...standing, ...own];
+      for (const band of own) {
+        anchoredObjects.push({
+          topPt: band.topPt,
+          bottomPt: band.bottomPt,
+          anchoredAt: paragraph.index,
+        });
+      }
       const measured = measureParagraph(paragraph, context, top, frame, neighbours, {
         bands,
         ahead: [],
@@ -346,11 +370,19 @@ function measureBlocks(
     boxes.push(...measured.boxes);
     cells.push(...measured.cells);
     untornRows.push(...measured.untornRows);
+    anchoredObjects.push(...measured.anchoredObjects);
     anchoredAtPt = null;
     top += measured.heightPt;
   }
 
-  return { kind: "measured", boxes, cells, untornRows, heightPt: top - originPt };
+  return {
+    kind: "measured",
+    boxes,
+    cells,
+    untornRows,
+    anchoredObjects,
+    heightPt: top - originPt,
+  };
 }
 
 const bandsOf = (paragraph: Paragraph, topPt: number, context: Context): readonly WrapBand[] =>
@@ -442,7 +474,16 @@ function measureTable(
     top += measured.heightPt;
   }
 
-  return { kind: "measured", boxes, cells, untornRows, heightPt: top + outerBottomPt - topPt };
+  // A cell is measured with no bands at all, so nothing inside a table can anchor
+  // an object a page break has to make room for.
+  return {
+    kind: "measured",
+    boxes,
+    cells,
+    untornRows,
+    anchoredObjects: [],
+    heightPt: top + outerBottomPt - topPt,
+  };
 }
 
 // How far a cell holds its text off its own left wall: the margin it asks for, or
@@ -587,7 +628,7 @@ function measureRow(
     untornRows.push({ topPt, bottomPt: topPt + heightPt, opensAt });
   }
 
-  return { kind: "measured", boxes, cells, untornRows, heightPt };
+  return { kind: "measured", boxes, cells, untornRows, anchoredObjects: [], heightPt };
 }
 
 // The largest margin any cell in the row asks for at that side, which is what

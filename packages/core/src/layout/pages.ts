@@ -1,4 +1,4 @@
-import type { ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
+import type { AnchoredObject, ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
 
 export type PageStack = {
   readonly index: number;
@@ -11,6 +11,7 @@ export type BreakStackInput = {
   readonly boxes: readonly ParagraphBox[];
   readonly cells: readonly PlacedCell[];
   readonly untornRows?: readonly UntornRow[];
+  readonly anchoredObjects?: readonly AnchoredObject[];
   readonly topPt: number;
   readonly bottomPt: number;
 };
@@ -82,6 +83,15 @@ function breakOnce(
   const opening = new Map<number, UntornRow>();
   for (const row of input.untornRows ?? []) opening.set(row.opensAt, row);
 
+  // Keyed the same way, and a paragraph may anchor several: a page of a real
+  // document holds three objects on one paragraph.
+  const anchoring = new Map<number, AnchoredObject[]>();
+  for (const object of input.anchoredObjects ?? []) {
+    const already = anchoring.get(object.anchoredAt);
+    if (already === undefined) anchoring.set(object.anchoredAt, [object]);
+    else already.push(object);
+  }
+
   // Whether the paragraph before this one ended on a page break, which draws no
   // line of its own and so has nothing here to be seen at.
   let broken = false;
@@ -99,6 +109,32 @@ function breakOnce(
     // other would be, which is what Word did with one it was told not to split.
     const row = opening.get(box.index);
     if (row !== undefined && overflows(row.topPt, row.bottomPt - row.topPt)) leave(row.topPt);
+
+    // **An object text wraps round moves to the page under it when it will not fit
+    // in the room left, and takes the paragraph anchoring it with it.** Measured on
+    // 2026-08-07 by the authored `objects-past-the-foot` document. An object
+    // wrapping nothing hangs past the foot instead, however far past, and moves
+    // neither itself nor anything else, which is why only the wraps a band is made
+    // for reach this. The room is measured to the foot of the text and not to the
+    // edge of the sheet: an object reaching into the bottom margin and no further
+    // moved like any other.
+    //
+    // The page is left at the paragraph's own top rather than at its first line's,
+    // which is the one place this parts from every other break here. An object is
+    // anchored to the paragraph, so it is the paragraph's top that has to land at
+    // the top of the new page for the object to land there too: a wrap taking the
+    // whole width with it holds the paragraph's own first line 300pt below the
+    // anchor, and leaving the page at that line would put the object above the top
+    // of the page.
+    //
+    // The room is asked for from that same top and not from where the object was
+    // put, since an object hanging below its paragraph is drawn back up to the foot
+    // of the text before anything moves. So what moves a page is an object that will
+    // not fit even standing at its paragraph's own top.
+    const objects = anchoring.get(box.index);
+    if (objects?.some((each) => overflowsHighest(each, box, overflows)) === true) {
+      leave(box.topPt);
+    }
 
     // A paragraph with nothing in it is judged by the room its mark stands in, as
     // one with lines is judged by its lines: the room it keeps below itself hangs
@@ -163,6 +199,18 @@ function breakOnce(
     split,
   };
 }
+
+// Whether an object will not fit even drawn as high as it is allowed to go.
+//
+// An object is drawn up towards the foot of the text and never above the paragraph
+// anchoring it, so the highest its top can reach is its own top or that paragraph's,
+// whichever is lower: one already standing above its anchor cannot rise at all, and
+// a real document anchors one 348pt above the paragraph it hangs off.
+const overflowsHighest = (
+  object: AnchoredObject,
+  box: ParagraphBox,
+  overflows: (topPt: number, heightPt: number) => boolean,
+): boolean => overflows(Math.min(object.topPt, box.topPt), object.bottomPt - object.topPt);
 
 // Whether the paragraph asks to stand with the one after it over a break neither
 // of them asked for.

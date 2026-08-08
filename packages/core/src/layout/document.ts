@@ -133,6 +133,9 @@ type FloatFrame = {
   // offset is measured from.
   readonly columnTopPt: number;
   readonly marginTopPt: number;
+  // The foot of the text an object is drawn up to when it hangs past it, or null in
+  // a story nothing is pulled up in. Only the body has one.
+  readonly bottomPt: number | null;
 };
 
 // "Resize shape to fit text": the box is as tall as its text, and as wide as it
@@ -190,17 +193,48 @@ const placeFloatIn = (
   frame: FloatFrame,
   resolvePart: PartResolver,
 ): PlacedFloat =>
-  placeFloat({
-    anchor,
-    page: frame.page,
+  drawnUpToTheFoot(
+    placeFloat({
+      anchor,
+      page: frame.page,
+      paragraphTopPt,
+      bodyTopPt: frame.columnTopPt,
+      marginTopPt: frame.marginTopPt,
+      resolvePart,
+      theme: frame.theme,
+      settings: frame.settings,
+      sizePt: fittedSizePt(anchor, frame),
+    }),
     paragraphTopPt,
-    bodyTopPt: frame.columnTopPt,
-    marginTopPt: frame.marginTopPt,
-    resolvePart,
-    theme: frame.theme,
-    settings: frame.settings,
-    sizePt: fittedSizePt(anchor, frame),
-  });
+    frame,
+  );
+
+// **An object hanging past the foot of the text is drawn up so that its own foot
+// rests there, and never higher than the paragraph anchoring it.** Measured on
+// 2026-08-07 by the authored `objects-past-the-foot` document: a box hung 74pt
+// below its paragraph with 156pt of room under it was drawn 38pt higher than it
+// asked for, its foot exactly on the bottom of the text, and the same box with
+// 100pt of room, where drawing it up that far would have taken it above its own
+// anchor, moved to the next page with the paragraph instead.
+//
+// So this and the break rule in `breakStack` are one rule read from two sides, and
+// what decides between them is whether the anchor itself leaves room: an object
+// moves on exactly when it will not fit even standing at its paragraph's own top.
+//
+// An object wrapping nothing is not drawn up at all. It hangs where it was put,
+// however far past the foot, which the same document says over three cases.
+function drawnUpToTheFoot(
+  float: PlacedFloat,
+  paragraphTopPt: number,
+  frame: FloatFrame,
+): PlacedFloat {
+  const bottomPt = frame.bottomPt;
+  if (bottomPt === null || float.anchor.wrap === "none") return float;
+  if (float.topPt + float.heightPt <= bottomPt) return float;
+
+  const topPt = Math.max(paragraphTopPt, bottomPt - float.heightPt);
+  return topPt >= float.topPt ? float : { ...float, topPt };
+}
 
 // Text stays off the part of an object its wrap covers by the distances its
 // anchor asks for; an object wrapped top and bottom takes the whole width of the
@@ -400,6 +434,7 @@ export function layOutDocument(
     part: string | null,
     columnTopPt: number,
     marginTopPt: number,
+    bottomPt: number | null = null,
   ): FloatFrame => ({
     page,
     styles,
@@ -409,6 +444,7 @@ export function layOutDocument(
     part: part ?? MAIN_DOCUMENT_PART,
     columnTopPt,
     marginTopPt,
+    bottomPt,
   });
 
   // A header's own objects are placed against the top of the body, which is not
@@ -523,11 +559,16 @@ export function layOutDocument(
     boxes: bodyStack.boxes,
     cells: bodyStack.cells,
     untornRows: bodyStack.untornRows,
+    anchoredObjects: bodyStack.anchoredObjects,
     topPt: bodyTopPt,
     bottomPt: bodyBottomPt,
   });
   const bodyDrawings = pageBoxes(broken).map((boxOf) =>
-    drawingsFor(bodyBlocks, boxOf, floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
+    drawingsFor(
+      bodyBlocks,
+      boxOf,
+      floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt, bodyBottomPt),
+    ),
   );
 
   const filled = fillTextBoxes(

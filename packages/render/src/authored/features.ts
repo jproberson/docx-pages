@@ -261,6 +261,132 @@ export function characterSpacingDocument(): string {
   return [...lands, ...between, ...justified, ...boundary, ...condensed, EMPTY].join("");
 }
 
+// What becomes of an anchored object whose foot falls past the bottom of the page
+// its paragraph stands on.
+//
+// Eight documents in the corpus are a page of anchored text boxes over a page of
+// flowing text, and they are the whole of what the clean corpus still misses outside
+// sections. In every one of them the boxes near the top of the page land within a
+// tenth of a point and the ones at the foot are drawn by Word on the page after. The
+// page they hold no text of their own to be read by, so the corpus cannot say which
+// of three things Word did, and all three put the box on the next page:
+//
+//   1. the object moved on and the flow stayed where it was,
+//   2. the paragraph anchoring it moved on and took the object with it, or
+//   3. the object hung past the foot and Word drew none of it.
+//
+// Every box here carries a line of its own text, so Word's own drawing says which
+// page the object landed on and where, and the paragraph anchoring it and the one
+// after say what the flow did. Each case opens a page of its own and is held down it
+// by a shim told exactly how tall to be, so the room left under it is arithmetic:
+// the page is 720pt of body, the marker takes 24 and the shim the rest.
+export function objectsPastTheFootDocument(): string {
+  const LINE_PT = 24;
+  const BODY_PT = 720;
+  const BOX_PT = 300;
+
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+
+  // A box of a stated size holding one line, which is what makes the object
+  // readable: a picture says only where it was drawn and a pdf says nothing about
+  // which anchor drew it.
+  const boxed = (
+    id: number,
+    name: string,
+    heightPt: number,
+    wrap: string,
+    offsetPt: number,
+  ): string =>
+    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
+      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+        <wp:simplePos x="0" y="0"/>
+        <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
+        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionV>
+        <wp:extent cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/>
+        <wp:effectExtent l="0" t="0" r="0" b="0"/>
+        ${wrap}
+        <wp:docPr id="${String(id)}" name="${name}"/>
+        <wp:cNvGraphicFramePr/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr txBox="1"/>
+            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/></a:xfrm>
+              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
+            <wps:txbx><w:txbxContent>${paragraph(exactly(LINE_PT), run(`${name} boxed`))}</w:txbxContent></wps:txbx>
+            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
+          </wps:wsp></a:graphicData></a:graphic>
+      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+
+  const NONE = `<wp:wrapNone/>`;
+  const SQUARE = `<wp:wrapSquare wrapText="bothSides"/>`;
+
+  type Case = {
+    readonly name: string;
+    // The room standing under the shim, which is what the object is offered.
+    readonly leftPt: number;
+    readonly heightPt: number;
+    readonly wrap: string;
+    // How far below its paragraph the object hangs. Nought in every case but the
+    // one written to the geometry of a document in the wild.
+    readonly offsetPt?: number;
+    // Whether the block is the last in the document, so the object has no page to
+    // be moved onto.
+    readonly last?: boolean;
+  };
+
+  const block = (of: Case, id: number): string =>
+    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${of.name} marks`)) +
+    paragraph(exactly(BODY_PT - LINE_PT - of.leftPt), run(`${of.name} shims`)) +
+    paragraph(
+      exactly(LINE_PT),
+      boxed(id, of.name, of.heightPt, of.wrap, of.offsetPt ?? 0) + run(`${of.name} anchors`),
+    ) +
+    (of.last === true ? "" : paragraph(exactly(LINE_PT), run(`${of.name} follows`)));
+
+  const CASES: readonly Case[] = [
+    // A hundred points of room and a box three times that, wrapping nothing, which
+    // is the plain case and the one the corpus documents are.
+    { name: "a", leftPt: 100, heightPt: BOX_PT, wrap: NONE },
+    // The same room and a box that fits in it, which the rest read against.
+    { name: "b", leftPt: 100, heightPt: 60, wrap: NONE },
+    // A box whose foot falls past the sheet rather than past the text, since a page
+    // has 36pt of margin under its text and a box may reach into it and no further.
+    { name: "c", leftPt: 100, heightPt: 700, wrap: NONE },
+    // The first case again with the wrap the corpus documents use, in case what a
+    // box does with the text beside it decides this too.
+    { name: "d", leftPt: 100, heightPt: BOX_PT, wrap: SQUARE },
+    // A box taller than the whole body, which no page can hold however far it is
+    // moved.
+    { name: "e", leftPt: 600, heightPt: 900, wrap: NONE },
+    // A wrap that takes the whole width with it rather than leaving a side, which
+    // is the other wrap a real document writes.
+    { name: "f", leftPt: 100, heightPt: BOX_PT, wrap: `<wp:wrapTopAndBottom/>` },
+    // A wrapping box that fits in the room left, which tells a rule about the room
+    // from a rule about the wrap.
+    { name: "g", leftPt: 100, heightPt: 60, wrap: SQUARE },
+    // A wrapping box reaching past the foot of the text and not past the sheet,
+    // which says which of the two the room is measured to.
+    { name: "h", leftPt: 100, heightPt: 120, wrap: SQUARE },
+    // The same box hung well below its own paragraph rather than starting at it,
+    // which is how a real document writes one: its objects sit 74pt under the
+    // paragraph that anchors them and Word neither moved them on nor left them
+    // where they fell.
+    { name: "i", leftPt: 100, heightPt: 120, wrap: SQUARE, offsetPt: 74 },
+    // And a box that will not fit anchored to the last paragraph there is, so there
+    // is no page under it to be moved to.
+    { name: "j", leftPt: 100, heightPt: 120, wrap: SQUARE, last: true },
+    // A box hung below its paragraph with room enough that drawing its foot on the
+    // bottom of the text still leaves its top below the anchor. In the real document
+    // Word did exactly that rather than move anything, and `i` says it will not do
+    // it where the box would have to rise above its own anchor to fit.
+    { name: "k", leftPt: 156, heightPt: 120, wrap: SQUARE, offsetPt: 74 },
+  ];
+
+  return [...CASES.map((each, at) => block(each, at + 1)), EMPTY].join("");
+}
+
 export function wrappingDocument(): string {
   const wrapping = (id: number, wrap: string, widthEmu: number, heightEmu: number): string =>
     `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>

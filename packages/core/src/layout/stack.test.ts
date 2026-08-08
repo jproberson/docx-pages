@@ -134,6 +134,7 @@ describe("measureStack", () => {
       boxes: [],
       cells: [],
       untornRows: [],
+      anchoredObjects: [],
       heightPt: 0,
     });
   });
