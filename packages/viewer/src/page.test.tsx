@@ -89,6 +89,7 @@ const paragraphOf = (
   keepNext: false,
   startsPage: false,
   endsPage: false,
+  endsPageAtASection: false,
   contentWidthPt: options.widthPt ?? 40,
   clipTo: null,
   paint: null,

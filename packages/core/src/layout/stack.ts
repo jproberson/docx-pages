@@ -162,6 +162,10 @@ export type ParagraphBox = {
   // break that puts whatever follows it on one.
   readonly startsPage: boolean;
   readonly endsPage: boolean;
+  // Which kind of break that was, since the page a section opens keeps the room
+  // the paragraph opening it asks for above itself and the page any other break
+  // opens does not.
+  readonly endsPageAtASection: boolean;
   // What the paragraph's text is cut off at, which is the row when a row was told
   // exactly how tall to be and nothing anywhere else.
   readonly clipTo: ClipRect | null;
@@ -837,7 +841,7 @@ function measureParagraph(
         rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
       }),
       startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
-      endsPage: sectionClose?.opensAPage === true,
+      endsPageAtASection: sectionClose?.opensAPage === true,
       closesASection: sectionClose !== undefined,
       number: measured === null ? null : measured.number,
       bands: standing.bands,
@@ -1077,7 +1081,7 @@ type LayOutParagraphInput = {
   readonly startsPage: boolean;
   // Whether a section break stands after the paragraph, which ends a page as a
   // break in its own text would. What the text asked for is read off the text.
-  readonly endsPage: boolean;
+  readonly endsPageAtASection: boolean;
   readonly closesASection: boolean;
   readonly bands: readonly WrapBand[];
   readonly ahead: readonly WrapBand[];
@@ -1169,7 +1173,7 @@ function layOutWholeParagraph(
   const belowPt = borderRoomPt(paint?.borders.bottom ?? null);
   const brokenByItsText = layOutLines(flow, input);
   const laid = brokenByItsText.lines;
-  const endsPage = brokenByItsText.endsPage || input.endsPage;
+  const endsPage = brokenByItsText.endsPage || input.endsPageAtASection;
 
   // A paragraph whose whole content is the section break it carries is not laid
   // out at all: it takes no room and holds nothing back. Measured on 2026-08-07 by
@@ -1197,6 +1201,7 @@ function layOutWholeParagraph(
       keepNext: paragraphFrame.keepNext,
       startsPage: input.startsPage,
       endsPage,
+      endsPageAtASection: input.endsPageAtASection,
       contentWidthPt: 0,
       clipTo: null,
       paint: null,
@@ -1240,6 +1245,7 @@ function layOutWholeParagraph(
       keepNext: paragraphFrame.keepNext,
       startsPage: input.startsPage,
       endsPage,
+      endsPageAtASection: input.endsPageAtASection,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
       clipTo: null,
       paint,
@@ -1282,6 +1288,7 @@ function layOutWholeParagraph(
     keepNext: paragraphFrame.keepNext,
     startsPage: input.startsPage,
     endsPage,
+    endsPageAtASection: input.endsPageAtASection,
     contentWidthPt: placed.reduce(
       (widest, line) => Math.max(widest, line.leftPt - frame.leftPt + line.line.widthPt),
       0,

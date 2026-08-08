@@ -1036,6 +1036,97 @@ export function raisedTextDocument(): string {
   return [...CASES.flatMap(block), EMPTY].join("");
 }
 
+// What becomes of the room a paragraph asks for above itself when a page begins
+// under it, which depends on what began the page.
+//
+// `breaking` says a paragraph the foot of a page carried on to draws its first line
+// at the top of the next page with none of that room above it, and this project has
+// been dropping the room at every break there is. Two corpus documents of five
+// sections each say that is too wide a rule: every page a section break opens in
+// them stands exactly the room the paragraph opening it asks for below where this
+// project puts it, 3.4pt at one of the breaks and 3.95pt at two more.
+//
+// So what is in question is the break rather than the room. Four kinds of them open
+// a page here: the foot of the page forcing one, a break inside the text, a
+// paragraph asking for a page of its own, and a section break. Each is written once
+// asking for 18pt above the paragraph and once asking for none, so the answer is the
+// distance between two lines Word drew rather than a line read against a font's
+// ascent, and each case is written out three times: the second and the third stand
+// mid page where the room is certainly kept, so the distance between one and the
+// next gives the line's own height beside it.
+//
+// **Read off Word's own pdf**, which is where a line was drawn. Word's report
+// answers for the paragraph, and a paragraph begins above whatever room it asked
+// for, which is the same number whether the page kept that room or not.
+export function spaceAboveABreakDocument(): string {
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+  const roomAbove = (twips: number): string => `<w:spacing w:before="${String(twips)}"/>`;
+
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+  const PAGE_BREAK = `<w:r><w:br w:type="page"/></w:r>`;
+
+  // The body's own page, written out again: every section here is the page the
+  // document's own is, to the twip, so the only thing a break can be about is the
+  // break.
+  const sectionProperties =
+    `<w:sectPr>` +
+    `<w:type w:val="nextPage"/>` +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
+    `<w:cols w:space="720"/>` +
+    `</w:sectPr>`;
+
+  // Room the paragraph could not be standing in by accident, against the 3.4pt and
+  // 3.95pt the documents in the wild ask for.
+  const ROOM_TWIPS = 360;
+
+  const MARKER_PT = 24;
+  const FILLERS = 9;
+  const FILLER_PT = 72;
+  const BODY_PT = 720;
+  // Twelve points of room under the shim, which is less than the 14.65pt line the
+  // case needs whether or not it asks for room above itself.
+  const SHIM_PT = BODY_PT - MARKER_PT - FILLERS * FILLER_PT - 12;
+
+  // How the page the case opens on was opened.
+  type Opening = "the page filling" | "a break in the text" | "a page of its own" | "a section";
+
+  const block = (name: string, opening: Opening, roomTwips: number): readonly string[] => {
+    const marker = paragraph(
+      `${OWN_PAGE}${exactly(MARKER_PT)}${opening === "a section" ? sectionProperties : ""}`,
+      run(`${name} above`) + (opening === "a break in the text" ? PAGE_BREAK : ""),
+    );
+    const fills =
+      opening !== "the page filling"
+        ? []
+        : [
+            ...Array.from({ length: FILLERS }, () =>
+              paragraph(exactly(FILLER_PT), run(`${name} fills`)),
+            ),
+            paragraph(exactly(SHIM_PT), run(`${name} shims`)),
+          ];
+    const cases = ["one", "two", "three"].map((which, at) =>
+      paragraph(
+        `${at === 0 && opening === "a page of its own" ? OWN_PAGE : ""}${roomAbove(roomTwips)}`,
+        run(`${name} ${which}`),
+      ),
+    );
+    return [marker, ...fills, ...cases];
+  };
+
+  return [
+    ...block("soft", "the page filling", ROOM_TWIPS),
+    ...block("soft bare", "the page filling", 0),
+    ...block("hard", "a break in the text", ROOM_TWIPS),
+    ...block("hard bare", "a break in the text", 0),
+    ...block("mark", "a page of its own", ROOM_TWIPS),
+    ...block("mark bare", "a page of its own", 0),
+    ...block("section", "a section", ROOM_TWIPS),
+    ...block("section bare", "a section", 0),
+  ].join("");
+}
+
 // What becomes of the room a paragraph asks for above itself when a wrap has
 // already pushed its first line down the page.
 //

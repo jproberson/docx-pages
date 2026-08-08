@@ -71,6 +71,7 @@ function stack(
       keepNext: false,
       startsPage: false,
       endsPage: false,
+      endsPageAtASection: false,
       contentWidthPt: 0,
       clipTo: null,
       paint: null,
@@ -103,7 +104,12 @@ const indexesOn = (page: { readonly boxes: readonly ParagraphBox[] }): readonly 
 const asking = (
   boxes: readonly ParagraphBox[],
   at: number,
-  asks: { readonly startsPage?: boolean; readonly endsPage?: boolean; readonly line?: number },
+  asks: {
+    readonly startsPage?: boolean;
+    readonly endsPage?: boolean;
+    readonly endsPageAtASection?: boolean;
+    readonly line?: number;
+  },
 ): readonly ParagraphBox[] =>
   boxes.map((box, index) =>
     index !== at
@@ -112,6 +118,7 @@ const asking = (
           ...box,
           startsPage: asks.startsPage ?? box.startsPage,
           endsPage: asks.endsPage ?? box.endsPage,
+          endsPageAtASection: asks.endsPageAtASection ?? box.endsPageAtASection,
           lines: box.lines.map((each, line) =>
             line === asks.line ? { ...each, startsPage: true } : each,
           ),
@@ -262,6 +269,7 @@ describe("breakStack", () => {
     keepNext: false,
     startsPage: false,
     endsPage: false,
+    endsPageAtASection: false,
     contentWidthPt: 0,
     clipTo: null,
     paint: null,
@@ -321,6 +329,71 @@ describe("breakStack", () => {
     const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
 
     expect(pages.map(linesOn)).toStrictEqual([[3], [1]]);
+  });
+});
+
+// Word's own answers, measured by the authored `space-above-a-break` document:
+// four kinds of break open a page there, and the paragraph opening the page asks
+// for 18pt above itself in each. Only the section break drew its first line that
+// far below the top of the page.
+describe("breakStack over the room a paragraph asks for above itself", () => {
+  // The room a paragraph keeps above its first line, which leaves its top standing
+  // that far above the line and moves everything under it down.
+  const roomAbove = (
+    boxes: readonly ParagraphBox[],
+    at: number,
+    roomPt: number,
+  ): readonly ParagraphBox[] =>
+    boxes.map((box, index) => {
+      if (index < at) return box;
+      const lower = (topPt: number): number => topPt + roomPt;
+      return {
+        ...box,
+        topPt: index === at ? box.topPt : lower(box.topPt),
+        heightPt: index === at ? box.heightPt + roomPt : box.heightPt,
+        markTopPt: lower(box.markTopPt),
+        contentBottomPt: lower(box.contentBottomPt),
+        lines: box.lines.map((line) => ({
+          ...line,
+          topPt: lower(line.topPt),
+          baselinePt: lower(line.baselinePt),
+        })),
+      };
+    });
+
+  it("keeps that room where a section break opened the page", () => {
+    const boxes = roomAbove(
+      asking(stack([[10], [10]]), 0, { endsPage: true, endsPageAtASection: true }),
+      1,
+      18,
+    );
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
+    expect(pages[1]?.boxes[0]?.topPt).toBe(100);
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(118);
+  });
+
+  it("leaves it behind where a break in the text opened the page", () => {
+    const boxes = roomAbove(asking(stack([[10], [10]]), 0, { endsPage: true }), 1, 18);
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
+  it("leaves it behind where the paragraph asked for a page of its own", () => {
+    const boxes = roomAbove(asking(stack([[10], [10]]), 1, { startsPage: true }), 1, 18);
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
+  it("leaves it behind where the foot of the page carried the paragraph over", () => {
+    const boxes = roomAbove(stack([[10], [10]]), 1, 18);
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 125 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
   });
 });
 

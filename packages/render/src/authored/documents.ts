@@ -14,6 +14,7 @@ import {
   sectionFlowDocument,
   sectionPagesDocument,
   sectionsDocument,
+  spaceAboveABreakDocument,
   statedRowHeightsDocument,
   tearingDocument,
   pageDocument,
@@ -406,6 +407,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A run raised or lowered off its own baseline",
       asks: "how far off the baseline w:position draws a run, and whether the line grows to hold it",
       bytes: buildAuthoredDocx({ body: raisedTextDocument() }),
+    },
+    {
+      id: "space-above-a-break",
+      title: "The room a paragraph asks for above itself, at the top of a page",
+      asks: "which kinds of page break keep the space before the paragraph that opens the page, and which drop it",
+      bytes: buildAuthoredDocx({ body: spaceAboveABreakDocument() }),
     },
     {
       id: "space-under-a-wrap",

@@ -130,8 +130,10 @@ function breakOnce(
   }
 
   // Whether the paragraph before this one ended on a page break, which draws no
-  // line of its own and so has nothing here to be seen at.
+  // line of its own and so has nothing here to be seen at, and whether that break
+  // was a section's.
   let broken = false;
+  let brokenAtASection = false;
   // The first paragraph this pass found parted from the one it holds.
   let split: number | null = null;
 
@@ -141,9 +143,22 @@ function breakOnce(
     const opens = bodyOf(box);
     const carriedForward = moved.has(box.index) && !moved.has(input.boxes[place - 1]?.index ?? -1);
     if (broken || box.startsPage || carriedForward) {
-      leave(box.lines[0]?.topPt ?? box.topPt, opens, box.index);
+      // **A page a section break opens keeps the room the paragraph opening it asks
+      // for above itself, and a page any other break opens does not.** Measured on
+      // 2026-08-08 by the authored `space-above-a-break` document: of the four kinds
+      // of break that open a page, the foot of the page filling, a break in the
+      // paragraph's own text, a paragraph asking for a page of its own and a section
+      // break, only the last drew its first line the 18pt it asked for below the top
+      // of the page. So the paragraph's own top goes to the top of the page there,
+      // and its first line's does everywhere else.
+      const opensAt =
+        brokenAtASection && !box.startsPage && !carriedForward
+          ? box.topPt
+          : (box.lines[0]?.topPt ?? box.topPt);
+      leave(opensAt, opens, box.index);
     }
     broken = box.endsPage;
+    brokenAtASection = box.endsPageAtASection;
 
     // A row that will not come apart is decided here, at the paragraph that opens
     // it: what does not fit below moves whole. Moved, its top stands at the top of
@@ -375,6 +390,7 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
     keepNext: to === box.lines.length && box.keepNext,
     startsPage: from === 0 && box.startsPage,
     endsPage: to === box.lines.length && box.endsPage,
+    endsPageAtASection: to === box.lines.length && box.endsPageAtASection,
     contentWidthPt: box.contentWidthPt,
     clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt - shiftPt },
     paint: box.paint,

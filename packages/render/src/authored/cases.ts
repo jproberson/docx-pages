@@ -120,6 +120,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Two pages of a continuous section's own text past the page it opened on, and
   // the two lines of the body's own section under them.
   "overflowing-section": { lines: 66, runs: 66, numbers: 0 },
+  // Eight cases: a marker and the case written out three times, and ten lines more
+  // in each of the two whose page is opened by the one below it filling up. This is
+  // the oracle the document was written for, since where a line was drawn is the
+  // whole of what it asks.
+  "space-above-a-break": { lines: 52, runs: 52, numbers: 0 },
   // Seven cases of four lines each, and the line inside each case's own box.
   "space-under-a-wrap": { lines: 35, runs: 35, numbers: 0 },
   // Twenty cases of five lines: a marker, the case written out three times and a
