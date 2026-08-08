@@ -156,8 +156,14 @@ type Fragment = {
   // holds none. A decimal stop lines its text up on that point, and the width is
   // free while the characters are being added up anyway.
   readonly beforePointPt: number | null;
+  // How far the fragment reaches above and below the line's own baseline, which a
+  // raised run reaches off: the raise moves both ends and neither passes the
+  // baseline going the other way.
   readonly heightPt: number;
   readonly ascentPt: number;
+  // The line the fragment's faces make with nothing raised, which is what a
+  // multiple line rule is taken of and what floors a line holding a short drawing.
+  readonly fontHeightPt: number;
 };
 
 type Unit =
@@ -233,7 +239,7 @@ class Measurer {
       };
       return null;
     }
-    return lineHeightPt(lookup.metrics, mark.fontSizePt);
+    return lineHeightPt(lookup.metrics, mark.lineSizePt);
   }
 
   // A character drawn out of another face raises the fragment as a run in that
@@ -245,8 +251,8 @@ class Measurer {
 
     let widthPt = 0;
     let beforePointPt: number | null = null;
-    let abovePt = ascentPt(face.metrics, mark.fontSizePt);
-    let belowPt = lineHeightPt(face.metrics, mark.fontSizePt) - abovePt;
+    let abovePt = ascentPt(face.metrics, mark.lineSizePt);
+    let belowPt = lineHeightPt(face.metrics, mark.lineSizePt) - abovePt;
 
     for (const character of text) {
       if (beforePointPt === null && character === DECIMAL_POINT) beforePointPt = widthPt;
@@ -269,19 +275,30 @@ class Measurer {
       // The fragment already stands on its own face, so only a borrowed character
       // can raise it.
       if (drawn.metrics !== face.metrics) {
-        const above = ascentPt(drawn.metrics, mark.fontSizePt);
+        const above = ascentPt(drawn.metrics, mark.lineSizePt);
         abovePt = Math.max(abovePt, above);
-        belowPt = Math.max(belowPt, lineHeightPt(drawn.metrics, mark.fontSizePt) - above);
+        belowPt = Math.max(belowPt, lineHeightPt(drawn.metrics, mark.lineSizePt) - above);
       }
     }
+
+    // A run that asked to be raised off its baseline carries its whole line with
+    // it: it reaches that much further above and that much less below, and neither
+    // end crosses the baseline. Measured on 2026-08-07 by the authored `raised-text`
+    // document, which is where the clamp comes from: a 12pt run raised six points,
+    // alone on its line, left the line 17.52pt tall rather than 14.64, so what the
+    // run no longer reaches below counts for nothing rather than pulling the next
+    // line up.
+    const raisedAbovePt = Math.max(0, abovePt + mark.lineRaisePt);
+    const raisedBelowPt = Math.max(0, belowPt - mark.lineRaisePt);
 
     return {
       mark,
       text,
       widthPt,
       beforePointPt,
-      heightPt: abovePt + belowPt,
-      ascentPt: abovePt,
+      heightPt: raisedAbovePt + raisedBelowPt,
+      ascentPt: raisedAbovePt,
+      fontHeightPt: abovePt + belowPt,
     };
   }
 }
@@ -560,7 +577,7 @@ class LineBuilder {
 
   private take(fragments: readonly Fragment[]): void {
     for (const fragment of fragments) {
-      this.raise(fragment.ascentPt, fragment.heightPt - fragment.ascentPt, fragment.heightPt);
+      this.raise(fragment.ascentPt, fragment.heightPt - fragment.ascentPt, fragment.fontHeightPt);
     }
     this.commit(fragments.map(segmentOf), widthOf(fragments));
   }

@@ -58,6 +58,8 @@ const mark = (fontSizePt = 10, name = "Even Sans"): ParagraphMark => ({
   italic: false,
   underline: false,
   raisePt: 0,
+  lineSizePt: fontSizePt,
+  lineRaisePt: 0,
   color: null,
   characterSpacingPt: 0,
 });
@@ -271,6 +273,56 @@ describe("breakLines", () => {
     expect(lines[0]?.ascentPt).toBeCloseTo(16, 9);
   });
 
+  // Measured on 2026-08-07 by the authored `raised-text` document: a 12pt run
+  // raised six points beside a plain one took its line from 14.64pt to 20.64, all
+  // of it above the baseline, and a run lowered six took it to the same height
+  // below. The face here is 8 above the baseline and 2 below at 10pt.
+  it("carries a raised run's whole line with it", () => {
+    const raised = { ...mark(), lineRaisePt: 3, raisePt: 3 };
+    const line = linesOf([runOf("ab"), runOf("cd", raised)], 100)[0] ?? never();
+
+    expect(line.ascentPt).toBeCloseTo(11, 9);
+    expect(line.heightPt).toBeCloseTo(13, 9);
+  });
+
+  it("carries a lowered run's line down instead", () => {
+    const lowered = { ...mark(), lineRaisePt: -3, raisePt: -3 };
+    const line = linesOf([runOf("ab"), runOf("cd", lowered)], 100)[0] ?? never();
+
+    expect(line.ascentPt).toBeCloseTo(8, 9);
+    expect(line.heightPt).toBeCloseTo(13, 9);
+  });
+
+  // What a raised run no longer reaches below the baseline counts for nothing
+  // rather than pulling the next line up: raised six points and alone on its line,
+  // a 12pt run left the line 17.52pt tall against the 14.64 it makes flat.
+  it("lets a raise past the descent leave the line no shallower", () => {
+    const raised = { ...mark(), lineRaisePt: 5, raisePt: 5 };
+    const line = linesOf([runOf("ab", raised)], 100)[0] ?? never();
+
+    expect(line.ascentPt).toBeCloseTo(13, 9);
+    expect(line.heightPt).toBeCloseTo(13, 9);
+  });
+
+  it("does the same at the top for a run lowered past the ascent", () => {
+    const lowered = { ...mark(), lineRaisePt: -12, raisePt: -12 };
+    const line = linesOf([runOf("ab", lowered)], 100)[0] ?? never();
+
+    expect(line.ascentPt).toBeCloseTo(0, 9);
+    expect(line.heightPt).toBeCloseTo(14, 9);
+  });
+
+  // A multiple line rule is taken of the line the faces make and the raise is added
+  // to it, so the two are kept apart: 12pt text raised six under a line and a half
+  // came out 27.96pt, which is 20.64 and half of 14.64 rather than half again of
+  // 20.64.
+  it("leaves the line its faces make where a raise grew the line itself", () => {
+    const raised = { ...mark(), lineRaisePt: 3, raisePt: 3 };
+    const line = linesOf([runOf("ab"), runOf("cd", raised)], 100)[0] ?? never();
+
+    expect(line.fontHeightPt).toBeCloseTo(10, 9);
+  });
+
   it("gives a hanging first line the extra room it starts with", () => {
     const result = breakLines({
       runs: [runOf("aaa bbb")],
@@ -467,6 +519,8 @@ describe("breakLines", () => {
       italic: false,
       underline: false,
       raisePt: 0,
+      lineSizePt: 10,
+      lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
     };

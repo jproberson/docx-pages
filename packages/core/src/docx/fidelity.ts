@@ -49,7 +49,6 @@ export type UnhonouredKind =
   | "keep-lines-together"
   | "character-kerning"
   | "capitals"
-  | "raised-or-lowered-text"
   | "hidden-text"
   | "automatic-hyphenation"
   | "right-to-left"
@@ -79,7 +78,6 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   "keep-lines-together": "moves-text",
   "character-kerning": "moves-text",
   capitals: "moves-text",
-  "raised-or-lowered-text": "moves-text",
   // Hidden text is measured and drawn here as any other run, so it takes room
   // Word gives it none of.
   "hidden-text": "moves-text",
@@ -166,8 +164,6 @@ function unhonouredBy(
     case "caps":
     case "smallCaps":
       return toggled(element) ? "capitals" : null;
-    case "position":
-      return numbered(element) !== 0 ? "raised-or-lowered-text" : null;
     case "vanish":
       return toggled(element) ? "hidden-text" : null;
     case "autoHyphenation":

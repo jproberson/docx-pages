@@ -897,6 +897,145 @@ export function overflowingSectionDocument(): string {
   ].join("");
 }
 
+// What a run raised or lowered off its own baseline does to the line it stands on.
+//
+// `w:position` is read by the fidelity report and by nothing else, so a run stating
+// one is drawn flat on the baseline today. Two things are in question and only one
+// of them is about the run itself: **how far off the baseline Word draws it**, and
+// **whether the line grows to hold it**, which is what puts every line below it in
+// the wrong place rather than only the run.
+//
+// The values asked are the ones the wild states. Of the 2783 `w:position` elements
+// in the corpus, 2189 are -1 and 174 are 5: a run half a point down and a run two
+// and a half points up. A raise of twelve half-points is asked beside them, since a
+// rule too small to read at a half-point is unmistakable at six.
+//
+// Eleven cases, each opening a page of its own, and the paragraph of each written
+// out three times so that the height of a line is the distance between one repeat
+// and the next rather than a difference of two rounded answers. A plain line closes
+// every case, which says where the last of the three left the page.
+//
+// **A raised run standing beside a plain one is what says where the line's own
+// baseline is**: Word draws the two as items of its own, so the drawing gives the
+// raise and the line at once. The cases where the raised run stands alone answer a
+// different question, which is what a line does when nothing on it is on the
+// baseline at all.
+export function raisedTextDocument(): string {
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+  const SUPERSCRIPT = `<w:vertAlign w:val="superscript"/>`;
+  const SUBSCRIPT = `<w:vertAlign w:val="subscript"/>`;
+
+  const raisedBy = (halfPoints: number): string => `<w:position w:val="${String(halfPoints)}"/>`;
+
+  type Case = {
+    readonly name: string;
+    // Word's own unit, a half-point, and its own sign: positive lifts the run.
+    readonly halfPoints: number;
+    // Whether a plain run opens the line in front of the raised one.
+    readonly besideAPlainRun: boolean;
+    // What the paragraphs of the case say about their own lines, where they say
+    // anything: left out, they take the single line the document's defaults set.
+    readonly spacing?: string;
+    // Whether the raised run is a script as well, which Word already moves off the
+    // baseline and shrinks on its own.
+    readonly superscript?: boolean;
+    readonly subscript?: boolean;
+    // What the raised run is set in, where that is not the document's own 12pt.
+    readonly sizeHalfPoints?: number;
+  };
+
+  const CASES: readonly Case[] = [
+    // Nothing raised at all, which is the height every other case is read against.
+    { name: "a", halfPoints: 0, besideAPlainRun: true },
+    // The commonest value in the corpus, and the smallest: half a point down.
+    { name: "b", halfPoints: -1, besideAPlainRun: true },
+    // The second commonest: two and a half points up.
+    { name: "c", halfPoints: 5, besideAPlainRun: true },
+    // Six points either way, which no rounding can hide.
+    { name: "d", halfPoints: 12, besideAPlainRun: true },
+    { name: "e", halfPoints: -12, besideAPlainRun: true },
+    // The same six points with nothing on the baseline beside them. If a line takes
+    // its height off a raised run's own ascent and descent, one holding nothing else
+    // is as tall as it ever was and simply sits higher.
+    { name: "f", halfPoints: 12, besideAPlainRun: false },
+    { name: "g", halfPoints: -12, besideAPlainRun: false },
+    // Twice the raise, alone: whatever f does, this says whether it goes on doing it.
+    { name: "h", halfPoints: 24, besideAPlainRun: false },
+    // The same raise under a line told exactly how tall to be, which is where a
+    // growing line has nowhere to grow.
+    {
+      name: "i",
+      halfPoints: 12,
+      besideAPlainRun: true,
+      spacing: `<w:spacing w:line="480" w:lineRule="exact"/>`,
+    },
+    // And under a floor low enough that the raise reaches past it: 16pt against a
+    // plain line of about 14.6.
+    {
+      name: "j",
+      halfPoints: 12,
+      besideAPlainRun: true,
+      spacing: `<w:spacing w:line="320" w:lineRule="atLeast"/>`,
+    },
+    // A superscript raised on top of what Word already raises it by, which says
+    // whether the two add and whether the shrunk size is what the raise is measured
+    // against.
+    { name: "k", halfPoints: 12, besideAPlainRun: true, superscript: true },
+    // Lowered further than a 12pt line reaches above its own baseline, alone: the
+    // other side of whatever f does when a raise runs past the descent.
+    { name: "l", halfPoints: -30, besideAPlainRun: false },
+    // A superscript and a subscript asking for no raise of their own, which is what
+    // says how far Word moves each and what that does to the line. This project
+    // moves both by a third of the size, which was never measured, and a raise it
+    // gets wrong is now a line height as well as a drawing.
+    { name: "n", halfPoints: 0, besideAPlainRun: true, superscript: true },
+    { name: "o", halfPoints: 0, besideAPlainRun: true, subscript: true },
+    // The same two at twice the size, which says whether either is a share of it.
+    { name: "p", halfPoints: 0, besideAPlainRun: true, superscript: true, sizeHalfPoints: 48 },
+    { name: "q", halfPoints: 0, besideAPlainRun: true, subscript: true, sizeHalfPoints: 48 },
+    // And a subscript with nothing on the baseline beside it, where whatever it does
+    // to the line has nothing to hide behind.
+    { name: "r", halfPoints: 0, besideAPlainRun: false, subscript: true },
+    // A third size of each, since two points fix a line and three say it is one.
+    { name: "s", halfPoints: 0, besideAPlainRun: true, superscript: true, sizeHalfPoints: 72 },
+    { name: "t", halfPoints: 0, besideAPlainRun: true, subscript: true, sizeHalfPoints: 72 },
+    // Six points up under a line and a half, which is where a multiple decides
+    // whether the raise is taken before it or after: a line of 14.64 grown to 20.64
+    // comes out 30.96 taken before and 27.96 taken after.
+    {
+      name: "m",
+      halfPoints: 12,
+      besideAPlainRun: true,
+      spacing: `<w:spacing w:line="360" w:lineRule="auto"/>`,
+    },
+  ];
+
+  const ORDINALS = ["one", "two", "three"] as const;
+
+  const block = (of: Case): readonly string[] => {
+    const properties = of.spacing ?? "";
+    const size =
+      of.sizeHalfPoints === undefined ? "" : `<w:sz w:val="${String(of.sizeHalfPoints)}"/>`;
+    const script =
+      (of.superscript === true ? SUPERSCRIPT : "") + (of.subscript === true ? SUBSCRIPT : "");
+    const marks = `${size}${script}${raisedBy(of.halfPoints)}`;
+
+    const repeat = (ordinal: string): string =>
+      paragraph(
+        properties,
+        (of.besideAPlainRun ? run(`${of.name} ${ordinal} `) : "") + run("shifted", marks),
+      );
+
+    return [
+      paragraph(`${OWN_PAGE}${properties}`, run(`${of.name} marks`)),
+      ...ORDINALS.map(repeat),
+      paragraph(properties, run(`${of.name} after`)),
+    ];
+  };
+
+  return [...CASES.flatMap(block), EMPTY].join("");
+}
+
 // What becomes of the room a paragraph asks for above itself when a wrap has
 // already pushed its first line down the page.
 //

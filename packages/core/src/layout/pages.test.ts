@@ -10,6 +10,8 @@ const MARK = {
   italic: false,
   underline: false,
   raisePt: 0,
+  lineSizePt: 10,
+  lineRaisePt: 0,
   color: null,
   characterSpacingPt: 0,
 } as const;

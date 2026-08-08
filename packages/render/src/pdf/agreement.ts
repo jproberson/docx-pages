@@ -99,6 +99,7 @@ function boxesOnPage(layout: LaidOutDocument, page: LaidOutPage): readonly Parag
 type Run = {
   readonly text: string;
   readonly leftPt: number;
+  readonly baselinePt: number;
 };
 
 // Runs line up by the characters that carry ink, since the spaces around them are
@@ -161,9 +162,22 @@ function startsOf(runs: readonly Run[]): ReadonlyMap<number, number> {
 const runsOf = (placed: PlacedLine): readonly Run[] =>
   placed.line.segments.flatMap((segment) =>
     segment.kind === "text"
-      ? [{ text: outOfSymbolPage(segment.text), leftPt: placed.leftPt + segment.offsetPt }]
+      ? [
+          {
+            text: outOfSymbolPage(segment.text),
+            leftPt: placed.leftPt + segment.offsetPt,
+            baselinePt: placed.baselinePt - segment.mark.raisePt,
+          },
+        ]
       : [],
   );
+
+// Where the first run carrying ink was drawn, which is the line's own baseline
+// unless that run is raised off it: Word writes the raised run as an item of its
+// own and the line is compared against the first item there is.
+const firstBaselineOf = (placed: PlacedLine): number =>
+  runsOf(placed).find((run) => inkOf(run.text) !== "" && !/^\s/.test(run.text))?.baselinePt ??
+  placed.baselinePt;
 
 // How near a number's line has to sit to Word's own before the number drawn there
 // can be taken for the same one.
@@ -238,8 +252,9 @@ export function agreementWith(
       if (size !== null && size > 0)
         scales.push(Math.max(...items.map((i) => i.fontSizePt)) / size);
 
-      // Only where the run starts is asked of it: a superscript sits off the line's
-      // own baseline, which the line itself is already pinned against.
+      // Only where the run starts is asked of it. How far off the line's baseline a
+      // raised one sits is asked of the first of them alone, which is the item the
+      // line itself is pinned against.
       const ours = startsOf(runsOf(line));
       const theirs = startsOf(items);
 
@@ -248,7 +263,7 @@ export function agreementWith(
       // item Word drew and the two starts are then not the same place.
       const off = Math.max(
         Math.abs((theirs.get(0) ?? found.leftPt) - (ours.get(0) ?? line.leftPt)),
-        Math.abs(found.baselinePt - line.baselinePt),
+        Math.abs(found.baselinePt - firstBaselineOf(line)),
       );
       if (off <= tolerancePt) placed += 1;
 

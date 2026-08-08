@@ -47,6 +47,8 @@ describe("resolveParagraphMark", () => {
       italic: false,
       underline: false,
       raisePt: 0,
+      lineSizePt: 11,
+      lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
     });
@@ -61,6 +63,8 @@ describe("resolveParagraphMark", () => {
       italic: false,
       underline: false,
       raisePt: 0,
+      lineSizePt: 14,
+      lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
     });
@@ -87,6 +91,8 @@ describe("resolveParagraphMark", () => {
       italic: false,
       underline: false,
       raisePt: 0,
+      lineSizePt: 20,
+      lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
     });
@@ -104,6 +110,8 @@ describe("resolveParagraphMark", () => {
       italic: false,
       underline: false,
       raisePt: 0,
+      lineSizePt: 10,
+      lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
     });
@@ -121,6 +129,8 @@ describe("resolveParagraphMark", () => {
       italic: false,
       underline: false,
       raisePt: 0,
+      lineSizePt: 12,
+      lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
     });
@@ -146,11 +156,48 @@ describe("resolveParagraphMark", () => {
     expect(mark.raisePt).toBeCloseTo(14 / 3, 9);
   });
 
-  it("drops a subscript below the baseline by as much", () => {
+  // Not by as much: measured on 2026-08-07 by the authored `raised-text` document
+  // at three sizes, Word lifts a superscript a third of the size and drops a
+  // subscript a tenth of it. 12pt, 24pt and 36pt went up 4.08, 7.92 and 12.00 and
+  // down 0.96, 2.40 and 3.60.
+  it("drops a subscript below the baseline by a tenth of its size", () => {
     const mark = runMark(`<w:sz w:val="28"/><w:vertAlign w:val="subscript"/>`);
 
     expect(mark.fontSizePt).toBeCloseTo(14 * 0.65, 9);
-    expect(mark.raisePt).toBeCloseTo(-14 / 3, 9);
+    expect(mark.raisePt).toBeCloseTo(-14 / 10, 9);
+  });
+
+  // Neither script changes the line: it is measured at the size the run was
+  // declared at whatever the script shrank it to, which is why a 24pt superscript
+  // and a 24pt subscript beside the same 12pt text made the same line.
+  it("leaves a script's line the size the run was declared at", () => {
+    for (const align of ["superscript", "subscript"]) {
+      const mark = runMark(`<w:sz w:val="48"/><w:vertAlign w:val="${align}"/>`);
+
+      expect(mark.lineSizePt).toBe(24);
+      expect(mark.lineRaisePt).toBe(0);
+    }
+  });
+
+  // A raise is stated in half-points and is a distance rather than a share of the
+  // size: measured on 2026-08-07 by the authored `raised-text` document, where a
+  // 12pt run stating twelve was drawn exactly six points up.
+  it("raises a run by half the half-points it states, whatever size it is set in", () => {
+    expect(runMark(`<w:sz w:val="24"/><w:position w:val="12"/>`).raisePt).toBeCloseTo(6, 9);
+    expect(runMark(`<w:sz w:val="48"/><w:position w:val="12"/>`).raisePt).toBeCloseTo(6, 9);
+    expect(runMark(`<w:sz w:val="24"/><w:position w:val="-1"/>`).raisePt).toBeCloseTo(-0.5, 9);
+    expect(runMark(`<w:sz w:val="24"/><w:position w:val="0"/>`).raisePt).toBe(0);
+  });
+
+  // The two raises add: a 12pt superscript stating twelve was drawn 10.08pt off the
+  // baseline, which is Word's own 4.08 for the script and the 6 the run asked for.
+  it("adds a stated raise to the one a superscript already has", () => {
+    const mark = runMark(
+      `<w:sz w:val="24"/><w:vertAlign w:val="superscript"/><w:position w:val="12"/>`,
+    );
+
+    expect(mark.fontSizePt).toBeCloseTo(12 * 0.65, 9);
+    expect(mark.raisePt).toBeCloseTo(12 / 3 + 6, 9);
   });
 
   it("leaves a run asked for at the baseline the size it was declared at", () => {
@@ -168,6 +215,8 @@ describe("resolveParagraphMark", () => {
       italic: false,
       underline: false,
       raisePt: 0,
+      lineSizePt: 10,
+      lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
     });

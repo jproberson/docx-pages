@@ -43,6 +43,14 @@ export type ParagraphMark = {
   readonly underline: boolean;
   // How far the run sits off the line's baseline, upwards.
   readonly raisePt: number;
+  // The line a run stands on is measured at the size it was declared at and moved
+  // by the raise it asked for by name: **a script shrinks and lifts what is drawn
+  // and leaves the line exactly as it was.** Measured on 2026-08-07 by the authored
+  // `raised-text` document, where a 24pt superscript and a 24pt subscript beside
+  // 12pt text made the same 29.28pt line, which is what 24pt text makes on its own
+  // and is neither run's drawn size nor either raise.
+  readonly lineSizePt: number;
+  readonly lineRaisePt: number;
   // Null where the run leaves its colour to whatever it is drawn on.
   readonly color: string | null;
   // Extra width laid after every character of the run, the last one included:
@@ -58,6 +66,7 @@ type PartialMark = {
   readonly italic: boolean | undefined;
   readonly underline: boolean | undefined;
   readonly verticalAlign: VerticalAlign | undefined;
+  readonly positionHalfPoints: number | undefined;
   readonly color: string | undefined;
   readonly characterSpacingTwentieths: number | undefined;
 };
@@ -130,6 +139,7 @@ const EMPTY: PartialMark = {
   italic: undefined,
   underline: undefined,
   verticalAlign: undefined,
+  positionHalfPoints: undefined,
   color: undefined,
   characterSpacingTwentieths: undefined,
 };
@@ -290,6 +300,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   italic: over.italic ?? base.italic,
   underline: over.underline ?? base.underline,
   verticalAlign: over.verticalAlign ?? base.verticalAlign,
+  positionHalfPoints: over.positionHalfPoints ?? base.positionHalfPoints,
   color: over.color ?? base.color,
   characterSpacingTwentieths: over.characterSpacingTwentieths ?? base.characterSpacingTwentieths,
 });
@@ -356,6 +367,7 @@ function readMark(
     italic: onOff(rPr, "i"),
     underline: underlineOf(rPr),
     verticalAlign: verticalAlignOf(rPr),
+    positionHalfPoints: positionOf(rPr),
     color: colorOf(rPr),
     characterSpacingTwentieths: characterSpacingOf(rPr),
   };
@@ -377,6 +389,17 @@ function underlineOf(rPr: XmlElement): boolean | undefined {
   const element = firstNamed(rPr, W_NS, "u");
   if (element === null) return undefined;
   return (attribute(element, W_NS, "val") ?? "single") !== "none";
+}
+
+// How far off its own baseline the run is drawn, in the half-points Word states
+// it in and with Word's sign: positive lifts. It is a distance and not a share of
+// the size, so a run raised twelve stands six points up whatever it is set in.
+function positionOf(rPr: XmlElement): number | undefined {
+  const element = firstNamed(rPr, W_NS, "position");
+  const value = element === null ? undefined : attribute(element, W_NS, "val");
+  if (value === undefined) return undefined;
+  const halfPoints = Number(value);
+  return Number.isFinite(halfPoints) ? halfPoints : undefined;
 }
 
 function verticalAlignOf(rPr: XmlElement): VerticalAlign | undefined {
@@ -487,17 +510,31 @@ function styleChain(table: StyleTable, styleId: string | undefined): readonly St
   return chain;
 }
 
-// Word sets a superscript or a subscript at about two thirds of the run's size,
-// which is what both reference faces carry as their own superscript size, and
-// moves it a third of that size off the baseline.
+// Word sets a script at about two thirds of the run's size, which is what both
+// reference faces carry as their own superscript size, and moves it off the
+// baseline by a share of the size it was declared at. **The two shares are not the
+// same one**: measured on 2026-08-07 by the authored `raised-text` document at
+// 12pt, 24pt and 36pt, a superscript went up 4.08, 7.92 and 12.00 and a subscript
+// went down 0.96, 2.40 and 3.60. Word writes those on a grid of 0.24pt, so the
+// superscript is a third of the size and the subscript a tenth, each to the one
+// step the smallest of them is out by.
 const SCRIPT_SIZE = 0.65;
 const SCRIPT_RAISE = 1 / 3;
+const SCRIPT_DROP = 1 / 10;
 
-const raiseOf = (align: VerticalAlign | undefined, fontSizePt: number): number => {
+const scriptRaiseOf = (align: VerticalAlign | undefined, fontSizePt: number): number => {
   if (align === "superscript") return fontSizePt * SCRIPT_RAISE;
-  if (align === "subscript") return -fontSizePt * SCRIPT_RAISE;
+  if (align === "subscript") return -fontSizePt * SCRIPT_DROP;
   return 0;
 };
+
+// The two raises add. Measured by the same document: a 12pt superscript raised
+// twelve half-points was drawn 10.08pt off the baseline, which is the 4.08 Word
+// lifts a superscript by and the 6 the run asked for.
+const raiseOf = (resolved: PartialMark, fontSizePt: number): number =>
+  scriptRaiseOf(resolved.verticalAlign, fontSizePt) + positionRaiseOf(resolved);
+
+const positionRaiseOf = (resolved: PartialMark): number => (resolved.positionHalfPoints ?? 0) / 2;
 
 function markOf(resolved: PartialMark): ParagraphMark {
   const declaredPt =
@@ -516,7 +553,9 @@ function markOf(resolved: PartialMark): ParagraphMark {
     bold: resolved.bold ?? false,
     italic: resolved.italic ?? false,
     underline: resolved.underline ?? false,
-    raisePt: raiseOf(resolved.verticalAlign, declaredPt),
+    raisePt: raiseOf(resolved, declaredPt),
+    lineSizePt: declaredPt,
+    lineRaisePt: positionRaiseOf(resolved),
     color: resolved.color ?? null,
     characterSpacingPt: (resolved.characterSpacingTwentieths ?? 0) / TWIPS_PER_POINT,
   };

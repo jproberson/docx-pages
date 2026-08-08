@@ -26,6 +26,8 @@ const MARK: ParagraphMark = {
   italic: false,
   underline: false,
   raisePt: 0,
+  lineSizePt: 12,
+  lineRaisePt: 0,
   color: null,
   characterSpacingPt: 0,
 };

@@ -122,6 +122,12 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   "overflowing-section": { lines: 66, runs: 66, numbers: 0 },
   // Seven cases of four lines each, and the line inside each case's own box.
   "space-under-a-wrap": { lines: 35, runs: 35, numbers: 0 },
+  // Twenty cases of five lines: a marker, the case written out three times and a
+  // plain line under it. The thirty six runs over the hundred lines are the moved
+  // run of each case that stands beside a plain one, which Word draws as an item of
+  // its own. This is the oracle the document was written for, since a raise is a
+  // position and Word's report answers for the paragraph rather than the run.
+  "raised-text": { lines: 100, runs: 136, numbers: 0 },
 };
 
 // What each authored document is expected to say it passed over. A document that

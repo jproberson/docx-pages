@@ -17,6 +17,7 @@ import {
   statedRowHeightsDocument,
   tearingDocument,
   pageDocument,
+  raisedTextDocument,
   spacingDocument,
   spaceUnderAWrapDocument,
   tableDocument,
@@ -399,6 +400,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A continuous section whose own text runs past the foot of its page",
       asks: "which section's page geometry a page a continuous section ran on to is made by",
       bytes: buildAuthoredDocx({ body: overflowingSectionDocument() }),
+    },
+    {
+      id: "raised-text",
+      title: "A run raised or lowered off its own baseline",
+      asks: "how far off the baseline w:position draws a run, and whether the line grows to hold it",
+      bytes: buildAuthoredDocx({ body: raisedTextDocument() }),
     },
     {
       id: "space-under-a-wrap",

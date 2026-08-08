@@ -256,6 +256,30 @@ describe("measureStack over text", () => {
     expect(box.heightPt).toBeCloseTo((ARIAL_12 * 276) / 240, 9);
   });
 
+  // A multiple is taken of the line the faces make and what a raise added stands on
+  // top of it: measured on 2026-08-07 by the authored `raised-text` document, where
+  // 12pt text raised six points under a line and a half came out 27.96pt rather
+  // than the 30.96 half again of the grown line would have made.
+  it("takes a multiple of the line the faces make and adds the raise to it", () => {
+    const body =
+      `<w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/></w:pPr>` +
+      `<w:r><w:t>aaaa</w:t></w:r>` +
+      `<w:r><w:rPr><w:position w:val="12"/></w:rPr><w:t>bbbb</w:t></w:r></w:p>`;
+
+    expect(firstBox(body).heightPt).toBeCloseTo(ARIAL_12 + 6 + ARIAL_12 / 2, 9);
+  });
+
+  // A line told exactly how tall to be has nowhere to grow, and the run is still
+  // drawn its six points off the baseline.
+  it("leaves a line told its own height alone when a run on it is raised", () => {
+    const body =
+      `<w:p><w:pPr><w:spacing w:line="480" w:lineRule="exact"/></w:pPr>` +
+      `<w:r><w:t>aaaa</w:t></w:r>` +
+      `<w:r><w:rPr><w:position w:val="12"/></w:rPr><w:t>bbbb</w:t></w:r></w:p>`;
+
+    expect(firstBox(body).heightPt).toBeCloseTo(24, 9);
+  });
+
   it("replaces a line's height when the rule is exact", () => {
     const box = firstBox(paragraph(`<w:spacing w:line="400" w:lineRule="exact"/>`, "aaaa"));
     expect(box.heightPt).toBeCloseTo(20, 9);
