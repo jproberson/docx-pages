@@ -2,6 +2,7 @@ import {
   bordersDocument,
   breakingDocument,
   characterSpacingDocument,
+  columnsDocument,
   compatibilityDocument,
   drawingDocument,
   keepingDocument,
@@ -397,6 +398,14 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A continuous section whose own text runs past the foot of its page",
       asks: "which section's page geometry a page a continuous section ran on to is made by",
       bytes: buildAuthoredDocx({ body: overflowingSectionDocument() }),
+    },
+    {
+      id: "columns",
+      title: "Text running in more than one column",
+      asks: "where a section's columns stand across the page, and when its text leaves one for the next",
+      refuses:
+        "nothing here lays a column out, so every line of it is drawn in a frame the whole page wide",
+      bytes: buildAuthoredDocx({ body: columnsDocument() }),
     },
     {
       id: "section-flow",

@@ -897,6 +897,101 @@ export function overflowingSectionDocument(): string {
   ].join("");
 }
 
+// Where a section's columns stand across the page, and when its text leaves one of
+// them for the next. Nothing here has ever been put to Word.
+//
+// Six questions, each a section of its own opening a page: **where the columns of an
+// equal-width section fall**, **the same of three of them**, **where a section
+// stating its own widths puts them**, **what `w:br w:type="column"` does**, **what
+// becomes of a multi-column section too short to fill its columns**, and **what
+// happens when the last column of a page is full**.
+//
+// Every section keeps a body 144pt tall: the page is letter and the bottom margin is
+// nine inches, so a column holds exactly six 24pt lines and a filled column is six
+// paragraphs rather than thirty. Every line names itself, so Word's own drawing says
+// which column each of them landed in.
+//
+// **The first and last line of every case is right-aligned**, which is the only
+// thing a drawing can say about how wide a column is: a right-aligned line starts
+// where its column ends. The first of them stands in the first column and the last
+// in whichever column the case ran on to, so the two together give the width and the
+// gap without any line having to wrap.
+export function columnsDocument(): string {
+  const LINE_PT = 24;
+  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const RIGHT = `<w:jc w:val="right"/>`;
+  const COLUMN_BREAK = `<w:r><w:br w:type="column"/></w:r>`;
+
+  const sectionProperties = (columns: string, type: string): string =>
+    `<w:sectPr>` +
+    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="12240" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
+    columns +
+    `</w:sectPr>`;
+
+  // Half an inch of gap and the whole 540pt to share, so two columns are 252pt and
+  // three are 168pt if Word takes the gaps off the text and divides what is left.
+  const TWO = `<w:cols w:num="2" w:space="720"/>`;
+  const THREE = `<w:cols w:num="3" w:space="360"/>`;
+  // Two columns Word is told the width of rather than asked to divide: a quarter of
+  // the text and the rest of it, with the same half inch between them.
+  const STATED =
+    `<w:cols w:num="2" w:equalWidth="0" w:space="720">` +
+    `<w:col w:w="3600" w:space="720"/><w:col w:w="6480"/></w:cols>`;
+  const ONE = `<w:cols w:space="720"/>`;
+
+  const line = (name: string): string => paragraph(exactly, run(name));
+  const opens = (name: string): string => paragraph(`${exactly}${RIGHT}`, run(name));
+  const closes = (name: string, columns: string, type: string): string =>
+    paragraph(`${exactly}${RIGHT}${sectionProperties(columns, type)}`, run(name));
+
+  const filling = (name: string, count: number): readonly string[] =>
+    Array.from({ length: count }, (_, at) => line(`${name}${String(at + 1)}`));
+
+  return [
+    // Nine lines in two columns: six fill the first and three stand in the second.
+    opens("a top"),
+    ...filling("a", 7),
+    closes("a foot", TWO, ""),
+    // Eighteen in three, which is the whole of the first two and most of the third.
+    opens("b top"),
+    ...filling("b", 16),
+    closes("b foot", THREE, ""),
+    // Nine again, in the two columns the section states the widths of.
+    opens("c top"),
+    ...filling("c", 7),
+    closes("c foot", STATED, ""),
+    // A column break three lines into a column with room for six, written inside a
+    // paragraph rather than between two, so that what it does to the rest of that
+    // paragraph is part of the answer.
+    opens("d top"),
+    line("d1"),
+    paragraph(exactly, run("d2") + COLUMN_BREAK + run("d3")),
+    line("d4"),
+    closes("d foot", TWO, ""),
+    // Four lines in two columns that hold twelve, closed by a continuous break into
+    // a single column. Two lines in each column say Word evened them out; four in
+    // the first say it did not, and where the single column's own text stands says
+    // what the section left behind it either way.
+    opens("e top"),
+    line("e1"),
+    line("e2"),
+    closes("e foot", TWO, ""),
+    line("e under"),
+    closes("e last", ONE, "continuous"),
+    // Fourteen lines in two columns that hold twelve, so the last two have nowhere
+    // on the page to go.
+    opens("f top"),
+    ...filling("f", 12),
+    closes("f foot", TWO, ""),
+    // And the body's own section, which is one column and the page every authored
+    // document keeps, so a line drawn there is one no case reached.
+    line("z a"),
+    line("z b"),
+  ].join("");
+}
+
 // Whether `w:keepNext` moves a paragraph onto the page its next one landed on,
 // and how far back a run of them pulls.
 //
