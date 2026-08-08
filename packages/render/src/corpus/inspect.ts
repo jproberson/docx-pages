@@ -51,6 +51,9 @@ type Reading = {
   // whose text is all in boxes reads as an empty page otherwise.
   readonly inABox: boolean;
   readonly drawn: TextPlacement | null;
+  // Where Word drew the same text when it drew none of it on this page, which for a
+  // document Word broke into more pages than this one says so at a glance.
+  readonly drawnOnPage: number | null;
   readonly off: number | null;
 };
 
@@ -84,16 +87,17 @@ function linesOn(
         .trim();
       if (text === "") continue;
 
-      const near =
-        drawn.find(
-          (item) => item.pageIndex === page.index && item.text.trim().startsWith(text.slice(0, 12)),
-        ) ?? null;
+      const spells = (item: TextPlacement): boolean =>
+        item.text.trim().startsWith(text.slice(0, 12));
+      const near = drawn.find((item) => item.pageIndex === page.index && spells(item)) ?? null;
+      const elsewhere = near !== null ? null : (drawn.find(spells)?.pageIndex ?? null);
       readings.push({
         leftPt: line.leftPt,
         baselinePt: line.baselinePt,
         characters: text.length,
         inABox: !bodyBoxes.has(box),
         drawn: near,
+        drawnOnPage: elsewhere === null ? null : elsewhere + 1,
         off:
           near === null
             ? null
@@ -188,9 +192,11 @@ async function main(): Promise<void> {
     process.stdout.write("  ours (left, baseline, chars, box)  |  Word's, by the text\n");
     for (const line of readings[at] ?? []) {
       process.stdout.write(
-        `  ${line.leftPt.toFixed(1).padStart(7)} ${line.baselinePt.toFixed(1).padStart(7)} ${String(line.characters).padStart(4)}ch  |  ` +
+        `  ${line.leftPt.toFixed(1).padStart(7)} ${line.baselinePt.toFixed(1).padStart(7)} ${String(line.characters).padStart(4)}ch ${line.inABox ? "box" : "   "}  |  ` +
           (line.drawn === null
-            ? "not found"
+            ? line.drawnOnPage === null
+              ? "not found"
+              : `Word drew it on page ${String(line.drawnOnPage)}`
             : `${line.drawn.leftPt.toFixed(1).padStart(7)} ${line.drawn.baselinePt.toFixed(1).padStart(7)}   dx ${(line.leftPt - line.drawn.leftPt).toFixed(1)}  dy ${(line.baselinePt - line.drawn.baselinePt).toFixed(1)}`) +
           "\n",
       );
