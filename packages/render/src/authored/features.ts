@@ -1157,7 +1157,15 @@ export function statedRowHeightsDocument(): string {
     // stated height is a floor rather than the answer.
     block({ name: "g", heightPt: 10, rule: "atLeast", eighths: 48, marginTwips: 100 }),
     // And a height stated exactly, which is a row that cannot grow for anything.
+    // Word draws this one a margin taller than the number stated, so the three under
+    // it take the margin and the line away one at a time to say which of them it is.
     block({ name: "h", heightPt: ASKED_PT, rule: "exact", eighths: 48, marginTwips: 100 }),
+    // Exact with a margin and no line at all.
+    block({ name: "i", heightPt: ASKED_PT, rule: "exact", eighths: 0, marginTwips: 100 }),
+    // Exact with a line and no margin.
+    block({ name: "j", heightPt: ASKED_PT, rule: "exact", eighths: 48, marginTwips: 0 }),
+    // And exact with neither, which is the number stated and nothing else.
+    block({ name: "k", heightPt: ASKED_PT, rule: "exact", eighths: 0, marginTwips: 0 }),
     // A table is the last thing in the body, which Word will not have.
     EMPTY,
   ].join("");

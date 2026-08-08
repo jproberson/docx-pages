@@ -98,12 +98,11 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // cannot see it either, since it answers nought for the left of any line an object
   // narrowed, so only this catches it.
   "objects-past-the-foot": { lines: 54, runs: 54, numbers: 0, placed: 53, runsPlaced: 53 },
-  // Eighty lines: eight cases of a marker, four rows of two cells and a line under
-  // the table. The seven left over are the rows of the case stating an exact height
-  // and the line beneath it, which Word draws a margin taller than the number stated
-  // and nothing here has asked what that margin is measured from. Every line of the
-  // other seven cases lands where Word drew it.
-  "stated-row-heights": { lines: 80, runs: 80, numbers: 0, placed: 73 },
+  // Every line of all eleven cases: a marker, four rows of two cells and a line
+  // under the table. Word's own pdf is the oracle this document is read by, since
+  // its report puts the last row of four of the cases 0.55 to 0.7pt below where its
+  // own drawing has it.
+  "stated-row-heights": { lines: 110, runs: 110, numbers: 0 },
   // Eighteen lines out of twenty two paragraphs: the four closing a section with
   // nothing in them draw no ink at all, which is the whole of what the document is
   // asking about. Every drawn line of it lands where Word drew it, which is worth

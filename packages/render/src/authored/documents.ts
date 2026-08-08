@@ -431,14 +431,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "stated-row-heights",
       title: "A row asking to stand taller than its own text",
       asks: "whether the line between two rows takes room on top of the height they each asked for",
-      // Ninety three of the 113. Eleven are the case stating an exact height, which
-      // Word draws a margin taller than the number stated: the only one of the eight
-      // this project does not answer, and the only thing here that document asks and
-      // nothing has measured. The other nine are Word's report alone, which puts the
-      // last row of the unlined case 0.55pt below its own drawing of it and two rows
-      // of the case lined at a point 0.6 below theirs. Word's own pdf agrees with
-      // every line of all seven cases that were built.
-      paragraphsPlaced: 93,
+      // A hundred and forty of the 155. The fifteen are Word's report alone, which
+      // puts the last row of four of the eleven cases 0.55 to 0.7pt below its own
+      // drawing of the same row and answers from a left the text column never
+      // reaches. Word's own pdf puts all 110 drawn lines where this project puts
+      // them, which is the oracle a height is read by here.
+      paragraphsPlaced: 140,
       bytes: buildAuthoredDocx({ body: statedRowHeightsDocument() }),
     },
     {

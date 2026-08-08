@@ -548,8 +548,10 @@ function measureRow(
   const measured: MeasuredCell[] = [];
   const topMarginPt =
     rowMarginPt(row, insets, "topTwips") + halfOf(borders.map((of) => of.agreed.top));
-  const bottomMarginPt =
-    rowMarginPt(row, insets, "bottomTwips") + halfOf(borders.map((of) => of.agreed.bottom));
+  // The cell's own margin at the foot, kept apart from the half of the line cleared
+  // after it, because a row told exactly how tall to be counts one and not the other.
+  const bottomCellMarginPt = rowMarginPt(row, insets, "bottomTwips");
+  const bottomMarginPt = bottomCellMarginPt + halfOf(borders.map((of) => of.agreed.bottom));
   let contentHeightPt = 0;
   let leftPt = frame.leftPt;
 
@@ -588,7 +590,10 @@ function measureRow(
   }
 
   const heldPt = topMarginPt + contentHeightPt + bottomMarginPt;
-  const heightPt = rowHeightPt(row, contentHeightPt, topMarginPt + bottomMarginPt);
+  const heightPt = rowHeightPt(row, contentHeightPt, {
+    marginsPt: topMarginPt + bottomMarginPt,
+    bottomCellMarginPt,
+  });
   // A row told exactly how tall to be leaves its cells whatever room is left over
   // once it has held them off its walls, and Word draws what does not fit anyway.
   const roomPt = Math.max(0, heightPt - topMarginPt - bottomMarginPt);
@@ -650,14 +655,27 @@ function rowMarginPt(row: TableRow, insets: TableInsets, side: "topTwips" | "bot
 // the larger of the stated height and the whole room the row held cost a real
 // three page document a fraction of a point at every row boundary in it.
 //
-// A row saying it is exact is the whole of the row however much its cells hold,
-// which is what was measured for a torn row and is not what that document draws:
-// Word gave such a row the stated height and one margin on top of it, and what that
-// margin is measured from has not been asked.
-function rowHeightPt(row: TableRow, contentHeightPt: number, marginsPt: number): number {
-  if (row.height === null) return marginsPt + contentHeightPt;
+// **A row saying it is exact is the stated height and the cell's own margin at the
+// foot, and the line between two rows takes no room in it at all.** The same document
+// says so over four cases: 60pt asked for came out 65.04 both with a 6pt line and
+// without one, so long as the cells were held off their walls by 5.04; and 60pt
+// exactly, line or no line, wherever they were held off by nothing.
+//
+// Every margin in that document is the same at the top as at the foot, so which of
+// the two it is comes from the `tables` document instead: one row there is told to be
+// 14.4pt with a cell holding its text 21.6pt off the top wall and nothing off the
+// bottom, and Word draws that row at 14.4. So the stated height covers the top margin
+// and the text under it, and only the foot is cleared after.
+function rowHeightPt(
+  row: TableRow,
+  contentHeightPt: number,
+  margins: { readonly marginsPt: number; readonly bottomCellMarginPt: number },
+): number {
+  if (row.height === null) return margins.marginsPt + contentHeightPt;
   const askedPt = twipsToPoints(row.height.twips);
-  return row.height.exact ? askedPt : marginsPt + Math.max(contentHeightPt, askedPt);
+  return row.height.exact
+    ? margins.bottomCellMarginPt + askedPt
+    : margins.marginsPt + Math.max(contentHeightPt, askedPt);
 }
 
 // **A cell that states no width of its own is as wide as the column it stands in.**

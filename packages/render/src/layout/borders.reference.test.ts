@@ -132,10 +132,6 @@ const AGREED: Readonly<Record<string, Agreed>> = {
   // as a stroked zigzag rather than as a filled rectangle: nothing of one reaches
   // this comparison at all.
   "authored-borders": { lines: 124, fills: 7 },
-  // Every line but the fourteen round the case stating an exact height, whose rows
-  // Word draws a margin taller than the number stated. What that margin is measured
-  // from is the one thing that document asks and nothing has measured.
-  "authored-stated-row-heights": { lines: 178, fills: 0 },
 };
 
 type Agreement = {
