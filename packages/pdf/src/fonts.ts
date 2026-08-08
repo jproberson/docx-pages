@@ -45,22 +45,25 @@ const scaled = (value: number, metrics: FontMetrics): number =>
 
 const normalise = (name: string): string => name.trim().toLowerCase();
 
-type Wanted = {
+// A face as something asking to be drawn names it. The same three things a
+// document states about a run and a metafile states about the text it records, so
+// both ask here in the one shape.
+export type PdfFaceRequest = {
   readonly name: string;
   readonly bold: boolean;
   readonly italic: boolean;
 };
 
-export const faceOf = (mark: ParagraphMark): Wanted => ({
+export const faceOf = (mark: ParagraphMark): PdfFaceRequest => ({
   name: mark.font.kind === "named" ? mark.font.name : "",
   bold: mark.bold,
   italic: mark.italic,
 });
 
-const keyOf = (want: Wanted): string =>
+const keyOf = (want: PdfFaceRequest): string =>
   `${normalise(want.name)}|${want.bold ? "b" : ""}${want.italic ? "i" : ""}`;
 
-const supplies = (font: PdfFont, want: Wanted): boolean =>
+const supplies = (font: PdfFont, want: PdfFaceRequest): boolean =>
   normalise(font.name) === normalise(want.name) &&
   (font.bold ?? false) === want.bold &&
   (font.italic ?? false) === want.italic;
@@ -78,10 +81,10 @@ export type PdfFace = {
 };
 
 export type PdfFonts = {
-  // The face a run is drawn in. **Refuses the document** where nothing supplies
-  // it: there is no stand-in here, and drawing a page in the wrong face is the one
-  // thing this project will not do quietly.
-  readonly faceFor: (mark: ParagraphMark) => PdfFace;
+  // The face something is drawn in. **Refuses the document** where nothing
+  // supplies it: there is no stand-in here, and drawing a page in the wrong face
+  // is the one thing this project will not do quietly.
+  readonly faceFor: (want: PdfFaceRequest) => PdfFace;
   // The `/Font` resource dictionary, once every page has been written and it is
   // settled what each face was asked to draw.
   readonly resources: (objects: PdfObjects) => PdfValue;
@@ -122,8 +125,7 @@ function openFace(font: PdfFont, resource: string): Used {
 export function pdfFonts(fonts: readonly PdfFont[]): PdfFonts {
   const used = new Map<string, Used>();
 
-  const faceFor = (mark: ParagraphMark): PdfFace => {
-    const want = faceOf(mark);
+  const faceFor = (want: PdfFaceRequest): PdfFace => {
     const key = keyOf(want);
 
     let face = used.get(key);

@@ -2,6 +2,7 @@ import type { LaidOutDocument, MetricsResolver } from "@docx-pages/core";
 
 import { contentOf } from "./content.js";
 import { pdfFonts } from "./fonts.js";
+import { pdfImages } from "./images.js";
 import {
   pdfArray,
   pdfDictionary,
@@ -85,16 +86,24 @@ const NOTHING_STATED = (entries: PdfEntries): boolean =>
 export function writePdf(layout: LaidOutDocument, options: WritePdfOptions): Uint8Array {
   const objects = pdfObjects();
   const fonts = pdfFonts(options.fonts);
+  const images = pdfImages({
+    imageBytes: options.imageBytes,
+    metricsFor: options.metricsFor,
+    fonts,
+    objects,
+  });
 
   // The tree is reserved before the pages it holds, since a page names it and it
   // names every page: one of the two has to be referred to before it is written.
   const tree = objects.reserve();
 
   // Written before the resources, because writing a page is what settles which
-  // faces were drawn in and what each of them was asked to draw.
+  // faces were drawn in, what each of them was asked to draw, and which pictures
+  // were reached for at all.
   const pages = layout.pages.map((page) => {
     const drawn = contentOf(layout, page, {
       fonts,
+      images,
       aliasSymbolFaces: options.aliasSymbolFaces ?? null,
     });
     const stream = objects.add(pdfStream({}, drawn.bytes));
@@ -117,9 +126,13 @@ export function writePdf(layout: LaidOutDocument, options: WritePdfOptions): Uin
       Type: pdfName("Pages"),
       Kids: pdfArray(pages),
       Count: pdfNumber(pages.length),
-      // Inherited by every page under it, which is what lets one set of faces
-      // answer for the whole document.
-      Resources: pdfDictionary({ Font: fonts.resources(objects) }),
+      // Inherited by every page under it, which is what lets one set of faces and
+      // one set of pictures answer for the whole document: a logo on every page is
+      // written once and named from each.
+      Resources: pdfDictionary({
+        Font: fonts.resources(objects),
+        XObject: images.resources() ?? undefined,
+      }),
     }),
   );
 

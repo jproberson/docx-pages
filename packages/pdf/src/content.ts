@@ -10,6 +10,9 @@ import {
 import { formatPdfNumber } from "./objects.js";
 import { pdfPageOf, type PdfPage } from "./coordinates.js";
 import type { PdfFonts } from "./fonts.js";
+import type { PdfImages } from "./images.js";
+import { paintedObject, type ObjectDrawable } from "./objects-paint.js";
+import { paintLayer } from "./paint.js";
 import { textOfBoxes, type TextOptions } from "./text.js";
 
 // A page's drawing, as the operators a pdf writes it in.
@@ -53,6 +56,9 @@ export type Content = {
   readonly line: (fromXPt: number, fromYPt: number, toXPt: number, toYPt: number) => void;
   readonly fill: () => void;
   readonly stroke: () => void;
+  // Both at once, which a rectangle asking for a colour behind it and a line round
+  // it takes rather than laying the path down twice.
+  readonly fillAndStroke: () => void;
   readonly clip: () => void;
   readonly transform: (matrix: readonly number[]) => void;
   readonly drawObject: (resource: string) => void;
@@ -61,6 +67,10 @@ export type Content = {
   readonly font: (resource: string, sizePt: number) => void;
   readonly characterSpacing: (spacingPt: number) => void;
   readonly textPosition: (xPt: number, yPt: number) => void;
+  // Where a run stands and which way up it is. A metafile plays under a flipped
+  // transform, since its own units count down the page, and text drawn under one
+  // would come out mirrored without a flip of its own here to undo it.
+  readonly textMatrix: (matrix: readonly number[]) => void;
   readonly showGlyphs: (glyphs: Uint8Array) => void;
   readonly bytes: () => Uint8Array;
 };
@@ -136,6 +146,9 @@ export function content(): Content {
     stroke: () => {
       write("S");
     },
+    fillAndStroke: () => {
+      write("B");
+    },
     // Cuts everything drawn after it to the path just laid down. `n` ends the path
     // without drawing it, which is what makes the rectangle a window rather than a
     // line round one.
@@ -171,6 +184,9 @@ export function content(): Content {
     textPosition: (xPt, yPt) => {
       write(`1 0 0 1 ${numbers([xPt, yPt])} Tm`);
     },
+    textMatrix: (matrix) => {
+      write(`${numbers(matrix)} Tm`);
+    },
     showGlyphs: (glyphs) => {
       let hex = "";
       for (const byte of glyphs) hex += byte.toString(16).padStart(2, "0");
@@ -187,8 +203,34 @@ export type PageContent = {
 
 export type ContentOptions = {
   readonly fonts: PdfFonts;
+  readonly images: PdfImages;
   readonly aliasSymbolFaces: ReadonlySet<string> | null;
 };
+
+// A picture is drawn over whatever fills its frame and under its own outline, so
+// the two halves of its paint go either side of the bitmap. A picture that could
+// not be drawn still gets both, which is what the frame of an unresolved one is.
+function drawObject(out: Content, page: PdfPage, images: PdfImages, at: ObjectDrawable): void {
+  const { content: what } = at;
+
+  switch (what.kind) {
+    case "picture":
+      paintedObject(out, page, at, { ...what.paint, outline: null });
+      images.draw(out, page, at, what.part, what.crop);
+      paintedObject(out, page, at, { ...what.paint, fillColor: null });
+      return;
+    case "text-box":
+    case "shape":
+      paintedObject(out, page, at, what.paint);
+      return;
+    // A picture whose relationship names no part in the package, and a drawing of
+    // a kind nothing here reads. Both draw nothing; the viewer outlines them when
+    // it is asked to, and a file being written has nobody to show an outline to.
+    case "missing-picture":
+    case "unknown":
+      return;
+  }
+}
 
 /**
  * Everything one page draws, as a single content stream.
@@ -234,7 +276,10 @@ export function contentOf(
         break;
       }
       case "paint":
+        paintLayer(out, pdfPage, drawable.cells, drawable.paragraphs);
+        break;
       case "object":
+        drawObject(out, pdfPage, options.images, drawable);
         break;
     }
   }

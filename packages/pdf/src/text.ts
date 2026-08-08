@@ -7,7 +7,7 @@ import {
 } from "@docx-pages/core";
 
 import { upFromTop, type PdfPage } from "./coordinates.js";
-import type { PdfFonts } from "./fonts.js";
+import { faceOf, type PdfFonts } from "./fonts.js";
 import type { Content } from "./content.js";
 
 // The text-showing half of a page, which mirrors the viewer's `textLayer` and
@@ -57,7 +57,7 @@ function shownRun(
 ): void {
   if (text === "") return;
 
-  const face = options.fonts.faceFor(mark);
+  const face = options.fonts.faceFor(faceOf(mark));
   const glyphs = face.glyphsFor(shownText(mark, text, options.aliasSymbolFaces));
 
   out.fillColor(mark.color ?? DEFAULT_COLOR);

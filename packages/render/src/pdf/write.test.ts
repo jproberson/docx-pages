@@ -7,6 +7,7 @@ import {
   layOutDocument,
   lookupFontMetrics,
   openDocx,
+  paintOfParagraph,
   readFontFile,
   type LaidOutDocument,
   type MetricsResolver,
@@ -15,7 +16,15 @@ import {
 import { buildDocx, wordDocument, WORDPROCESSING_NS } from "@docx-pages/core/testing";
 import { writePdf, type PdfFont } from "@docx-pages/pdf";
 
+import { readFillPlacements } from "./fills.js";
+import { readImagePlacements } from "./placements.js";
 import { readTextPlacements } from "./text.js";
+
+// The namespaces a drawing is written through, which `wordDocument` does not
+// declare for us.
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
 // What the writer produces, read back through the very reader this project holds
 // Word's own pdf to. Layout says where a line goes; the file is written; the file
@@ -206,5 +215,120 @@ describe("a face nothing supplies", () => {
     expect(() => writePdf(layout, { fonts: [], imageBytes: () => undefined, metricsFor })).toThrow(
       /nothing supplies it/,
     );
+  });
+});
+
+// A 4 by 4 grayscale jpeg, which is a real one rather than a shape a reader would
+// have to be lenient about: the bytes are passed straight into the file and the
+// reader decodes them as it would any other picture.
+const TINY_JPEG = Uint8Array.from(
+  Buffer.from(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAFA3PEY8MlBGQUZaVVBfeMiCeG5uePWvuZHI////////////////////////" +
+      "////////////////////////////wAALCAAEAAQBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAAP/EABQQAQAAAAAAAAAA" +
+      "AAAAAAAAAAD/2gAIAQEAAD8AP//Z",
+    "base64",
+  ),
+);
+
+const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+describe("what a page paints behind its text", () => {
+  // A paragraph's own fill is a rectangle, and a rectangle is where the flip is
+  // easiest to get wrong: applied to its top edge rather than its bottom, it lands
+  // its own height away from where it belongs.
+  it("fills a paragraph where the geometry says, the right way up", async () => {
+    const shaded =
+      `<w:p><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="C00000"/></w:pPr>` +
+      `${run("shaded")}</w:p>`;
+    const layout = laidOut(shaded);
+    const fills = await readFillPlacements(written(layout));
+
+    const box = layout.pages[0]?.body[0];
+    const paint = box?.paint;
+    if (box === undefined || paint === null || paint === undefined) {
+      throw new Error("the paragraph states a fill and the layout carries none");
+    }
+
+    const wanted = paintOfParagraph(paint, box.lines[0]?.topPt ?? 0, box.contentBottomPt).fills[0];
+    if (wanted === undefined) throw new Error("the geometry paints no fill");
+
+    expect(
+      fills.map((fill) => ({
+        leftPt: round(fill.leftPt),
+        topPt: round(fill.topPt),
+        widthPt: round(fill.widthPt),
+        heightPt: round(fill.heightPt),
+      })),
+    ).toContainEqual({
+      leftPt: round(wanted.leftPt),
+      topPt: round(wanted.topPt),
+      widthPt: round(wanted.widthPt),
+      heightPt: round(wanted.heightPt),
+    });
+  });
+});
+
+describe("a picture", () => {
+  const drawing = (widthEmu: number, heightEmu: number): string =>
+    `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">` +
+    `<wp:extent cx="${String(widthEmu)}" cy="${String(heightEmu)}"/>` +
+    `<wp:docPr id="1" name="Picture 1"/><a:graphic xmlns:a="${A_NS}">` +
+    `<a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">` +
+    `<pic:blipFill><a:blip xmlns:r="${R_NS}" r:embed="rId9"/></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:ext cx="${String(widthEmu)}" cy="${String(heightEmu)}"/></a:xfrm>` +
+    `</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+
+  const withPicture = (widthEmu: number, heightEmu: number) => {
+    const bytes = buildDocx({
+      "word/document.xml": wordDocument(drawing(widthEmu, heightEmu) + section()),
+      "word/styles.xml": STYLES,
+      "word/media/image1.jpeg": TINY_JPEG,
+      "word/_rels/document.xml.rels":
+        `<?xml version="1.0"?><Relationships ` +
+        `xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId9" Target="media/image1.jpeg" Type="${R_NS}/image"/>` +
+        `</Relationships>`,
+    });
+    const pkg = openDocx(bytes);
+    const layout = layOutDocument(pkg, metricsFor);
+    if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
+    return { pkg, layout };
+  };
+
+  // A jpeg goes into the file as it stands, so what the reader finds is the very
+  // bytes the document held, drawn into the rectangle layout placed it in.
+  it("is drawn in the rectangle layout placed it in", async () => {
+    const inches = 914400;
+    const { pkg, layout } = withPicture(inches * 2, inches);
+    const bytes = writePdf(layout, {
+      fonts,
+      imageBytes: (part) => pkg.parts.get(part),
+      metricsFor,
+    });
+
+    const placements = await readImagePlacements(bytes);
+    const placed = layout.pages[0]?.inlines[0];
+
+    expect(placements).toHaveLength(1);
+    expect({
+      leftPt: round(placements[0]?.rect.leftPt ?? 0),
+      topPt: round(placements[0]?.rect.topPt ?? 0),
+      widthPt: round(placements[0]?.rect.widthPt ?? 0),
+      heightPt: round(placements[0]?.rect.heightPt ?? 0),
+    }).toStrictEqual({
+      leftPt: round(placed?.leftPt ?? 0),
+      topPt: round(placed?.topPt ?? 0),
+      widthPt: round(placed?.widthPt ?? 0),
+      heightPt: round(placed?.heightPt ?? 0),
+    });
+  });
+
+  // Bytes that are not there leave the frame empty rather than refusing the page,
+  // which is what the viewer does with a picture it cannot resolve.
+  it("is left undrawn where nothing answers for its bytes", async () => {
+    const { layout } = withPicture(914400, 914400);
+    const bytes = writePdf(layout, { fonts, imageBytes: () => undefined, metricsFor });
+
+    expect(await readImagePlacements(bytes)).toStrictEqual([]);
   });
 });
