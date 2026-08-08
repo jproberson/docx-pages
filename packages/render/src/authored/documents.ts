@@ -8,6 +8,7 @@ import {
   linedRowsDocument,
   numberingDocument,
   objectsPastTheFootDocument,
+  overflowingSectionDocument,
   sectionCloserDocument,
   sectionFlowDocument,
   sectionPagesDocument,
@@ -391,6 +392,13 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // puts them.
       paragraphsPlaced: 18,
       bytes: buildAuthoredDocx({ body: sectionCloserDocument() }),
+    },
+    {
+      id: "overflowing-section",
+      title: "A continuous section whose own text runs past the foot of its page",
+      asks: "which section's page geometry a page a continuous section ran on to is made by",
+      refuses: "nothing here reads a section but the last, so the pages are the last one's",
+      bytes: buildAuthoredDocx({ body: overflowingSectionDocument() }),
     },
     {
       id: "section-flow",

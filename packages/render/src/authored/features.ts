@@ -843,6 +843,60 @@ export function sectionFlowDocument(): string {
   ].join("");
 }
 
+// Which page a continuous section's own text is drawn on when it runs past the foot
+// of the page it opened on: the page the run opened with, or the section's own.
+//
+// A continuous section opens no page, so its text starts under the line above it on
+// whatever page that was, and the page it started on was made by an earlier section.
+// When its text runs on there is a page nothing has stated the geometry of, and the
+// two readings differ by the whole of the margins. This is the one thing about a
+// section nothing had put to Word, and the page geometry has to move off the document
+// and onto the page either way, so it decides what a page is made of before anything
+// is built on it.
+//
+// The two sections are three inches apart in their left margins and an inch and a
+// half apart at the top, so where a line is drawn says which of them governed the
+// page it stands on. Read off Word's own pdf: the report gives a paragraph's position
+// from its own text boundary, which is the same number whatever the margin is.
+export function overflowingSectionDocument(): string {
+  const LINE_PT = 24;
+
+  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+
+  const sectionProperties = (topTwips: number, leftTwips: number, type: string): string =>
+    `<w:sectPr>` +
+    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="${String(topTwips)}" w:right="720" w:bottom="720" w:left="${String(leftTwips)}" w:header="720" w:footer="720" w:gutter="0"/>` +
+    `<w:cols w:space="720"/>` +
+    `</w:sectPr>`;
+
+  const line = (name: string): string => paragraph(exactly, run(name));
+
+  const closes = (name: string, topTwips: number, leftTwips: number, type: string): string =>
+    paragraph(`${exactly}${sectionProperties(topTwips, leftTwips, type)}`, run(name));
+
+  // Enough to fill the page it opens on twice over, so there are two pages of it
+  // beyond the one the run began with and a page that ran on from a page that ran on
+  // is read as well as the first.
+  const RUNS_ON = 60;
+
+  return [
+    // An inch across and half an inch down, which is where the run opens.
+    line("one a"),
+    closes("one b", 720, 1440, ""),
+    // Four inches across and two inches down, and continuous, so this section opens
+    // no page of its own and every page its text reaches is one it did not make.
+    line("two a"),
+    ...Array.from({ length: RUNS_ON }, (_, at) => line(`two ${String(at + 1)}`)),
+    closes("two z", 2880, 5760, "continuous"),
+    // And the body's own, which every authored document keeps half an inch down and
+    // half an inch across, so a line drawn there is one neither section reached.
+    line("three a"),
+    line("three b"),
+  ].join("");
+}
+
 // Whether `w:keepNext` moves a paragraph onto the page its next one landed on,
 // and how far back a run of them pulls.
 //
