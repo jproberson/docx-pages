@@ -61,12 +61,13 @@ export type {
   SuppliedFace,
 } from "./layout/font-metrics.js";
 
-export { readFontFile, readFontMetrics } from "./layout/font-file.js";
+export { readFontFile, readFontMetrics, readGlyphIndex } from "./layout/font-file.js";
 export type {
   FontFileFormat,
   ReadFontFileResult,
   ReadFontMetricsResult,
 } from "./layout/font-file.js";
+export type { CodeToGlyph } from "./layout/glyphs.js";
 
 export type {
   Block,

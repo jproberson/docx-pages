@@ -2,7 +2,7 @@ import { unzlibSync } from "fflate";
 
 import { DocxPagesError } from "../errors.js";
 import type { AdvanceTable, FontMetrics } from "./font-metrics.js";
-import { readAdvanceTable } from "./glyphs.js";
+import { readAdvanceTable, readGlyphIndex as glyphIndexIn, type CodeToGlyph } from "./glyphs.js";
 
 export type FontFileFormat = "sfnt" | "woff";
 
@@ -216,14 +216,14 @@ function readsSansSerif(tables: ReadonlyMap<string, Uint8Array>): boolean {
   );
 }
 
-/**
- * Reads what laying text out in a face needs: its vertical metrics, the advance of
- * every glyph it maps, and whether it draws its letters without serifs.
- *
- * `faceName` picks one face out of a collection, which holds several; without one
- * the face the file is named for answers, and a file holding one face ignores it.
- */
-export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFileResult {
+type OpenedFont = {
+  readonly format: FontFileFormat;
+  readonly tables: ReadonlyMap<string, Uint8Array>;
+};
+
+// What every reader below starts from: the format the file is in, and the tables
+// under whichever face of it was asked for.
+function openFontFile(bytes: Uint8Array, faceName: string | undefined): OpenedFont {
   if (bytes.byteLength < 12)
     throw unreadable("the file is too short to be a font", bytes.byteLength);
 
@@ -246,10 +246,51 @@ export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFile
   }
 
   const format: FontFileFormat = signature === "wOFF" ? "woff" : "sfnt";
-  const tables =
-    format === "woff"
-      ? readWoffTables(bytes)
-      : readSfntTables(bytes, isCollection ? faceOfCollection(bytes, faceName) : 0);
+  return {
+    format,
+    tables:
+      format === "woff"
+        ? readWoffTables(bytes)
+        : readSfntTables(bytes, isCollection ? faceOfCollection(bytes, faceName) : 0),
+  };
+}
+
+/**
+ * Which glyph a face draws each character with, read out of the same cmap the
+ * advances are read through, so that a character measured at one glyph's width is
+ * never written as another.
+ *
+ * A writer embedding the face needs this and layout does not: a font embedded
+ * under Identity-H is addressed by glyph, where the document is written in
+ * characters. Unmapped characters answer 0, which is .notdef and is the face's
+ * own answer for one it cannot draw.
+ *
+ * A face whose cmap cannot be read is **refused rather than written wrongly**:
+ * there is no glyph number to fall back on that would draw the right letter.
+ */
+export function readGlyphIndex(bytes: Uint8Array, faceName?: string): CodeToGlyph {
+  const { tables } = openFontFile(bytes, faceName);
+  const index = glyphIndexIn(tables);
+  if (index.kind === "unavailable") {
+    throw new DocxPagesError({
+      code: "font-glyphs-unreadable",
+      message: `the font's character map could not be read: ${index.reason}`,
+      at: "core/layout/font-file.readGlyphIndex",
+      context: { reason: index.reason, presentTables: [...tables.keys()].sort() },
+    });
+  }
+  return index.glyphFor;
+}
+
+/**
+ * Reads what laying text out in a face needs: its vertical metrics, the advance of
+ * every glyph it maps, and whether it draws its letters without serifs.
+ *
+ * `faceName` picks one face out of a collection, which holds several; without one
+ * the face the file is named for answers, and a file holding one face ignores it.
+ */
+export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFileResult {
+  const { format, tables } = openFontFile(bytes, faceName);
 
   const head = requireTable(tables, HEAD, 20);
   const hhea = requireTable(tables, HHEA, 10);

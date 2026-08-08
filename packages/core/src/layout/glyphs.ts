@@ -1,9 +1,20 @@
-import type { AdvanceTable } from "./font-metrics.js";
+import type { AdvanceTable, AdvancesUnavailable } from "./font-metrics.js";
 
 const CMAP = "cmap";
 const HMTX = "hmtx";
 
-type CodeToGlyph = (codePoint: number) => number;
+export type CodeToGlyph = (codePoint: number) => number;
+
+// Which glyph a face draws a character with, and whether the face is a symbol one,
+// which is what decides its answer for a character it has no glyph for.
+//
+// Layout reads this to reach the character's advance; a writer embedding the face
+// reads the number itself, since an Identity-H encoding writes glyphs where the
+// document writes characters. One cmap, read once, so the two cannot disagree
+// about which glyph a character is.
+export type GlyphIndex =
+  | { readonly kind: "glyphs"; readonly glyphFor: CodeToGlyph; readonly symbol: boolean }
+  | { readonly kind: "unavailable"; readonly reason: AdvancesUnavailable };
 
 type CharacterMap =
   | { readonly kind: "map"; readonly glyphFor: CodeToGlyph }
@@ -189,15 +200,9 @@ function parseSubtable(table: Uint8Array): CharacterMap {
   return { kind: "unsupported" };
 }
 
-export function readAdvanceTable(
-  tables: ReadonlyMap<string, Uint8Array>,
-  numberOfHMetrics: number,
-): AdvanceTable {
+export function readGlyphIndex(tables: ReadonlyMap<string, Uint8Array>): GlyphIndex {
   const cmap = tables.get(CMAP);
   if (cmap === undefined) return { kind: "unavailable", reason: "cmap-missing" };
-
-  const hmtx = tables.get(HMTX);
-  if (hmtx === undefined) return { kind: "unavailable", reason: "hmtx-missing" };
 
   const subtable = selectSubtable(cmap);
   if (subtable === null) return { kind: "unavailable", reason: "cmap-unsupported" };
@@ -205,9 +210,27 @@ export function readAdvanceTable(
   const parsed = parseSubtable(subtable.bytes);
   if (parsed.kind === "unsupported") return { kind: "unavailable", reason: "cmap-unsupported" };
   if (parsed.kind === "malformed") return { kind: "unavailable", reason: "cmap-malformed" };
-  const glyphFor = throughThinSpace(
-    subtable.symbol ? throughSymbolPage(parsed.glyphFor) : parsed.glyphFor,
-  );
+
+  return {
+    kind: "glyphs",
+    symbol: subtable.symbol,
+    glyphFor: throughThinSpace(
+      subtable.symbol ? throughSymbolPage(parsed.glyphFor) : parsed.glyphFor,
+    ),
+  };
+}
+
+export function readAdvanceTable(
+  tables: ReadonlyMap<string, Uint8Array>,
+  numberOfHMetrics: number,
+): AdvanceTable {
+  const index = readGlyphIndex(tables);
+  if (index.kind === "unavailable") return index;
+
+  const hmtx = tables.get(HMTX);
+  if (hmtx === undefined) return { kind: "unavailable", reason: "hmtx-missing" };
+
+  const { glyphFor, symbol } = index;
 
   // Glyphs past the last long metric all repeat it, which is how a face gives its
   // monospaced tail a single advance.
@@ -222,7 +245,7 @@ export function readAdvanceTable(
     advanceFor: (codePoint) => {
       const glyph = glyphFor(codePoint);
       if (glyph !== 0) return advanceOf(glyph);
-      return subtable.symbol && symbolAlias(codePoint) !== null ? advanceOf(NOTDEF_GLYPH) : null;
+      return symbol && symbolAlias(codePoint) !== null ? advanceOf(NOTDEF_GLYPH) : null;
     },
     notDefAdvance: advanceOf(NOTDEF_GLYPH),
   };

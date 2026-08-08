@@ -8,8 +8,9 @@ import {
   buildWoff2,
   type FontFixture,
 } from "../testing/build-font.js";
-import { readFontFile, readFontMetrics } from "./font-file.js";
+import { readFontFile, readFontMetrics, readGlyphIndex } from "./font-file.js";
 import { lineHeightPt, type GlyphAdvances } from "./font-metrics.js";
+import type { CodeToGlyph } from "./glyphs.js";
 
 const FACE: FontFixture = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
 
@@ -309,5 +310,75 @@ describe("a narrow no-break space", () => {
 
   it("is unmapped in a face that has no thin space either", () => {
     expect(advanceOf(advancesOf({ ...FACE, advances: WIDTHS }), "\u202F")).toBeNull();
+  });
+});
+
+// The number itself, which layout never needs and a writer embedding the face
+// cannot do without: a font written under Identity-H is addressed by glyph.
+describe("readGlyphIndex", () => {
+  // `buildSfnt` numbers a fixture's glyphs from one in code point order, leaving
+  // zero to .notdef as a real face does.
+  const glyphsOf = (fixture: FontFixture): CodeToGlyph => readGlyphIndex(buildSfnt(fixture));
+
+  const glyphOf = (glyphFor: CodeToGlyph, character: string): number =>
+    glyphFor(character.codePointAt(0) ?? 0);
+
+  it("answers the glyph the face draws each character with", () => {
+    const glyphFor = glyphsOf({ ...FACE, advances: WIDTHS });
+
+    expect(glyphOf(glyphFor, " ")).toBe(1);
+    expect(glyphOf(glyphFor, "A")).toBe(2);
+    expect(glyphOf(glyphFor, "B")).toBe(3);
+  });
+
+  it("answers .notdef for a character the face does not map", () => {
+    expect(glyphOf(glyphsOf({ ...FACE, advances: WIDTHS }), "Z")).toBe(0);
+  });
+
+  it("reads a format 12 cmap, which maps past the basic plane", () => {
+    const wide: FontFixture = { ...FACE, cmapFormat: 12, advances: { A: 500, "\u{1F600}": 900 } };
+    expect(glyphOf(glyphsOf(wide), "\u{1F600}")).toBe(2);
+  });
+
+  // The same two aliases the advances are read through, so a character measured at
+  // one glyph's width is never written as another.
+  it("follows a symbol face into the page it maps its glyphs in", () => {
+    const symbol: FontFixture = { ...FACE, subtables: ["symbol"], advances: { "\uF041": 500 } };
+    expect(glyphOf(glyphsOf(symbol), "A")).toBe(1);
+  });
+
+  it("takes the face's thin space for a narrow no-break space it has no glyph for", () => {
+    const thin: FontFixture = { ...FACE, advances: { "\u2009": 205 } };
+    expect(glyphOf(glyphsOf(thin), "\u202F")).toBe(1);
+  });
+
+  it("picks one face out of a collection by name, as the metrics reader does", () => {
+    const collection = buildCollection([
+      { ...FACE, faceName: "First", advances: { A: 500 } },
+      { ...FACE, faceName: "Second", advances: { A: 500, B: 600 } },
+    ]);
+
+    expect(readGlyphIndex(collection, "Second")("B".codePointAt(0) ?? 0)).toBe(2);
+  });
+
+  // Refused rather than written wrongly: no glyph number stands in for one that
+  // could not be read, and a wrong one draws a different letter.
+  it("refuses a face whose character map cannot be read", () => {
+    const error = caught(() =>
+      readGlyphIndex(buildSfnt({ ...FACE, advances: WIDTHS, omit: "cmap" })),
+    );
+
+    expect(error.code).toBe("font-glyphs-unreadable");
+    expect(error.at).toBe("core/layout/font-file.readGlyphIndex");
+    expect(error.context["reason"]).toBe("cmap-missing");
+  });
+
+  it("refuses a face whose cmap is in a format nothing here reads", () => {
+    const error = caught(() =>
+      readGlyphIndex(buildSfnt({ ...FACE, cmapFormat: 6, advances: WIDTHS })),
+    );
+
+    expect(error.code).toBe("font-glyphs-unreadable");
+    expect(error.context["reason"]).toBe("cmap-unsupported");
   });
 });
