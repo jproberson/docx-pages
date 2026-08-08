@@ -72,6 +72,9 @@ importers:
         specifier: ^6.2.108
         version: 6.2.108
     devDependencies:
+      '@docx-pages/pdf':
+        specifier: workspace:*
+        version: link:../pdf
       '@docx-pages/viewer':
         specifier: workspace:*
         version: link:../viewer

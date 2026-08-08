@@ -1,4 +1,17 @@
-import type { MetricsResolver } from "@docx-pages/core";
+import type { LaidOutDocument, MetricsResolver } from "@docx-pages/core";
+
+import { contentOf } from "./content.js";
+import { pdfFonts } from "./fonts.js";
+import {
+  pdfArray,
+  pdfDictionary,
+  pdfName,
+  pdfNumber,
+  pdfObjects,
+  pdfStream,
+  pdfString,
+  type PdfEntries,
+} from "./objects.js";
 
 /**
  * A face handed in by bytes, named the way the document names it. The same shape
@@ -38,4 +51,86 @@ export type WritePdfOptions = {
   // playing it back asks the same resolver the layout asked.
   readonly metricsFor: MetricsResolver;
   readonly metadata?: PdfMetadata;
+  // Symbol faces the layout stood in for, by lowercased name, exactly as the
+  // viewer takes them. A run written in one holds positions in that face's own
+  // page, and drawing it as the stand-in's letters would draw the wrong ones.
+  readonly aliasSymbolFaces?: ReadonlySet<string>;
 };
+
+const infoOf = (metadata: PdfMetadata): PdfEntries => ({
+  Title: metadata.title === undefined ? undefined : pdfString(metadata.title),
+  Author: metadata.author === undefined ? undefined : pdfString(metadata.author),
+  Subject: metadata.subject === undefined ? undefined : pdfString(metadata.subject),
+  Keywords: metadata.keywords === undefined ? undefined : pdfString(metadata.keywords),
+  Creator: metadata.creator === undefined ? undefined : pdfString(metadata.creator),
+  Producer: metadata.producer === undefined ? undefined : pdfString(metadata.producer),
+});
+
+const NOTHING_STATED = (entries: PdfEntries): boolean =>
+  Object.values(entries).every((value) => value === undefined);
+
+/**
+ * Writes a laid-out document out as a pdf.
+ *
+ * Decides nothing about where anything sits. Every position here was settled by
+ * `layOutDocument` and measured against Word; this turns the one list
+ * `drawablesOf` hands back into the operators that draw it, flipped onto a pdf's
+ * own way up.
+ *
+ * The faces are the caller's to bring, and **a face the document draws in that
+ * `fonts` does not supply refuses the document** rather than being stood in for.
+ * A pdf carries the faces it draws in, and a page written in the wrong one is
+ * wrong in a way nobody watching the file being made would see.
+ */
+export function writePdf(layout: LaidOutDocument, options: WritePdfOptions): Uint8Array {
+  const objects = pdfObjects();
+  const fonts = pdfFonts(options.fonts);
+
+  // The tree is reserved before the pages it holds, since a page names it and it
+  // names every page: one of the two has to be referred to before it is written.
+  const tree = objects.reserve();
+
+  // Written before the resources, because writing a page is what settles which
+  // faces were drawn in and what each of them was asked to draw.
+  const pages = layout.pages.map((page) => {
+    const drawn = contentOf(layout, page, {
+      fonts,
+      aliasSymbolFaces: options.aliasSymbolFaces ?? null,
+    });
+    const stream = objects.add(pdfStream({}, drawn.bytes));
+
+    return objects.add(
+      pdfDictionary({
+        Type: pdfName("Page"),
+        Parent: tree,
+        // Page size is stated per section, so a document whose sections differ
+        // draws its pages at more than one size and each states its own.
+        MediaBox: pdfArray([0, 0, drawn.page.widthPt, drawn.page.heightPt].map(pdfNumber)),
+        Contents: stream,
+      }),
+    );
+  });
+
+  objects.put(
+    tree,
+    pdfDictionary({
+      Type: pdfName("Pages"),
+      Kids: pdfArray(pages),
+      Count: pdfNumber(pages.length),
+      // Inherited by every page under it, which is what lets one set of faces
+      // answer for the whole document.
+      Resources: pdfDictionary({ Font: fonts.resources(objects) }),
+    }),
+  );
+
+  const root = objects.add(pdfDictionary({ Type: pdfName("Catalog"), Pages: tree }));
+
+  // Nothing here reads a clock, so no creation date is written: a writer that
+  // touches no disk and no network should answer the same bytes on two runs of the
+  // same document.
+  const info = infoOf(options.metadata ?? {});
+  return objects.bytes({
+    root,
+    ...(NOTHING_STATED(info) ? {} : { info: objects.add(pdfDictionary(info)) }),
+  });
+}

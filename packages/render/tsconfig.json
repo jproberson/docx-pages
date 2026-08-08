@@ -9,13 +9,17 @@
     "paths": {
       "@docx-pages/core": ["../core/src/index.ts"],
       "@docx-pages/core/internal": ["../core/src/internal.ts"],
-      "@docx-pages/core/testing": ["../core/src/testing/index.ts"]
+      "@docx-pages/core/testing": ["../core/src/testing/index.ts"],
+      "@docx-pages/pdf": ["../pdf/src/index.ts"]
     }
   },
   "include": ["src"],
   "references": [
     {
       "path": "../core"
+    },
+    {
+      "path": "../pdf"
     },
     {
       "path": "../viewer"

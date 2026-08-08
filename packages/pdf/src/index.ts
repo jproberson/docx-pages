@@ -6,4 +6,8 @@
 // the page has already been settled by `@docx-pages/core`, and this package
 // decides nothing about where anything sits.
 
+export { writePdf } from "./document.js";
 export type { PdfFont, PdfMetadata, WritePdfOptions } from "./document.js";
+
+export { pdfOfDocx } from "./docx-pdf.js";
+export type { PdfOfDocxOptions } from "./docx-pdf.js";
