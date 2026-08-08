@@ -6,8 +6,8 @@ import {
   type PlacedLine,
 } from "@docx-pages/core";
 
-import { upFromTop, type PdfPage } from "./coordinates.js";
-import { faceOf, type PdfFonts } from "./fonts.js";
+import { bottomOf, upFromTop, type PdfPage } from "./coordinates.js";
+import { faceOf, type PdfFonts, type PdfUnderline } from "./fonts.js";
 import type { Content } from "./content.js";
 
 // The text-showing half of a page, which mirrors the viewer's `textLayer` and
@@ -54,6 +54,7 @@ function shownRun(
   text: string,
   leftPt: number,
   baselinePt: number,
+  widthPt: number,
 ): void {
   if (text === "") return;
 
@@ -69,6 +70,45 @@ function shownRun(
   out.textPosition(leftPt, upFromTop(options.page, baselinePt));
   out.showGlyphs(glyphs);
   out.endText();
+
+  if (mark.underline) underlined(out, options, face, mark, leftPt, baselinePt, widthPt);
+}
+
+/**
+ * The line under an underlined run.
+ *
+ * A pdf has no such thing as an underline: the line is drawn, as Word draws it,
+ * as a filled rectangle. **Where it goes is the face's own business** and not this
+ * package's. Measured on 2026-08-07 off Word's own pdf of a reference document:
+ * every underline there sat 0.1207 em below the baseline and was 0.0690 em thick,
+ * the same at three places on the page, and those are the ratios the drawn face's
+ * `post` table states rather than any constant Word carries.
+ *
+ * A face stating no `post` table gets no line, since nothing here could invent
+ * where to put one and a line in the wrong place is worse than the run being
+ * drawn without it. The README names it.
+ */
+function underlined(
+  out: Content,
+  options: TextOptions,
+  face: { readonly underlineAt: (fontSizePt: number) => PdfUnderline | null },
+  mark: ParagraphMark,
+  leftPt: number,
+  baselinePt: number,
+  widthPt: number,
+): void {
+  const underline = face.underlineAt(mark.fontSizePt);
+  if (underline === null || widthPt <= 0 || underline.thicknessPt <= 0) return;
+
+  const topPt = baselinePt + underline.belowBaselinePt;
+  out.fillColor(mark.color ?? DEFAULT_COLOR);
+  out.rectangle(
+    leftPt,
+    bottomOf(options.page, topPt, underline.thicknessPt),
+    widthPt,
+    underline.thicknessPt,
+  );
+  out.fill();
 }
 
 /**
@@ -85,6 +125,7 @@ export function lineText(out: Content, options: TextOptions, placed: PlacedLine)
       segment.text,
       placed.leftPt + segment.offsetPt,
       placed.baselinePt - segment.mark.raisePt,
+      segment.widthPt,
     );
   }
 }
@@ -92,7 +133,15 @@ export function lineText(out: Content, options: TextOptions, placed: PlacedLine)
 // A list's number is drawn out of the text flow, at the position the level's
 // hanging indent pulls the first line back to.
 export function markerText(out: Content, options: TextOptions, marker: ParagraphMarker): void {
-  shownRun(out, options, marker.mark, marker.text, marker.leftPt, marker.baselinePt);
+  shownRun(
+    out,
+    options,
+    marker.mark,
+    marker.text,
+    marker.leftPt,
+    marker.baselinePt,
+    marker.widthPt,
+  );
 }
 
 export function textOfBoxes(

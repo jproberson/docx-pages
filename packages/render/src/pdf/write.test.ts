@@ -332,3 +332,50 @@ describe("a picture", () => {
     expect(await readImagePlacements(bytes)).toStrictEqual([]);
   });
 });
+
+// Word draws an underline as a filled rectangle, where the drawn face's own `post`
+// table says to put it rather than at a place of its own. Measured on 2026-08-07
+// off Word's pdf of a reference document: three runs at 13.92pt, every underline
+// 0.1207 em below the baseline and 0.0690 em thick, which are that face's stated
+// ratios and no constant of Word's.
+describe("an underlined run", () => {
+  it("draws its line where the face says to put it", async () => {
+    const underlined = `<w:p><w:r><w:rPr><w:rFonts w:ascii="${FACE_NAME}" w:hAnsi="${FACE_NAME}"/>
+      <w:sz w:val="24"/><w:u w:val="single"/></w:rPr><w:t>linked</w:t></w:r></w:p>`;
+    const layout = laidOut(underlined);
+    const bytes = written(layout);
+
+    const line = layout.pages[0]?.body[0]?.lines[0];
+    const segment = line?.line.segments[0];
+    if (line === undefined || segment?.kind !== "text") {
+      throw new Error("the paragraph draws no underlined run");
+    }
+
+    const face = readFontFile(fonts[0]?.bytes ?? new Uint8Array());
+    const underline = face.underline;
+    if (underline === null) throw new Error("the pack face states no post table");
+
+    const em = segment.mark.fontSizePt / face.metrics.unitsPerEm;
+    const fills = await readFillPlacements(bytes);
+
+    expect(
+      fills.map((fill) => ({
+        leftPt: round(fill.leftPt),
+        topPt: round(fill.topPt),
+        widthPt: round(fill.widthPt),
+        heightPt: round(fill.heightPt),
+      })),
+    ).toStrictEqual([
+      {
+        leftPt: round(line.leftPt),
+        topPt: round(line.baselinePt + underline.position * em),
+        widthPt: round(segment.widthPt),
+        heightPt: round(underline.thickness * em),
+      },
+    ]);
+  });
+
+  it("leaves a run that asks for no underline unlined", async () => {
+    expect(await readFillPlacements(written(laidOut(paragraph(run("plain")))))).toStrictEqual([]);
+  });
+});

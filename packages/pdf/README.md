@@ -66,6 +66,9 @@ can still be selected and searched. See the gaps below on what that costs.
 ## What is drawn
 
 - Text, at the baselines layout measured, in the faces supplied.
+- Underlines, as the filled rectangle Word draws one as, where the face's own
+  `post` table says to put it. Measured on 2026-08-07 against Word's own pdf: it
+  puts the line where the drawn face states and not at a place of its own.
 - Paragraph and cell fills, and their borders: single, double, dashed and dotted.
 - Shapes and text boxes: their fill, their outline, and their own text.
 - Pictures: jpeg passed through as it stands, and metafiles played back as the
@@ -92,6 +95,9 @@ Named here rather than passed over quietly, which is the same bargain
   is not a placeholder: the paint round it is still drawn, and the picture is not.
   The viewer outlines such a frame when it is asked to; a file being written has
   nobody to show an outline to.
+- **No underline under a face stating no `post` table.** The run is drawn without
+  one rather than under a line in a place nothing measured. Every real face states
+  the table, so this is a gap in principle more than in practice.
 - **No encryption**, and so no permissions and no password.
 - **No transparency beyond a flat fill.** A soft mask, a blend mode or a partly
   transparent picture is drawn as though it were opaque.

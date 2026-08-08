@@ -382,3 +382,38 @@ describe("readGlyphIndex", () => {
     expect(error.context["reason"]).toBe("cmap-unsupported");
   });
 });
+
+// Word draws an underline where the drawn face says to rather than at a place of
+// its own, which is measured in `font-file.ts` beside the type.
+describe("where a face puts the line under its letters", () => {
+  it("reads the position and the thickness the post table states", () => {
+    const face = readFontFile(
+      buildSfnt({ ...FACE, underlinePosition: 232, underlineThickness: 134 }),
+    );
+
+    expect(face.underline).toStrictEqual({ position: 232, thickness: 134 });
+  });
+
+  // The file states the position as a distance up from the baseline, and a line
+  // under the letters is below one. Turned the right way up on the way out, so a
+  // caller adding it to a baseline goes down the page as everything else does.
+  it("answers a line below the baseline as a positive distance", () => {
+    const face = readFontFile(buildSfnt({ ...FACE, underlinePosition: 100 }));
+
+    expect(face.underline?.position).toBeGreaterThan(0);
+  });
+
+  it("reads how far the letters lean", () => {
+    expect(readFontFile(buildSfnt({ ...FACE, italicAngle: -12 })).italicAngle).toBeCloseTo(-12, 4);
+    expect(readFontFile(buildSfnt({ ...FACE, underlinePosition: 1 })).italicAngle).toBe(0);
+  });
+
+  // Nothing can be invented for a face that does not say, so a renderer needing a
+  // line is told there is no answer rather than given a made-up one.
+  it("answers nothing at all for a face stating no post table", () => {
+    const face = readFontFile(buildSfnt(FACE));
+
+    expect(face.underline).toBeNull();
+    expect(face.italicAngle).toBe(0);
+  });
+});

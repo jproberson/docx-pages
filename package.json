@@ -16,6 +16,7 @@
     "preview": "tsx --tsconfig packages/render/tsconfig.json packages/render/src/preview/write.tsx",
     "browse": "pnpm preview && tsx --tsconfig packages/render/tsconfig.json packages/render/src/preview/serve.ts",
     "check": "tsx --tsconfig packages/render/tsconfig.json packages/render/src/preview/check.tsx",
+    "pdf": "tsx --tsconfig packages/render/tsconfig.json packages/render/src/preview/emit-pdf.ts",
     "fonts": "tsx --tsconfig packages/render/tsconfig.json packages/render/src/fonts/report.ts",
     "measure": "tsx --tsconfig packages/render/tsconfig.json packages/render/src/authored/measure.ts"
   },

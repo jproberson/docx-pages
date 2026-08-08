@@ -66,6 +66,7 @@ export type {
   FontFileFormat,
   ReadFontFileResult,
   ReadFontMetricsResult,
+  UnderlineMetrics,
 } from "./layout/font-file.js";
 export type { CodeToGlyph } from "./layout/glyphs.js";
 

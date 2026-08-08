@@ -11,12 +11,32 @@ export type ReadFontMetricsResult = {
   readonly metrics: FontMetrics;
 };
 
+// Where the face puts the line under its own letters, in the face's own units.
+// `position` is the top of the line measured down from the baseline, so it is
+// positive below one.
+//
+// Word draws an underline where the face says to rather than at a place of its
+// own. Measured on 2026-08-07 off Word's own pdf of a reference document, which
+// drew every underline 0.1207 em below the baseline and 0.0690 em thick,
+// consistently across three runs at 13.92pt, and those are not the ratios of any
+// face this machine could stand in: they are the drawn face's own.
+export type UnderlineMetrics = {
+  readonly position: number;
+  readonly thickness: number;
+};
+
 export type ReadFontFileResult = ReadFontMetricsResult & {
   readonly advances: AdvanceTable;
   // Whether the face draws its letters without serifs, which is the half of the
   // question the file itself answers about which face Word borrows a character
   // from. See `sansSerif` in `font-metrics.ts` for what turns on it.
   readonly sansSerif: boolean;
+  // Null where the face states no `post` table, which nothing can be invented
+  // for: a renderer that needs a line has to say what it did instead.
+  readonly underline: UnderlineMetrics | null;
+  // How far the face's letters lean, in degrees, negative to the right. Zero for
+  // an upright face and for one that does not say.
+  readonly italicAngle: number;
 };
 
 const AT = "core/layout/font-file.readFontMetrics";
@@ -25,6 +45,7 @@ const HEAD = "head";
 const HHEA = "hhea";
 const NAME = "name";
 const OS2 = "OS/2";
+const POST = "post";
 
 const tagAt = (bytes: Uint8Array, offset: number): string =>
   String.fromCharCode(...bytes.subarray(offset, offset + 4));
@@ -255,6 +276,40 @@ function openFontFile(bytes: Uint8Array, faceName: string | undefined): OpenedFo
   };
 }
 
+// The `post` table opens with its version, then the angle the letters lean at as
+// a fixed-point number, then where the line under them goes and how thick it is.
+const ITALIC_ANGLE_AT = 4;
+const UNDERLINE_POSITION_AT = 8;
+const UNDERLINE_THICKNESS_AT = 10;
+
+// A fixed-point number in the font formats is a whole part and a fraction of
+// sixty-five thousand.
+const FIXED = 65536;
+
+const POST_LENGTH = 12;
+
+function readPost(tables: ReadonlyMap<string, Uint8Array>): {
+  readonly underline: UnderlineMetrics | null;
+  readonly italicAngle: number;
+} {
+  const post = tables.get(POST);
+  if (post === undefined || post.byteLength < POST_LENGTH) {
+    return { underline: null, italicAngle: 0 };
+  }
+
+  const view = viewOf(post);
+  return {
+    // Stated as a distance up from the baseline, which for a line under the
+    // letters is negative. Turned the right way up here so that a caller adding it
+    // to a baseline is going down the page, as everything else here does.
+    underline: {
+      position: -view.getInt16(UNDERLINE_POSITION_AT),
+      thickness: view.getInt16(UNDERLINE_THICKNESS_AT),
+    },
+    italicAngle: view.getInt32(ITALIC_ANGLE_AT) / FIXED,
+  };
+}
+
 /**
  * Which glyph a face draws each character with, read out of the same cmap the
  * advances are read through, so that a character measured at one glyph's width is
@@ -310,6 +365,7 @@ export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFile
     },
     advances: readAdvanceTable(tables, metricCount),
     sansSerif: readsSansSerif(tables),
+    ...readPost(tables),
   };
 }
 

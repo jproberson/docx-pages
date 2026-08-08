@@ -25,6 +25,12 @@ export type FontFixture = {
   readonly panoseSerifStyle?: number;
   // What the face calls itself, which is how one is picked out of a collection.
   readonly faceName?: string;
+  // Where the face puts the line under its letters, how thick it is and how far
+  // they lean, all of which it states in its `post` table. A fixture stating none
+  // of them writes no table at all, as a face may.
+  readonly underlinePosition?: number;
+  readonly underlineThickness?: number;
+  readonly italicAngle?: number;
   readonly omit?: "head" | "hhea" | "cmap" | "hmtx";
 };
 
@@ -204,6 +210,22 @@ function nameTable(faceName: string): Uint8Array {
   return table;
 }
 
+// Long enough to hold the angle, the underline and its thickness, which are the
+// only part of the table anything here reads.
+const POST_LENGTH = 32;
+
+// Stated as a distance up from the baseline, so a line under the letters is
+// negative in the file. A fixture states where it wants the line, which is down.
+function postTable(fixture: FontFixture): Uint8Array {
+  const table = new Uint8Array(POST_LENGTH);
+  const view = new DataView(table.buffer);
+  view.setUint32(0, 0x00030000);
+  view.setInt32(4, Math.round((fixture.italicAngle ?? 0) * 65536));
+  view.setInt16(8, -(fixture.underlinePosition ?? 0));
+  view.setInt16(10, fixture.underlineThickness ?? 0);
+  return table;
+}
+
 function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array])[] {
   const glyphs = glyphsOf(fixture);
   const tables: (readonly [string, Uint8Array])[] = [
@@ -215,6 +237,13 @@ function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array]
     tables.push(["OS/2", os2Table(fixture)]);
   }
   if (fixture.faceName !== undefined) tables.push(["name", nameTable(fixture.faceName)]);
+  if (
+    fixture.underlinePosition !== undefined ||
+    fixture.underlineThickness !== undefined ||
+    fixture.italicAngle !== undefined
+  ) {
+    tables.push(["post", postTable(fixture)]);
+  }
   if (fixture.advances !== undefined) {
     tables.push(["cmap", cmapTable(fixture, glyphs)], ["hmtx", hmtxTable(fixture, glyphs)]);
   }

@@ -7,6 +7,7 @@ import {
   type CodeToGlyph,
   type FontMetrics,
   type ParagraphMark,
+  type UnderlineMetrics,
 } from "@docx-pages/core";
 
 import {
@@ -72,12 +73,21 @@ const supplies = (font: PdfFont, want: PdfFaceRequest): boolean =>
  * One face as this file uses it: the name a content stream calls it by, and what
  * to write to draw a string in it.
  */
+// Where an underline goes for a run set at a given size, in points below the
+// baseline, which the face states and this scales.
+export type PdfUnderline = {
+  readonly belowBaselinePt: number;
+  readonly thicknessPt: number;
+};
+
 export type PdfFace = {
   readonly resource: string;
   // The glyphs a string is drawn as, two bytes to each, which is what an
   // Identity-H encoding takes. Every one is recorded, so that the widths and the
   // reverse map written afterwards cover exactly what was drawn.
   readonly glyphsFor: (text: string) => Uint8Array;
+  // Null for a face stating no `post` table, which nothing can be invented for.
+  readonly underlineAt: (fontSizePt: number) => PdfUnderline | null;
 };
 
 export type PdfFonts = {
@@ -96,6 +106,8 @@ type Used = {
   readonly metrics: FontMetrics;
   readonly advanceFor: (codePoint: number) => number | null;
   readonly glyphFor: CodeToGlyph;
+  readonly underline: UnderlineMetrics | null;
+  readonly italicAngle: number;
   // What the face was asked to draw, by glyph. The character is kept beside it for
   // the reverse map, which is what lets the text be selected and searched.
   readonly drawn: Map<number, number>;
@@ -118,6 +130,8 @@ function openFace(font: PdfFont, resource: string): Used {
     metrics: read.metrics,
     advanceFor: read.advances.advanceFor,
     glyphFor: readGlyphIndex(font.bytes, font.name),
+    underline: read.underline,
+    italicAngle: read.italicAngle,
     drawn: new Map(),
   };
 }
@@ -152,6 +166,14 @@ export function pdfFonts(fonts: readonly PdfFont[]): PdfFonts {
     return {
       resource: opened.resource,
       glyphsFor: (text) => glyphsOf(opened, text),
+      underlineAt: (fontSizePt) => {
+        const { underline, metrics } = opened;
+        if (underline === null) return null;
+        return {
+          belowBaselinePt: (underline.position * fontSizePt) / metrics.unitsPerEm,
+          thicknessPt: (underline.thickness * fontSizePt) / metrics.unitsPerEm,
+        };
+      },
     };
   };
 
@@ -201,11 +223,7 @@ function writeFace(objects: PdfObjects, face: Used): PdfReference {
       FontName: pdfName(name),
       Flags: pdfNumber(flagsOf(face)),
       FontBBox: pdfArray(boundsOf(face.metrics).map(pdfNumber)),
-      // Nothing here reads the `post` table, so the angle an italic face states
-      // is not known. A reader draws the outlines in the embedded file, which
-      // carry the slant themselves; this is what it would fall back on and never
-      // does.
-      ItalicAngle: pdfNumber(0),
+      ItalicAngle: pdfNumber(face.italicAngle),
       Ascent: pdfNumber(scaled(face.metrics.ascender, face.metrics)),
       Descent: pdfNumber(scaled(face.metrics.descender, face.metrics)),
       CapHeight: pdfNumber(scaled(face.metrics.ascender, face.metrics)),
