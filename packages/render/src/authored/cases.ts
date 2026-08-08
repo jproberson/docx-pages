@@ -120,6 +120,14 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Two pages of a continuous section's own text past the page it opened on, and
   // the two lines of the body's own section under them.
   "overflowing-section": { lines: 66, runs: 66, numbers: 0 },
+  // Seven cases of a marker, four cells and the lines the table left standing, which
+  // the last case writes long enough to reach past the table and take two lines each.
+  //
+  // Three of the 61 are the case whose table leaves a run of the frame wide enough
+  // for a line on both sides of itself: Word draws one line and fills both runs with
+  // it, and a line here stands in one run or the other. Nothing in the wild leaves a
+  // run that wide on the near side.
+  "positioned-table": { lines: 61, runs: 62, numbers: 0, placed: 58, runsPlaced: 60 },
   // Eight cases: a marker and the case written out three times, and ten lines more
   // in each of the two whose page is opened by the one below it filling up. This is
   // the oracle the document was written for, since where a line was drawn is the

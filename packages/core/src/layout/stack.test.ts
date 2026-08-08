@@ -1021,6 +1021,73 @@ const walls = (twips: number) =>
 const linedTable = (eighths: number, marginTwips = 0) =>
   `<w:tbl>${walls(marginTwips)}<w:tr>${cell(`<w:p/>`, lined(eighths))}</w:tr></w:tbl>`;
 
+// Word's own answers, measured by the authored `positioned-table` document. The
+// frame here runs from 72 to 540 and the stack starts at 36, so a table an inch off
+// the column stands at 144 and one the same inch off the sheet at 72.
+describe("measureStack over a table taken out of the flow", () => {
+  const positioned = (properties: string, ...cells: readonly string[]) =>
+    `<w:tbl><w:tblPr><w:tblpPr ${properties}/></w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="2880"/></w:tblGrid>` +
+    `<w:tr>${cells.join("")}</w:tr></w:tbl>`;
+
+  const across = `w:vertAnchor="text" w:tblpX="1440"`;
+
+  it("leaves the flow no room where the table stood", () => {
+    const result = measure(`<w:p/>${positioned(across, cell(`<w:p/>`))}<w:p/>`);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    const after = result.boxes[result.boxes.length - 1];
+    expect(after?.topPt).toBeCloseTo(36 + ARIAL_12, 9);
+    expect(result.heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
+  });
+
+  it("measures the table from where the flow stood", () => {
+    const boxes = boxesOf(`<w:p/>${positioned(across, cell(`<w:p/>`))}<w:p/>`);
+    expect(boxes[1]?.topPt).toBeCloseTo(36 + ARIAL_12, 9);
+  });
+
+  it("drops it by the offset it asks for down the page", () => {
+    const boxes = boxesOf(
+      `<w:p/>${positioned(`w:vertAnchor="text" w:tblpX="1440" w:tblpY="-360"`, cell(`<w:p/>`))}<w:p/>`,
+    );
+    expect(boxes[1]?.topPt).toBeCloseTo(36 + ARIAL_12 - 18, 9);
+  });
+
+  it("stands it off the column where the anchor names the column", () => {
+    const boxes = boxesOf(positioned(across, cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)));
+    expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 72, 9);
+  });
+
+  it("stands it off the sheet where the anchor names the page", () => {
+    const boxes = boxesOf(
+      positioned(
+        `w:vertAnchor="text" w:horzAnchor="page" w:tblpX="1440"`,
+        cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`),
+      ),
+    );
+    expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72, 9);
+  });
+
+  it("puts its right edge on the frame's where it asks for the right", () => {
+    const boxes = boxesOf(
+      positioned(
+        `w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="right"`,
+        cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`),
+      ),
+    );
+    expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 468 - 144, 9);
+  });
+
+  it("keeps the text it left clear of it by the distance it asks for", () => {
+    const body =
+      positioned(
+        `w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:tblpX="0"`,
+        cell(`<w:p/>`),
+      ) + paragraph("", "aaaa");
+    const boxes = boxesOf(body);
+    expect(boxes[boxes.length - 1]?.lines[0]?.leftPt).toBeCloseTo(72 + 144 + 9, 9);
+  });
+});
+
 describe("measureStack over a table's own lines", () => {
   it("leaves each row half of every line drawn along its edges", () => {
     const result = measure(linedTable(48));

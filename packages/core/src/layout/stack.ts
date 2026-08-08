@@ -4,6 +4,7 @@ import type {
   Paragraph,
   TableCell,
   TableInsets,
+  TablePositioning,
   TableRow,
 } from "../docx/blocks.js";
 import {
@@ -376,6 +377,24 @@ function measureBlocks(
       continue;
     }
 
+    // **A table `w:tblpPr` takes out of the flow keeps no room in it**, so the
+    // paragraphs under it are drawn where they would have stood had the table never
+    // been there, and the table is a band they wrap round instead. Measured on
+    // 2026-08-08 by the authored `positioned-table` document.
+    if (block.positioning !== null && !context.inCell) {
+      const placed = positionedFrame(block, block.positioning, frame);
+      const measured = measureTable(block, context, top + placed.topPt, placed.frame);
+      if (measured.kind === "blocked") return measured;
+      boxes.push(...measured.boxes);
+      cells.push(...measured.cells);
+      standing = [
+        ...standing,
+        bandRound(placed, top + placed.topPt, measured.heightPt, block.positioning),
+      ];
+      anchoredAtPt = null;
+      continue;
+    }
+
     const measured = measureTable(block, context, top, frame);
     if (measured.kind === "blocked") return measured;
     boxes.push(...measured.boxes);
@@ -430,6 +449,72 @@ function lookedAhead(
 }
 
 type Table = Extract<Block, { kind: "table" }>;
+
+// Where a positioned table stands, and how wide it turned out to be.
+type PositionedTable = {
+  readonly frame: Frame;
+  // How far below the flow the table's own top is, which is what `w:tblpY` asks
+  // for and nothing at all where it asks for nothing.
+  readonly topPt: number;
+  readonly widthPt: number;
+};
+
+// The table's own width, which is what its first row's cells come to. Read the same
+// way `measureRow` reads them, since a table stating a grid and a table whose cells
+// state their own widths both have to come out where Word drew them.
+function tableWidthPt(block: Table, frame: Frame): number {
+  const cells = block.rows[0]?.cells ?? [];
+  return cells.reduce(
+    (width, cell, at) =>
+      width + (cellWidthPt(cell) ?? columnWidthPt(block.gridTwips, at) ?? frame.widthPt),
+    0,
+  );
+}
+
+// **What `w:tblpX` is measured from is what `w:horzAnchor` names**: the edge of the
+// sheet for `page`, and the text frame's own left for `margin` and for the `column`
+// a table stating no anchor takes. Measured on 2026-08-08 by the authored
+// `positioned-table` document, which places the same table an inch off each of the
+// three: Word drew it at 72 for the page and at 108 for the other two, the frame
+// there beginning at 36. One column makes the margin and the column the same place,
+// and nothing here can tell them apart until there is more than one.
+//
+// **`w:tblpXSpec` names an edge rather than a distance**, and `right` puts the
+// table's own right edge on the frame's.
+function positionedFrame(
+  block: Table,
+  positioning: TablePositioning,
+  frame: Frame,
+): PositionedTable {
+  const widthPt = tableWidthPt(block, frame);
+  const originPt = positioning.horizontalAnchor === "page" ? 0 : frame.leftPt;
+  const leftPt =
+    positioning.xSpec === "right"
+      ? frame.leftPt + frame.widthPt - widthPt
+      : positioning.xSpec === "center"
+        ? frame.leftPt + (frame.widthPt - widthPt) / 2
+        : originPt + twipsToPoints(positioning.xTwips);
+
+  return {
+    frame: { leftPt, widthPt: frame.widthPt },
+    topPt: twipsToPoints(positioning.yTwips),
+    widthPt,
+  };
+}
+
+// The room the text keeps clear of a positioned table: its own rectangle grown by
+// the distances it asks the text to stay off each side of it.
+const bandRound = (
+  placed: PositionedTable,
+  topPt: number,
+  heightPt: number,
+  positioning: TablePositioning,
+): WrapBand => ({
+  leftPt: placed.frame.leftPt - twipsToPoints(positioning.leftFromTextTwips),
+  rightPt: placed.frame.leftPt + placed.widthPt + twipsToPoints(positioning.rightFromTextTwips),
+  topPt: topPt - twipsToPoints(positioning.topFromTextTwips),
+  bottomPt: topPt + heightPt + twipsToPoints(positioning.bottomFromTextTwips),
+});
 
 // Half of a border falls outside the line it is centred on, so half of the ones
 // round the outside of a table falls outside the table. What stands where the

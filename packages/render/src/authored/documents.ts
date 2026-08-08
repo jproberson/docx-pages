@@ -10,6 +10,7 @@ import {
   numberingDocument,
   objectsPastTheFootDocument,
   overflowingSectionDocument,
+  positionedTableDocument,
   sectionCloserDocument,
   sectionFlowDocument,
   sectionPagesDocument,
@@ -407,6 +408,20 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A run raised or lowered off its own baseline",
       asks: "how far off the baseline w:position draws a run, and whether the line grows to hold it",
       bytes: buildAuthoredDocx({ body: raisedTextDocument() }),
+    },
+    {
+      id: "positioned-table",
+      title: "A table positioned rather than flowed",
+      asks: "where w:tblpPr stands a table across and down the page, and what the text it left does with the room",
+      // Sixty nine of the seventy one. The two left over are the case whose table
+      // leaves a usable run of the frame on both sides of itself: Word draws one
+      // line there and fills both runs with it, and this project has no line that
+      // can stand in two places, so it breaks the paragraph at the first run's end
+      // instead and everything under it is a line low. Neither of the other six
+      // cases leaves a run wider than the 18pt a line needs to the left of the
+      // table, and neither does any of the seven documents in the wild.
+      paragraphsPlaced: 69,
+      bytes: buildAuthoredDocx({ body: positionedTableDocument() }),
     },
     {
       id: "space-above-a-break",

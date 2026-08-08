@@ -1127,6 +1127,129 @@ export function spaceAboveABreakDocument(): string {
   ].join("");
 }
 
+// A table positioned rather than flowed, which is what `w:tblpPr` asks for.
+//
+// Seven corpus documents state one and they miss 459 lines between them, 300 of
+// them in the documents needing no face stood in, which is the second largest thing
+// left after the columns. Three of those seven are among the eight this project
+// could not explain at all, and the ranking calls the whole cluster `merged-cells`,
+// which is stated by four documents and explains nothing about any of them.
+//
+// **The corpus says two things are out and neither has been put to Word.** One
+// document's table takes 165pt of the flow here and none of it there: twelve empty
+// paragraphs standing under it are drawn beside it instead, and the paragraph after
+// them lands where the flow would have put it had the table never been in it.
+// Another's is drawn 299.4pt to the right of where this project puts it and 3.25pt
+// above, which is what `w:tblpXSpec="right"` and `w:tblpY="-65"` would come to.
+//
+// Every case is the same two rows of two cells, each row told exactly how tall to
+// be, so the table is 28.8pt tall and 144pt wide whatever a case does with it, and
+// every flow line is told exactly how tall to be as well: the marker takes 24pt from
+// the top of the body at 36, so a flow that closed over the table draws its next
+// line's baseline at a place arithmetic gives. Each case's line after the table is
+// written out three times, so the distance between one repeat and the next says the
+// line height the case was drawn at rather than leaving it to be inferred.
+//
+// **Read off Word's own pdf.** Word's report answers for a paragraph in a table with
+// the origin of the row rather than the cell, and for the horizontal with nought,
+// which is the whole of what is being asked here.
+export function positionedTableDocument(): string {
+  const LINE_PT = 24;
+  const ROW_PT = 14.4;
+  const CELL_TWIPS = 1440;
+
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+
+  // Stated because an authored document declares no table style, and a table whose
+  // cells state no margin of their own is then held off its walls by nothing.
+  const CELL_MARGINS =
+    `<w:tblCellMar>` +
+    `<w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>` +
+    `<w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>` +
+    `</w:tblCellMar>`;
+
+  const cell = (text: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/></w:tcPr>` +
+    paragraph(exactly(ROW_PT), run(text)) +
+    `</w:tc>`;
+
+  const row = (left: string, right: string): string =>
+    `<w:tr><w:trPr><w:trHeight w:hRule="exact" w:val="${String(ROW_PT * 20)}"/></w:trPr>` +
+    cell(left) +
+    cell(right) +
+    `</w:tr>`;
+
+  // `positioning` is the whole of `w:tblpPr`, or nothing at all for the case that
+  // asks what the same table does when it is left in the flow.
+  const table = (name: string, positioning: string): string =>
+    `<w:tbl><w:tblPr>${positioning}` +
+    `<w:tblW w:w="${String(CELL_TWIPS * 2)}" w:type="dxa"/>` +
+    CELL_MARGINS +
+    `</w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="${String(CELL_TWIPS)}"/><w:gridCol w:w="${String(CELL_TWIPS)}"/></w:tblGrid>` +
+    row(`${name} a`, `${name} b`) +
+    row(`${name} c`, `${name} d`) +
+    `</w:tbl>`;
+
+  const positioned = (properties: string): string => `<w:tblpPr ${properties}/>`;
+
+  const block = (name: string, positioning: string, after = ""): readonly string[] => [
+    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${name} above`)),
+    table(name, positioning),
+    ...["one", "two", "three"].map((which) =>
+      paragraph(
+        exactly(LINE_PT),
+        run(after === "" ? `${name} ${which}` : `${name} ${which} ${after}`),
+      ),
+    ),
+  ];
+
+  // An inch across, which is neither the margin the page keeps nor the edge of the
+  // sheet, so the three anchors cannot be confused with one another.
+  const ACROSS = 1440;
+
+  return [
+    // The same table left in the flow, which says what the flow does with its room
+    // and what the cases below are read against.
+    ...block("flowed", ""),
+    // Anchored to the text and placed an inch from the column, which is where a
+    // document stating no `w:horzAnchor` puts it.
+    ...block("column", positioned(`w:vertAnchor="text" w:tblpX="${String(ACROSS)}"`)),
+    // The same inch from the edge of the sheet, which is half an inch further left
+    // than the column's if the anchor is read.
+    ...block(
+      "page",
+      positioned(`w:vertAnchor="text" w:horzAnchor="page" w:tblpX="${String(ACROSS)}"`),
+    ),
+    // And the same inch from the margin, which one column makes the same place as
+    // the column's own: what this separates is the page from the other two.
+    ...block(
+      "margin",
+      positioned(`w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="${String(ACROSS)}"`),
+    ),
+    // Asked for the right of the margin rather than a distance, which is what three
+    // of the seven documents state.
+    ...block("right", positioned(`w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="right"`)),
+    // Lifted 18pt off wherever the text anchor puts it, which is the other half of
+    // what those three state.
+    ...block(
+      "lifted",
+      positioned(`w:vertAnchor="text" w:tblpX="${String(ACROSS)}" w:tblpY="-360"`),
+    ),
+    // Held at the column's own left with 9pt kept clear either side, and followed by
+    // text long enough to reach it: either the text stands beside the table or it
+    // runs under it.
+    ...block(
+      "beside",
+      positioned(`w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:tblpX="0"`),
+      FLOW,
+    ),
+    EMPTY,
+  ].join("");
+}
+
 // What becomes of the room a paragraph asks for above itself when a wrap has
 // already pushed its first line down the page.
 //

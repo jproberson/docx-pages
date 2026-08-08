@@ -43,11 +43,14 @@ export function answeringParagraphs(blocks: readonly Block[]): readonly Answer[]
   return answers.map((answer) => ({ ...answer, comparesLeft: false }));
 }
 
+// A table taken out of the flow wraps the text as an object does, and Word answers
+// for a line it narrowed the same way: nought, wherever across the page it drew it.
 const wrapsText = (blocks: readonly Block[]): boolean =>
   blocks.some((block) =>
     block.kind === "paragraph"
       ? anchorsWrap(block.paragraph)
-      : block.rows.some((row) => row.cells.some((cell) => wrapsText(cell.blocks))),
+      : block.positioning !== null ||
+        block.rows.some((row) => row.cells.some((cell) => wrapsText(cell.blocks))),
   );
 
 const anchorsWrap = (paragraph: Paragraph): boolean =>

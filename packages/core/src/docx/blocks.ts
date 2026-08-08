@@ -73,6 +73,24 @@ export const DEFAULT_TABLE_INSETS: TableInsets = {
   bottomTwips: 0,
 };
 
+// Where a table stands when `w:tblpPr` takes it out of the flow: what its own
+// offsets are measured from, and how far off those origins it stands. `xSpec`
+// names an edge instead of a distance, and stands in front of `xTwips` where a
+// table states both.
+export type TablePositioning = {
+  readonly horizontalAnchor: "page" | "margin" | "column";
+  readonly verticalAnchor: "page" | "margin" | "text";
+  readonly xTwips: number;
+  readonly yTwips: number;
+  readonly xSpec: string | null;
+  readonly ySpec: string | null;
+  // How far the text has to stay off each side of it.
+  readonly leftFromTextTwips: number;
+  readonly rightFromTextTwips: number;
+  readonly topFromTextTwips: number;
+  readonly bottomFromTextTwips: number;
+};
+
 export type Block =
   | { readonly kind: "paragraph"; readonly paragraph: Paragraph }
   | {
@@ -85,6 +103,8 @@ export type Block =
       // The table style the borders above stand in front of, which the styles
       // rather than the blocks can look up.
       readonly styleId: string | null;
+      // Null in a table that flows with the text, which is all but ten of the 966.
+      readonly positioning: TablePositioning | null;
     };
 
 // Text box content is laid out inside its own frame, and mc:Fallback repeats the
@@ -140,6 +160,32 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
     insets: tableInsets(element),
     borders: readTableBorders(properties),
     styleId: style === null ? null : (attribute(style, W_NS, "val") ?? null),
+    positioning: tablePositioning(properties),
+  };
+}
+
+function tablePositioning(properties: XmlElement | null): TablePositioning | null {
+  const stated = properties === null ? null : firstNamed(properties, W_NS, "tblpPr");
+  if (stated === null) return null;
+
+  const twips = (name: string): number => {
+    const value = Number(attribute(stated, W_NS, name) ?? Number.NaN);
+    return Number.isFinite(value) ? value : 0;
+  };
+  const horizontal = attribute(stated, W_NS, "horzAnchor");
+  const vertical = attribute(stated, W_NS, "vertAnchor");
+
+  return {
+    horizontalAnchor: horizontal === "page" || horizontal === "margin" ? horizontal : "column",
+    verticalAnchor: vertical === "page" || vertical === "margin" ? vertical : "text",
+    xTwips: twips("tblpX"),
+    yTwips: twips("tblpY"),
+    xSpec: attribute(stated, W_NS, "tblpXSpec") ?? null,
+    ySpec: attribute(stated, W_NS, "tblpYSpec") ?? null,
+    leftFromTextTwips: twips("leftFromText"),
+    rightFromTextTwips: twips("rightFromText"),
+    topFromTextTwips: twips("topFromText"),
+    bottomFromTextTwips: twips("bottomFromText"),
   };
 }
 
