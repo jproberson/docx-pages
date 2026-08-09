@@ -624,6 +624,120 @@ export function breaksInAParagraphDocument(): string {
   return [...CASES.map(block), EMPTY].join("");
 }
 
+// How much a justified line will be squeezed to take one more word.
+//
+// 118 of the 718 corpus documents justify a paragraph, and between them they hold
+// 15407 lines and miss 5512 of them, against 78.9% placed over every document that
+// justifies nothing. Reading one of them says why: Word draws a justified line
+// holding text whose own width is **wider than the line**, by 3.8pt over 14 spaces
+// in one case and 4.8pt over 13 in another. This project fits a line at its natural
+// width and never squeezes it, so it breaks a word earlier and the whole paragraph
+// is a line long.
+//
+// Twenty seven cases, each written out three times, each a justified paragraph
+// whose last word overflows the room by a stated amount. Where Word draws that word
+// says what it will accept, and the three digits opening every case say which case
+// and which repeat a line belongs to.
+//
+// The numbers are this project's own measure of Calibri at 24pt, which the authored
+// suite pins to the hundredth elsewhere: `mmmm` is 76.6875pt, `mmmmmmmm` 153.375,
+// `aa` 22.9922, a space 5.4258, and the three digits in front of every case 36.4921.
+// So a case of four `mmmm` is 364.9453pt of text over four spaces, one of twelve `aa`
+// is 377.5078 over twelve and one of three `mmmmmmmm` is 512.8945 over three, and the
+// room each is given is that width less the overflow it is being asked about.
+export function justifiedFittingDocument(): string {
+  const OWN_PAGE = `<w:pageBreakBefore/>`;
+
+  // Enough words after the case's own to fill a second line, so the line being asked
+  // about is never the last one: Word justifies every line of a paragraph but that.
+  const FILLER = "zzzz zzzz zzzz zzzz zzzz zzzz zzzz zzzz";
+
+  type Family = {
+    readonly name: string;
+    readonly word: string;
+    readonly words: number;
+    readonly sizePt: number;
+    // The room that leaves the line exactly the width of its own text, in twips off
+    // the right of a 540pt frame.
+    readonly indentTwips: number;
+    // How many characters the line holds, which is what the answer turned out to
+    // turn on.
+    readonly characters: number;
+    // What the room is narrowed by, in points, against the width of the whole first
+    // line. A twip is a twentieth of a point, so the closest two of these are two
+    // twips apart.
+    readonly overflowsPt: readonly number[];
+  };
+
+  // Three shapes of line at 24pt and one of them again at 12pt. The first two ask
+  // the same overflow of four spaces and of twelve, the third asks three spaces to
+  // hold it on a line half again as wide, and the fourth asks whether the answer is
+  // a length or a fraction of the size the text is set in. Each sweep is close
+  // around where the line stopped taking the word, and holds one wide case either
+  // side of it for the record.
+  const FAMILIES: readonly Family[] = [
+    {
+      name: "few",
+      word: "mmmm",
+      words: 4,
+      sizePt: 24,
+      indentTwips: 3502,
+      characters: 23,
+      overflowsPt: [0, 4, 4.2, 4.3, 4.4, 4.6, 6],
+    },
+    {
+      name: "many",
+      word: "aa",
+      words: 12,
+      sizePt: 24,
+      indentTwips: 3251,
+      characters: 39,
+      overflowsPt: [0, 6, 7, 7.2, 7.3, 7.4, 7.6, 12],
+    },
+    {
+      name: "wide",
+      word: "mmmmmmmm",
+      words: 3,
+      sizePt: 24,
+      indentTwips: 543,
+      characters: 30,
+      overflowsPt: [0, 5, 5.4, 5.6, 5.7, 5.8, 6],
+    },
+    {
+      name: "small",
+      word: "mmmm",
+      words: 4,
+      sizePt: 12,
+      indentTwips: 7151,
+      characters: 23,
+      overflowsPt: [0, 2, 2.1, 2.15, 2.2, 2.3, 3],
+    },
+  ];
+
+  const cases = FAMILIES.flatMap((family) =>
+    family.overflowsPt.map((overflowPt) => ({ family, overflowPt })),
+  );
+
+  return [
+    ...cases.flatMap(({ family, overflowPt }, at) => {
+      const number = String(at + 1).padStart(2, "0");
+      const size = `<w:sz w:val="${String(family.sizePt * 2)}"/><w:szCs w:val="${String(family.sizePt * 2)}"/>`;
+      const indent = `<w:ind w:right="${String(family.indentTwips + Math.round(overflowPt * 20))}"/>`;
+      const words = Array.from({ length: family.words }, () => family.word).join(" ");
+      return [
+        paragraph(OWN_PAGE, run(`${family.name} short of ${String(overflowPt)} above`)),
+        ...[1, 2, 3].map((repeat) =>
+          paragraph(
+            `<w:jc w:val="both"/>${indent}`,
+            run(`${number}${String(repeat)} ${words} ${FILLER}`, size),
+          ),
+        ),
+      ];
+    }),
+    EMPTY,
+  ].join("");
+}
+
 export function wrappingDocument(): string {
   const wrapping = (id: number, wrap: string, widthEmu: number, heightEmu: number): string =>
     `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>

@@ -108,6 +108,12 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // document asks, so what is counted here is what is left: 46 of the 8 cases' own
   // lines and the marks either side of them.
   "breaks-in-a-paragraph": { lines: 46, runs: 46, numbers: 0 },
+  // The document is read by Word's own drawing and disagrees with it on purpose: a
+  // line Word squeezed is drawn as one item and a line it would not squeeze in as
+  // many pieces as it has words, so of the 248 items Word drew, 89 are lines this
+  // project drew too and five of those are in the wrong place. Every number here
+  // falls as the squeeze is built.
+  "justified-fitting": { lines: 89, runs: 140, numbers: 0, placed: 84, runsPlaced: 140 },
   // Every line of all eleven cases: a marker, four rows of two cells and a line
   // under the table. Word's own pdf is the oracle this document is read by, since
   // its report puts the last row of four of the cases 0.55 to 0.7pt below where its

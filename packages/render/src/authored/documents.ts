@@ -7,6 +7,7 @@ import {
   compatibilityDocument,
   drawingDocument,
   insignificantSpaceDocument,
+  justifiedFittingDocument,
   keepingDocument,
   linedRowsDocument,
   numberingDocument,
@@ -298,6 +299,17 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "A break with nothing on the line it opens",
       asks: "whether a break at the end of a paragraph, or a second one after it, still opens a line",
       bytes: buildAuthoredDocx({ body: breaksInAParagraphDocument() }),
+    },
+    {
+      id: "justified-fitting",
+      title: "The word a justified line is squeezed to take",
+      asks: "how far past its own room a justified line's text may reach before the last word is sent down",
+      // Measured and not built: this project breaks a justified line at its natural
+      // width and Word squeezes the spaces to take one word more, so the 26 that
+      // disagree are the second line of every case Word squeezed and the paragraphs
+      // under it.
+      paragraphsPlaced: 91,
+      bytes: buildAuthoredDocx({ body: justifiedFittingDocument() }),
     },
     {
       id: "objects-and-the-footer",
