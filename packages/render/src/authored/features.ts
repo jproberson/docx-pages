@@ -3561,3 +3561,124 @@ export const FIRST_LINE_NUMBERING = `<?xml version="1.0" encoding="UTF-8" standa
     )
     .join("")}
 </w:numbering>`;
+
+// Which of a table style's conditional formats reach a cell, and in what order they
+// stand in front of each other.
+//
+// A `w:tblStylePr` names a place in the table and holds the same `w:pPr` and
+// `w:rPr` a style itself does. Nothing here read them at all, and three of the 718
+// turn on it: one centres the text of its first column and this project drew it
+// left, 27pt out on the shortest of its cells.
+//
+// **Every format asked about here states an indent and nothing else**, and each a
+// different one, so where Word drew a cell's line says which format reached it and
+// which of two reaching it won. An indent is one value and the last writer takes it,
+// so the drawn left names the winner outright. Five points apart over thirteen
+// places, in cells 135pt wide, so nothing is pushed out of its cell and no sum of
+// two could be mistaken for a third.
+export function conditionalTableDocument(): string {
+  const CELL_TWIPS = 2700;
+  const COLUMNS = 4;
+  const ROWS = 5;
+
+  const cell = (content: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+
+  const line = (name: string): string => paragraph("", run(name));
+
+  // A table's own look decides which of the formats are asked for at all.
+  const look = (attributes: string): string => `<w:tblLook ${attributes}/>`;
+
+  const table = (name: string, styleId: string, lookAttributes: string): string =>
+    `<w:tbl><w:tblPr><w:tblStyle w:val="${styleId}"/>
+      <w:tblW w:w="${String(CELL_TWIPS * COLUMNS)}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>
+      <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+        <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>
+      ${look(lookAttributes)}</w:tblPr>
+      <w:tblGrid>${Array.from({ length: COLUMNS }, () => `<w:gridCol w:w="${String(CELL_TWIPS)}"/>`).join("")}</w:tblGrid>
+      ${Array.from(
+        { length: ROWS },
+        (_, row) =>
+          `<w:tr>${Array.from({ length: COLUMNS }, (_, column) =>
+            cell(line(`${name}r${String(row + 1)}c${String(column + 1)}`)),
+          ).join("")}</w:tr>`,
+      ).join("")}</w:tbl>`;
+
+  const block = (name: string, styleId: string, lookAttributes: string): string =>
+    paragraph(`<w:pageBreakBefore/>`, run(`case ${name}`)) +
+    table(name, styleId, lookAttributes) +
+    paragraph("", run(`${name} after`));
+
+  const ALL_ON = `w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="0" w:noVBand="0"`;
+
+  return [
+    // Every switch on, so each of the eight places states an indent of its own and
+    // where a line landed says which of them reached it. A corner cell is in four of
+    // them at once, which is what says the order.
+    block("a", "Conditional", ALL_ON),
+    // The same table with every switch off, which is what the rest are read against:
+    // no format may reach anything.
+    block("b", "Conditional", `w:val="0000"`),
+    // The rows and columns on and the banding off, and then the other way round.
+    block(
+      "c",
+      "Conditional",
+      `w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"`,
+    ),
+    block(
+      "d",
+      "Conditional",
+      `w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"`,
+    ),
+    // The switches written only as the hex mask an older file carries, which is
+    // Word's own default: the first row, the first column, and no vertical banding.
+    block("e", "Conditional", `w:val="04A0"`),
+    // Bands two rows and two columns deep, which says where a band starts counting.
+    block("f", "WideBands", ALL_ON),
+    EMPTY,
+  ].join("");
+}
+
+// One indent a place, each 10pt apart, and nothing else stated anywhere: a line's
+// left is then the whole of what the document answers.
+export const CONDITIONAL_STYLES = [
+  {
+    id: "Conditional",
+    rowBand: 1,
+    columnBand: 1,
+  },
+  {
+    id: "WideBands",
+    rowBand: 2,
+    columnBand: 2,
+  },
+]
+  .map(
+    ({ id, rowBand, columnBand }) => `<w:style w:type="table" w:styleId="${id}">
+    <w:name w:val="${id}"/>
+    <w:tblPr><w:tblStyleRowBandSize w:val="${String(rowBand)}"/>
+      <w:tblStyleColBandSize w:val="${String(columnBand)}"/></w:tblPr>
+    ${[
+      ["wholeTable", 0],
+      ["band1Vert", 5],
+      ["band2Vert", 10],
+      ["band1Horz", 15],
+      ["band2Horz", 20],
+      ["firstCol", 25],
+      ["lastCol", 30],
+      ["firstRow", 35],
+      ["lastRow", 40],
+      ["nwCell", 45],
+      ["neCell", 50],
+      ["swCell", 55],
+      ["seCell", 60],
+    ]
+      .map(
+        ([type, indentPt]) =>
+          `<w:tblStylePr w:type="${String(type)}"><w:pPr><w:ind w:left="${String(Number(indentPt) * 20)}"/></w:pPr></w:tblStylePr>`,
+      )
+      .join("")}
+  </w:style>`,
+  )
+  .join("");

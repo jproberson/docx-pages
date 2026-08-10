@@ -76,7 +76,10 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // rather than by the grid column it stands on, so a cell beside a span agrees with
   // the wrong neighbour, and the room half a line takes moves the text with it.
   "merged-cells": "moves-text",
-  "table-style-conditional-formatting": "changes-paint",
+  // What such a format says about a paragraph or a run is read; what it says about a
+  // cell, a row or the table is not, so a first row shaded by its style comes out
+  // unshaded and one lined by its style moves the text under it.
+  "table-style-conditional-formatting": "moves-text",
   "keep-lines-together": "moves-text",
   "character-kerning": "moves-text",
   capitals: "moves-text",
@@ -159,7 +162,7 @@ function unhonouredBy(
     case "vMerge":
       return "merged-cells";
     case "tblStylePr":
-      return "table-style-conditional-formatting";
+      return conditionalFormattingUnread(element);
     case "keepLines":
       return toggled(element) ? "keep-lines-together" : null;
     case "kern":
@@ -234,6 +237,20 @@ function drawnBefore(element: XmlElement, paragraph: XmlElement | null): boolean
   };
   walk(paragraph);
   return seen;
+}
+
+// **What a table style says about one place in the table is read for the paragraphs
+// and the runs standing there and for nothing else.** A `w:tblStylePr` holding a
+// `w:pPr` or a `w:rPr` alone is honoured (see `CONDITIONAL_ORDER`); one that also
+// states a `w:tcPr`, a `w:trPr` or a `w:tblPr` is asking for shading, a row height
+// or a border this project still settles from the table's own properties.
+const READ_IN_A_CONDITIONAL_FORMAT = new Set(["pPr", "rPr"]);
+
+function conditionalFormattingUnread(element: XmlElement): UnhonouredKind | null {
+  for (const child of element.children)
+    if (child.namespace === W_NS && !READ_IN_A_CONDITIONAL_FORMAT.has(child.name))
+      return "table-style-conditional-formatting";
+  return null;
 }
 
 // A border names its pattern in `w:val`, and only inside one of the elements that

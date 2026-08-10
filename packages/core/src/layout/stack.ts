@@ -34,8 +34,11 @@ import {
   resolveParagraphFrame,
   resolveParagraphMark,
   resolveRunMarks,
+  resolveBandSizes,
   resolveTableBorders,
   styleIdOf,
+  type CellPosition,
+  type InTable,
   type ParagraphFrame,
   type ParagraphMark,
   type StyleTable,
@@ -278,7 +281,7 @@ type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "width
   readonly inColumn: boolean;
   // The style of the table a cell's text stands in, which that text reads between
   // the document's defaults and its own style. Null anywhere but inside a cell.
-  readonly tableStyleId: string | null;
+  readonly inTable: InTable | null;
 };
 
 // Where a story's text runs across the page, which a section break can change
@@ -311,7 +314,7 @@ export function measureStack(input: MeasureStackInput): StackMeasurement {
     settings: input.settings ?? DEFAULT_SETTINGS,
     inCell: false,
     inColumn: false,
-    tableStyleId: null,
+    inTable: null,
   };
   return measureBlocks(input.blocks, context, input.originPt, {
     leftPt: input.leftPt,
@@ -687,7 +690,7 @@ const opensPage = (
 ): boolean =>
   !context.inCell &&
   (above?.endsPage === true ||
-    resolveParagraphFrame(paragraph, context.styles, context.tableStyleId).pageBreakBefore);
+    resolveParagraphFrame(paragraph, context.styles, context.inTable).pageBreakBefore);
 
 // Half the twip a legacy document's anchors are rounded to, which is as far over
 // the paragraph above an object can come to stand by that rounding alone. An
@@ -723,7 +726,9 @@ type PositionedTable = {
 // way `measureRow` reads them, since a table stating a grid and a table whose cells
 // state their own widths both have to come out where Word drew them.
 function tableWidthPt(block: Table, frame: Frame): number {
-  const plans = planCells(block, frame);
+  // A width needs no bands: every cell of the first row is as wide as its columns
+  // however the style formats it.
+  const plans = planCells(block, { rowBandSize: 1, columnBandSize: 1 }, frame);
   const first = plans[0] ?? [];
   return first.reduce((width, plan) => width + plan.widthPt, 0);
 }
@@ -734,6 +739,9 @@ type CellPlan = {
   readonly at: number;
   readonly leftPt: number;
   readonly widthPt: number;
+  // Where the cell stands in the table, which is what the style's conditional
+  // formats are chosen by.
+  readonly position: CellPosition;
   // The last row the cell reaches, which is its own unless a merge opens at it. A
   // swallowed cell reaches nowhere: it draws nothing and is worth nothing.
   readonly throughRow: number | null;
@@ -749,7 +757,52 @@ type CellPlan = {
 // rows: Word drew no ink for any of them and left every row at 20pt. A continuation
 // with no merge open above it is a cell of its own, which is what an orphan can only
 // be.
-function planCells(block: Table, frame: Frame): readonly (readonly CellPlan[])[] {
+// Which of the table's conditional formats a cell standing here answers to. A
+// switch the table's own `w:tblLook` turns off takes the row or the column out of the
+// question altogether, and a table that turns banding off has no bands at all.
+//
+// **Banding counts from the first row the header did not take**, so a table whose
+// first row is its header has its second row in band 1.
+function positionOf(
+  block: Table,
+  bands: BandSizes,
+  rowAt: number,
+  gridAt: number,
+  span: number,
+): CellPosition {
+  const look = block.look;
+  const columns = Math.max(block.gridTwips.length, ...block.rows.map((row) => row.cells.length));
+  const lastRowAt = block.rows.length - 1;
+
+  const firstRow = look.firstRow && rowAt === 0;
+  const lastRow = look.lastRow && rowAt === lastRowAt && lastRowAt > 0;
+  const firstColumn = look.firstColumn && gridAt === 0;
+  const lastColumn = look.lastColumn && gridAt + span >= columns && columns > 1;
+
+  const bandOf = (index: number, size: number): 1 | 2 | null =>
+    index < 0 ? null : Math.floor(index / size) % 2 === 0 ? 1 : 2;
+
+  return {
+    firstRow,
+    lastRow,
+    firstColumn,
+    lastColumn,
+    rowBand:
+      !look.horizontalBanding || firstRow || lastRow
+        ? null
+        : bandOf(rowAt - (look.firstRow ? 1 : 0), bands.rowBandSize),
+    columnBand:
+      !look.verticalBanding || firstColumn || lastColumn
+        ? null
+        : bandOf(gridAt - (look.firstColumn ? 1 : 0), bands.columnBandSize),
+  };
+}
+
+// A band is as deep as the table style says unless the table says otherwise, and
+// one row and one column deep where neither does.
+type BandSizes = { readonly rowBandSize: number; readonly columnBandSize: number };
+
+function planCells(block: Table, bands: BandSizes, frame: Frame): readonly (readonly CellPlan[])[] {
   // A merge learns how far down it reached only once the rows under it have been
   // read, so the cell that opened one is written to as they are.
   type Planning = { -readonly [K in keyof CellPlan]: CellPlan[K] };
@@ -769,8 +822,9 @@ function planCells(block: Table, frame: Frame): readonly (readonly CellPlan[])[]
       const widthPt =
         cellWidthPt(cell) ?? columnWidthPt(block.gridTwips, gridAt, cell.gridSpan) ?? frame.widthPt;
       const opened = cell.merge === "continue" ? open.get(gridAt) : undefined;
+      const position = positionOf(block, bands, rowAt, gridAt, cell.gridSpan);
       if (opened === undefined) {
-        const plan: Planning = { cell, at: gridAt, leftPt, widthPt, throughRow: rowAt };
+        const plan: Planning = { cell, at: gridAt, leftPt, widthPt, position, throughRow: rowAt };
         planned.push(plan);
         if (cell.merge === "restart") {
           open.set(gridAt, plan);
@@ -779,7 +833,7 @@ function planCells(block: Table, frame: Frame): readonly (readonly CellPlan[])[]
       } else {
         opened.throughRow = rowAt;
         alive.add(gridAt);
-        planned.push({ cell, at: gridAt, leftPt, widthPt, throughRow: null });
+        planned.push({ cell, at: gridAt, leftPt, widthPt, position, throughRow: null });
       }
       gridAt += cell.gridSpan;
       leftPt += widthPt;
@@ -874,9 +928,17 @@ function measureTable(
 
   // Everything inside the table reads the table's own style, which the paragraphs
   // in its cells sit under.
-  const inTable: Context = { ...context, tableStyleId: block.styleId };
+  const inTable: Context = { ...context, inTable: { styleId: block.styleId, at: null } };
 
-  const plans = planCells(block, rowFrame);
+  const stated = resolveBandSizes(context.styles, block.styleId);
+  const plans = planCells(
+    block,
+    {
+      rowBandSize: block.look.rowBandSize ?? stated.rowBandSize ?? 1,
+      columnBandSize: block.look.columnBandSize ?? stated.columnBandSize ?? 1,
+    },
+    rowFrame,
+  );
   const measured: MeasuredCell[][] = [];
   const margins: RowMargins[] = [];
   for (const [at, row] of block.rows.entries()) {
@@ -995,6 +1057,10 @@ function measureRowCells(
   for (const [at, plan] of plans.entries()) {
     if (plan.throughRow === null) continue;
     const cell = plan.cell;
+    const inCellHere: Context = {
+      ...inCell,
+      inTable: { styleId: context.inTable?.styleId ?? null, at: plan.position },
+    };
     const own = borders[at]?.drawn ?? NO_BORDERS;
     const leftMarginPt = leftMarginOf(cell, insets, own);
     const rightMarginPt = Math.max(
@@ -1005,7 +1071,7 @@ function measureRowCells(
       leftPt: plan.leftPt + leftMarginPt,
       widthPt: Math.max(0, plan.widthPt - leftMarginPt - rightMarginPt),
     };
-    const of = measureBlocks(cell.blocks, inCell, 0, cellFrame);
+    const of = measureBlocks(cell.blocks, inCellHere, 0, cellFrame);
     if (of.kind === "blocked") return of;
     measured.push({
       align: cell.verticalAlign,
@@ -1296,7 +1362,7 @@ function measureParagraph(
   neighbours: Neighbours,
   standing: Standing,
 ): ParagraphMeasurement {
-  const paragraphMark = resolveParagraphMark(paragraph, context.styles, context.tableStyleId);
+  const paragraphMark = resolveParagraphMark(paragraph, context.styles, context.inTable);
   const marks: readonly ParagraphMark[] = [
     paragraphMark,
     ...resolveRunMarks(paragraph, context.styles),
@@ -1320,7 +1386,7 @@ function measureParagraph(
     if (mark === paragraphMark) markHeight = height.value;
   }
 
-  const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.tableStyleId);
+  const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.inTable);
   const runs = flowing(readRuns(paragraph, context.styles), context.inCell, context.inColumn);
   const insets = insetsOf(paragraphFrame);
   const number = context.numbers.get(paragraph.index);
@@ -1432,10 +1498,7 @@ function paintOf(
 
   const joins = (other: Paragraph | null): boolean =>
     other !== null &&
-    sameBorders(
-      borders,
-      resolveParagraphFrame(other, context.styles, context.tableStyleId).borders,
-    );
+    sameBorders(borders, resolveParagraphFrame(other, context.styles, context.inTable).borders);
 
   return {
     ...across,
@@ -1512,7 +1575,7 @@ function ownSpacingPt(
 // what it already put between the two.
 function roomBelowPt(above: Paragraph | null, below: Paragraph, context: Context): number {
   if (above === null) return 0;
-  const frame = resolveParagraphFrame(above, context.styles, context.tableStyleId);
+  const frame = resolveParagraphFrame(above, context.styles, context.inTable);
   return ownSpacingPt(above, frame, context, { above: null, below }).afterPt;
 }
 

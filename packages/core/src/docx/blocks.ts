@@ -82,6 +82,33 @@ export const DEFAULT_TABLE_INSETS: TableInsets = {
   bottomTwips: 0,
 };
 
+// Which of a table style's conditional formats the table asks for, and how many
+// rows and columns a band is. Word writes `w:tblLook` on every table it makes; a
+// table that states none asks for none of them, which is what the attributes
+// default to.
+export type TableLook = {
+  readonly firstRow: boolean;
+  readonly lastRow: boolean;
+  readonly firstColumn: boolean;
+  readonly lastColumn: boolean;
+  readonly horizontalBanding: boolean;
+  readonly verticalBanding: boolean;
+  // Undefined where the table states none of its own and the style's stands.
+  readonly rowBandSize: number | undefined;
+  readonly columnBandSize: number | undefined;
+};
+
+export const NO_TABLE_LOOK: TableLook = {
+  firstRow: false,
+  lastRow: false,
+  firstColumn: false,
+  lastColumn: false,
+  horizontalBanding: false,
+  verticalBanding: false,
+  rowBandSize: undefined,
+  columnBandSize: undefined,
+};
+
 // Where a table stands when `w:tblpPr` takes it out of the flow: what its own
 // offsets are measured from, and how far off those origins it stands. `xSpec`
 // names an edge instead of a distance, and stands in front of `xTwips` where a
@@ -114,6 +141,7 @@ export type Block =
       readonly styleId: string | null;
       // Null in a table that flows with the text, which is all but ten of the 966.
       readonly positioning: TablePositioning | null;
+      readonly look: TableLook;
     };
 
 // Text box content is laid out inside its own frame, and mc:Fallback repeats the
@@ -172,6 +200,41 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
     borders: readTableBorders(properties),
     styleId: style === null ? null : (attribute(style, W_NS, "val") ?? null),
     positioning: tablePositioning(properties),
+    look: tableLook(properties),
+  };
+}
+
+// **Word writes the switches twice**, once as attributes of their own and once as a
+// hex mask in `w:val` that older files carry alone. The attributes win where they
+// are there, and the mask answers where they are not.
+function tableLook(properties: XmlElement | null): TableLook {
+  const stated = properties === null ? null : firstNamed(properties, W_NS, "tblLook");
+  if (stated === null) return NO_TABLE_LOOK;
+
+  const mask = Number.parseInt(attribute(stated, W_NS, "val") ?? "", 16);
+  const bit = (of: number): boolean => Number.isFinite(mask) && (mask & of) !== 0;
+  const on = (name: string, at: number): boolean => {
+    const value = attribute(stated, W_NS, name);
+    return value === undefined ? bit(at) : value !== "0" && value !== "false" && value !== "off";
+  };
+
+  const bandSize = (name: string): number | undefined => {
+    const held = properties === null ? null : firstNamed(properties, W_NS, name);
+    const value = held === null ? Number.NaN : Number(attribute(held, W_NS, "val") ?? Number.NaN);
+    return Number.isFinite(value) && value >= 1 ? Math.floor(value) : undefined;
+  };
+
+  return {
+    firstRow: on("firstRow", 0x0020),
+    lastRow: on("lastRow", 0x0040),
+    firstColumn: on("firstColumn", 0x0080),
+    lastColumn: on("lastColumn", 0x0100),
+    // The mask says which banding is *off*, and the attributes say the same, so both
+    // are read the same way round and both are turned over here.
+    horizontalBanding: !on("noHBand", 0x0200),
+    verticalBanding: !on("noVBand", 0x0400),
+    rowBandSize: bandSize("tblStyleRowBandSize"),
+    columnBandSize: bandSize("tblStyleColBandSize"),
   };
 }
 

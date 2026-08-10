@@ -5,6 +5,7 @@ import {
   characterSpacingDocument,
   columnsDocument,
   compatibilityDocument,
+  conditionalTableDocument,
   drawingDocument,
   insignificantSpaceDocument,
   justifiedFittingDocument,
@@ -35,6 +36,7 @@ import {
   unmappedInTextFaceDocument,
   wrappingDocument,
   wrapSidesDocument,
+  CONDITIONAL_STYLES,
   FIRST_LINE_NUMBERING,
   NUMBERING,
   SPACING_STYLES,
@@ -553,6 +555,15 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // them, which is the oracle a height is read by here.
       paragraphsPlaced: 140,
       bytes: buildAuthoredDocx({ body: statedRowHeightsDocument() }),
+    },
+    {
+      id: "conditional-table",
+      title: "A table style that formats one place differently from another",
+      asks: "which of a style's conditional formats reach a cell, in what order, and which of them w:tblLook turns off",
+      bytes: buildAuthoredDocx({
+        body: conditionalTableDocument(),
+        extraStyles: CONDITIONAL_STYLES,
+      }),
     },
     {
       id: "numbered-first-line",

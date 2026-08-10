@@ -36,6 +36,10 @@ type Drawn = {
 };
 
 const DRAWN: Readonly<Record<string, Drawn>> = {
+  // Every line of all six cases: a marker, a table of five rows and four cells, and
+  // a line under it. Word's own pdf is the oracle, since every one of the thirteen
+  // conditional formats states an indent and a left is what says which of them won.
+  "conditional-table": { lines: 132, runs: 132, numbers: 0 },
   // Forty two of the forty three lines of all seven cases, in both documents: a
   // marker, the numbered paragraph's own lines and a line under it. The one left out
   // is case e's first line, where the level's suffix is `nothing` and Word draws the
