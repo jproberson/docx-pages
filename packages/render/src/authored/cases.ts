@@ -109,11 +109,10 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // lines and the marks either side of them.
   "breaks-in-a-paragraph": { lines: 46, runs: 46, numbers: 0 },
   // Sixty seven cases of a marker and three repeats, and the second line of each.
-  // The twelve out of place are the six cases whose overflow falls within a tenth of
-  // a point of the ceiling the squeeze is capped at, and the line under each of them:
-  // the ceiling is measured to a tenth and built as five twelfths of the size, which
-  // is not the whole answer. See **Settled recently** in `docs/gaps.md`.
-  "justified-fitting": { lines: 546, runs: 645, numbers: 0, placed: 534, runsPlaced: 645 },
+  // Every one of them lands where Word drew it, which twenty four did not until the
+  // squeeze was measured against the advance of the word being taken rather than
+  // against the size its text is set in. See **Settled recently** in `docs/gaps.md`.
+  "justified-fitting": { lines: 570, runs: 681, numbers: 0 },
   // Every line of the same body in a document that declares no compatibility mode,
   // where no line is squeezed at all and every one of them lands where Word drew it.
   // Word draws more of its lines in pieces than the modern one's, which is why the

@@ -472,32 +472,38 @@ class LineBuilder {
 
   // **A justified line takes a word it has not the room for so long as its own
   // spaces can give up the difference: every space gives up at most a quarter of
-  // itself, and the line at most five twelfths of the size its text is set in.**
-  // Measured on 2026-08-08 by the authored `justified-fitting` document, over lines
-  // of three, four, six, eight, ten, twelve and sixteen spaces, at two sizes and in
-  // two faces. The quarter is bracketed to between 0.246 and 0.253 of a space by the
-  // lines the spaces themselves hold back; the ceiling to between 0.400 and 0.434 of
-  // the em by the ones the ceiling holds back, which is where five twelfths falls.
-  // The ceiling is of the em and not of the space: Times New Roman, whose space is a
-  // quarter of its em where Calibri's is 0.2261, stopped at the same length.
+  // itself, and the line at most a third of the advance of the word it is being
+  // asked to take, counting the space in front of it, plus 0.2307 of that advance
+  // over the line's spaces less a half.**
+  //
+  // Measured on 2026-08-10 off Word's own pdf, over 18 sweeps a twip apart: four to
+  // thirty two spaces, three sizes, two faces, and words advancing from 5.6pt to
+  // 43.8pt. The quarter is the bound where the word is a wide one, and Word took
+  // 10.8125pt of a line offering 10.8516 and refused 10.8625. Everywhere else the
+  // word's own advance is the bound, and it is that advance and not the em: a line
+  // in Times New Roman, whose space is a quarter of its em where Calibri's is
+  // 0.2261, stopped at the same fraction of it. The line's width does not enter at
+  // all, a line of `mm` seven times ending in a short word stopping where the same
+  // short word did on a line half as wide. The 0.2307 is bracketed to 0.2299-0.2315
+  // by the eight and sixteen space sweeps, and the third is what the sweeps out to
+  // thirty two spaces settle on.
   //
   // The squeeze itself is on the spaces and nowhere else, which Word's own report of
   // every character of such a line says: the letters advance by what the face makes
   // them and the spaces come out at 78% of theirs.
   private squeezePt(fragments: readonly Fragment[]): number {
     if (!this.justified) return 0;
-    const gapsPt = [...this.segments, ...this.pending].reduce(
+    const held = [...this.segments, ...this.pending];
+    const gapsPt = held.reduce(
       (widthPt, segment) => widthPt + (spaceCountOf(segment) === 0 ? 0 : segment.widthPt),
       0,
     );
-    const sizePt = Math.max(
-      0,
-      ...[...this.segments, ...this.pending].map((segment) =>
-        segment.kind === "text" ? segment.mark.fontSizePt : 0,
-      ),
-      ...fragments.map((fragment) => fragment.mark.fontSizePt),
-    );
-    return Math.min(gapsPt / 4, (sizePt * 5) / 12);
+    const spaces = held.reduce((count, segment) => count + spaceCountOf(segment), 0);
+    if (spaces === 0) return 0;
+
+    const advancePt =
+      widthOf(fragments) + this.pending.reduce((widthPt, segment) => widthPt + segment.widthPt, 0);
+    return Math.min(gapsPt / 4, advancePt * (1 / 3 + 0.2307 / (spaces - 0.5)));
   }
 
   // A line reaches as far above the baseline as the highest thing on it and as far

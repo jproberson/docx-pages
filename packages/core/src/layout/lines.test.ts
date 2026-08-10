@@ -638,6 +638,56 @@ describe("a character drawn out of another face", () => {
   });
 });
 
+// **What a justified line may be squeezed by, measured on 2026-08-10 off Word's own
+// pdf**: at most a quarter of the spaces it holds, and at most a third of the
+// advance of the word it is being asked to take, counting the space in front of it,
+// plus 0.2307 of that advance over the line's spaces less a half.
+//
+// Every glyph of the face here is half an em, so a 10pt run measures 5pt a character
+// and each allowance can be counted out by hand.
+describe("breakLines squeezing a justified line", () => {
+  const justifiedWords = (text: string, widthPt: number): number => {
+    const result = breakLines({
+      runs: [runOf(text)],
+      widthPt,
+      metricsFor: metricsFor(),
+      justified: true,
+    });
+    if (result.kind !== "lines") throw new Error(result.failure.kind);
+    return textOf(result.lines[0] ?? never())
+      .trim()
+      .split(/\s+/).length;
+  };
+
+  // "aa aa aa aa b" is 65pt over four spaces. The word it ends on advances 10pt with
+  // its space, so the line may be squeezed by 10 * (1/3 + 0.2307/3.5) = 3.992pt,
+  // which is under the quarter of 20pt of spaces the same line offers.
+  it("takes a word overflowing by a third of its advance and a share over the spaces", () => {
+    expect(justifiedWords("aa aa aa aa b", 61.1)).toBe(5);
+    expect(justifiedWords("aa aa aa aa b", 61)).toBe(4);
+  });
+
+  // The same word on a line of eight spaces: 10 * (1/3 + 0.2307/7.5) = 3.641pt, so
+  // the more spaces a line holds the less it may be squeezed to take one more word.
+  it("allows less the more spaces the line holds", () => {
+    expect(justifiedWords("aa aa aa aa aa aa aa aa b", 121.4)).toBe(9);
+    expect(justifiedWords("aa aa aa aa aa aa aa aa b", 121.3)).toBe(8);
+  });
+
+  // "abcd abcd abcd abcd abcd" is 120pt over four spaces. A third of the last word's
+  // 25pt advance is more than the spaces can give up, so the quarter is what holds.
+  it("never squeezes a space by more than a quarter of itself", () => {
+    expect(justifiedWords("abcd abcd abcd abcd abcd", 115.1)).toBe(5);
+    expect(justifiedWords("abcd abcd abcd abcd abcd", 114.9)).toBe(4);
+  });
+
+  it("squeezes nothing at all where the paragraph is not justified", () => {
+    const lines = linesOf([runOf("aa aa aa aa b")], 61.1);
+
+    expect(textOf(lines[0] ?? never()).trim()).toBe("aa aa aa aa");
+  });
+});
+
 // Measured against Word itself: every space character on the line takes an equal
 // share of the room the line did not fill, and nothing else takes any.
 describe("justifyLine", () => {
