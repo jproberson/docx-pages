@@ -13,15 +13,19 @@ import { bottomOf, type PdfPage } from "./coordinates.js";
 import type { Content } from "./content.js";
 import type { PdfFonts } from "./fonts.js";
 import {
+  pdfArray,
   pdfDictionary,
+  pdfHexString,
   pdfName,
   pdfNumber,
   pdfStream,
+  type PdfEntries,
   type PdfObjects,
   type PdfReference,
   type PdfValue,
 } from "./objects.js";
 import type { ObjectDrawable } from "./objects-paint.js";
+import { hasAlpha, readPng, samplesOf, splitAlpha, type PngImage } from "./png.js";
 
 // The two kinds of picture a `.docx` holds that this writes, which are not the
 // same kind of thing at all.
@@ -169,6 +173,10 @@ function writeBitmap(options: ImageOptions, part: string): PdfReference | null {
   const bytes = options.imageBytes(part);
   if (bytes === undefined) return null;
 
+  return writeJpeg(options, bytes) ?? writePng(options, bytes);
+}
+
+function writeJpeg(options: ImageOptions, bytes: Uint8Array): PdfReference | null {
   const jpeg = readJpeg(bytes);
   const space = jpeg === null ? undefined : COLOR_SPACES[jpeg.components];
   if (jpeg === null || space === undefined) return null;
@@ -191,6 +199,137 @@ function writeBitmap(options: ImageOptions, part: string): PdfReference | null {
       false,
     ),
   );
+}
+
+// What a pdf calls a png's pixels. An indexed one names its palette instead, which
+// is written beside it below.
+const PNG_COLOR_SPACES: Readonly<Record<number, string>> = {
+  0: "DeviceGray",
+  2: "DeviceRGB",
+  4: "DeviceGray",
+  6: "DeviceRGB",
+};
+
+// A png filters its rows exactly as a pdf's predictor 15 does, so the two agree on
+// what the deflated bytes mean and the pixels never have to be opened.
+const PNG_PREDICTOR = 15;
+
+const BITS = 8;
+
+/**
+ * A png written into the file.
+ *
+ * Two paths, and which one a picture takes is decided by whether it carries alpha.
+ *
+ * **Without alpha the bytes go across untouched.** A pdf deflates and predicts its
+ * pixels the same way a png does, so the IDAT stream is already a pdf image
+ * stream: it is written as it stands, with the predictor named, and nothing is
+ * inflated, decoded or compressed again. A picture written this way is the very
+ * picture the document held.
+ *
+ * **With alpha the pixels have to be opened**, because a png keeps what shows
+ * through a picture in with the colour and a pdf keeps it in an image of its own.
+ * They are inflated, unfiltered, split, and deflated again as two streams.
+ */
+function writePng(options: ImageOptions, bytes: Uint8Array): PdfReference | null {
+  const png = readPng(bytes);
+  if (png === null) return null;
+
+  // The corpus sweep finds no png of another depth at all, and interlaced ones
+  // vanishingly rare. An interlaced png holds its rows in seven passes that would
+  // have to be woven back together, and is left undrawn rather than drawn as the
+  // smear that reading it straight would give. The README names both.
+  if (png.interlaced || png.bitDepth !== BITS) return null;
+
+  const width = pdfNumber(png.widthPixels);
+  const height = pdfNumber(png.heightPixels);
+  const shared: PdfEntries = {
+    Type: pdfName("XObject"),
+    Subtype: pdfName("Image"),
+    Width: width,
+    Height: height,
+    BitsPerComponent: pdfNumber(BITS),
+  };
+
+  if (!hasAlpha(png.colourType)) {
+    const space = colourSpaceOf(png);
+    if (space === null) return null;
+    return options.objects.add(
+      pdfStream(
+        {
+          ...shared,
+          ColorSpace: space,
+          Mask: maskOf(png),
+          Filter: pdfName("FlateDecode"),
+          DecodeParms: pdfDictionary({
+            Predictor: pdfNumber(PNG_PREDICTOR),
+            Colors: pdfNumber(samplesOf(png.colourType)),
+            Columns: width,
+            BitsPerComponent: pdfNumber(BITS),
+          }),
+        },
+        png.deflated,
+        false,
+      ),
+    );
+  }
+
+  const split = splitAlpha(png);
+  const space = PNG_COLOR_SPACES[png.colourType];
+  if (split === null || space === undefined) return null;
+
+  // What shows through the picture, as a greyscale image of its own the same size.
+  const soft = options.objects.add(
+    pdfStream({ ...shared, ColorSpace: pdfName("DeviceGray") }, split.alpha),
+  );
+
+  return options.objects.add(
+    pdfStream({ ...shared, ColorSpace: pdfName(space), SMask: soft }, split.colour),
+  );
+}
+
+function colourSpaceOf(png: PngImage): PdfValue | null {
+  if (png.colourType !== 3) {
+    const named = PNG_COLOR_SPACES[png.colourType];
+    return named === undefined ? null : pdfName(named);
+  }
+
+  // An indexed png draws out of its own palette, which the pdf carries beside it
+  // rather than the picture being expanded into full colour.
+  const palette = png.palette;
+  if (palette === null || palette.byteLength === 0) return null;
+  return pdfArray([
+    pdfName("Indexed"),
+    pdfName("DeviceRGB"),
+    pdfNumber(Math.floor(palette.byteLength / 3) - 1),
+    pdfHexString(palette),
+  ]);
+}
+
+/**
+ * The palette entries a png says are not drawn at all.
+ *
+ * `tRNS` states an alpha for each entry, and only an indexed png in these
+ * documents ever carries one. Where every alpha it states is all or nothing, the
+ * entries that are nothing become a colour-key mask, which costs nothing: the
+ * picture still goes across untouched.
+ *
+ * A palette that is **partly** transparent would need the pixels opened to make a
+ * soft mask of, and the pass-through given up with them. Nothing here does that,
+ * so such a png is drawn opaque rather than not at all: the shape is right and only
+ * what shows through it is wrong. The README names it.
+ */
+function maskOf(png: PngImage): PdfValue | undefined {
+  const stated = png.transparency;
+  if (png.colourType !== 3 || stated === null) return undefined;
+
+  const ranges: PdfValue[] = [];
+  for (const [index, alpha] of stated.entries()) {
+    if (alpha === 0xff) continue;
+    if (alpha !== 0) return undefined;
+    ranges.push(pdfNumber(index), pdfNumber(index));
+  }
+  return ranges.length === 0 ? undefined : pdfArray(ranges);
 }
 
 // An image draws into the unit square, so the transform that places it is its

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { strFromU8 } from "fflate";
+import { strFromU8, zlibSync } from "fflate";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -269,33 +269,38 @@ describe("what a page paints behind its text", () => {
   });
 });
 
+const drawing = (widthEmu: number, heightEmu: number): string =>
+  `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">` +
+  `<wp:extent cx="${String(widthEmu)}" cy="${String(heightEmu)}"/>` +
+  `<wp:docPr id="1" name="Picture 1"/><a:graphic xmlns:a="${A_NS}">` +
+  `<a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">` +
+  `<pic:blipFill><a:blip xmlns:r="${R_NS}" r:embed="rId9"/></pic:blipFill>` +
+  `<pic:spPr><a:xfrm><a:ext cx="${String(widthEmu)}" cy="${String(heightEmu)}"/></a:xfrm>` +
+  `</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+
+const withPicture = (
+  widthEmu: number,
+  heightEmu: number,
+  picture: Uint8Array = TINY_JPEG,
+  name = "jpeg",
+) => {
+  const bytes = buildDocx({
+    "word/document.xml": wordDocument(drawing(widthEmu, heightEmu) + section()),
+    "word/styles.xml": STYLES,
+    [`word/media/image1.${name}`]: picture,
+    "word/_rels/document.xml.rels":
+      `<?xml version="1.0"?><Relationships ` +
+      `xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="rId9" Target="media/image1.${name}" Type="${R_NS}/image"/>` +
+      `</Relationships>`,
+  });
+  const pkg = openDocx(bytes);
+  const layout = layOutDocument(pkg, metricsFor);
+  if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
+  return { pkg, layout };
+};
+
 describe("a picture", () => {
-  const drawing = (widthEmu: number, heightEmu: number): string =>
-    `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">` +
-    `<wp:extent cx="${String(widthEmu)}" cy="${String(heightEmu)}"/>` +
-    `<wp:docPr id="1" name="Picture 1"/><a:graphic xmlns:a="${A_NS}">` +
-    `<a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">` +
-    `<pic:blipFill><a:blip xmlns:r="${R_NS}" r:embed="rId9"/></pic:blipFill>` +
-    `<pic:spPr><a:xfrm><a:ext cx="${String(widthEmu)}" cy="${String(heightEmu)}"/></a:xfrm>` +
-    `</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
-
-  const withPicture = (widthEmu: number, heightEmu: number) => {
-    const bytes = buildDocx({
-      "word/document.xml": wordDocument(drawing(widthEmu, heightEmu) + section()),
-      "word/styles.xml": STYLES,
-      "word/media/image1.jpeg": TINY_JPEG,
-      "word/_rels/document.xml.rels":
-        `<?xml version="1.0"?><Relationships ` +
-        `xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-        `<Relationship Id="rId9" Target="media/image1.jpeg" Type="${R_NS}/image"/>` +
-        `</Relationships>`,
-    });
-    const pkg = openDocx(bytes);
-    const layout = layOutDocument(pkg, metricsFor);
-    if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
-    return { pkg, layout };
-  };
-
   // A jpeg goes into the file as it stands, so what the reader finds is the very
   // bytes the document held, drawn into the rectangle layout placed it in.
   it("is drawn in the rectangle layout placed it in", async () => {
@@ -436,3 +441,161 @@ describe("pdfOfDocx", () => {
     ]);
   });
 });
+
+// A png in a `.docx` is nearly always one that carries alpha, and nearly always
+// eight bits deep and drawn in one pass; the corpus sweep is what says so. Both
+// paths below are worth holding all the same.
+describe("a png picture", () => {
+  const crcTable = Uint32Array.from({ length: 256 }, (_, byte) => {
+    let value = byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    return value >>> 0;
+  });
+
+  const crc32 = (bytes: Uint8Array): number => {
+    let value = 0xffffffff;
+    for (const byte of bytes) value = (crcTable[(value ^ byte) & 0xff] ?? 0) ^ (value >>> 8);
+    return (value ^ 0xffffffff) >>> 0;
+  };
+
+  function chunk(name: string, data: Uint8Array): Uint8Array {
+    const out = new Uint8Array(data.byteLength + 12);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, data.byteLength);
+    for (const [at, character] of Array.from(name).entries()) out[4 + at] = character.charCodeAt(0);
+    out.set(data, 8);
+    view.setUint32(out.byteLength - 4, crc32(out.subarray(4, out.byteLength - 4)));
+    return out;
+  }
+
+  // One pixel, so the fixture states a whole picture rather than a fragment of one.
+  function png(colourType: number, samples: readonly number[], interlaced = false): Uint8Array {
+    const header = new Uint8Array(13);
+    const view = new DataView(header.buffer);
+    view.setUint32(0, 1);
+    view.setUint32(4, 1);
+    header[8] = 8;
+    header[9] = colourType;
+    header[12] = interlaced ? 1 : 0;
+
+    const parts = [
+      Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk("IHDR", header),
+      chunk("IDAT", zlibSync(Uint8Array.from([0, ...samples]))),
+      chunk("IEND", new Uint8Array(0)),
+    ];
+    const out = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
+    let at = 0;
+    for (const part of parts) {
+      out.set(part, at);
+      at += part.byteLength;
+    }
+    return out;
+  }
+
+  const wroteWith = (picture: Uint8Array): Uint8Array => {
+    const { pkg, layout } = withPicture(914400, 914400, picture, "png");
+    return writePdf(layout, { fonts, imageBytes: (part) => pkg.parts.get(part), metricsFor });
+  };
+
+  it("is drawn in the rectangle layout placed it in", async () => {
+    const { pkg, layout } = withPicture(914400, 457200, png(6, [10, 20, 30, 255]), "png");
+    const bytes = writePdf(layout, {
+      fonts,
+      imageBytes: (part) => pkg.parts.get(part),
+      metricsFor,
+    });
+
+    const placements = await readImagePlacements(bytes);
+    const placed = layout.pages[0]?.inlines[0];
+
+    expect(placements.length).toBeGreaterThan(0);
+    expect({
+      leftPt: round(placements[0]?.rect.leftPt ?? 0),
+      topPt: round(placements[0]?.rect.topPt ?? 0),
+      widthPt: round(placements[0]?.rect.widthPt ?? 0),
+    }).toStrictEqual({
+      leftPt: round(placed?.leftPt ?? 0),
+      topPt: round(placed?.topPt ?? 0),
+      widthPt: round(placed?.widthPt ?? 0),
+    });
+  });
+
+  // **The whole point of the path that carries no alpha.** A pdf deflates and
+  // predicts its pixels exactly as a png does, so the picture in the document is
+  // the picture in the file, byte for byte, never decoded and never compressed a
+  // second time.
+  it("carries a picture with no alpha across untouched", () => {
+    const source = png(2, [10, 20, 30]);
+    const written = wroteWith(source);
+    const idat = readPngIdat(source);
+
+    expect(strFromU8(written, true)).toContain("/Predictor 15");
+    expect(indexOfBytes(written, idat)).toBeGreaterThan(-1);
+  });
+
+  // Alpha is the one thing that forces the pixels open, since a png keeps it in
+  // with the colour and a pdf keeps it in an image of its own.
+  it("gives a picture that carries alpha a soft mask of its own", () => {
+    const text = strFromU8(wroteWith(png(6, [10, 20, 30, 128])), true);
+
+    expect(text).toContain("/SMask ");
+    expect(text).toContain("/ColorSpace /DeviceGray");
+  });
+
+  it("draws an indexed picture out of its own palette", () => {
+    const paletted = withPalette(png(3, [1]));
+    const text = strFromU8(wroteWith(paletted), true);
+
+    expect(text).toContain("/Indexed /DeviceRGB 1");
+  });
+
+  // A png may hold its rows in seven passes instead of one. Left undrawn rather
+  // than drawn as the smear that reading it straight would give.
+  it("leaves an interlaced picture undrawn rather than drawing it wrongly", async () => {
+    expect(await readImagePlacements(wroteWith(png(6, [10, 20, 30, 255], true)))).toStrictEqual([]);
+  });
+});
+
+// The deflated pixels of a png, which is what the no-alpha path hands to the pdf.
+function readPngIdat(bytes: Uint8Array): Uint8Array {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = 8;
+  while (at + 12 <= bytes.byteLength) {
+    const length = view.getUint32(at);
+    const name = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
+    if (name === "IDAT") return bytes.subarray(at + 8, at + 8 + length);
+    at += length + 12;
+  }
+  throw new Error("the fixture holds no pixels");
+}
+
+// A palette put into a png that states none, so an indexed fixture has one.
+function withPalette(bytes: Uint8Array): Uint8Array {
+  const table = Uint8Array.from([255, 0, 0, 0, 0, 255]);
+  const out = new Uint8Array(bytes.byteLength + table.byteLength + 12);
+  const at = 8 + 25;
+  out.set(bytes.subarray(0, at), 0);
+
+  const entry = new Uint8Array(table.byteLength + 12);
+  const view = new DataView(entry.buffer);
+  view.setUint32(0, table.byteLength);
+  for (const [index, character] of Array.from("PLTE").entries())
+    entry[4 + index] = character.charCodeAt(0);
+  entry.set(table, 8);
+  out.set(entry, at);
+  out.set(bytes.subarray(at), at + entry.byteLength);
+  return out;
+}
+
+function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
+  outer: for (let at = 0; at + needle.byteLength <= haystack.byteLength; at += 1) {
+    for (let index = 0; index < needle.byteLength; index += 1) {
+      if (haystack[at + index] !== needle[index]) continue outer;
+    }
+    return at;
+  }
+  return -1;
+}

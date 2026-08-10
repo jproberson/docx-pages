@@ -71,8 +71,21 @@ can still be selected and searched. See the gaps below on what that costs.
   puts the line where the drawn face states and not at a place of its own.
 - Paragraph and cell fills, and their borders: single, double, dashed and dotted.
 - Shapes and text boxes: their fill, their outline, and their own text.
-- Pictures: jpeg passed through as it stands, and metafiles played back as the
-  vector drawing they record rather than rasterised.
+- Pictures: jpeg and png, and metafiles played back as the vector drawing they
+  record rather than rasterised.
+
+A picture costs as little as it can. **A jpeg goes across as it stands**, since it
+is already the compression a pdf would have applied. **So does a png that carries
+no alpha**: a pdf deflates and predicts its pixels exactly as a png does, so the
+`IDAT` stream is already a pdf image stream and is written untouched, with
+`/Predictor 15` naming the arrangement. Neither is decoded and neither is
+compressed a second time, so what the document held is what the file holds.
+
+A png that carries alpha is the one picture whose pixels have to be opened, because
+a png keeps what shows through in with the colour and a pdf keeps it in a separate
+image. It is inflated, unfiltered, split, and written as the picture and its soft
+mask. That is the path that matters: the corpus sweep says nearly every png a real
+document holds carries alpha.
 
 ## What a document asks for and does not get
 
@@ -81,16 +94,27 @@ Named here rather than passed over quietly, which is the same bargain
 
 - **No font subsetting.** The whole of every face goes into the file, every glyph
   of it, including the thousands the document never draws. The output is correct
-  and it is larger than it needs to be: a document in one face of Calibri carries
-  the whole of Calibri. This is the one gap here that is only about size.
-- **No png**, and no gif, bmp, tiff or webp. Only jpeg is passed through, because
-  only jpeg is already a compression a pdf understands. A png would have to be
-  inflated and its predictors undone before it could be written, and the others
-  would have to be encoded into something a pdf carries. None of them is drawn.
-- **No CMYK jpeg.** A four-channel jpeg is left undrawn beside the png. Word writes
-  them inverted often enough that drawing one the wrong way round is worse than
-  not drawing it, and which of the two it is cannot be told from the frame header
-  alone. Greyscale and colour jpegs, which is nearly all of them, go through.
+  and it is larger than it needs to be. This is the one gap here that is only
+  about size, **and it is the whole of the size**: a reference one-pager comes out
+  at 2.8MB, of which 2.5MB is five embedded faces and 0.24MB is every picture on
+  it. Word's own pdf of the same document is 1.0MB.
+- **No gif, bmp, tiff or webp.** Only jpeg and png are written, because only those
+  two are already compressions a pdf understands; the rest would have to be
+  encoded into something it carries. None of them is drawn.
+- **No interlaced png**, which holds its rows in seven passes that would have to be
+  woven back together. Left undrawn rather than drawn as the smear that reading it
+  straight would give. The corpus sweep finds them vanishingly rare.
+- **No png that is not eight bits to a sample.** The sweep finds no other depth at
+  all, so this is a gap in principle rather than in practice.
+- **A partly transparent palette is drawn opaque.** Where an indexed png says an
+  entry is wholly invisible it is masked out and the picture still crosses
+  untouched; where it says an entry is _half_ transparent, honouring it would mean
+  opening the pixels, and the picture is drawn solid instead. The shape is right
+  and only what shows through it is wrong.
+- **No CMYK jpeg.** A four-channel jpeg is left undrawn. Word writes them inverted
+  often enough that drawing one the wrong way round is worse than not drawing it,
+  and which of the two it is cannot be told from the frame header alone. Greyscale
+  and colour jpegs, which is nearly all of them, go through.
 - **A picture nothing can draw leaves its frame empty.** It is not an error and it
   is not a placeholder: the paint round it is still drawn, and the picture is not.
   The viewer outlines such a frame when it is asked to; a file being written has
@@ -99,8 +123,10 @@ Named here rather than passed over quietly, which is the same bargain
   one rather than under a line in a place nothing measured. Every real face states
   the table, so this is a gap in principle more than in practice.
 - **No encryption**, and so no permissions and no password.
-- **No transparency beyond a flat fill.** A soft mask, a blend mode or a partly
-  transparent picture is drawn as though it were opaque.
+- **No transparency beyond a picture's own.** A png brings its alpha with it and
+  keeps it, as a soft mask. Everything else does not: a shape or a run that Word
+  draws part way through what is behind it is drawn solid here, and a blend mode
+  is not read at all.
 - **No tagged structure.** The file is not a tagged pdf: text can be selected and
   copied, and a screen reader is given no reading order, no headings and no
   alternative text for a picture.
