@@ -304,12 +304,21 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "justified-fitting",
       title: "The word a justified line is squeezed to take",
       asks: "how far past its own room a justified line's text may reach before the last word is sent down",
-      // Measured and not built: this project breaks a justified line at its natural
-      // width and Word squeezes the spaces to take one word more, so the 26 that
-      // disagree are the second line of every case Word squeezed and the paragraphs
-      // under it.
-      paragraphsPlaced: 91,
+      // One family is written in Times New Roman, whose space is a quarter of its em
+      // where Calibri's is 0.2261: that is what says whether the ceiling on the
+      // squeeze is a length of the em or of the space.
+      statedFaces: ["Times New Roman"],
       bytes: buildAuthoredDocx({ body: justifiedFittingDocument() }),
+    },
+    {
+      id: "legacy-justified-fitting",
+      title: "The same question of a document that declares no compatibility mode",
+      asks: "whether a justified line is squeezed at all in an old document",
+      statedFaces: ["Times New Roman"],
+      bytes: buildAuthoredDocx({
+        body: justifiedFittingDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
     },
     {
       id: "objects-and-the-footer",

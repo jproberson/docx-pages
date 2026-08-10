@@ -634,7 +634,7 @@ export function breaksInAParagraphDocument(): string {
 // width and never squeezes it, so it breaks a word earlier and the whole paragraph
 // is a line long.
 //
-// Twenty seven cases, each written out three times, each a justified paragraph
+// Sixty seven cases, each written out three times, each a justified paragraph
 // whose last word overflows the room by a stated amount. Where Word draws that word
 // says what it will accept, and the three digits opening every case say which case
 // and which repeat a line belongs to.
@@ -657,6 +657,10 @@ export function justifiedFittingDocument(): string {
     readonly word: string;
     readonly words: number;
     readonly sizePt: number;
+    // A face of its own where the question is about the face: Times New Roman makes
+    // its space a quarter of the em where Calibri makes it 0.2261, so the two say
+    // differently whether the ceiling below is a length of the em or of the space.
+    readonly face?: string;
     // The room that leaves the line exactly the width of its own text, in twips off
     // the right of a 540pt frame.
     readonly indentTwips: number;
@@ -675,6 +679,13 @@ export function justifiedFittingDocument(): string {
   // a length or a fraction of the size the text is set in. Each sweep is close
   // around where the line stopped taking the word, and holds one wide case either
   // side of it for the record.
+  // The first four are the shapes that killed every rule of one term: four spaces,
+  // twelve, three on a line half again as wide, and the first again at half the
+  // size, each holding the widest overflow Word took and the narrowest it refused.
+  // The six after them vary nothing but how many spaces the line holds, since that
+  // is the axis a rule of one term and a rule of two disagree on: a rule per space
+  // rises straight from three spaces to twelve, and one that also holds a floor of
+  // its own is flat until the spaces are worth more than the floor.
   const FAMILIES: readonly Family[] = [
     {
       name: "few",
@@ -683,7 +694,7 @@ export function justifiedFittingDocument(): string {
       sizePt: 24,
       indentTwips: 3502,
       characters: 23,
-      overflowsPt: [0, 4, 4.2, 4.3, 4.4, 4.6, 6],
+      overflowsPt: [4.6, 6],
     },
     {
       name: "many",
@@ -692,7 +703,7 @@ export function justifiedFittingDocument(): string {
       sizePt: 24,
       indentTwips: 3251,
       characters: 39,
-      overflowsPt: [0, 6, 7, 7.2, 7.3, 7.4, 7.6, 12],
+      overflowsPt: [7.6, 12],
     },
     {
       name: "wide",
@@ -701,7 +712,7 @@ export function justifiedFittingDocument(): string {
       sizePt: 24,
       indentTwips: 543,
       characters: 30,
-      overflowsPt: [0, 5, 5.4, 5.6, 5.7, 5.8, 6],
+      overflowsPt: [4, 5],
     },
     {
       name: "small",
@@ -710,7 +721,116 @@ export function justifiedFittingDocument(): string {
       sizePt: 12,
       indentTwips: 7151,
       characters: 23,
-      overflowsPt: [0, 2, 2.1, 2.15, 2.2, 2.3, 3],
+      overflowsPt: [2.2, 2.3],
+    },
+    {
+      name: "three",
+      word: "aa",
+      words: 3,
+      sizePt: 24,
+      indentTwips: 8365,
+      characters: 12,
+      overflowsPt: [4, 4.4],
+    },
+    {
+      name: "four",
+      word: "aa",
+      words: 4,
+      sizePt: 24,
+      indentTwips: 7797,
+      characters: 15,
+      overflowsPt: [5.2, 5.6, 6, 6.4],
+    },
+    {
+      name: "six",
+      word: "aa",
+      words: 6,
+      sizePt: 24,
+      indentTwips: 6660,
+      characters: 21,
+      overflowsPt: [6, 7, 8, 8.4, 8.8, 9.6],
+    },
+    {
+      name: "eight",
+      word: "aa",
+      words: 8,
+      sizePt: 24,
+      indentTwips: 5523,
+      characters: 27,
+      overflowsPt: [10.2, 10.4, 10.6, 10.8, 11],
+    },
+    {
+      name: "ten",
+      word: "aa",
+      words: 10,
+      sizePt: 24,
+      indentTwips: 4387,
+      characters: 33,
+      overflowsPt: [10.1, 10.2, 10.4, 10.6],
+    },
+    {
+      name: "half",
+      word: "aa",
+      words: 12,
+      sizePt: 12,
+      indentTwips: 7025,
+      characters: 39,
+      overflowsPt: [4.6, 5, 5.2, 5.4, 6, 7, 8],
+    },
+    {
+      name: "sixteen",
+      word: "aa",
+      words: 16,
+      sizePt: 24,
+      indentTwips: 976,
+      characters: 51,
+      overflowsPt: [10, 10.2, 10.4, 10.6, 11],
+    },
+    {
+      name: "sixteen wide",
+      word: "aa",
+      words: 16,
+      sizePt: 24,
+      indentTwips: 976,
+      characters: 51,
+      overflowsPt: [9.5, 9.6, 9.7, 9.8, 9.9],
+    },
+    {
+      name: "sixteen small",
+      word: "aa",
+      words: 16,
+      sizePt: 12,
+      indentTwips: 5888,
+      characters: 51,
+      overflowsPt: [4, 4.6, 4.8, 5, 5.4],
+    },
+    {
+      name: "twenty four small",
+      word: "aa",
+      words: 24,
+      sizePt: 12,
+      indentTwips: 3615,
+      characters: 75,
+      overflowsPt: [4, 4.6, 4.8, 5, 5.4],
+    },
+    {
+      name: "roman",
+      word: "aa",
+      words: 12,
+      sizePt: 24,
+      face: "Times New Roman",
+      indentTwips: 3527,
+      characters: 39,
+      overflowsPt: [9.6, 10, 10.4, 10.8, 11.2, 11.6],
+    },
+    {
+      name: "twelve",
+      word: "aa",
+      words: 12,
+      sizePt: 24,
+      indentTwips: 3250,
+      characters: 39,
+      overflowsPt: [10.1, 10.2, 10.4, 10.6],
     },
   ];
 
@@ -721,7 +841,11 @@ export function justifiedFittingDocument(): string {
   return [
     ...cases.flatMap(({ family, overflowPt }, at) => {
       const number = String(at + 1).padStart(2, "0");
-      const size = `<w:sz w:val="${String(family.sizePt * 2)}"/><w:szCs w:val="${String(family.sizePt * 2)}"/>`;
+      const face =
+        family.face === undefined
+          ? ""
+          : `<w:rFonts w:ascii="${family.face}" w:hAnsi="${family.face}" w:cs="${family.face}"/>`;
+      const size = `${face}<w:sz w:val="${String(family.sizePt * 2)}"/><w:szCs w:val="${String(family.sizePt * 2)}"/>`;
       const indent = `<w:ind w:right="${String(family.indentTwips + Math.round(overflowPt * 20))}"/>`;
       const words = Array.from({ length: family.words }, () => family.word).join(" ");
       return [

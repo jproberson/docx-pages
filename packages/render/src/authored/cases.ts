@@ -108,12 +108,17 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // document asks, so what is counted here is what is left: 46 of the 8 cases' own
   // lines and the marks either side of them.
   "breaks-in-a-paragraph": { lines: 46, runs: 46, numbers: 0 },
-  // The document is read by Word's own drawing and disagrees with it on purpose: a
-  // line Word squeezed is drawn as one item and a line it would not squeeze in as
-  // many pieces as it has words, so of the 248 items Word drew, 89 are lines this
-  // project drew too and five of those are in the wrong place. Every number here
-  // falls as the squeeze is built.
-  "justified-fitting": { lines: 89, runs: 140, numbers: 0, placed: 84, runsPlaced: 140 },
+  // Sixty seven cases of a marker and three repeats, and the second line of each.
+  // The twelve out of place are the six cases whose overflow falls within a tenth of
+  // a point of the ceiling the squeeze is capped at, and the line under each of them:
+  // the ceiling is measured to a tenth and built as five twelfths of the size, which
+  // is not the whole answer. See **Settled recently** in `docs/gaps.md`.
+  "justified-fitting": { lines: 546, runs: 645, numbers: 0, placed: 534, runsPlaced: 645 },
+  // Every line of the same body in a document that declares no compatibility mode,
+  // where no line is squeezed at all and every one of them lands where Word drew it.
+  // Word draws more of its lines in pieces than the modern one's, which is why the
+  // count is higher: a line it stretched is an item a word.
+  "legacy-justified-fitting": { lines: 615, runs: 735, numbers: 0 },
   // Every line of all eleven cases: a marker, four rows of two cells and a line
   // under the table. Word's own pdf is the oracle this document is read by, since
   // its report puts the last row of four of the cases 0.55 to 0.7pt below where its

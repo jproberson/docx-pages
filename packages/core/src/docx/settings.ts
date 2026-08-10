@@ -29,6 +29,16 @@ export const DEFAULT_SETTINGS: DocumentSettings = {
 export const roundsAnchorsToTwips = (settings: DocumentSettings): boolean =>
   settings.compatibilityMode === null || settings.compatibilityMode < 15;
 
+// **A justified line is squeezed to take one more word only in a modern document.**
+// Measured on 2026-08-09 by the authored pair `justified-fitting` and
+// `legacy-justified-fitting`, which are the same body and differ in nothing but the
+// compatibility mode: of their 66 cases the modern one takes a word the old one
+// sends down 26 times, and the old one squeezes nothing anywhere. A reference
+// document that declares no mode is what found it, having lost 29 of its 118 lines
+// to a squeeze it never asked for.
+export const squeezesAJustifiedLine = (settings: DocumentSettings): boolean =>
+  !(settings.compatibilityMode === null || settings.compatibilityMode < 15);
+
 // Whether a document is one of the old ones, which the two rules below are the
 // whole of besides the rounding above.
 const legacy = roundsAnchorsToTwips;

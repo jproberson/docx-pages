@@ -24,6 +24,7 @@ import { W_NS, type SectionClose } from "../docx/section.js";
 import {
   measuresTheIndentToTheText,
   roundsAnchorsToTwips,
+  squeezesAJustifiedLine,
   DEFAULT_SETTINGS,
   type DocumentSettings,
 } from "../docx/settings.js";
@@ -1146,6 +1147,9 @@ function measureParagraph(
   const breaking = beginLines({
     runs,
     metricsFor: context.metricsFor,
+    // A justified line may take a word it has not the room for, so where a line
+    // breaks depends on how it is aligned and on how old the document is.
+    justified: paragraphFrame.alignment === "justify" && squeezesAJustifiedLine(context.settings),
     tabs: {
       stopsPt: tabStopsPt(paragraphFrame),
       originPt: insets.leftPt,
