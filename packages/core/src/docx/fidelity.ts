@@ -275,11 +275,25 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
   }
 
   // A style's conditional formats and the settings' own switches belong to no part
-  // of the flow, so they are read where they are written.
-  for (const part of [STYLES_PART, SETTINGS_PART]) {
-    if (!pkg.parts.has(part)) continue;
-    walk(partXml(pkg, part), null, {
-      part,
+  // of the flow, so they are read where they are written. Only the styles the flow
+  // reaches are read: see `stylesTheFlowReaches`.
+  if (pkg.parts.has(STYLES_PART)) {
+    const styles = partXml(pkg, STYLES_PART);
+    const reached = stylesTheFlowReaches(pkg, styles, parts);
+    for (const child of styles.children) {
+      if (child.namespace === W_NS && child.name === "style" && !reached.has(child)) continue;
+      walk(child, null, {
+        part: STYLES_PART,
+        paragraphs: new Map(),
+        found,
+        resolvePart: () => null,
+      });
+    }
+  }
+
+  if (pkg.parts.has(SETTINGS_PART)) {
+    walk(partXml(pkg, SETTINGS_PART), null, {
+      part: SETTINGS_PART,
       paragraphs: new Map(),
       found,
       resolvePart: () => null,
@@ -287,6 +301,73 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
   }
 
   return gathered(found);
+}
+
+// The styles some paragraph, run or table in the flow actually resolves to, with
+// everything each of them is based on.
+//
+// **A style nothing is written in is not something the document asked for.** Reading
+// every `w:style` in the part said 509 of the 718 corpus documents wanted kerning
+// where 44 state `w:kern` in their own flow and 38 more on the defaults every
+// paragraph inherits; the other 481 carry it on a named style, and the ranking that
+// number led was pointing at nothing. `keep-with-next` was rank 1 on the same
+// mistake, at 707 documents against the 44 that have a paragraph resolving to it.
+//
+// `w:docDefaults` is not a style and is always read: what it states, every paragraph
+// in the document gets.
+function stylesTheFlowReaches(
+  pkg: DocxPackage,
+  styles: XmlElement,
+  parts: readonly string[],
+): ReadonlySet<XmlElement> {
+  const byId = new Map<string, XmlElement>();
+  const wanted = new Set<string>();
+
+  for (const style of styles.children) {
+    if (style.namespace !== W_NS || style.name !== "style") continue;
+    const id = attribute(style, W_NS, "styleId");
+    if (id === undefined) continue;
+    byId.set(id, style);
+    // A paragraph naming no style of its own is written in the default one, and so
+    // is a run and a table.
+    if (attribute(style, W_NS, "default") === "1") wanted.add(id);
+  }
+
+  const NAMES = new Set(["pStyle", "rStyle", "tblStyle"]);
+  const gather = (node: XmlElement): void => {
+    for (const child of node.children) {
+      if (child.namespace === W_NS && NAMES.has(child.name)) {
+        const id = attribute(child, W_NS, "val");
+        if (id !== undefined) wanted.add(id);
+      }
+      gather(child);
+    }
+  };
+  for (const part of parts) gather(partXml(pkg, part));
+
+  const reached = new Set<XmlElement>();
+  for (const id of wanted) {
+    let at: string | undefined = id;
+    // A cycle in `w:basedOn` is a broken package rather than a feature passed over,
+    // and walking one is what would hang here.
+    const walked = new Set<string>();
+    while (at !== undefined && !walked.has(at)) {
+      walked.add(at);
+      const style = byId.get(at);
+      if (style === undefined) break;
+      reached.add(style);
+      const basedOn = basedOnOf(style);
+      at = basedOn === null ? undefined : (attribute(basedOn, W_NS, "val") ?? undefined);
+    }
+  }
+
+  return reached;
+}
+
+function basedOnOf(style: XmlElement): XmlElement | null {
+  for (const child of style.children)
+    if (child.namespace === W_NS && child.name === "basedOn") return child;
+  return null;
 }
 
 const STYLES_PART = "word/styles.xml";
