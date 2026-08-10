@@ -55,6 +55,7 @@ const paragraphOf = (
   index: 0,
   topPt: 0,
   anchorTopPt: 0,
+  resumesUnderPt: 0,
   heightPt: 14,
   lines: [
     {

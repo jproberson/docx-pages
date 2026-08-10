@@ -161,6 +161,17 @@ export type ParagraphBox = {
   // by the paragraph's whole height, since the room a paragraph keeps below itself
   // never holds it back at the foot of a page.
   readonly contentBottomPt: number;
+  // What a page opening at this paragraph's text keeps above that text, which is
+  // the furniture the rows it stands in put there again: the table's own top
+  // border, and the margin holding a cell's text off its wall. Nought outside a
+  // table, where a page opens at the first line and everything above it is left
+  // behind.
+  //
+  // Measured on 2026-08-10 by the authored `resuming` document. A row with neither
+  // resumed exactly where an ordinary paragraph did; one held 12pt off the top of
+  // its cell resumed 12pt below the top of the body, and one inside a 3pt border
+  // 3.12pt below it.
+  readonly resumesUnderPt: number;
   // What the paragraph asks of a page break running through it, and of one falling
   // between it and the paragraph after it. Only the break itself can act on either.
   readonly widowControl: boolean;
@@ -377,6 +388,8 @@ function measureBlocks(
       const neighbours = {
         above: paragraphAt(blocks, at - 1),
         below: paragraphAt(blocks, at + 1),
+        closesACellUnderATable:
+          context.inCell && at === blocks.length - 1 && blocks[at - 1]?.kind === "table",
       };
       // An object wraps the text on the page its anchor landed on and no other, so
       // an explicit break is where the objects met before it are let go of.
@@ -915,9 +928,15 @@ function measureTable(
   // An old document's indent is measured to the text rather than to the table, so
   // the first column's own margin stands outside the indent instead of inside it
   // and the table's edge moves left by the whole of it.
+  //
+  // **A table inside a cell stands where a modern document's does either way.**
+  // Measured on 2026-08-10 by the authored `resuming` document and its legacy twin:
+  // the two put the outer table's text 5.28pt apart and the table inside a cell in
+  // the same place, 6.96pt inside the cell's own text in both. A nested table
+  // states no indent of its own there, which is what a document in the wild writes.
   const openingCell = block.rows[0]?.cells[0];
   const insetPt =
-    measuresTheIndentToTheText(context.settings) && openingCell !== undefined
+    measuresTheIndentToTheText(context.settings) && !context.inCell && openingCell !== undefined
       ? -leftMarginOf(openingCell, block.insets, first[0]?.drawn ?? NO_BORDERS)
       : outerLeftPt;
 
@@ -949,7 +968,7 @@ function measureTable(
   }
 
   const heightsPt = rowHeights(block, measured, margins);
-  const placed = placeRows(block, measured, margins, heightsPt, topPt + outerTopPt);
+  const placed = placeRows(block, measured, margins, heightsPt, topPt + outerTopPt, outerTopPt);
 
   // A cell is measured with no bands at all, so nothing inside a table can anchor
   // an object a page break has to make room for.
@@ -1152,6 +1171,7 @@ function placeRows(
   margins: readonly RowMargins[],
   heightsPt: readonly number[],
   topPt: number,
+  outerTopPt: number,
 ): {
   readonly boxes: readonly ParagraphBox[];
   readonly cells: readonly PlacedCell[];
@@ -1207,8 +1227,19 @@ function placeRows(
         row.height?.exact === true
           ? { leftPt: cell.leftPt, topPt: rowTopPt, widthPt: cell.widthPt, heightPt: heldToPt }
           : null;
+      // What the row draws above its own text where a page opens at it, which is
+      // what it drew above it on the page the table opened on: the table's own top
+      // border and the margin holding the cell's text off its wall. A table inside
+      // a cell adds its own to the one round it, which is what case e of `resuming`
+      // asks: the outer row states neither, and the page below the tear opens on
+      // the nested table's 3pt border.
+      const resumesUnderPt = outerTopPt + topMarginPt;
       for (const box of cell.boxes) {
-        const placed = { ...shiftBox(box, offset), clipTo };
+        const placed = {
+          ...shiftBox(box, offset),
+          clipTo,
+          resumesUnderPt: box.resumesUnderPt + resumesUnderPt,
+        };
         boxes.push(placed);
         opened.push(placed);
       }
@@ -1342,6 +1373,9 @@ type ParagraphMeasurement =
 type Neighbours = {
   readonly above: Paragraph | null;
   readonly below: Paragraph | null;
+  // Whether this is the paragraph a cell holding a table has to end with, which is
+  // the one paragraph Word leaves no room for.
+  readonly closesACellUnderATable: boolean;
 };
 
 // What the objects around the paragraph have already settled: the ones standing in
@@ -1443,6 +1477,7 @@ function measureParagraph(
       startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
       endsPageAtASection: sectionClose?.opensAPage === true,
       closesASection: sectionClose !== undefined,
+      closesACellUnderATable: neighbours.closesACellUnderATable,
       number: measured === null ? null : measured.number,
       bands: standing.bands,
       ahead: standing.ahead,
@@ -1576,7 +1611,8 @@ function ownSpacingPt(
 function roomBelowPt(above: Paragraph | null, below: Paragraph, context: Context): number {
   if (above === null) return 0;
   const frame = resolveParagraphFrame(above, context.styles, context.inTable);
-  return ownSpacingPt(above, frame, context, { above: null, below }).afterPt;
+  return ownSpacingPt(above, frame, context, { above: null, below, closesACellUnderATable: false })
+    .afterPt;
 }
 
 // A number sits at the hanging position and the text after it starts at whatever
@@ -1712,6 +1748,7 @@ type LayOutParagraphInput = {
   // break in its own text would. What the text asked for is read off the text.
   readonly endsPageAtASection: boolean;
   readonly closesASection: boolean;
+  readonly closesACellUnderATable: boolean;
   readonly bands: readonly WrapBand[];
   readonly ahead: readonly WrapBand[];
   // What a line has room for where nothing stands beside it, which a shape that
@@ -1816,7 +1853,13 @@ function layOutWholeParagraph(
   // A real document closes a section with such a paragraph six points past the foot
   // of its page, and read as an ordinary one it came out a blank page longer than
   // Word drew it.
-  if (laid.length === 0 && input.closesASection) {
+  // **The paragraph a cell holding a table has to end with is not laid out
+  // either.** Measured on 2026-08-10 by the authored `resuming` document: the row
+  // under such a cell opened where the table above it left off, and the same
+  // paragraph with a word in it took the whole of its line. A paragraph closing a
+  // cell after ordinary text keeps its line too, so what empties this one is the
+  // table above it and not the cell it ends.
+  if (laid.length === 0 && (input.closesASection || input.closesACellUnderATable)) {
     return {
       index,
       topPt: input.topPt,
@@ -1826,6 +1869,7 @@ function layOutWholeParagraph(
       marker: null,
       markTopPt: input.topPt,
       contentBottomPt: input.topPt,
+      resumesUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
       keepNext: paragraphFrame.keepNext,
       startsPage: input.startsPage,
@@ -1870,6 +1914,7 @@ function layOutWholeParagraph(
       marker: markerAt(number, slot.topPt + height.baseFromTopPt),
       markTopPt: slot.topPt + height.seatPt,
       contentBottomPt: slot.topPt + height.heightPt,
+      resumesUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
       keepNext: paragraphFrame.keepNext,
       startsPage: input.startsPage,
@@ -1913,6 +1958,7 @@ function layOutWholeParagraph(
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
     contentBottomPt: bottomPt,
+    resumesUnderPt: 0,
     widowControl: paragraphFrame.widowControl,
     keepNext: paragraphFrame.keepNext,
     startsPage: input.startsPage,

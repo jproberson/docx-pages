@@ -1,3 +1,5 @@
+import { borderExtentPt } from "../docx/borders.js";
+import type { Border } from "../docx/borders.js";
 import type { AnchoredObject, ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
 
 // The run of a page the body's text may stand in: where it begins under the
@@ -154,7 +156,7 @@ function breakOnce(
       const opensAt =
         brokenAtASection && !box.startsPage && !carriedForward
           ? box.topPt
-          : (box.lines[0]?.topPt ?? box.topPt);
+          : (box.lines[0]?.topPt ?? box.topPt) - box.resumesUnderPt;
       leave(opensAt, opens, box.index);
     }
     broken = box.endsPage;
@@ -209,7 +211,7 @@ function breakOnce(
     // past the foot of the page rather than moving it on.
     if (box.lines.length === 0) {
       if (overflows(box.topPt, box.contentBottomPt - box.topPt)) {
-        shiftPt = box.topPt - opens.topPt;
+        shiftPt = box.topPt - opens.topPt - box.resumesUnderPt;
         open(opens, box.index);
       }
       put(partOf(box, 0, 0, shiftPt));
@@ -232,10 +234,12 @@ function breakOnce(
         }
 
         // The lines between the cut and the line that overflowed are on the next
-        // page now, so they are looked at again from there.
+        // page now, so they are looked at again from there. A line inside a table
+        // lands as far below the top of the page as its row draws furniture above
+        // it, which is what a torn row resumes under.
         const cut = asked ? at : cutFor(box, { from, at, shiftPt, topPt: opens.topPt });
         if (cut > from) put(partOf(box, from, cut, shiftPt));
-        shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - opens.topPt;
+        shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - opens.topPt - box.resumesUnderPt;
         open(opens, box.index);
         from = cut;
         at = cut + 1;
@@ -330,18 +334,31 @@ function cellsOn(
   const { shiftPt, body } = page;
   const fromPt = body.topPt + shiftPt;
   const next = opened[index + 1];
-  const toPt = Math.min(
-    next === undefined ? Number.POSITIVE_INFINITY : next.body.topPt + next.shiftPt,
-    fromPt + (body.bottomPt - body.topPt),
-  );
+  const nextPt = next === undefined ? Number.POSITIVE_INFINITY : next.body.topPt + next.shiftPt;
+  const footPt = fromPt + (body.bottomPt - body.topPt);
 
   return input.cells.flatMap((cell) => {
-    const topPt = Math.max(cell.topPt, fromPt);
-    const bottomPt = Math.min(cell.topPt + cell.heightPt, toPt);
+    // **A cell the break runs through runs on to the foot of the page**, and one
+    // that begins after the break stands on the next page rather than leaving a
+    // sliver of itself at the foot of this one. The two are the same thing only
+    // where a page ends exactly where the next one takes up, which a torn row is
+    // the case against: the room the row keeps above its text on the page below is
+    // room the page above never had.
+    const cutPt = cell.topPt < nextPt && cell.topPt + cell.heightPt > nextPt ? footPt : nextPt;
+    const topPt = Math.max(cell.topPt, fromPt + halfPt(cell.borders.top));
+    const bottomPt = Math.min(cell.topPt + cell.heightPt, cutPt - halfPt(cell.borders.bottom));
     if (bottomPt - topPt <= 0) return [];
     return [{ ...cell, topPt: topPt - shiftPt, heightPt: bottomPt - topPt }];
   });
 }
+
+// **A row a break runs through keeps the line closing it inside the page**, at
+// both ends: the edge a cut leaves is half a border in from where the page ends
+// rather than on it. Measured on 2026-08-10 by the authored `resuming` document,
+// whose 3pt-bordered row was torn with 96pt of it on each page: Word drew the line
+// closing the first piece over the last 2.88pt of the body and the one opening the
+// second over the first 2.88pt of it.
+const halfPt = (border: Border | null): number => borderExtentPt(border) / 2;
 
 type Cut = {
   // The first of the paragraph's lines still to be placed, and the one whose own
@@ -400,6 +417,7 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
       to === box.lines.length || last === undefined
         ? box.contentBottomPt - shiftPt
         : last.topPt + last.heightPt - shiftPt,
+    resumesUnderPt: box.resumesUnderPt,
     widowControl: box.widowControl,
     // What the paragraph asked of the pages either side of it belongs to the part
     // of it that stands there, and what it holds is held by the part carrying its

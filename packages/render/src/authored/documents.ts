@@ -18,6 +18,7 @@ import {
   objectsPastTheFootDocument,
   overflowingSectionDocument,
   positionedTableDocument,
+  resumingDocument,
   sectionCloserDocument,
   sectionFlowDocument,
   sectionPagesDocument,
@@ -611,6 +612,27 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // where the pdf has it.
       paragraphsPlaced: 160,
       bytes: buildAuthoredDocx({ body: tearingDocument() }),
+    },
+    {
+      id: "resuming",
+      title: "The page a torn row resumes on",
+      asks: "what a row puts above its own text where it resumes, and what closes a cell holding a table",
+      // Four of the 142 in each document, which Word's own report puts between 0.43
+      // and 0.6pt below where its own pdf draws them. Every one of the document's
+      // 121 drawn lines lands where the pdf has it, in both documents, and two of
+      // the four stand in a case with no border in it at all: nothing here rounds.
+      paragraphsPlaced: 138,
+      bytes: buildAuthoredDocx({ body: resumingDocument() }),
+    },
+    {
+      id: "legacy-resuming",
+      title: "The same rows in a document that declares no compatibility mode",
+      asks: "whether declaring 15 changes where a torn row resumes",
+      paragraphsPlaced: 138,
+      bytes: buildAuthoredDocx({
+        body: resumingDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
     },
     {
       id: "trailing-space",

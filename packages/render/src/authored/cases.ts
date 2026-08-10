@@ -73,6 +73,12 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Every line of all eight cases, the fillers holding them down the page
   // included: a case is nine lines of its own and the row it asks about.
   tearing: { lines: 154, runs: 154, numbers: 0 },
+  // Every line of all eight cases in both documents: nine holding each case down
+  // its page, and between three and eight of the case's own. The two documents
+  // differ in nothing but the left, since an old document measures a table's
+  // indent to the text inside its first cell.
+  resuming: { lines: 121, runs: 121, numbers: 0 },
+  "legacy-resuming": { lines: 121, runs: 121, numbers: 0 },
   // Twenty lines out of thirty two paragraphs: the twelve holding nothing but a
   // space or a tab draw no ink at all, which is the whole of what the document is
   // asking about and the reason Word's report is the oracle for it. The three runs

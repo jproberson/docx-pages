@@ -2353,6 +2353,128 @@ export function tearingDocument(): string {
   ].join("");
 }
 
+// Where a row torn across a page resumes on the next one, and what a cell's own
+// furniture is worth there.
+//
+// `tearing` asks which side of a break a row lands on. This asks the question
+// under that one: given that the row was torn, what stands above the first line of
+// it on the page below. A row carries a top border and a cell top margin above its
+// text on the page it opens, and whether either is drawn again where it resumes has
+// never been asked.
+//
+// Every case fills its page from a known place, exactly as `tearing` does: a
+// marker, seven fillers and a shim leave 102pt of room, which four of the 24pt
+// lines fit in with six to spare. Case a holds no table at all, so the line it
+// resumes with stands at the top of the body and every other case is read against
+// it: the difference is what the row put above its own text.
+//
+// The last three ask what closes a cell rather than what opens one. A cell must end
+// in a paragraph, so a cell whose last content is a nested table carries an empty
+// one after it, and a corpus document says Word gives that paragraph no room at
+// all. They stand on one page each, since what is being asked is a height and not a
+// break.
+export function resumingDocument(): string {
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const FILLERS = 7;
+  const FILLER_PT = 72;
+  const MARKER_PT = 24;
+  const BLOCK_PT = 720;
+  const LINE_PT = 24;
+  const ROOM_PT = 102;
+
+  const WIDTH = 10800;
+  const NESTED_WIDTH = 5400;
+
+  // Three points, which is thick enough that no rounding can be mistaken for it
+  // and is the width the corpus document that raised the question states.
+  const BORDER_EIGHTHS = 24;
+  const bordered = `<w:tblBorders>${["top", "left", "bottom", "right"]
+    .map(
+      (side) =>
+        `<w:${side} w:val="single" w:sz="${String(BORDER_EIGHTHS)}" w:space="0" w:color="000000"/>`,
+    )
+    .join("")}</w:tblBorders>`;
+
+  // An authored document declares no table style, so a table stating no margins is
+  // held off its walls by nothing at all. Above and below they are nought unless
+  // the case is asking what a top margin is worth.
+  const margins = (topTwips: number): string =>
+    `<w:tblCellMar>
+      <w:top w:w="${String(topTwips)}" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
+    </w:tblCellMar>`;
+
+  const cell = (widthTwips: number, content: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(widthTwips)}" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+
+  const table = (widthTwips: number, properties: string, rows: readonly string[]): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(widthTwips)}" w:type="dxa"/><w:tblInd w:w="0" w:type="dxa"/>${properties}</w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="${String(widthTwips)}"/></w:tblGrid>` +
+    rows.map((content) => `<w:tr>${cell(widthTwips, content)}</w:tr>`).join("") +
+    `</w:tbl>`;
+
+  const named = (name: string, at: number): string => `${name} ${String(at).padStart(2, "0")}`;
+
+  const lines = (name: string, from: number, to: number): string =>
+    Array.from({ length: to - from + 1 }, (_, at) =>
+      paragraph(exactly(LINE_PT), run(named(name, from + at))),
+    ).join("");
+
+  const block = (name: string, content: string): readonly string[] => [
+    paragraph(`<w:pageBreakBefore/>${exactly(MARKER_PT)}`, run(`case ${name}`)),
+    ...Array.from({ length: FILLERS }, (_, at) =>
+      paragraph(exactly(FILLER_PT), run(`${name} fill ${String(at + 1)}`)),
+    ),
+    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - ROOM_PT), run(`${name} shim`)),
+    content,
+  ];
+
+  // A nested table of its own rows, with the empty paragraph a cell holding one
+  // has to end with.
+  const nested = (name: string, from: number, to: number, closer: string): string =>
+    table(
+      NESTED_WIDTH,
+      `${bordered}${margins(0)}`,
+      Array.from({ length: to - from + 1 }, (_, at) => lines(name, from + at, from + at)),
+    ) + closer;
+
+  const CLOSED_EMPTY = paragraph(exactly(LINE_PT), "");
+
+  return [
+    // No table at all, so the line this resumes with stands at the top of the body
+    // and is what every case below is read against.
+    ...block("a", lines("a", 1, 8)),
+    // A row with neither a border nor a top margin, which says whether a row
+    // resumes where an ordinary paragraph does.
+    ...block("b", table(WIDTH, margins(0), [lines("b", 1, 8)])),
+    // The same row held 12pt off the top of its cell, which says whether the margin
+    // is opened again on the page the row resumes on.
+    ...block("c", table(WIDTH, margins(240), [lines("c", 1, 8)])),
+    // The same row inside a 3pt border, which says whether the border is drawn
+    // again there and whether it takes room when it is.
+    ...block("d", table(WIDTH, `${bordered}${margins(0)}`, [lines("d", 1, 8)])),
+    // A row whose cell holds four lines and then a bordered table of its own, so
+    // that the tear falls between the two and the page below opens on the nested
+    // table's own top border. This is the shape the corpus document is.
+    ...block("e", table(WIDTH, margins(0), [lines("e", 1, 4) + nested("e", 5, 7, CLOSED_EMPTY)])),
+    // A nested table and the empty paragraph closing the cell after it, whole on
+    // one page: where the row under it starts says what that paragraph was worth.
+    ...block("f", table(WIDTH, margins(0), [nested("f", 1, 2, CLOSED_EMPTY), lines("f", 3, 3)])),
+    // The same with a word in the closing paragraph, which has to take a line.
+    ...block(
+      "g",
+      table(WIDTH, margins(0), [nested("g", 1, 2, lines("g", 3, 3)), lines("g", 4, 4)]),
+    ),
+    // The same closing paragraph after a line rather than after a nested table,
+    // which says whether it is the paragraph or what stands above it that decides.
+    ...block("h", table(WIDTH, margins(0), [lines("h", 1, 2) + CLOSED_EMPTY, lines("h", 3, 3)])),
+    // A table is the last thing in the body, which Word will not have.
+    EMPTY,
+  ].join("");
+}
+
 // Whether a space raises the line it stands on, and how tall a paragraph holding
 // nothing but spaces comes out.
 //
