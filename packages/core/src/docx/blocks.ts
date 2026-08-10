@@ -27,11 +27,20 @@ export type CellMargins = {
   readonly bottomTwips: number | null;
 };
 
+// Where a cell stands in a run of rows merged down the page. A `restart` opens the
+// run and holds everything drawn in it; a `continue` was swallowed by the one above
+// and draws nothing at all.
+export type CellMerge = "restart" | "continue";
+
 export type TableCell = {
   readonly element: XmlElement;
   readonly blocks: readonly Block[];
   readonly verticalAlign: CellVerticalAlign;
   readonly margins: CellMargins;
+  // How many of the table's grid columns the cell stands on, which is one unless it
+  // says otherwise.
+  readonly gridSpan: number;
+  readonly merge: CellMerge | null;
   // What the cell asks for at each of its own edges, which the table's own lines
   // stand behind. Settling them takes the whole table: see `resolveCellBorders`.
   readonly borders: StatedBorders;
@@ -145,6 +154,8 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
         blocks,
         verticalAlign: verticalAlignOf(tc),
         margins: cellMargins(tc),
+        gridSpan: gridSpanOf(properties),
+        merge: mergeOf(properties),
         borders: readBorders(properties, "tcBorders"),
         fillColor: readShading(properties),
       });
@@ -196,6 +207,21 @@ function gridColumns(element: XmlElement): readonly number[] {
     .filter((child) => child.namespace === W_NS && child.name === "gridCol")
     .map((column) => Number(attribute(column, W_NS, "w") ?? Number.NaN))
     .filter((twips) => Number.isFinite(twips));
+}
+
+// A span with no number on it is one column, and so is a number that is not one.
+function gridSpanOf(properties: XmlElement | null): number {
+  const span = properties === null ? null : firstNamed(properties, W_NS, "gridSpan");
+  const value = span === null ? Number.NaN : Number(attribute(span, W_NS, "val") ?? Number.NaN);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1;
+}
+
+// A `w:vMerge` saying nothing is a continuation, which is how Word writes every one
+// of the 188 in the corpus document that holds most of this gap.
+function mergeOf(properties: XmlElement | null): CellMerge | null {
+  const merge = properties === null ? null : firstNamed(properties, W_NS, "vMerge");
+  if (merge === null) return null;
+  return attribute(merge, W_NS, "val") === "restart" ? "restart" : "continue";
 }
 
 // A height with no rule under it is a floor, which is what Word makes of one.

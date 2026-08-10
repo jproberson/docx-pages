@@ -10,6 +10,7 @@ import {
   justifiedFittingDocument,
   keepingDocument,
   linedRowsDocument,
+  mergedCellsDocument,
   numberingDocument,
   objectsAndTheFooterDocument,
   objectsPastTheFootDocument,
@@ -550,6 +551,21 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // them, which is the oracle a height is read by here.
       paragraphsPlaced: 140,
       bytes: buildAuthoredDocx({ body: statedRowHeightsDocument() }),
+    },
+    {
+      id: "merged-cells",
+      title: "A cell merged down a run of rows",
+      asks: "where a merged cell's text sits, what its rows are worth, and where the room it is short comes from",
+      bytes: buildAuthoredDocx({ body: mergedCellsDocument() }),
+    },
+    {
+      id: "legacy-merged-cells",
+      title: "The same merges in a document that declares no compatibility mode",
+      asks: "whether declaring 15 changes what a merge is worth",
+      bytes: buildAuthoredDocx({
+        body: mergedCellsDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
     },
     {
       id: "tearing",

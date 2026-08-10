@@ -723,12 +723,73 @@ type PositionedTable = {
 // way `measureRow` reads them, since a table stating a grid and a table whose cells
 // state their own widths both have to come out where Word drew them.
 function tableWidthPt(block: Table, frame: Frame): number {
-  const cells = block.rows[0]?.cells ?? [];
-  return cells.reduce(
-    (width, cell, at) =>
-      width + (cellWidthPt(cell) ?? columnWidthPt(block.gridTwips, at) ?? frame.widthPt),
-    0,
-  );
+  const plans = planCells(block, frame);
+  const first = plans[0] ?? [];
+  return first.reduce((width, plan) => width + plan.widthPt, 0);
+}
+
+// Where one cell stands on the table, before anything knows how tall a row is.
+type CellPlan = {
+  readonly cell: TableCell;
+  readonly at: number;
+  readonly leftPt: number;
+  readonly widthPt: number;
+  // The last row the cell reaches, which is its own unless a merge opens at it. A
+  // swallowed cell reaches nowhere: it draws nothing and is worth nothing.
+  readonly throughRow: number | null;
+};
+
+// **A cell spanning grid columns is worth the columns under it whether it says so or
+// not**, and the cell after it starts at the column the span ended on rather than at
+// the next one along. Measured on 2026-08-10 by the authored `merged-cells`
+// document, whose cases h and i put a third column's text at 180 either way.
+//
+// **A `w:vMerge` continuation draws nothing and is worth nothing.** The same
+// document's case g puts a 40pt line in every swallowed cell of a table of 20pt
+// rows: Word drew no ink for any of them and left every row at 20pt. A continuation
+// with no merge open above it is a cell of its own, which is what an orphan can only
+// be.
+function planCells(block: Table, frame: Frame): readonly (readonly CellPlan[])[] {
+  // A merge learns how far down it reached only once the rows under it have been
+  // read, so the cell that opened one is written to as they are.
+  type Planning = { -readonly [K in keyof CellPlan]: CellPlan[K] };
+
+  const plans: Planning[][] = [];
+  const open = new Map<number, Planning>();
+
+  for (const [rowAt, row] of block.rows.entries()) {
+    const planned: Planning[] = [];
+    // The columns a merge still reaches past this row: the ones it was continued in,
+    // and the ones it opened at.
+    const alive = new Set<number>();
+    let gridAt = 0;
+    let leftPt = frame.leftPt;
+
+    for (const cell of row.cells) {
+      const widthPt =
+        cellWidthPt(cell) ?? columnWidthPt(block.gridTwips, gridAt, cell.gridSpan) ?? frame.widthPt;
+      const opened = cell.merge === "continue" ? open.get(gridAt) : undefined;
+      if (opened === undefined) {
+        const plan: Planning = { cell, at: gridAt, leftPt, widthPt, throughRow: rowAt };
+        planned.push(plan);
+        if (cell.merge === "restart") {
+          open.set(gridAt, plan);
+          alive.add(gridAt);
+        } else open.delete(gridAt);
+      } else {
+        opened.throughRow = rowAt;
+        alive.add(gridAt);
+        planned.push({ cell, at: gridAt, leftPt, widthPt, throughRow: null });
+      }
+      gridAt += cell.gridSpan;
+      leftPt += widthPt;
+    }
+
+    for (const column of [...open.keys()]) if (!alive.has(column)) open.delete(column);
+    plans.push(planned);
+  }
+
+  return plans;
 }
 
 // **What `w:tblpX` is measured from is what `w:horzAnchor` names**: the edge of the
@@ -806,9 +867,6 @@ function measureTable(
       ? -leftMarginOf(openingCell, block.insets, first[0]?.drawn ?? NO_BORDERS)
       : outerLeftPt;
 
-  const boxes: ParagraphBox[] = [];
-  const cells: PlacedCell[] = [];
-  const untornRows: UntornRow[] = [];
   const rowFrame = {
     leftPt: frame.leftPt + twipsToPoints(block.insets.indentTwips) + insetPt,
     widthPt: frame.widthPt,
@@ -818,27 +876,28 @@ function measureTable(
   // in its cells sit under.
   const inTable: Context = { ...context, tableStyleId: block.styleId };
 
-  let top = topPt + outerTopPt;
+  const plans = planCells(block, rowFrame);
+  const measured: MeasuredCell[][] = [];
+  const margins: RowMargins[] = [];
   for (const [at, row] of block.rows.entries()) {
-    const measured = measureRow(row, borders[at] ?? [], inTable, top, rowFrame, block.insets, {
-      gridTwips: block.gridTwips,
-    });
-    if (measured.kind === "blocked") return measured;
-    boxes.push(...measured.boxes);
-    cells.push(...measured.cells);
-    untornRows.push(...measured.untornRows);
-    top += measured.heightPt;
+    const of = measureRowCells(row, plans[at] ?? [], borders[at] ?? [], inTable, block.insets);
+    if (of.kind === "blocked") return of;
+    measured.push([...of.cells]);
+    margins.push(of.margins);
   }
+
+  const heightsPt = rowHeights(block, measured, margins);
+  const placed = placeRows(block, measured, margins, heightsPt, topPt + outerTopPt);
 
   // A cell is measured with no bands at all, so nothing inside a table can anchor
   // an object a page break has to make room for.
   return {
     kind: "measured",
-    boxes,
-    cells,
-    untornRows,
+    boxes: placed.boxes,
+    cells: placed.cells,
+    untornRows: placed.untornRows,
     anchoredObjects: [],
-    heightPt: top + outerBottomPt - topPt,
+    heightPt: outerTopPt + heightsPt.reduce((total, each) => total + each, 0) + outerBottomPt,
   };
 }
 
@@ -869,8 +928,21 @@ type MeasuredCell = {
   readonly heightPt: number;
   readonly leftPt: number;
   readonly widthPt: number;
+  // The last row this cell reaches, which is the row it stands in unless a merge
+  // opens at it.
+  readonly throughRow: number;
   readonly fillColor: string | null;
   readonly borders: Borders;
+};
+
+// How far a row holds every cell in it off its own walls, which is the row's
+// business rather than any one cell's.
+type RowMargins = {
+  readonly topPt: number;
+  // The cell's own margin at the foot, kept apart from the half of the line cleared
+  // after it, because a row told exactly how tall to be counts one and not the other.
+  readonly bottomCellPt: number;
+  readonly bottomPt: number;
 };
 
 // A row is as tall as its tallest cell, and every cell starts at the row's top;
@@ -892,32 +964,37 @@ type MeasuredCell = {
 //
 // What was here before took the larger of the two, which is right only where one of
 // them is nought, and every table in a real document is out by a line a row for it.
-function measureRow(
+//
+// What each cell of a row holds, before anything knows how tall the row is: a cell
+// merged down a run of rows is measured here and seated once all of them are.
+function measureRowCells(
   row: TableRow,
+  plans: readonly CellPlan[],
   borders: readonly CellBorders[],
   context: Context,
-  topPt: number,
-  frame: Frame,
   insets: TableInsets,
-  table: { readonly gridTwips: readonly number[] },
-): StackMeasurement {
+):
+  | {
+      readonly kind: "measured";
+      readonly cells: readonly MeasuredCell[];
+      readonly margins: RowMargins;
+    }
+  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker } {
   const measured: MeasuredCell[] = [];
-  const topMarginPt =
-    rowMarginPt(row, insets, "topTwips") + halfOf(borders.map((of) => of.agreed.top));
-  // The cell's own margin at the foot, kept apart from the half of the line cleared
-  // after it, because a row told exactly how tall to be counts one and not the other.
-  const bottomCellMarginPt = rowMarginPt(row, insets, "bottomTwips");
-  const bottomMarginPt = bottomCellMarginPt + halfOf(borders.map((of) => of.agreed.bottom));
-  let contentHeightPt = 0;
-  let leftPt = frame.leftPt;
+  const bottomCellPt = rowMarginPt(row, insets, "bottomTwips");
+  const margins: RowMargins = {
+    topPt: rowMarginPt(row, insets, "topTwips") + halfOf(borders.map((of) => of.agreed.top)),
+    bottomCellPt,
+    bottomPt: bottomCellPt + halfOf(borders.map((of) => of.agreed.bottom)),
+  };
 
   // A cell is measured from its own origin and only then moved down to the row, so
   // the page coordinates a wrapping object stands in cannot reach inside one.
   const inCell: Context = { ...context, bandsFor: () => [], inCell: true };
-  const untornRows: UntornRow[] = [];
 
-  for (const [at, cell] of row.cells.entries()) {
-    const widthPt = cellWidthPt(cell) ?? columnWidthPt(table.gridTwips, at) ?? frame.widthPt;
+  for (const [at, plan] of plans.entries()) {
+    if (plan.throughRow === null) continue;
+    const cell = plan.cell;
     const own = borders[at]?.drawn ?? NO_BORDERS;
     const leftMarginPt = leftMarginOf(cell, insets, own);
     const rightMarginPt = Math.max(
@@ -925,8 +1002,8 @@ function measureRow(
       halfOf([own.right]),
     );
     const cellFrame = {
-      leftPt: leftPt + leftMarginPt,
-      widthPt: Math.max(0, widthPt - leftMarginPt - rightMarginPt),
+      leftPt: plan.leftPt + leftMarginPt,
+      widthPt: Math.max(0, plan.widthPt - leftMarginPt - rightMarginPt),
     };
     const of = measureBlocks(cell.blocks, inCell, 0, cellFrame);
     if (of.kind === "blocked") return of;
@@ -936,60 +1013,168 @@ function measureRow(
       inner: of.cells,
       innerUntorn: of.untornRows,
       heightPt: of.heightPt,
-      leftPt,
-      widthPt,
+      leftPt: plan.leftPt,
+      widthPt: plan.widthPt,
+      throughRow: plan.throughRow,
       fillColor: cell.fillColor,
       borders: own,
     });
-    contentHeightPt = Math.max(contentHeightPt, of.heightPt);
-    leftPt += widthPt;
   }
 
-  const heldPt = topMarginPt + contentHeightPt + bottomMarginPt;
-  const heightPt = rowHeightPt(row, contentHeightPt, {
-    marginsPt: topMarginPt + bottomMarginPt,
-    bottomCellMarginPt,
+  return { kind: "measured", cells: measured, margins };
+}
+
+// How tall each row of the table came out.
+//
+// **What a merge is short falls whole on the last row of the merge**, and on the last
+// row of the merge rather than the last row of the table. Measured on 2026-08-10 by
+// the authored `merged-cells` document: six 20pt lines merged down four 20pt rows
+// left the first three at 20 and made the fourth 60, ten lines made it 140, and the
+// same six lines merged down only the first two rows made the second 99.84 while the
+// two ordinary rows under it stayed at 20. Sharing the shortfall out would have put
+// every one of those rows at the same height, and it does not.
+//
+// Nothing has asked Word what a merge ending on a row told exactly how tall to be
+// does. It is left as that row already is: unable to grow for anything, overflowed
+// by a merge the way it would be by its own text.
+function rowHeights(
+  block: Table,
+  measured: readonly (readonly MeasuredCell[])[],
+  margins: readonly RowMargins[],
+): readonly number[] {
+  const heightsPt = block.rows.map((row, at) => {
+    const own = measured[at] ?? [];
+    const contentHeightPt = Math.max(
+      0,
+      ...own.filter((cell) => cell.throughRow === at).map((cell) => cell.heightPt),
+    );
+    return rowHeightPt(row, contentHeightPt, {
+      marginsPt: (margins[at]?.topPt ?? 0) + (margins[at]?.bottomPt ?? 0),
+      bottomCellMarginPt: margins[at]?.bottomCellPt ?? 0,
+    });
   });
-  // A row told exactly how tall to be leaves its cells whatever room is left over
-  // once it has held them off its walls, and Word draws what does not fit anyway.
-  const roomPt = Math.max(0, heightPt - topMarginPt - bottomMarginPt);
+
+  // A merge is read once the rows it reaches are all as tall as their own text, and
+  // the ones ending lowest are read last so that a merge above them has already had
+  // whatever it was short.
+  const merges = measured
+    .flatMap((row, at) => row.filter((cell) => cell.throughRow > at).map((cell) => ({ cell, at })))
+    .sort((left, right) => left.cell.throughRow - right.cell.throughRow);
+
+  for (const { cell, at } of merges) {
+    const through = cell.throughRow;
+    if (block.rows[through]?.height?.exact === true) continue;
+    const requiredPt =
+      (margins[at]?.topPt ?? 0) + cell.heightPt + (margins[through]?.bottomPt ?? 0);
+    let availablePt = 0;
+    for (let row = at; row <= through; row += 1) availablePt += heightsPt[row] ?? 0;
+    if (requiredPt > availablePt + EPSILON)
+      heightsPt[through] = (heightsPt[through] ?? 0) + requiredPt - availablePt;
+  }
+
+  return heightsPt;
+}
+
+// Where everything in the table ended up, once every row knows how tall it is.
+//
+// **A merged cell is seated in the whole run of rows it reaches** rather than in the
+// one it opens. The same document's case f centres one 20pt line in a merge of four
+// 20pt rows, and Word drew it 30pt down: half of the 60pt the run had over it.
+function placeRows(
+  block: Table,
+  measured: readonly (readonly MeasuredCell[])[],
+  margins: readonly RowMargins[],
+  heightsPt: readonly number[],
+  topPt: number,
+): {
+  readonly boxes: readonly ParagraphBox[];
+  readonly cells: readonly PlacedCell[];
+  readonly untornRows: readonly UntornRow[];
+} {
+  const topsPt: number[] = [];
+  let running = topPt;
+  for (const heightPt of heightsPt) {
+    topsPt.push(running);
+    running += heightPt;
+  }
+  const spannedPt = (from: number, through: number): number => {
+    let total = 0;
+    for (let row = from; row <= through; row += 1) total += heightsPt[row] ?? 0;
+    return total;
+  };
+
+  // What each row's own text asks of it, a merge reaching down into it counted
+  // against the row it lands in rather than the one it opened at.
+  const heldPt = block.rows.map(() => 0);
+  for (const [at, row] of measured.entries())
+    for (const cell of row) {
+      const through = cell.throughRow;
+      const askedPt =
+        (margins[at]?.topPt ?? 0) +
+        cell.heightPt +
+        (margins[through]?.bottomPt ?? 0) -
+        spannedPt(at, through - 1);
+      heldPt[through] = Math.max(heldPt[through] ?? 0, askedPt);
+    }
 
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
-  for (const cell of measured) {
-    const offset = topPt + topMarginPt + seatingOffset(cell.align, roomPt, cell.heightPt);
-    // Only a row given a height of its own can be shorter than what it holds, so
-    // only that row has anything to cut its cells off at.
-    const clipTo =
-      row.height?.exact === true
-        ? { leftPt: cell.leftPt, topPt, widthPt: cell.widthPt, heightPt }
-        : null;
-    for (const box of cell.boxes) boxes.push({ ...shiftBox(box, offset), clipTo });
-    for (const inner of cell.inner) cells.push({ ...inner, topPt: inner.topPt + offset });
-    for (const inner of cell.innerUntorn)
-      untornRows.push({ ...inner, topPt: inner.topPt + offset, bottomPt: inner.bottomPt + offset });
-    cells.push({
-      leftPt: cell.leftPt,
-      topPt,
-      widthPt: cell.widthPt,
-      heightPt,
-      fillColor: cell.fillColor,
-      borders: cell.borders,
-    });
+  const untornRows: UntornRow[] = [];
+
+  for (const [at, row] of block.rows.entries()) {
+    const rowTopPt = topsPt[at] ?? topPt;
+    const ownHeightPt = heightsPt[at] ?? 0;
+    const opened: ParagraphBox[] = [];
+
+    for (const cell of measured[at] ?? []) {
+      const through = cell.throughRow;
+      const heldToPt = spannedPt(at, through);
+      const topMarginPt = margins[at]?.topPt ?? 0;
+      const bottomMarginPt = margins[through]?.bottomPt ?? 0;
+      // A row told exactly how tall to be leaves its cells whatever room is left over
+      // once it has held them off its walls, and Word draws what does not fit anyway.
+      const roomPt = Math.max(0, heldToPt - topMarginPt - bottomMarginPt);
+      const offset = rowTopPt + topMarginPt + seatingOffset(cell.align, roomPt, cell.heightPt);
+      // Only a row given a height of its own can be shorter than what it holds, so
+      // only that row has anything to cut its cells off at.
+      const clipTo =
+        row.height?.exact === true
+          ? { leftPt: cell.leftPt, topPt: rowTopPt, widthPt: cell.widthPt, heightPt: heldToPt }
+          : null;
+      for (const box of cell.boxes) {
+        const placed = { ...shiftBox(box, offset), clipTo };
+        boxes.push(placed);
+        opened.push(placed);
+      }
+      for (const inner of cell.inner) cells.push({ ...inner, topPt: inner.topPt + offset });
+      for (const inner of cell.innerUntorn)
+        untornRows.push({
+          ...inner,
+          topPt: inner.topPt + offset,
+          bottomPt: inner.bottomPt + offset,
+        });
+      cells.push({
+        leftPt: cell.leftPt,
+        topPt: rowTopPt,
+        widthPt: cell.widthPt,
+        heightPt: heldToPt,
+        fillColor: cell.fillColor,
+        borders: cell.borders,
+      });
+    }
+
+    // Word tears an ordinary row at a line, and refuses two: one saying so, and one
+    // standing taller than its own text, whose empty foot has no line to be torn at.
+    // Both were measured on 2026-08-07 by the authored `tearing` document: a row
+    // asking to be 150pt tall with 48pt of text in it moved whole where 102pt was
+    // left, and so did the same row with 144pt of text, while a row asking to be
+    // 48pt tall with 144pt of text in it was torn like any other.
+    const opensAt = opened[0]?.index;
+    if (opensAt !== undefined && (row.cantSplit || ownHeightPt > (heldPt[at] ?? 0) + EPSILON))
+      untornRows.push({ topPt: rowTopPt, bottomPt: rowTopPt + ownHeightPt, opensAt });
   }
 
-  // Word tears an ordinary row at a line, and refuses two: one saying so, and one
-  // standing taller than its own text, whose empty foot has no line to be torn at.
-  // Both were measured on 2026-08-07 by the authored `tearing` document: a row
-  // asking to be 150pt tall with 48pt of text in it moved whole where 102pt was
-  // left, and so did the same row with 144pt of text, while a row asking to be
-  // 48pt tall with 144pt of text in it was torn like any other.
-  const opensAt = boxes[0]?.index;
-  if (opensAt !== undefined && (row.cantSplit || heightPt > heldPt + EPSILON)) {
-    untornRows.push({ topPt, bottomPt: topPt + heightPt, opensAt });
-  }
-
-  return { kind: "measured", boxes, cells, untornRows, anchoredObjects: [], heightPt };
+  return { boxes, cells, untornRows };
 }
 
 // The largest margin any cell in the row asks for at that side, which is what
@@ -1038,9 +1223,10 @@ function rowHeightPt(
 // The grid is what a table is drawn on and a `w:tcW` is the cell's own preference
 // over it, so a table stating a grid and no cell widths at all, which a real
 // document does, had every column as wide as the whole text frame before this.
-function columnWidthPt(gridTwips: readonly number[], at: number): number | null {
-  const twips = gridTwips[at];
-  return twips === undefined ? null : twipsToPoints(twips);
+function columnWidthPt(gridTwips: readonly number[], at: number, span: number): number | null {
+  const spanned = gridTwips.slice(at, at + span);
+  if (spanned.length === 0) return null;
+  return twipsToPoints(spanned.reduce((total, twips) => total + twips, 0));
 }
 
 function cellWidthPt(cell: TableCell): number | null {

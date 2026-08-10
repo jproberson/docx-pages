@@ -71,8 +71,10 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // height on every page the last section did not make.
   "more-than-one-section": "moves-text",
   "text-columns": "moves-text",
-  // A cell spanning its neighbours is laid out at its own width, and the cells
-  // beside it resolve their borders against the wrong neighbour.
+  // Where a span and a merge put their text is built (see `planCells`), and what is
+  // left is the lines round them: borders are settled by a cell's place in its row
+  // rather than by the grid column it stands on, so a cell beside a span agrees with
+  // the wrong neighbour, and the room half a line takes moves the text with it.
   "merged-cells": "moves-text",
   "table-style-conditional-formatting": "changes-paint",
   "keep-lines-together": "moves-text",

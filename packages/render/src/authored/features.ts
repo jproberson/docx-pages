@@ -3304,3 +3304,144 @@ export function insignificantSpaceDocument(): string {
     EMPTY,
   ].join("");
 }
+
+// A cell merged down a run of rows: where its text sits, what its rows are worth,
+// and what becomes of the cells the merge swallowed.
+//
+// Ten of the 966 state `w:vMerge` and one of them holds 635 lines this project
+// places 142 of, so the question is not academic. Nothing here is built: a
+// continuation cell is laid out today as a cell of its own, and the restart cell's
+// whole content is charged to the one row it opens.
+//
+// Every case is four rows of two cells with one 20pt line in the right hand one, so
+// a row's height is the distance from one repeat to the next. The left hand column
+// is what the case varies. Word's own pdf is the oracle: its report answers for the
+// row, and every question here is about a cell.
+export function mergedCellsDocument(): string {
+  const CELL_TWIPS = 2880;
+  const LINE_PT = 20;
+  const ROWS = 4;
+
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const line = (name: string, pt = LINE_PT): string => paragraph(exactly(pt), run(name));
+
+  // An authored document declares no table style, so a table stating no margins is
+  // held off its walls by nothing at all, and a row is exactly as tall as its lines.
+  const NO_MARGINS = `<w:tblCellMar>
+      <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+    </w:tblCellMar>`;
+
+  // Fixed, so that a cell stating no width of its own is the grid it stands on
+  // rather than whatever Word would rather it were.
+  const table = (columnTwips: readonly number[], rows: string): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(columnTwips.reduce((a, b) => a + b, 0))}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>${NO_MARGINS}</w:tblPr>
+      <w:tblGrid>${columnTwips.map((twips) => `<w:gridCol w:w="${String(twips)}"/>`).join("")}</w:tblGrid>
+      ${rows}</w:tbl>`;
+
+  const cell = (properties: string, content: string): string =>
+    `<w:tc><w:tcPr>${properties}</w:tcPr>${content}</w:tc>`;
+
+  const width = (twips: number): string => `<w:tcW w:w="${String(twips)}" w:type="dxa"/>`;
+
+  const RESTART = `<w:vMerge w:val="restart"/>`;
+  const CONTINUE = `<w:vMerge/>`;
+
+  // The right hand column of every case: one 20pt line a row, naming its row, which
+  // is what every height here is read off.
+  const marker = (name: string, at: number): string =>
+    cell(width(CELL_TWIPS), line(`${name}${String(at)} right`));
+
+  const merged = (name: string, lines: number, properties = ""): string =>
+    cell(
+      `${width(CELL_TWIPS)}${properties}${RESTART}`,
+      Array.from({ length: lines }, (_, at) => line(`${name} m${String(at + 1)}`)).join(""),
+    );
+
+  const swallowed = (content = EMPTY): string => cell(`${width(CELL_TWIPS)}${CONTINUE}`, content);
+
+  // A merge opening at the first row and running to the row named, the rows after it
+  // holding an ordinary cell of their own.
+  const mergedTable = (
+    name: string,
+    lines: number,
+    through: number,
+    options: { readonly restart?: string; readonly swallowedContent?: string } = {},
+  ): string =>
+    table(
+      [CELL_TWIPS, CELL_TWIPS],
+      Array.from({ length: ROWS }, (_, at) => {
+        const left =
+          at === 0
+            ? merged(name, lines, options.restart ?? "")
+            : at < through
+              ? swallowed(options.swallowedContent)
+              : cell(width(CELL_TWIPS), line(`${name}${String(at + 1)} left`));
+        return `<w:tr>${left}${marker(name, at + 1)}</w:tr>`;
+      }).join(""),
+    );
+
+  // A line of its own either side of each table, so where the table starts and where
+  // it ends are read as well as the distance from row to row.
+  const block = (name: string, content: string): string =>
+    paragraph(`<w:pageBreakBefore/>${exactly(LINE_PT)}`, run(`case ${name}`)) +
+    content +
+    paragraph(exactly(LINE_PT), run(`${name} after`));
+
+  // Three grid columns where the first two are spanned by one cell, so that the left
+  // of the third column's text says what a span is worth. The second row spans
+  // nothing, and is what the first is read against.
+  const SPAN_TWIPS = [1440, 1440, 2880] as const;
+
+  const spanTable = (name: string, statesItsWidth: boolean): string =>
+    table(
+      SPAN_TWIPS,
+      `<w:tr>${cell(
+        `${statesItsWidth ? width(SPAN_TWIPS[0] + SPAN_TWIPS[1]) : ""}<w:gridSpan w:val="2"/>`,
+        line(`${name}1 spanning`),
+      )}${cell(width(SPAN_TWIPS[2]), line(`${name}1 third`))}</w:tr>` +
+        `<w:tr>${cell(width(SPAN_TWIPS[0]), line(`${name}2 first`))}${cell(
+          width(SPAN_TWIPS[1]),
+          line(`${name}2 second`),
+        )}${cell(width(SPAN_TWIPS[2]), line(`${name}2 third`))}</w:tr>`,
+    );
+
+  return [
+    // One line in a cell merged down the whole table. Says where the text of a merged
+    // cell sits, and whether the cells it swallowed are worth anything at all: four
+    // rows 20pt apart say they are not.
+    block("a", mergedTable("a", 1, ROWS)),
+    // Content that fits inside the merge with room to spare, which is the case a real
+    // document is mostly made of.
+    block("b", mergedTable("b", 3, ROWS)),
+    // Six 20pt lines in a merge worth 80pt. The 40pt over says where the room a merge
+    // is short comes from: rows at 20, 20, 20, 60 say it is the last row of the merge,
+    // and rows at 30 each say it is shared out.
+    block("c", mergedTable("c", 6, ROWS)),
+    // The same again at ten lines, so that a rule read off one case is read again at
+    // three times the deficit.
+    block("d", mergedTable("d", 10, ROWS)),
+    // A merge closing at the second row with two ordinary rows under it, and six lines
+    // in it. Read against c, this says whether what a merge is short falls on the last
+    // row of the merge or on the last row of the table.
+    block("e", mergedTable("e", 6, 2)),
+    // One line in a merge asking to be seated in the middle of itself, which says
+    // whether a merged cell is seated in its own row or in the whole run of them.
+    block("f", mergedTable("f", 1, ROWS, { restart: `<w:vAlign w:val="center"/>` })),
+    // A swallowed cell holding a 40pt line of its own. If Word draws it, or if the row
+    // grows to hold it, a continuation cell is not the nothing the rest of this
+    // assumes.
+    block("g", mergedTable("g", 1, ROWS, { swallowedContent: line("g spare", 40) })),
+    // A cell spanning two grid columns and stating no width of its own, which says
+    // whether a span is worth the columns under it.
+    block("h", spanTable("h", false)),
+    // And the same span stating the width of both columns, which is how a real
+    // document writes it.
+    block("i", spanTable("i", true)),
+    // A table is the last thing in the body, which Word will not have.
+    EMPTY,
+  ].join("");
+}

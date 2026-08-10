@@ -36,6 +36,11 @@ type Drawn = {
 };
 
 const DRAWN: Readonly<Record<string, Drawn>> = {
+  // Every line of all nine cases, in both documents: a marker, the case's table and
+  // a line under it. The swallowed cells of case g hold a 40pt line each and Word
+  // draws none of them, which is why the count is the same either way.
+  "merged-cells": { lines: 86, runs: 86, numbers: 0 },
+  "legacy-merged-cells": { lines: 86, runs: 86, numbers: 0 },
   // Every line, tabs and all. Word draws a tab as a space stretched to the width
   // of the gap it opened, though the line holds no character for it, which is why
   // a line here is spelled out of what carries ink rather than of every character
@@ -182,6 +187,11 @@ const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
   columns: ["column-break"],
   // The wave borders, which are drawn as plain lines of the stated width.
   borders: ["approximated-border"],
+  // Where a merged cell puts its text is built and the lines round one are not, so
+  // both documents still state the gap they were written to close. Neither table
+  // draws a line at all, which is why every one of their 86 lines lands anyway.
+  "merged-cells": ["merged-cells"],
+  "legacy-merged-cells": ["merged-cells"],
 };
 
 // Images in Word's pdf that are no picture of the document's. Word draws a glyph
