@@ -50,6 +50,7 @@ const CORE_SURFACE: readonly string[] = [
   "pictureExtension",
   "readColorReference",
   "readFaceShapes",
+  "readFontFaces",
   "readFontFile",
   "readFontMetrics",
   "readMetafilePicture",

@@ -61,8 +61,9 @@ export type {
   SuppliedFace,
 } from "./layout/font-metrics.js";
 
-export { readFontFile, readFontMetrics } from "./layout/font-file.js";
+export { readFontFaces, readFontFile, readFontMetrics } from "./layout/font-file.js";
 export type {
+  FontFaceName,
   FontFileFormat,
   ReadFontFileResult,
   ReadFontMetricsResult,
