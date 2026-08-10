@@ -1381,9 +1381,25 @@ function measureParagraph(
       bands: standing.bands,
       ahead: standing.ahead,
       roomPt: widthPt,
-      // A hanging indent leaves its first line wider than the rest, except where a
-      // number is what hangs there: then the text starts at the indent like the rest.
-      firstLineRoomPt: number === undefined ? widthPt - insets.firstLinePt : widthPt,
+      // A hanging indent leaves its first line wider than the rest, and a numbered
+      // paragraph's first line is as wide as the run from where its text starts to
+      // the right indent, wherever the number's suffix left that text.
+      //
+      // **What stood here gave a numbered first line the room between the two
+      // indents**, on the reading that a number hanging in front of the text leaves
+      // that text starting at the left indent like every line under it. It does
+      // where nothing says otherwise, and one of the 966 says otherwise: its number
+      // tabs to a stop 26.7pt short of the indent, and Word fits 29 characters on
+      // that line where this fitted 11.
+      //
+      // Measured on 2026-08-10 by the authored `numbered-first-line` document and
+      // its legacy twin, whose pdfs are identical. Seven cases in a column 126pt
+      // wide from the left indent: a number tabbing to a stop 36pt in front of it
+      // took **seven** of the 21pt words where every line under it took six, a
+      // suffix of one space took eight from 12.45pt further out again, and a suffix
+      // of nothing took nine from the number's own place. Room measured from the
+      // left indent would have given all four of them six.
+      firstLineRoomPt: firstLineRoomOf(measured, widthPt, frame, insets),
     }),
   };
 }
@@ -1556,6 +1572,19 @@ function measureNumber(
       }),
     },
   };
+}
+
+// A box that never wraps is measured at no width at all, and a first line has to
+// stay as unbounded as the rest of them.
+function firstLineRoomOf(
+  measured: NumberMeasurement | null,
+  widthPt: number,
+  frame: Frame,
+  insets: Insets,
+): number {
+  if (measured === null || measured.kind === "blocked") return widthPt - insets.firstLinePt;
+  if (!Number.isFinite(widthPt)) return widthPt;
+  return frame.leftPt + frame.widthPt - insets.rightPt - measured.number.textStartPt;
 }
 
 type SuffixContext = {

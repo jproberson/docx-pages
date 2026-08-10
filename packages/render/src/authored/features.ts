@@ -3445,3 +3445,119 @@ export function mergedCellsDocument(): string {
     EMPTY,
   ].join("");
 }
+
+// How much room the first line of a numbered paragraph has.
+//
+// The number sits at the hanging position and the text after it starts wherever the
+// level's suffix moves on to, which `startOfText` already reads off the paragraph's
+// own tab stops. What nothing has asked is how wide the line that text stands on
+// then is. What is built gives it the room between the two indents, on the reading
+// that a number hanging in front of the text leaves the text starting at the left
+// indent like every line under it.
+//
+// **A real document breaks that reading.** One of the 966 states stops at 907 and
+// 1441 twips against a left indent of 1441 and a hanging of 744: its number tabs to
+// the first stop, which is 26.7pt short of the indent, so its first line starts
+// there and runs the whole way to the right indent. Word fits 29 characters on that
+// line where this project fits 11.
+//
+// Each case is a marker, the case, and a plain line under it. The words are three
+// characters each and numbered, so which of them Word put on the first line says
+// where that line ended to within about 19pt, and the readings being compared are
+// 36pt apart.
+export function numberedFirstLineDocument(): string {
+  // A column 162pt wide from the text start and 126 from the left indent, which is
+  // the whole of what the cases disagree about.
+  const LEFT_TWIPS = 2880;
+  const HANGING_TWIPS = 1440;
+  const RIGHT_TWIPS = 5400;
+  // Short of the left indent by 36pt, and past where any of the numbers end.
+  const STOP_TWIPS = 2160;
+
+  const words = (name: string): string =>
+    Array.from({ length: 24 }, (_, at) => `${name}${String(at + 1).padStart(2, "0")}`).join(" ");
+
+  const indent = (hangingTwips: number, firstLineTwips: number | null): string =>
+    `<w:ind w:left="${String(LEFT_TWIPS)}" w:right="${String(RIGHT_TWIPS)}"` +
+    (firstLineTwips === null
+      ? ` w:hanging="${String(hangingTwips)}"`
+      : ` w:firstLine="${String(firstLineTwips)}"`) +
+    `/>`;
+
+  const stops = (positions: readonly number[]): string =>
+    positions.length === 0
+      ? ""
+      : `<w:tabs>${positions.map((at) => `<w:tab w:val="left" w:pos="${String(at)}"/>`).join("")}</w:tabs>`;
+
+  type Case = {
+    readonly name: string;
+    readonly numId: number | null;
+    readonly stops: readonly number[];
+    readonly firstLineTwips?: number;
+  };
+
+  const block = (of: Case): string =>
+    paragraph(`<w:pageBreakBefore/>`, run(`case ${of.name}`)) +
+    paragraph(
+      (of.numId === null
+        ? ""
+        : `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${String(of.numId)}"/></w:numPr>`) +
+        stops(of.stops) +
+        indent(HANGING_TWIPS, of.firstLineTwips ?? null),
+      run(words(of.name)),
+    ) +
+    paragraph("", run(`${of.name} after`));
+
+  return [
+    // A stop short of the left indent, which is what the real document holds: the
+    // number tabs to it and the text starts 36pt in front of the indent. Whether
+    // the line ends at the right indent or 36pt short of it is the whole question.
+    block({ name: "a", numId: 1, stops: [STOP_TWIPS] }),
+    // The same with no stop of its own, so the number's tab moves on to the implicit
+    // one at the left indent. This is the case the built reading assumes, and it has
+    // to come out unchanged.
+    block({ name: "b", numId: 1, stops: [] }),
+    // A number wider than the room in front of the indent, so the text is pushed
+    // past the indent instead of standing short of it. Says whether a first line
+    // loses room as readily as it gains it.
+    block({ name: "c", numId: 2, stops: [] }),
+    // A suffix that puts a single space after the number rather than a tab, so the
+    // text starts wherever the number ended and no stop is consulted at all.
+    block({ name: "d", numId: 3, stops: [] }),
+    // And a suffix that puts nothing after it.
+    block({ name: "e", numId: 4, stops: [] }),
+    // The same indents with no number at all, which is the rule this one is read
+    // against: a hanging indent leaves its first line wider than the rest.
+    block({ name: "f", numId: null, stops: [] }),
+    // And a first line indented the other way, which leaves it narrower.
+    block({ name: "g", numId: null, stops: [], firstLineTwips: 720 }),
+    EMPTY,
+  ].join("");
+}
+
+// One list a case, so that a suffix and a width of number can be varied without
+// disturbing the others. Every level states the same indents the paragraphs do, so
+// nothing here turns on which of the two Word reads.
+export const FIRST_LINE_NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  ${[
+    { id: 0, text: "%1.", suffix: null },
+    { id: 1, text: "Section %1.%1.%1:", suffix: null },
+    { id: 2, text: "%1.", suffix: "space" },
+    { id: 3, text: "%1.", suffix: "nothing" },
+  ]
+    .map(
+      (each) => `<w:abstractNum w:abstractNumId="${String(each.id)}">
+    <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/>
+      <w:lvlText w:val="${each.text}"/><w:lvlJc w:val="left"/>
+      ${each.suffix === null ? "" : `<w:suff w:val="${each.suffix}"/>`}
+      <w:pPr><w:ind w:left="2880" w:right="5400" w:hanging="1440"/></w:pPr></w:lvl>
+  </w:abstractNum>`,
+    )
+    .join("")}
+  ${[0, 1, 2, 3]
+    .map(
+      (id) => `<w:num w:numId="${String(id + 1)}"><w:abstractNumId w:val="${String(id)}"/></w:num>`,
+    )
+    .join("")}
+</w:numbering>`;

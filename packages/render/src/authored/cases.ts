@@ -36,6 +36,16 @@ type Drawn = {
 };
 
 const DRAWN: Readonly<Record<string, Drawn>> = {
+  // Forty two of the forty three lines of all seven cases, in both documents: a
+  // marker, the numbered paragraph's own lines and a line under it. The one left out
+  // is case e's first line, where the level's suffix is `nothing` and Word draws the
+  // number against the text as a single item: our line holds the text alone, so
+  // there is nothing in the pdf carrying the same characters to pair it with. Where
+  // that line starts is still read, by the case either side of it.
+  // Four of the five numbers, for the same reason: the fifth is drawn against its
+  // own text rather than as an item of its own.
+  "numbered-first-line": { lines: 42, runs: 42, numbers: 4 },
+  "legacy-numbered-first-line": { lines: 42, runs: 42, numbers: 4 },
   // Every line of all nine cases, in both documents: a marker, the case's table and
   // a line under it. The swallowed cells of case g hold a 40pt line each and Word
   // draws none of them, which is why the count is the same either way.

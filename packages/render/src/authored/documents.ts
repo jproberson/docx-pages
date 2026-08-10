@@ -11,6 +11,7 @@ import {
   keepingDocument,
   linedRowsDocument,
   mergedCellsDocument,
+  numberedFirstLineDocument,
   numberingDocument,
   objectsAndTheFooterDocument,
   objectsPastTheFootDocument,
@@ -34,6 +35,7 @@ import {
   unmappedInTextFaceDocument,
   wrappingDocument,
   wrapSidesDocument,
+  FIRST_LINE_NUMBERING,
   NUMBERING,
   SPACING_STYLES,
   STATED_FOOTER,
@@ -551,6 +553,25 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // them, which is the oracle a height is read by here.
       paragraphsPlaced: 140,
       bytes: buildAuthoredDocx({ body: statedRowHeightsDocument() }),
+    },
+    {
+      id: "numbered-first-line",
+      title: "The room the first line of a numbered paragraph has",
+      asks: "whether a first line whose number tabbed short of the left indent runs the whole way to the right one",
+      bytes: buildAuthoredDocx({
+        body: numberedFirstLineDocument(),
+        numbering: FIRST_LINE_NUMBERING,
+      }),
+    },
+    {
+      id: "legacy-numbered-first-line",
+      title: "The same first lines in a document that declares no compatibility mode",
+      asks: "whether declaring 15 changes the room a numbered first line has",
+      bytes: buildAuthoredDocx({
+        body: numberedFirstLineDocument(),
+        numbering: FIRST_LINE_NUMBERING,
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
     },
     {
       id: "merged-cells",
