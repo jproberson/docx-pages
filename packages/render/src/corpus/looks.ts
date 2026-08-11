@@ -1,0 +1,208 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  looksOf,
+  shareOfLooks,
+  workspaceIn,
+  type Looks,
+  type Workspace,
+} from "../raster/compare.js";
+import { canDraw } from "../raster/draw.js";
+import { renderedPath } from "./render.js";
+import { CORPUS_DIRECTORY, documentsIn, identityOf } from "./sweep.js";
+
+// How different every document in a corpus looks from Word's own drawing of it.
+//
+// **The score beside this one cannot see a page.** `agreement.ts` counts the
+// baselines and lefts of lines we laid out, over the lines Word drew the same
+// text for. So it is blind to paint, pictures, borders, shapes, crops and what
+// covers what, and blindest of all to content we draw nowhere at all, which never
+// enters its denominator and therefore costs nothing. On 2026-08-10 a page
+// scoring 35 of its 35 lines was looked at for the first time and was wrong five
+// ways; the bug behind two of the three pages looked at that day was one line of
+// header resolution, and fixing it took the line-perfect clean documents from 122
+// to 353. **No number this project had ever computed could see it.**
+//
+// So this asks the other question, and it asks it of the page rather than of the
+// layout: draw ours, draw Word's, and count how much of the page does not match.
+// **Keep both.** The raster says which page is wrong and where on it; the lines
+// and `inspect.ts` say by how much and in which direction, which is what names
+// the rule. Neither replaces the other.
+//
+// **Nothing this writes names a document.** A row says the first twelve
+// characters of the hash of the document's bytes and nothing more, and no number
+// out of it may be committed.
+
+const REPORT_PATH = process.env["DOCX_PAGES_CORPUS_LOOKS"] ?? "samples/corpus/looks.jsonl";
+
+const AGREEMENT_PATH =
+  process.env["DOCX_PAGES_CORPUS_AGREEMENT"] ?? "samples/corpus/agreement.jsonl";
+
+const DIRECTORY = process.env["DOCX_PAGES_RASTER"] ?? "samples/corpus/raster";
+
+// How many documents are drawn at once. Each wants a browser of its own and a
+// browser is most of a second before it has drawn anything, so the run is bound
+// by how many can be started rather than by anything this code does.
+const AT_ONCE = 4;
+
+const share = (count: number, of: number): string =>
+  of === 0 ? "n/a" : `${((count / of) * 100).toFixed(1)}%`;
+
+export type LineScore = { readonly placed: number; readonly lines: number };
+
+// The line score of the same documents, where a sweep has left one, so that the
+// two readings of a document stand beside each other rather than in two files.
+export function linesPlacedIn(text: string): ReadonlyMap<string, LineScore> {
+  const placed = new Map<string, LineScore>();
+
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    const row: unknown = JSON.parse(line);
+    if (typeof row !== "object" || row === null) continue;
+    const { id, placed: put, lines }: Record<string, unknown> = { ...row };
+    if (typeof id !== "string" || typeof put !== "number" || typeof lines !== "number") continue;
+    placed.set(id, { placed: put, lines });
+  }
+
+  return placed;
+}
+
+const linesPlaced = (): ReadonlyMap<string, LineScore> =>
+  existsSync(resolve(AGREEMENT_PATH))
+    ? linesPlacedIn(readFileSync(resolve(AGREEMENT_PATH), "utf8"))
+    : new Map();
+
+export function reportOf(rows: readonly Looks[], lines: ReadonlyMap<string, LineScore>): string {
+  const compared = rows.filter((each) => each.outcome === "compared");
+  const clean = compared.filter((each) => each.facesStoodIn === 0);
+
+  const totals = (list: readonly Looks[]): string => {
+    const interesting = list.reduce((sum, each) => sum + each.interesting, 0);
+    const differing = list.reduce((sum, each) => sum + each.differing, 0);
+    const right = list.filter((each) => shareOfLooks(each) <= 0.02).length;
+    const pages = list.filter((each) => each.pagesOurs !== each.pagesWord).length;
+    return (
+      `    ${String(list.length)} documents, ${String(interesting)} cells drawn in\n` +
+      `    not matching Word's drawing: ${String(differing)} (${share(differing, interesting)})\n` +
+      `    documents inside the floor: ${String(right)} (${share(right, list.length)})\n` +
+      `    documents making the wrong number of pages: ${String(pages)}\n`
+    );
+  };
+
+  const out = [
+    `${String(rows.length)} documents`,
+    `  compared  ${String(compared.length)}`,
+    `  blocked   ${String(rows.filter((each) => each.outcome === "blocked").length)}`,
+    `  threw     ${String(rows.filter((each) => each.outcome === "threw").length)}`,
+    `  not drawn ${String(rows.filter((each) => each.outcome === "not drawn").length)}`,
+    "",
+    "every document compared:",
+    totals(compared),
+    "documents needing no face stood in, which are the ones worth ranking by:",
+    totals(clean),
+    "the worst of those, by how much of the page does not match:",
+    `  ${"document".padEnd(14)} ${"different".padStart(9)} ${"cells".padStart(7)} ${"pages".padStart(7)} ${"lines placed".padStart(12)}  asks`,
+  ];
+
+  const worst = [...clean]
+    .sort((one, other) => shareOfLooks(other) - shareOfLooks(one))
+    .slice(0, 40);
+  for (const each of worst) {
+    const line = lines.get(each.id);
+    const placed = line === undefined ? "" : `${String(line.placed)}/${String(line.lines)}`;
+    out.push(
+      `  ${each.id.padEnd(14)} ${share(each.differing, each.interesting).padStart(9)} ` +
+        `${String(each.interesting).padStart(7)} ` +
+        `${`${String(each.pagesOurs)}/${String(each.pagesWord)}`.padStart(7)} ` +
+        `${placed.padStart(12)}  ${[...new Set(each.asks)].join(" ")}`,
+    );
+  }
+
+  return out.join("\n");
+}
+
+type Wanted = { readonly id: string; readonly path: string };
+
+// **The 966 files are 718 documents.** A tool that walks the directory and
+// forgets to dedupe reports one of them seven times over and ranks it that many
+// times too high.
+function documentsWanted(directory: string): readonly Wanted[] {
+  const already = new Set<string>();
+  const wanted: Wanted[] = [];
+  for (const path of documentsIn(directory)) {
+    const id = identityOf(new Uint8Array(readFileSync(path)));
+    if (already.has(id)) continue;
+    already.add(id);
+    wanted.push({ id, path });
+  }
+  return wanted;
+}
+
+async function sweep(
+  wanted: readonly Wanted[],
+  workspace: Workspace,
+  onProgress: (done: number) => void,
+): Promise<readonly Looks[]> {
+  const rows: Looks[] = [];
+  let next = 0;
+
+  // A browser will not share the directory it keeps its profile in, so each of
+  // the four drawing at once is given one of its own.
+  const worker = async (profile: string): Promise<void> => {
+    const mine = { ...workspace, profile };
+    for (let at = next++; at < wanted.length; at = next++) {
+      const each = wanted[at];
+      if (each === undefined) continue;
+      const bytes = new Uint8Array(readFileSync(each.path));
+      rows.push(await looksOf(bytes, each.id, renderedPath(each.id), mine));
+      onProgress(rows.length);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: AT_ONCE }, (_, at) => worker(`${workspace.profile}-${String(at)}`)),
+  );
+  return rows;
+}
+
+async function main(): Promise<void> {
+  if (CORPUS_DIRECTORY === null) {
+    process.stdout.write(
+      "No corpus configured: set DOCX_PAGES_CORPUS to a directory of .docx files.\n",
+    );
+    return;
+  }
+  if (!canDraw()) {
+    process.stdout.write("No rasteriser: this wants Google Chrome and pdftoppm.\n");
+    return;
+  }
+
+  const wanted = documentsWanted(CORPUS_DIRECTORY);
+  process.stdout.write(`${String(wanted.length)} documents to draw beside Word's drawing\n`);
+
+  const started = Date.now();
+  const rows = await sweep(wanted, workspaceIn(DIRECTORY, false), (done) => {
+    if (done % 25 !== 0) return;
+    const each = (Date.now() - started) / done;
+    const left = Math.round((each * (wanted.length - done)) / 1000);
+    process.stdout.write(`  ${String(done)}/${String(wanted.length)}, ${String(left)}s left\n`);
+  });
+
+  const ordered = [...rows].sort((one, other) => one.id.localeCompare(other.id));
+  mkdirSync(dirname(resolve(REPORT_PATH)), { recursive: true });
+  writeFileSync(
+    resolve(REPORT_PATH),
+    ordered.map((each) => JSON.stringify(each)).join("\n") + "\n",
+  );
+
+  process.stdout.write(`\n${reportOf(ordered, linesPlaced())}\n\nWritten to ${REPORT_PATH}\n`);
+}
+
+// Compared against this module's own path: a guard naming the built `.js` never
+// fires under tsx, which is how these are run, and the run then does nothing at
+// all and says nothing about it.
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}

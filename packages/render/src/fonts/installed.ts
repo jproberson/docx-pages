@@ -73,6 +73,42 @@ const keyOf = (name: string, bold: boolean, italic: boolean): string =>
  * The first face to claim a name keeps it, so a directory earlier in the list wins
  * and a font's own regular cut is never shadowed by a bold one from elsewhere.
  */
+export type InstalledFaceFile = {
+  readonly family: string;
+  readonly fullName: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly filePath: string;
+};
+
+/**
+ * The same faces named beside the file each came out of, which is what a browser
+ * asked to draw a page needs and what measuring it never did. Only the name
+ * tables are read, so this costs a fraction of what `installedFaces` costs.
+ *
+ * A collection holds several faces in one file and no browser will unpick one, so
+ * a face out of a `.ttc` is named here and has to be reached some other way.
+ */
+export function installedFaceFiles(
+  directories: readonly string[] = fontDirectories(),
+): readonly InstalledFaceFile[] {
+  const found: InstalledFaceFile[] = [];
+
+  for (const directory of directories) {
+    for (const filePath of filesIn(directory)) {
+      try {
+        for (const face of readFontFaces(new Uint8Array(readFileSync(filePath)))) {
+          found.push({ ...face, filePath });
+        }
+      } catch {
+        // A file this reader cannot take is a face this machine cannot offer.
+      }
+    }
+  }
+
+  return found;
+}
+
 export function installedFaces(
   directories: readonly string[] = fontDirectories(),
 ): readonly SuppliedFace[] {
