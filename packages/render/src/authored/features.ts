@@ -570,6 +570,48 @@ export const STATED_FOOTER = paragraph(
   run("the footer"),
 );
 
+/**
+ * What a line multiple is a multiple of, and where the room it opens goes.
+ *
+ * A multiple is the one line rule whose answer this project has never read off a
+ * repeat: the `spacing` document asks it once, at 1.5, and Word's own answer for a
+ * paragraph is rounded to the point, which is coarser than the question. Five
+ * corpus documents make a page more than Word does and every one of them turns on
+ * about four tenths of a point per paragraph under a rule of 1.1.
+ *
+ * Calibri at 12pt makes a line of 14.65pt and stands 12.00pt of it above and below
+ * the baseline, the rest being the gap the face keeps between one line and the
+ * next. So the three readings worth telling apart are far enough apart to name at
+ * 1.5: a multiple of the whole line gives 21.98, a line plus a share of the face
+ * gives 20.65, and a multiple of the face alone gives 18.00. Each case is written
+ * out three times, so the height is the distance from one repeat to the next.
+ */
+export function lineMultipleDocument(): string {
+  const multiples = [240, 264, 276, 360, 480];
+
+  const rule = (twips: number): string =>
+    `<w:spacing w:before="0" w:after="0" w:line="${String(twips)}" w:lineRule="auto"/>`;
+
+  // The same rule over text twice the size, which tells a share of the face from a
+  // constant: everything the rule opens doubles with the face or none of it does.
+  const sizes = [
+    { name: "plain", mark: "" },
+    { name: "large", mark: `<w:sz w:val="48"/><w:szCs w:val="48"/>` },
+  ];
+
+  return [
+    paragraph("", run("above")),
+    ...sizes.flatMap((size) =>
+      multiples.flatMap((twips) => [
+        paragraph("", run(`${size.name} ${String(twips)}`)),
+        ...Array.from({ length: REPEATS }, () => paragraph(rule(twips), run(SHORT, size.mark))),
+      ]),
+    ),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
 // How far a footer that draws nothing holds the text off the bottom margin.
 //
 // A page 792pt tall keeping 36pt of bottom margin ends its body at 756, and

@@ -19,6 +19,7 @@ import {
   overflowingSectionDocument,
   positionedTableDocument,
   footerRoomDocument,
+  lineMultipleDocument,
   resumingDocument,
   rotatedDrawingDocument,
   rotatedDrawingTiesDocument,
@@ -409,6 +410,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // point, which is the oracle that answers here.
       paragraphsPlaced: 50,
       bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
+    },
+    {
+      id: "line-multiple",
+      title: "Lines under a rule asking for a multiple of one",
+      asks: "what a line multiple is a multiple of, and which side of the text the room it opens falls",
+      bytes: buildAuthoredDocx({ body: lineMultipleDocument() }),
     },
     {
       id: "empty-footer",
