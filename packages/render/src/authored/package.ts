@@ -76,6 +76,32 @@ const HEADER_IDS: Readonly<Record<HeaderKind, string>> = {
 
 const HEADER_KINDS: readonly HeaderKind[] = ["first", "default", "even"];
 
+/**
+ * A section break the body writes for itself, which is the only way to author a
+ * document of more than one section: a `w:sectPr` in the properties of the last
+ * paragraph of a section describes **that** section, and the one at the end of the
+ * body describes the last.
+ *
+ * The page it states is the same page every authored document uses, so a break
+ * changes only what it is asked to change: which header parts the section names,
+ * whether it says its first page draws one of its own, and whether the section
+ * starts a page or carries on down the one it is already on.
+ */
+export function sectionBreak(options: {
+  readonly headers?: readonly HeaderKind[];
+  readonly titlePage?: boolean;
+  readonly type?: "continuous" | "nextPage";
+}): string {
+  const references = (options.headers ?? [])
+    .map((type) => `<w:headerReference w:type="${type}" r:id="${HEADER_IDS[type]}"/>`)
+    .join("");
+  const type = options.type === undefined ? "" : `<w:type w:val="${options.type}"/>`;
+  return PAGE.replace(
+    "<w:sectPr>",
+    `<w:sectPr>${references}${type}${options.titlePage === true ? `<w:titlePg/>` : ""}`,
+  );
+}
+
 const headerPartsOf = (headers: AuthoredHeaders | undefined): readonly HeaderPart[] =>
   headers === undefined
     ? []
@@ -184,6 +210,15 @@ export type AuthoredParts = {
   // kind left out is a part the section names no reference for at all, which is
   // the whole of what one authored document asks about.
   readonly headers?: AuthoredHeaders;
+  // Which of those parts the document's own last section names a reference for.
+  // Left out it names every one it holds; given empty it names none at all, which
+  // is a section that draws whatever the section before it named.
+  readonly namesHeaders?: readonly HeaderKind[];
+  // How the document's own last section starts. `w:type` describes the section it
+  // stands in rather than the one after it, so a section that carries on down the
+  // page it is already on says so here and not in the break that closes the one
+  // before it.
+  readonly sectionType?: "continuous" | "nextPage";
   // Whether the section says its first page draws a header and footer of its own.
   readonly titlePage?: boolean;
 };
@@ -200,6 +235,7 @@ export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
   const opening = [
     footer ? `<w:footerReference w:type="default" r:id="${FOOTER_ID}"/>` : "",
     ...headers.map((each) => `<w:headerReference w:type="${each.type}" r:id="${each.id}"/>`),
+    parts.sectionType === undefined ? "" : `<w:type w:val="${parts.sectionType}"/>`,
     parts.titlePage === true ? `<w:titlePg/>` : "",
   ].join("");
   const page = opening === "" ? PAGE : PAGE.replace("<w:sectPr>", `<w:sectPr>${opening}`);

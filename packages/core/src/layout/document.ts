@@ -512,10 +512,18 @@ function sectionOfEachBlock(
 // knows it as. The indices run in document order through a table's cells as well as
 // over the body's own paragraphs, so a section takes in every index from the block
 // it opens at up to the block the next section opens at.
+type SectionsByParagraph = {
+  readonly at: (index: number) => BodySection | undefined;
+  // The paragraph a section starts at, which is what says whether a page is the
+  // section's first: a section that started part way down a page had its first page
+  // there, whatever the page below it holds.
+  readonly opensAt: (index: number) => number | null;
+};
+
 function sectionAtEachParagraph(
   blocks: readonly Block[],
   sectionOf: ReadonlyMap<Block, BodySection>,
-): (index: number) => BodySection | undefined {
+): SectionsByParagraph {
   const opens: { readonly index: number; readonly section: BodySection }[] = [];
   for (const block of blocks) {
     const section = sectionOf.get(block);
@@ -525,13 +533,18 @@ function sectionAtEachParagraph(
     opens.push({ index, section });
   }
 
-  return (index) => {
-    let found: BodySection | undefined = undefined;
+  const governing = (index: number): { index: number; section: BodySection } | null => {
+    let found: { index: number; section: BodySection } | null = null;
     for (const each of opens) {
       if (each.index > index) break;
-      found = each.section;
+      found = each;
     }
     return found;
+  };
+
+  return {
+    at: (index) => governing(index)?.section,
+    opensAt: (index) => governing(index)?.index ?? null,
   };
 }
 
@@ -605,7 +618,8 @@ export function layOutDocument(
 
   const bodyBlocks = readBlocks(pkg);
   const bodySectionOf = sectionOfEachBlock(pkg, bodyBlocks);
-  const sectionAt = sectionAtEachParagraph(bodyBlocks, bodySectionOf);
+  const sections = sectionAtEachParagraph(bodyBlocks, bodySectionOf);
+  const sectionAt = sections.at;
   const geometryAt = (index: number | null): SectionGeometry =>
     (index === null ? undefined : sectionAt(index)?.geometry) ?? page;
   // The page the body opens on, which the first section makes and not the last.
@@ -703,8 +717,8 @@ export function layOutDocument(
   // whole of what `w:titlePg` turns on. A page opened by a paragraph standing in
   // another section than the page above it opens that section, and the first page of
   // the document opens after nothing.
-  const opensASection = (index: number | null, after: number | null): boolean =>
-    after === null || sectionAt(index ?? -1) !== sectionAt(after);
+  const opensASection = (index: number | null): boolean =>
+    index !== null && sections.opensAt(index) === index;
 
   const openingSection = sectionAt(blockParagraphs(bodyBlocks)[0]?.index ?? -1);
   const openingStories = storiesOf(openingSection, true);
@@ -825,7 +839,7 @@ export function layOutDocument(
     anchoredObjects: bodyStack.anchoredObjects,
     topPt: bodyTopPt,
     bottomPt: bodyBottomPt,
-    bodyOf: (box, after) => bodyOfPage(sectionAt(box.index), opensASection(box.index, after)),
+    bodyOf: (box) => bodyOfPage(sectionAt(box.index), opensASection(box.index)),
   });
   const bodyDrawings = pageBoxes(broken).map((boxOf) =>
     drawingsFor(
@@ -887,12 +901,9 @@ export function layOutDocument(
 
   // Which header and footer each page took, keyed the way the drawings below are
   // gathered: a story is filled once however many pages draw it.
-  const drawnOn = broken.map((each, at) => {
+  const drawnOn = broken.map((each) => {
     const section = sectionAt(each.openedBy ?? -1);
-    const stories = storiesOf(
-      section,
-      opensASection(each.openedBy, broken[at - 1]?.openedBy ?? null),
-    );
+    const stories = storiesOf(section, opensASection(each.openedBy));
     const geometry = section?.geometry ?? page;
     return {
       header: headerOn(stories.header, geometry),

@@ -1,4 +1,4 @@
-import { LEFT_PT, PICTURE_ID, RIGHT_PT, TOP_PT } from "./package.js";
+import { sectionBreak, LEFT_PT, PICTURE_ID, RIGHT_PT, TOP_PT } from "./package.js";
 
 // The bodies of the authored documents that ask about a feature of the flowing
 // text rather than about a shape. Each paragraph is written so that the rule it
@@ -585,6 +585,46 @@ export const STATED_FOOTER = paragraph(
  * exists whatever the header does.
  */
 export const NAMED_FIRST_HEADER = paragraph("", run("the first header"));
+export const NAMED_DEFAULT_HEADER = paragraph("", run("the default header"));
+
+/**
+ * Which page a section's own first-page header is drawn on when the section began
+ * part way down a page.
+ *
+ * Two corpus documents draw a header on a second page where Word draws none, and
+ * the shape is the same in both: two sections, both `continuous`, the second
+ * naming no header of its own and so inheriting the first's, and `w:titlePg` on.
+ * This project reads the second page as opening the second section, so the
+ * inherited first-page header is drawn there.
+ *
+ * The two readings that fit are that a section which began part way down a page
+ * has already opened and its next page opens nothing, or that `w:titlePg` governs
+ * the document's own first page and no other. **Both headers draw words of their
+ * own here**, so the page that follows says which was chosen rather than leaving
+ * nothing to read: the corpus documents could not answer because the part their
+ * second section named was empty.
+ */
+export function sectionsAndTheFirstPageDocument(): string {
+  const LINE_PT = 24;
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const lines = (name: string, count: number): readonly string[] =>
+    Array.from({ length: count }, (_, at) =>
+      paragraph(exactly, run(`${name} ${String(at + 1).padStart(2, "0")}`)),
+    );
+
+  // The first section is five lines and closes part way down the page. **What
+  // makes the second one carry on down that page is the second one's own type**,
+  // stated where the document's last section is written, since `w:type` describes
+  // the section it stands in rather than the one after it.
+  const closing = sectionBreak({ headers: ["first", "default"], titlePage: true });
+
+  return [
+    ...lines("one", 4),
+    paragraph(`${exactly}${closing}`, run("one 05")),
+    ...lines("two", 40),
+    EMPTY,
+  ].join("");
+}
 
 export function headerNotNamedDocument(): string {
   const LINE_PT = 24;

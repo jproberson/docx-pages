@@ -20,6 +20,7 @@ import {
   positionedTableDocument,
   footerRoomDocument,
   headerNotNamedDocument,
+  sectionsAndTheFirstPageDocument,
   lineMultipleDocument,
   twipGridDocument,
   resumingDocument,
@@ -52,6 +53,7 @@ import {
   EMPTY_FOOTER,
   SPACED_FOOTER,
   NAMED_FIRST_HEADER,
+  NAMED_DEFAULT_HEADER,
 } from "./features.js";
 import { buildAuthoredDocx, settingsPart, FACE } from "./package.js";
 
@@ -422,6 +424,19 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
         body: headerNotNamedDocument(),
         headers: { first: NAMED_FIRST_HEADER },
         titlePage: true,
+      }),
+    },
+    {
+      id: "sections-and-the-first-page",
+      title: "A second section that began part way down a page, and the header it draws next",
+      asks: "whether a page after a section that opened mid-page draws that section's first-page header",
+      bytes: buildAuthoredDocx({
+        body: sectionsAndTheFirstPageDocument(),
+        headers: { first: NAMED_FIRST_HEADER, default: NAMED_DEFAULT_HEADER },
+        // The last section names neither, so it draws whatever the first named.
+        namesHeaders: [],
+        titlePage: true,
+        sectionType: "continuous",
       }),
     },
     {

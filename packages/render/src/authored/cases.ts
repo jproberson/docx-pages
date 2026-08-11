@@ -205,6 +205,9 @@ const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
   // The document states w:titlePg, which is what it was written to ask about: the
   // report names it whether or not the page it governs comes out right.
   "header-not-named": ["alternate-first-or-even-page"],
+  // The document states w:titlePg, which is what it was written to ask about. The
+  // report names a gap once however many sections state it.
+  "sections-and-the-first-page": ["alternate-first-or-even-page"],
   // The one column break of the six cases that stands between two runs of one
   // paragraph, which is a place inside a block rather than between two.
   columns: ["column-break"],
