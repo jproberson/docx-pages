@@ -34,9 +34,9 @@ describe.skipIf(CASES.length === 0)("paragraph stack against Word", () => {
     describe(each.id, () => {
       for (const { index, topPt } of each.headerTopsPt) {
         it(`puts header paragraph ${String(index)} where Word put it`, () => {
-          expect(Math.abs(topOf(layoutOf(each).header, index) - topPt)).toBeLessThan(
-            each.tolerancePt,
-          );
+          expect(
+            Math.abs(topOf(layoutOf(each).pages[0]?.header ?? [], index) - topPt),
+          ).toBeLessThan(each.tolerancePt);
         });
       }
 
@@ -63,7 +63,8 @@ describe.skipIf(CASES.length === 0)("paragraph stack against Word", () => {
       });
 
       it("starts the body under the header, or at the top margin where there is none", () => {
-        const { bodyTopPt, headerTopPt, headerHeightPt, page } = layoutOf(each);
+        const { bodyTopPt, headerTopPt, page, pages } = layoutOf(each);
+        const headerHeightPt = pages[0]?.headerHeightPt ?? 0;
         // A header pushes the body down past the margin; a document without one
         // starts at the margin itself, which is where a header of no height sits.
         const marginPt = page.margin.topTwips / 20;

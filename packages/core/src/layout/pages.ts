@@ -34,7 +34,13 @@ export type BreakStackInput = {
   // once, of the paragraph that opens it, and holds what it answered to its foot: a
   // continuous section beginning partway down a page is drawn on the page it found,
   // and makes only the pages its own text runs on to.
-  readonly bodyOf?: (box: ParagraphBox) => PageBody;
+  //
+  // `after` is the paragraph that opened the page above, which is the whole of what
+  // says whether this one opens a section: a page opened by a paragraph of another
+  // section than the one above it is that section's first, and the first page of the
+  // document opens after nothing. Only the caller knows which section a paragraph
+  // stands in, so only the caller can answer.
+  readonly bodyOf?: (box: ParagraphBox, after: number | null) => PageBody;
 };
 
 // Where a page started in the stack, what it keeps for the body, and the paragraph
@@ -79,14 +85,14 @@ function breakOnce(
   moved: ReadonlySet<number>,
 ): { readonly pages: readonly PageStack[]; readonly split: number | null } {
   const everyPage: PageBody = { topPt: input.topPt, bottomPt: input.bottomPt };
-  const bodyOf = (box: ParagraphBox | undefined): PageBody =>
-    box === undefined ? everyPage : (input.bodyOf?.(box) ?? everyPage);
+  const bodyOf = (box: ParagraphBox | undefined, after: number | null): PageBody =>
+    box === undefined ? everyPage : (input.bodyOf?.(box, after) ?? everyPage);
 
   const pages: ParagraphBox[][] = [[]];
   const first = input.boxes[0];
   // What the page being filled keeps for the body, which is what the paragraph that
   // opened it asked for.
-  let body = bodyOf(first);
+  let body = bodyOf(first, null);
   let shiftPt = 0;
   // Where in the stack each page started and what it kept, which is what the cells
   // are cut by once the text has said where the pages fall.
@@ -142,7 +148,7 @@ function breakOnce(
   for (const [place, box] of input.boxes.entries()) {
     // What a page this paragraph opens keeps for the body, which is its own
     // section's and not the page it may be standing at the foot of.
-    const opens = bodyOf(box);
+    const opens = bodyOf(box, opened[opened.length - 1]?.openedBy ?? null);
     const carriedForward = moved.has(box.index) && !moved.has(input.boxes[place - 1]?.index ?? -1);
     if (broken || box.startsPage || carriedForward) {
       // **A page a section break opens keeps the room the paragraph opening it asks

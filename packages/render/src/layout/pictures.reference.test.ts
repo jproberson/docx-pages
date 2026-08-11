@@ -75,10 +75,10 @@ const pictureAt = (each: PlacedFloat | PlacedInline, pageIndex: number): OurPict
 // pdf holds their pictures as well as its own.
 function ourPictures(layout: LaidOutDocument): readonly OurPicture[] {
   const repeated = [
-    ...layout.headerFloats,
-    ...layout.footerFloats,
-    ...layout.headerInlines,
-    ...layout.footerInlines,
+    ...(layout.pages[0]?.headerFloats ?? []),
+    ...(layout.pages[0]?.footerFloats ?? []),
+    ...(layout.pages[0]?.headerInlines ?? []),
+    ...(layout.pages[0]?.footerInlines ?? []),
   ];
   return layout.pages.flatMap((page) =>
     [...repeated, ...page.floats, ...page.inlines].flatMap((each) => {

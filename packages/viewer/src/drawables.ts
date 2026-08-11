@@ -164,16 +164,16 @@ function paintedParagraphs(boxes: readonly ParagraphBox[]): readonly PaintedPara
 }
 
 export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonly Drawable[] {
-  const inlines = [...layout.headerInlines, ...page.inlines, ...layout.footerInlines].map(
+  const inlines = [...page.headerInlines, ...page.inlines, ...page.footerInlines].map(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
   );
 
-  const flowed = [...layout.header, ...page.body, ...layout.footer];
+  const flowed = [...page.header, ...page.body, ...page.footer];
   const text = [...flowedText(flowed), ...cutText(flowed)];
-  const cells = [...layout.headerCells, ...page.cells, ...layout.footerCells];
+  const cells = [...page.headerCells, ...page.cells, ...page.footerCells];
 
   return [
-    ...stacked([...layout.headerFloats, ...layout.footerFloats], "story"),
+    ...stacked([...page.headerFloats, ...page.footerFloats], "story"),
     ...paintLayer(cells, flowed, "paint"),
     ...text,
     ...inlines,

@@ -40,10 +40,10 @@ function placedMetafiles(each: ReferenceCase): readonly Placement[] {
   const imageUrl = imageResolver(pkg, metricsFor);
 
   const drawn = [
-    ...layout.headerFloats,
-    ...layout.footerFloats,
-    ...layout.headerInlines,
-    ...layout.footerInlines,
+    ...(layout.pages[0]?.headerFloats ?? []),
+    ...(layout.pages[0]?.footerFloats ?? []),
+    ...(layout.pages[0]?.headerInlines ?? []),
+    ...(layout.pages[0]?.footerInlines ?? []),
     ...layout.pages.flatMap((page) => [...page.floats, ...page.inlines]),
   ];
 

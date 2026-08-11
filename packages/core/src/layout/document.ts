@@ -1,7 +1,7 @@
 import { readAnchors, type FloatingAnchor } from "../docx/anchors.js";
 import { readInlines } from "../docx/inlines.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
-import { defaultFooterPart, defaultHeaderPart, readRelationships } from "../docx/relationships.js";
+import { readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
 import {
   readUnhonoured,
@@ -12,8 +12,10 @@ import {
 } from "../docx/fidelity.js";
 import {
   bodySections,
+  NO_STORIES,
   readSectionGeometry,
   sectionsClosedBy,
+  storyFor,
   type BodySection,
   type SectionClose,
   type SectionGeometry,
@@ -46,8 +48,14 @@ import { layOutTextBox } from "./text-boxes.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
 import type { BandSide, OutlinePoint, WrapBand } from "./wrapping.js";
 
-// The header and the footer are drawn again on every page, so only the body is
-// broken up: a page is the run of it that fitted between the two.
+// A page and everything drawn on it: the run of the body that fitted, and the
+// header and footer that page draws.
+//
+// **The header and the footer belong to the page and not to the document.** They
+// stood on the document until 2026-08-10, which gave one story to every page: a
+// section naming a first-page header of its own, which 408 of the 718 corpus
+// documents do, had it drawn nowhere, and a document whose sections name different
+// defaults had one section's given to all of them.
 export type LaidOutPage = {
   readonly index: number;
   // The page the section whose text opened this one makes. Page size and margins
@@ -58,15 +66,8 @@ export type LaidOutPage = {
   readonly cells: readonly PlacedCell[];
   readonly floats: readonly PlacedFloat[];
   readonly inlines: readonly PlacedInline[];
-};
-
-export type LaidOutDocument = {
-  readonly kind: "laid-out";
-  readonly page: SectionGeometry;
   readonly headerTopPt: number;
   readonly headerHeightPt: number;
-  readonly bodyTopPt: number;
-  readonly bodyBottomPt: number;
   readonly footerTopPt: number;
   readonly header: readonly ParagraphBox[];
   readonly footer: readonly ParagraphBox[];
@@ -76,6 +77,14 @@ export type LaidOutDocument = {
   readonly footerFloats: readonly PlacedFloat[];
   readonly headerInlines: readonly PlacedInline[];
   readonly footerInlines: readonly PlacedInline[];
+};
+
+export type LaidOutDocument = {
+  readonly kind: "laid-out";
+  readonly page: SectionGeometry;
+  readonly headerTopPt: number;
+  readonly bodyTopPt: number;
+  readonly bodyBottomPt: number;
   readonly pages: readonly LaidOutPage[];
   // What the document asked for that this project passed over. A page with
   // anything here is a page Word would have drawn differently, and the entry says
@@ -354,6 +363,27 @@ type Story = {
 
 type StoryMeasurement = Story | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
+// A story as one page draws it: where it hangs, and the drawings its own
+// paragraphs anchor.
+type LaidStory = Story & {
+  readonly topPt: number;
+  readonly floats: readonly PlacedFloat[];
+  readonly inlines: readonly PlacedInline[];
+};
+
+// What a page naming no header or footer draws, which is nothing at all.
+const NOTHING_DRAWN: LaidStory = {
+  kind: "measured",
+  part: null,
+  blocks: [],
+  boxes: [],
+  cells: [],
+  heightPt: 0,
+  topPt: 0,
+  floats: [],
+  inlines: [],
+};
+
 type StoryFrame = {
   readonly styles: StyleTable;
   readonly metricsFor: MetricsResolver;
@@ -533,25 +563,44 @@ export function layOutDocument(
     bottomPt,
   });
 
+  // **A page draws its own section's header and footer, and the page a section
+  // opens draws that section's first-page ones where it says `w:titlePg`.** What
+  // stood here read the last `w:headerReference` of type `default` anywhere in the
+  // part and gave that one story to every page of the document.
+  //
+  // 408 of the 718 corpus documents state `w:titlePg` and 226 hold sections naming
+  // different defaults, so the old reading was one section's answer handed to
+  // everybody. A one-page corpus document whose section names nothing but a
+  // first-page header was drawn under the *next* section's default, which is a
+  // background image the size of the sheet: the page came out under a grey grid,
+  // without the logo and rule its own header holds.
+  const storiesOf = (section: BodySection | undefined, opensItsSection: boolean) => ({
+    header: storyFor(section?.headers ?? NO_STORIES, opensItsSection, section?.titlePage ?? false),
+    footer: storyFor(section?.footers ?? NO_STORIES, opensItsSection, section?.titlePage ?? false),
+  });
+
   // A header's own objects are placed against the top of the body, which is not
   // known until the header has been measured. So it is measured once against the
-  // margin the page asks for, and again against the body top that came of it.
-  const headerPart = defaultHeaderPart(pkg);
-  const measureHeader = (marginTopPt: number): StoryMeasurement =>
-    measureStory(
+  // margin the page asks for, and again against the body top that came of it. Only
+  // the first pass is needed to say how tall a header is, and a document draws few
+  // enough of them that measuring each one once is nothing.
+  const headerHeights = new Map<string, StoryMeasurement>();
+  const heightOfHeader = (part: string | null): StoryMeasurement => {
+    const known = part === null ? undefined : headerHeights.get(part);
+    if (known !== undefined) return known;
+    const measured = measureStory(
       pkg,
-      headerPart,
+      part,
       frame,
       headerTopPt,
-      bandsIn(floatFrame(headerPart, headerTopPt, marginTopPt)),
+      bandsIn(floatFrame(part, headerTopPt, twipsToPoints(page.margin.topTwips))),
     );
-  const firstPass = measureHeader(twipsToPoints(page.margin.topTwips));
-  if (firstPass.kind === "blocked") return firstPass;
+    if (part !== null) headerHeights.set(part, measured);
+    return measured;
+  };
 
   // Where a section's own page starts the body: at its top margin, or under a
-  // header that reaches past it. The header itself is measured once, against the
-  // document's own page, so the room it takes is the same on every page and only
-  // the margins move.
+  // header that reaches past it.
   //
   // **A page that draws no header starts its body at the top margin**, however far
   // down the page the room kept for a header would have reached. The room a header
@@ -560,59 +609,66 @@ export function layOutDocument(
   // header margin over a 1pt top margin and drawing no header had every line of
   // them 35pt below where Word drew it, and every one of the four was read as a
   // fault about the columns it also states.
-  const bodyTopOf = (geometry: SectionGeometry): number => {
+  const bodyTopOf = (geometry: SectionGeometry, headerPart: string | null): number => {
     const marginTopPt = twipsToPoints(geometry.margin.topTwips);
     if (headerPart === null) return marginTopPt;
-    return Math.max(marginTopPt, twipsToPoints(geometry.margin.headerTwips) + firstPass.heightPt);
+    const measured = heightOfHeader(headerPart);
+    if (measured.kind === "blocked") return marginTopPt;
+    return Math.max(marginTopPt, twipsToPoints(geometry.margin.headerTwips) + measured.heightPt);
   };
 
-  const bodyTopPt = bodyTopOf(openingPage);
-  const header = measureHeader(bodyTopPt);
-  if (header.kind === "blocked") return header;
+  // Whether the page a paragraph opens is the first of its section, which is the
+  // whole of what `w:titlePg` turns on. A page opened by a paragraph standing in
+  // another section than the page above it opens that section, and the first page of
+  // the document opens after nothing.
+  const opensASection = (index: number | null, after: number | null): boolean =>
+    after === null || sectionAt(index ?? -1) !== sectionAt(after);
 
-  const headerHeightPt = header.heightPt;
+  const openingSection = sectionAt(blockParagraphs(bodyBlocks)[0]?.index ?? -1);
+  const openingStories = storiesOf(openingSection, true);
+  const bodyTopPt = bodyTopOf(openingPage, openingStories.header);
 
   // The footer hangs from the bottom edge, so it is measured at the origin and then
   // dropped to the height it turned out to need.
-  const footerPart = defaultFooterPart(pkg);
-  const measuredFooter = measureStory(
-    pkg,
-    footerPart,
-    frame,
-    0,
-    bandsIn(floatFrame(footerPart, 0, bodyTopPt)),
-  );
-  if (measuredFooter.kind === "blocked") return measuredFooter;
+  const footers = new Map<string, StoryMeasurement>();
+  const measureFooter = (part: string | null): StoryMeasurement => {
+    const known = part === null ? undefined : footers.get(part);
+    if (known !== undefined) return known;
+    const measured = measureStory(pkg, part, frame, 0, bandsIn(floatFrame(part, 0, bodyTopPt)));
+    if (part !== null) footers.set(part, measured);
+    return measured;
+  };
 
   // Where a section's own page hangs the footer, which is as far above the bottom
-  // edge as that section keeps for one. The footer itself is measured once, against
-  // the document's own page.
-  const footerTopOf = (geometry: SectionGeometry): number =>
-    twipsToPoints(geometry.heightTwips) -
-    twipsToPoints(geometry.margin.footerTwips) -
-    measuredFooter.heightPt;
-
-  const footerTopPt = footerTopOf(page);
-  const footer: Story = {
-    ...measuredFooter,
-    boxes: shiftBoxes(measuredFooter.boxes, footerTopPt),
-    cells: shiftCells(measuredFooter.cells, footerTopPt),
+  // edge as that section keeps for one.
+  const footerTopOf = (geometry: SectionGeometry, footerPart: string | null): number => {
+    const measured = measureFooter(footerPart);
+    return (
+      twipsToPoints(geometry.heightTwips) -
+      twipsToPoints(geometry.margin.footerTwips) -
+      (measured.kind === "blocked" ? 0 : measured.heightPt)
+    );
   };
 
   // What a page a section opens keeps for the body of the text. Page size and
   // margins are stated per section, so a document whose sections differ breaks each
-  // page against the geometry of the one whose text opened it.
-  const bodyOfSection = (geometry: SectionGeometry): PageBody => {
+  // page against the geometry of the one whose text opened it, and now against the
+  // header and footer that page draws as well.
+  const bodyOfPage = (section: BodySection | undefined, opensItsSection: boolean): PageBody => {
+    const geometry = section?.geometry ?? page;
+    const stories = storiesOf(section, opensItsSection);
     const marginBottomPt =
       twipsToPoints(geometry.heightTwips) - twipsToPoints(geometry.margin.bottomTwips);
     return {
-      topPt: bodyTopOf(geometry),
+      topPt: bodyTopOf(geometry, stories.header),
       bottomPt:
-        footer.part === null ? marginBottomPt : Math.min(marginBottomPt, footerTopOf(geometry)),
+        stories.footer === null
+          ? marginBottomPt
+          : Math.min(marginBottomPt, footerTopOf(geometry, stories.footer)),
     };
   };
 
-  const bodyBottomPt = bodyOfSection(openingPage).bottomPt;
+  const bodyBottomPt = bodyOfPage(openingSection, true).bottomPt;
 
   const bodyStack = measureStack({
     ...frame,
@@ -680,8 +736,6 @@ export function layOutDocument(
           floatFrame(story.part, columnTopPt, bodyTopPt),
         );
 
-  const headerDrawings = drawingsIn(header, headerTopPt);
-  const footerDrawings = drawingsIn(footer, footerTopPt);
   const broken = breakStack({
     boxes: bodyStack.boxes,
     cells: bodyStack.cells,
@@ -689,7 +743,7 @@ export function layOutDocument(
     anchoredObjects: bodyStack.anchoredObjects,
     topPt: bodyTopPt,
     bottomPt: bodyBottomPt,
-    bodyOf: (box) => bodyOfSection(geometryAt(box.index)),
+    bodyOf: (box, after) => bodyOfPage(sectionAt(box.index), opensASection(box.index, after)),
   });
   const bodyDrawings = pageBoxes(broken).map((boxOf) =>
     drawingsFor(
@@ -699,10 +753,69 @@ export function layOutDocument(
     ),
   );
 
+  // The header and the footer each page draws, measured once for each part and then
+  // hung where that page keeps it: a document naming three headers draws three, and
+  // a page names which of them it took.
+  const laidHeaders = new Map<string | null, LaidStory>();
+  const headerOn = (part: string | null): LaidStory => {
+    const known = laidHeaders.get(part);
+    if (known !== undefined) return known;
+    const measured = measureStory(
+      pkg,
+      part,
+      frame,
+      headerTopPt,
+      bandsIn(floatFrame(part, headerTopPt, bodyTopPt)),
+    );
+    const story: LaidStory =
+      measured.kind === "blocked"
+        ? NOTHING_DRAWN
+        : { ...measured, topPt: headerTopPt, ...drawingsIn(measured, headerTopPt) };
+    laidHeaders.set(part, story);
+    return story;
+  };
+
+  const laidFooters = new Map<string | null, LaidStory>();
+  const footerOn = (part: string | null, geometry: SectionGeometry): LaidStory => {
+    const known = laidFooters.get(part);
+    if (known !== undefined) return known;
+    const measured = measureFooter(part);
+    if (measured.kind === "blocked") {
+      laidFooters.set(part, NOTHING_DRAWN);
+      return NOTHING_DRAWN;
+    }
+    const topPt = footerTopOf(geometry, part);
+    const dropped: Story = {
+      ...measured,
+      boxes: shiftBoxes(measured.boxes, topPt),
+      cells: shiftCells(measured.cells, topPt),
+    };
+    const story: LaidStory = { ...dropped, topPt, ...drawingsIn(dropped, topPt) };
+    laidFooters.set(part, story);
+    return story;
+  };
+
+  // Which header and footer each page took, keyed the way the drawings below are
+  // gathered: a story is filled once however many pages draw it.
+  const drawnOn = broken.map((each, at) => {
+    const section = sectionAt(each.openedBy ?? -1);
+    const stories = storiesOf(
+      section,
+      opensASection(each.openedBy, broken[at - 1]?.openedBy ?? null),
+    );
+    return {
+      header: headerOn(stories.header),
+      footer: footerOn(stories.footer, section?.geometry ?? page),
+    };
+  });
+
+  const stories = [...new Set([...laidHeaders.values(), ...laidFooters.values()])];
   const filled = fillTextBoxes(
     [
-      { floats: headerDrawings.floats, part: header.part ?? MAIN_DOCUMENT_PART },
-      { floats: footerDrawings.floats, part: footer.part ?? MAIN_DOCUMENT_PART },
+      ...stories.map((story) => ({
+        floats: story.floats,
+        part: story.part ?? MAIN_DOCUMENT_PART,
+      })),
       ...bodyDrawings.map((drawings) => ({ floats: drawings.floats, part: MAIN_DOCUMENT_PART })),
     ],
     styles,
@@ -710,7 +823,10 @@ export function layOutDocument(
     settings,
   );
   if (filled.kind === "blocked") return filled;
-  const [headerFloats = [], footerFloats = [], ...pageFloats] = filled.floats;
+  const floatsOfStory = new Map(
+    stories.map((story, at) => [story, filled.floats[at] ?? []] as const),
+  );
+  const pageFloats = filled.floats.slice(stories.length);
 
   return {
     kind: "laid-out",
@@ -722,27 +838,31 @@ export function layOutDocument(
       ),
       faces === null ? [] : (faces.missingGlyphs?.() ?? []),
     ),
-    headerFloats,
-    footerFloats,
-    headerInlines: headerDrawings.inlines,
-    footerInlines: footerDrawings.inlines,
     headerTopPt,
-    headerHeightPt,
     bodyTopPt,
     bodyBottomPt,
-    footerTopPt,
-    header: header.boxes,
-    footer: footer.boxes,
-    headerCells: header.cells,
-    footerCells: footer.cells,
-    pages: broken.map((each) => ({
-      index: each.index,
-      geometry: geometryAt(each.openedBy),
-      body: each.boxes,
-      cells: each.cells,
-      floats: pageFloats[each.index] ?? [],
-      inlines: bodyDrawings[each.index]?.inlines ?? [],
-    })),
+    pages: broken.map((each) => {
+      const drawn = drawnOn[each.index] ?? { header: NOTHING_DRAWN, footer: NOTHING_DRAWN };
+      return {
+        index: each.index,
+        geometry: geometryAt(each.openedBy),
+        body: each.boxes,
+        cells: each.cells,
+        floats: pageFloats[each.index] ?? [],
+        inlines: bodyDrawings[each.index]?.inlines ?? [],
+        headerTopPt,
+        headerHeightPt: drawn.header.heightPt,
+        footerTopPt: drawn.footer.topPt,
+        header: drawn.header.boxes,
+        footer: drawn.footer.boxes,
+        headerCells: drawn.header.cells,
+        footerCells: drawn.footer.cells,
+        headerFloats: floatsOfStory.get(drawn.header) ?? [],
+        footerFloats: floatsOfStory.get(drawn.footer) ?? [],
+        headerInlines: drawn.header.inlines,
+        footerInlines: drawn.footer.inlines,
+      };
+    }),
   };
 }
 

@@ -174,7 +174,7 @@ export type SectionStories = {
   readonly even: string | null;
 };
 
-const NO_STORIES: SectionStories = { first: null, default: null, even: null };
+export const NO_STORIES: SectionStories = { first: null, default: null, even: null };
 
 // One of the body's own sections, and the paragraph it ends at. The final section
 // ends at nothing: the body's own `w:sectPr` governs whatever follows the last

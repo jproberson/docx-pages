@@ -67,7 +67,7 @@ describe("where a page starts its body", () => {
   it("starts under a header that reaches past the top margin", () => {
     const laid = laidOut(20, 720, true);
 
-    expect(laid.bodyTopPt).toBe(laid.headerTopPt + laid.headerHeightPt);
+    expect(laid.bodyTopPt).toBe(laid.headerTopPt + (laid.pages[0]?.headerHeightPt ?? 0));
     expect(laid.bodyTopPt).toBeGreaterThan(36);
   });
 

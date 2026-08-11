@@ -63,7 +63,7 @@ type Reading = {
 // page, and the page was full. The comparison the score is read off has always
 // counted these; only this had not.
 function boxesOn(layout: LaidOutDocument, page: LaidOutPage): readonly ParagraphBox[] {
-  const floats = [...layout.headerFloats, ...layout.footerFloats, ...page.floats];
+  const floats = [...page.headerFloats, ...page.footerFloats, ...page.floats];
   const inBoxes = floats.flatMap((float) =>
     float.content.kind === "text-box" && float.content.text !== null
       ? [...float.content.text.boxes]
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
     process.stdout.write(
       `page geometry: ${JSON.stringify(laid.page)}\n` +
         `body from ${laid.bodyTopPt.toFixed(2)} to ${laid.bodyBottomPt.toFixed(2)}\n` +
-        `header lines ${String(laid.header.length)}, footer lines ${String(laid.footer.length)}\n` +
+        `header lines ${String(laid.pages[0]?.header.length ?? 0)}, footer lines ${String(laid.pages[0]?.footer.length ?? 0)}\n` +
         `our pages ${String(laid.pages.length)}, Word's ${String(Math.max(...drawn.map((d) => d.pageIndex)) + 1)}\n\n`,
     );
 
