@@ -571,6 +571,36 @@ export const STATED_FOOTER = paragraph(
 );
 
 /**
+ * What a page draws where its section names no header for the kind of page it is.
+ *
+ * Two corpus documents draw a logo and a footer on a second page where Word draws
+ * neither, and the file says why: their first section states a `headerReference`
+ * of type `first` and **no default at all**. Whether Word then draws nothing on a
+ * page that is not the first, or falls back to the one header the section does
+ * name, is the whole question, and only a page that draws or does not draw a word
+ * can answer it.
+ *
+ * The header holds text of its own, so which pages hold that text in Word's own
+ * pdf is the answer. The body is two pages of numbered lines, so the second page
+ * exists whatever the header does.
+ */
+export const NAMED_FIRST_HEADER = paragraph("", run("the first header"));
+
+export function headerNotNamedDocument(): string {
+  const LINE_PT = 24;
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+
+  // The body of an authored page is 720pt, so 30 of these fill one and 45 make a
+  // second page that is plainly the second.
+  return [
+    ...Array.from({ length: 45 }, (_, at) =>
+      paragraph(exactly, run(`line ${String(at + 1).padStart(2, "0")}`)),
+    ),
+    EMPTY,
+  ].join("");
+}
+
+/**
  * Whether a line's height is rounded to the twip before it is stacked.
  *
  * Word's own arithmetic runs on twentieths of a point and this project's runs on

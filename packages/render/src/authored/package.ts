@@ -32,6 +32,7 @@ const OFFICE = "application/vnd.openxmlformats-officedocument.wordprocessingml";
 const contentTypes = (
   picture: boolean,
   footer: boolean,
+  headers: readonly HeaderPart[],
 ): string => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -42,6 +43,7 @@ const contentTypes = (
   <Override PartName="/word/settings.xml" ContentType="${OFFICE}.settings+xml"/>
   <Override PartName="/word/numbering.xml" ContentType="${OFFICE}.numbering+xml"/>
   ${footer ? `<Override PartName="/word/footer1.xml" ContentType="${OFFICE}.footer+xml"/>` : ""}
+  ${headers.map((each) => `<Override PartName="/word/${each.name}" ContentType="${OFFICE}.header+xml"/>`).join("")}
 </Types>`;
 
 const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -55,9 +57,39 @@ export const PICTURE_ID = "rId4";
 
 const FOOTER_ID = "rId5";
 
+// A header part, its relationship and the type of page it is drawn on. A section
+// states one reference per type and Word draws whichever the page calls for.
+type HeaderPart = {
+  readonly type: HeaderKind;
+  readonly id: string;
+  readonly name: string;
+  readonly blocks: string;
+};
+
+export type HeaderKind = "first" | "default" | "even";
+
+const HEADER_IDS: Readonly<Record<HeaderKind, string>> = {
+  first: "rId6",
+  default: "rId7",
+  even: "rId8",
+};
+
+const HEADER_KINDS: readonly HeaderKind[] = ["first", "default", "even"];
+
+const headerPartsOf = (headers: AuthoredHeaders | undefined): readonly HeaderPart[] =>
+  headers === undefined
+    ? []
+    : HEADER_KINDS.flatMap((type) => {
+        const blocks = headers[type];
+        return blocks === undefined
+          ? []
+          : [{ type, id: HEADER_IDS[type], name: `header-${type}.xml`, blocks }];
+      });
+
 const documentRels = (
   picture: boolean,
   footer: boolean,
+  headers: readonly HeaderPart[],
 ): string => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="${R_NS}/styles" Target="styles.xml"/>
@@ -65,6 +97,7 @@ const documentRels = (
   <Relationship Id="rId3" Type="${R_NS}/numbering" Target="numbering.xml"/>
   ${picture ? `<Relationship Id="${PICTURE_ID}" Type="${R_NS}/image" Target="media/picture.png"/>` : ""}
   ${footer ? `<Relationship Id="${FOOTER_ID}" Type="${R_NS}/footer" Target="footer1.xml"/>` : ""}
+  ${headers.map((each) => `<Relationship Id="${each.id}" Type="${R_NS}/header" Target="${each.name}"/>`).join("")}
 </Relationships>`;
 
 // One opaque pixel, stretched to whatever extent a drawing states. Written out
@@ -147,16 +180,29 @@ export type AuthoredParts = {
   // Whether the document states on its own root that the whitespace under it is the
   // text's own. A document in the wild states it there and on no `w:t` at all.
   readonly preservesSpace?: boolean;
+  // The header parts the document holds, by the kind of page each is drawn on. A
+  // kind left out is a part the section names no reference for at all, which is
+  // the whole of what one authored document asks about.
+  readonly headers?: AuthoredHeaders;
+  // Whether the section says its first page draws a header and footer of its own.
+  readonly titlePage?: boolean;
+};
+
+export type AuthoredHeaders = {
+  readonly first?: string;
+  readonly default?: string;
+  readonly even?: string;
 };
 
 export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
   const footer = parts.footer !== undefined;
-  const page = footer
-    ? PAGE.replace(
-        "<w:sectPr>",
-        `<w:sectPr><w:footerReference w:type="default" r:id="${FOOTER_ID}"/>`,
-      )
-    : PAGE;
+  const headers = headerPartsOf(parts.headers);
+  const opening = [
+    footer ? `<w:footerReference w:type="default" r:id="${FOOTER_ID}"/>` : "",
+    ...headers.map((each) => `<w:headerReference w:type="${each.type}" r:id="${each.id}"/>`),
+    parts.titlePage === true ? `<w:titlePg/>` : "",
+  ].join("");
+  const page = opening === "" ? PAGE : PAGE.replace("<w:sectPr>", `<w:sectPr>${opening}`);
   const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document ${DOCUMENT_NAMESPACES}${parts.preservesSpace === true ? ` xml:space="preserve"` : ""}>
   <w:body>${parts.body}${page}</w:body>
@@ -164,14 +210,21 @@ export function buildAuthoredDocx(parts: AuthoredParts): Uint8Array {
 
   const picture = parts.picture === true;
   return zipSync({
-    "[Content_Types].xml": strToU8(contentTypes(picture, footer)),
+    "[Content_Types].xml": strToU8(contentTypes(picture, footer, headers)),
     "_rels/.rels": strToU8(ROOT_RELS),
-    "word/_rels/document.xml.rels": strToU8(documentRels(picture, footer)),
+    "word/_rels/document.xml.rels": strToU8(documentRels(picture, footer, headers)),
     "word/document.xml": strToU8(document),
     "word/styles.xml": strToU8(STYLES.replace("<!--EXTRA-->", parts.extraStyles ?? "")),
     "word/settings.xml": strToU8(parts.settings ?? settingsPart()),
     "word/numbering.xml": strToU8(parts.numbering ?? NUMBERING),
     ...(picture ? { "word/media/picture.png": Buffer.from(PICTURE_PNG, "base64") } : {}),
+    ...Object.fromEntries(
+      headers.map((each) => [
+        `word/${each.name}`,
+        strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr ${DOCUMENT_NAMESPACES}>${each.blocks}</w:hdr>`),
+      ]),
+    ),
     ...(parts.footer === undefined
       ? {}
       : {

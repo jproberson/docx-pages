@@ -19,6 +19,7 @@ import {
   overflowingSectionDocument,
   positionedTableDocument,
   footerRoomDocument,
+  headerNotNamedDocument,
   lineMultipleDocument,
   twipGridDocument,
   resumingDocument,
@@ -50,6 +51,7 @@ import {
   DRAWN_FOOTER,
   EMPTY_FOOTER,
   SPACED_FOOTER,
+  NAMED_FIRST_HEADER,
 } from "./features.js";
 import { buildAuthoredDocx, settingsPart, FACE } from "./package.js";
 
@@ -411,6 +413,16 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // point, which is the oracle that answers here.
       paragraphsPlaced: 50,
       bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
+    },
+    {
+      id: "header-not-named",
+      title: "A section naming a first-page header and no other",
+      asks: "what a page draws where its section names no header for the kind of page it is",
+      bytes: buildAuthoredDocx({
+        body: headerNotNamedDocument(),
+        headers: { first: NAMED_FIRST_HEADER },
+        titlePage: true,
+      }),
     },
     {
       id: "twip-grid",
