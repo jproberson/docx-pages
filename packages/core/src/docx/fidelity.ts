@@ -66,9 +66,10 @@ export type UnhonouredKind =
   | "missing-glyph";
 
 const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
-  // The header and the footer are read from the last section alone, so a document
-  // that changes page size or margins part way through draws them at the wrong
-  // height on every page the last section did not make.
+  // A page draws its own section's header and footer and hangs them where its own
+  // section keeps them; how wide they are is still the document's answer, so a
+  // section keeping a different left or right margin wraps its header at the wrong
+  // width.
   "more-than-one-section": "moves-text",
   "text-columns": "moves-text",
   // Where a span and a merge put their text is built (see `planCells`), and what is
@@ -425,14 +426,20 @@ function walk(
 
 // Every page is now broken and drawn against the geometry of the section whose
 // text opened it, so a second page size or a second set of margins costs the body
-// nothing. What is still read from the last section alone is the header and the
-// footer: they are measured once, against that page, and drawn at its margins on
-// every page of the document.
+// nothing, and as of 2026-08-10 a page hangs its header and its footer from the
+// room its own section keeps for them as well.
+//
+// **What is still read from the last section alone is how wide they are.** A
+// header is measured across the document's own text frame, so a section keeping a
+// different left or right margin draws its header at the wrong left and wraps it
+// at the wrong width. Nothing has measured what that is worth.
 //
 // So what is named here is a second *page* with a header or a footer to put in the
 // wrong place. A break that changes only a column count leaves the geometry alone
 // and is named elsewhere, and a document that draws neither header nor footer has
-// nothing left standing in for it.
+// nothing left standing in for it. The count is deliberately the loose one: a
+// second page size is named whether or not its margins are the ones that still
+// matter, which leaves the row wider than the fault.
 function countSections(
   root: XmlElement,
   part: string,
