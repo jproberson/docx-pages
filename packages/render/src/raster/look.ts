@@ -23,13 +23,17 @@ import { writePng } from "./png.js";
 const DIRECTORY = process.env["DOCX_PAGES_RASTER"] ?? "samples/corpus/raster";
 
 async function main(): Promise<void> {
-  const wanted = new Set(process.argv.slice(2));
+  // `--sides` leaves each side's own drawing on disk beside the overlay. The
+  // overlay says where the two differ; a side on its own says what we actually
+  // drew there, which is the question as soon as the answer is not text.
+  const sides = process.argv.includes("--sides");
+  const wanted = new Set(process.argv.slice(2).filter((each) => !each.startsWith("--")));
   if (wanted.size === 0 || CORPUS_DIRECTORY === null || !canDraw()) {
-    process.stdout.write("usage: look.ts <id>..., with DOCX_PAGES_CORPUS set\n");
+    process.stdout.write("usage: look.ts <id>... [--sides], with DOCX_PAGES_CORPUS set\n");
     return;
   }
 
-  const workspace = workspaceIn(DIRECTORY, false);
+  const workspace = workspaceIn(DIRECTORY, sides);
 
   for (const path of documentsIn(CORPUS_DIRECTORY)) {
     if (wanted.size === 0) break;
@@ -50,6 +54,9 @@ async function main(): Promise<void> {
       );
       const written = resolve(DIRECTORY, `${id}.page-${String(at + 1)}.png`);
       writeFileSync(written, writePng(overlayOf(mine, yours)));
+      if (sides && mine !== null) {
+        writeFileSync(resolve(DIRECTORY, `${id}.mine-${String(at + 1)}.png`), writePng(mine));
+      }
       process.stdout.write(
         `  page ${String(at + 1).padStart(3)}  ` +
           `${(shareOf(difference) * 100).toFixed(1).padStart(6)}% of ` +
