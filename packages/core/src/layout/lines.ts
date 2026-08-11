@@ -58,6 +58,13 @@ export type TextLine = {
   // without being measured from a face. This is what a line multiple is taken of,
   // and what a line holding nothing but a drawing is never shorter than.
   readonly fontHeightPt: number;
+  // The line the run holding the break at the end of this one would have made, for
+  // a line with nothing measured on it to be held open by. **Word measures such a
+  // line from that run rather than from the paragraph's mark**, which only the
+  // paragraph's last line answers to: measured on 2026-08-11 by the authored
+  // `empty-line-size` document. Null on a line no break ends, which is where the
+  // mark stands.
+  readonly heldOpenPt: number | null;
 };
 
 export type MeasureFailure =
@@ -173,7 +180,13 @@ type Fragment = {
 type Unit =
   | { readonly kind: "word" | "space"; readonly fragments: readonly Fragment[] }
   | { readonly kind: "tab" }
-  | { readonly kind: "break"; readonly endsPage: boolean }
+  | {
+      readonly kind: "break";
+      readonly endsPage: boolean;
+      // The line the break's own run would have made had it held text, which is
+      // what holds open a line the break leaves nothing measured on.
+      readonly heightPt: number;
+    }
   | {
       readonly kind: "drawing";
       readonly widthPt: number;
@@ -364,7 +377,11 @@ function addPiece(
     return true;
   }
   if (piece.kind === "break") {
-    units.push({ kind: "break", endsPage: piece.endsPage });
+    // The break's run is asked for nothing but its line height, which is what a
+    // line the break leaves nothing on is held open by.
+    const heightPt = measurer.lineHeight(mark);
+    if (heightPt === null) return false;
+    units.push({ kind: "break", endsPage: piece.endsPage, heightPt });
     return true;
   }
   if (piece.kind === "drawing") {
@@ -553,6 +570,7 @@ class LineBuilder {
       ascentPt: this.ascentPt,
       seatPt: heightPt - contentPt,
       fontHeightPt: this.fontHeightPt,
+      heldOpenPt: null,
     };
   }
 
@@ -647,16 +665,18 @@ const START: Cursor = {
 
 // The line a break leaves behind it where nothing stood on it. **Every break opens
 // a line under it, and that line stands whether anything is written on it or not**,
-// so this is handed back rather than stepped over. It is measured from the
-// paragraph's own mark, as any other line with nothing on it is.
-const EMPTY_LINE: TextLine = {
+// so this is handed back rather than stepped over. A line a break ends is held open
+// by the run that break stands in; one the paragraph merely ran out on is held open
+// by the paragraph's mark, which is what `heldOpenPt` of null asks for.
+const emptyLine = (heldOpenPt: number | null): TextLine => ({
   segments: [],
   widthPt: 0,
   heightPt: 0,
   ascentPt: 0,
   seatPt: 0,
   fontHeightPt: 0,
-};
+  heldOpenPt,
+});
 
 // One line's worth of units, or nothing left to draw one from. A line held open by
 // nothing but a line break carries no text and takes no room, so the flow steps
@@ -756,7 +776,7 @@ function fillLine(
     if (unit.kind === "break") {
       const line = builder.finish();
       return {
-        line: line ?? EMPTY_LINE,
+        line: line === null ? emptyLine(unit.heightPt) : { ...line, heldOpenPt: unit.heightPt },
         cursor: {
           at,
           rest: null,
@@ -798,7 +818,7 @@ function fillLine(
   // Nothing left to write, and a break that opened a line for it: the line is
   // handed back empty, which is what makes a paragraph ending in a break one line
   // taller than its text.
-  if (line === null) return cursor.opened ? { line: EMPTY_LINE, cursor: spent } : null;
+  if (line === null) return cursor.opened ? { line: emptyLine(null), cursor: spent } : null;
   return { line, cursor: spent };
 }
 

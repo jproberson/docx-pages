@@ -641,6 +641,62 @@ export function breakLineMarkDocument(): string {
   ].join("");
 }
 
+/**
+ * Whose size a line carrying no text at all takes, when it is not the paragraph's
+ * last line.
+ *
+ * `break-line-mark` asked whose size the line under a break takes and every one of
+ * its paragraphs wrote text before the break, so the empty line was always the
+ * last one and the mark was always on it. The corpus document that raised it holds
+ * the other shape: a break in front of everything, so the empty line is the first
+ * of two, and it comes out 1.15pt taller here than in Word. Its mark states 11pt
+ * Arial and the line Word drew is 11.50, which is that face at the 10pt Word falls
+ * back to where nothing states a size, so the empty line there is not the mark's.
+ *
+ * Three answers fit that one document: the empty line follows the run the break
+ * stands in, or it follows what a run stating nothing would resolve to in that
+ * paragraph, or the mark is measured on the last line alone and an empty line
+ * anywhere else is neither. The cases below tell them apart, and the last of them
+ * asks the same question from the other end: whether a line that does hold text is
+ * measured against the mark as well.
+ */
+export function emptyLineSizeDocument(): string {
+  const large = `<w:sz w:val="48"/><w:szCs w:val="48"/>`;
+  const broken = (properties: string): string =>
+    `<w:r>${properties === "" ? "" : `<w:rPr>${properties}</w:rPr>`}<w:br/></w:r>`;
+
+  const cases = [
+    // Two lines, both empty and both at the size the document is written in, which
+    // the four below are read against.
+    { name: "plain", properties: "", content: broken("") },
+    // The mark is twice the size and the break's run is not. A first line following
+    // the mark makes this as tall as two large lines.
+    { name: "mark large", properties: `<w:rPr>${large}</w:rPr>`, content: broken("") },
+    // The break's own run is twice the size and the mark is not, which is the only
+    // case that separates the run the break stands in from what the paragraph
+    // resolves for a run stating nothing.
+    { name: "break large", properties: "", content: broken(large) },
+    // Two breaks and a large mark: three lines, of which the first two carry
+    // nothing. One empty line answering to the mark and the other not would show up
+    // nowhere else.
+    { name: "two breaks", properties: `<w:rPr>${large}</w:rPr>`, content: broken("") + broken("") },
+    // One line, holding text at the size the document is written in against a mark
+    // twice that. The mark sits at the end of the last line whatever else is on it,
+    // so a line holding text is as tall as the mark or it is not.
+    { name: "mark over text", properties: `<w:rPr>${large}</w:rPr>`, content: run(SHORT) },
+  ];
+
+  return [
+    paragraph("", run("above")),
+    ...cases.flatMap((each) => [
+      paragraph("", run(each.name)),
+      ...Array.from({ length: REPEATS }, () => paragraph(each.properties, each.content)),
+    ]),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
 export const NAMED_FIRST_HEADER = paragraph("", run("the first header"));
 export const NAMED_DEFAULT_HEADER = paragraph("", run("the default header"));
 

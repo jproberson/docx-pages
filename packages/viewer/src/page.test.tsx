@@ -74,6 +74,7 @@ const paragraphOf = (
         ascentPt: 11,
         seatPt: 0,
         fontHeightPt: 14,
+        heldOpenPt: null,
       },
       leftPt: options.leftPt ?? 120,
       topPt: 30,

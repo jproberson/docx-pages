@@ -354,6 +354,34 @@ describe("measureStack over text", () => {
     expect(box.endsPage).toBe(true);
   });
 
+  // Whose size a line carrying no text takes, measured on 2026-08-11 by the
+  // authored `empty-line-size` document: the run whose break ends it, and the
+  // paragraph's own mark on the line no break does. A paragraph holding one break
+  // and a mark twice the size came out 43.92 against a document written in 12pt,
+  // which is one line of 12 over one of 24 and not two of either.
+  it("holds the line a break ends open at the height of the break's own run", () => {
+    const body = `<w:p><w:pPr><w:rPr><w:sz w:val="48"/></w:rPr></w:pPr><w:r><w:br/></w:r></w:p>`;
+    const box = firstBox(body);
+
+    expect(box.lines.map((placed) => placed.heightPt)).toStrictEqual([ARIAL_12, ARIAL_12 * 2]);
+  });
+
+  it("holds the line under a break open at the mark, whatever the break's run states", () => {
+    const body = `<w:p><w:r><w:rPr><w:sz w:val="48"/></w:rPr><w:br/></w:r></w:p>`;
+    const box = firstBox(body);
+
+    expect(box.lines.map((placed) => placed.heightPt)).toStrictEqual([ARIAL_12 * 2, ARIAL_12]);
+  });
+
+  // A space is measured across and never up, so the line is still one nothing is
+  // measured on and the break's run is what holds it open.
+  it("passes over a space on the line a break ends", () => {
+    const body = `<w:p><w:r><w:rPr><w:sz w:val="48"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r><w:r><w:br/></w:r></w:p>`;
+    const box = firstBox(body);
+
+    expect(box.lines.map((placed) => placed.heightPt)).toStrictEqual([ARIAL_12, ARIAL_12]);
+  });
+
   // A break with nothing on the line it ended still holds the room that line takes
   // on the page it is leaving, which is the mark's own height.
   it("gives the line a page break ends on its own the height of the mark", () => {

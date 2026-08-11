@@ -2107,11 +2107,16 @@ function slotFor(slot: Slot): LineSlot {
 const raisedBy = (line: TextLine, at: number, input: LayOutParagraphInput): number =>
   at === 0 ? liftOfNumber(input.number, line) : 0;
 
-// A line a tab alone holds open has nothing measured on it to give it a height, so
-// it takes the tallest mark the paragraph has, as an empty paragraph does.
+// A line a tab or a space alone holds open has nothing measured on it to give it a
+// height, so it is held open by the run whose break ends it, and by the paragraph's
+// own mark where no break does. **Measured on 2026-08-11 by the authored
+// `empty-line-size` document**: a paragraph holding one break comes out one line of
+// the break's run and one of the mark, whichever of the two is the larger, so a
+// mark twice the size raises the second line alone and a break's run twice the size
+// raises the first.
 function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): LineHeight {
   const raisedPt = raisedBy(line, at, input);
-  const held = line.segments.length === 0 ? input.markHeightPt : 0;
+  const held = line.segments.length === 0 ? (line.heldOpenPt ?? input.markHeightPt) : 0;
   return seatedHeight(
     {
       naturalPt: Math.max(line.heightPt, held) + raisedPt,

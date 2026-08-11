@@ -20,6 +20,7 @@ import {
   positionedTableDocument,
   footerRoomDocument,
   breakLineMarkDocument,
+  emptyLineSizeDocument,
   headerNotNamedDocument,
   sectionsAndTheFirstPageDocument,
   lineMultipleDocument,
@@ -445,6 +446,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "The line a break opens, and whose size it takes",
       asks: "whether the line a break opens is measured from the run holding the break or from the paragraph's mark",
       bytes: buildAuthoredDocx({ body: breakLineMarkDocument() }),
+    },
+    {
+      id: "empty-line-size",
+      title: "Lines a paragraph holds open with nothing written on them",
+      asks: "whose size a line carrying no text takes, and which line the paragraph's mark is measured on",
+      bytes: buildAuthoredDocx({ body: emptyLineSizeDocument() }),
     },
     {
       id: "twip-grid",
