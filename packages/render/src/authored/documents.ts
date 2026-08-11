@@ -21,6 +21,7 @@ import {
   footerRoomDocument,
   breakLineMarkDocument,
   emptyLineSizeDocument,
+  lineIntoABandDocument,
   headerNotNamedDocument,
   sectionsAndTheFirstPageDocument,
   lineMultipleDocument,
@@ -452,6 +453,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       title: "Lines a paragraph holds open with nothing written on them",
       asks: "whose size a line carrying no text takes, and which line the paragraph's mark is measured on",
       bytes: buildAuthoredDocx({ body: emptyLineSizeDocument() }),
+    },
+    {
+      id: "line-into-a-band",
+      title: "Lines under a multiple meeting the top of a wrapped object's band",
+      asks: "how much of a line has to stand clear of a band's top for the line to stay above it",
+      bytes: buildAuthoredDocx({ body: lineIntoABandDocument() }),
     },
     {
       id: "twip-grid",

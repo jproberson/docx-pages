@@ -697,6 +697,86 @@ export function emptyLineSizeDocument(): string {
   ].join("");
 }
 
+/**
+ * How much of a line has to stand clear of a wrap band for the line to stay above
+ * it: the whole of the room its line rule opened, or only the text seated in that
+ * room.
+ *
+ * **The page foot already answers this question one way.** A multiple opens its
+ * room below the text, and `twip-grid` measured that the room hangs past the foot
+ * of the page rather than moving the line on to the next one. Nothing has asked
+ * whether the top of a band answers as the page foot does, and two corpus
+ * documents of one template turn on it: a line under a 1.15 multiple there reaches
+ * 13.89pt with 12.07 of text in it, and the 1.8 the multiple opened below carries
+ * it past the top of a `wrapSquare` picture. Word keeps the line above the
+ * picture.
+ *
+ * Each case is a page of its own: a marker line of an exact height, the object
+ * anchored to it at a stated offset, and eight lines under a multiple of two, so
+ * that a line's box is 29.28 and the text in it 14.65. The room below the text is
+ * then 14.65 wide and no arithmetic here turns on a tenth of a point. Which lines
+ * Word left above the band is the whole of the answer, and Word's own report of
+ * where each paragraph landed says it: every line is a paragraph of its own for
+ * that reason.
+ */
+export function lineIntoABandDocument(): string {
+  const MARKER_PT = 24;
+  const BAND_PT = 100;
+  const WIDTH_PT = RIGHT_PT - LEFT_PT;
+  const LINES = 8;
+
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(MARKER_PT * 20)}" w:lineRule="exact"/>`;
+  const twice = `<w:spacing w:before="0" w:after="0" w:line="480" w:lineRule="auto"/>`;
+
+  const banded = (id: number, name: string, offsetPt: number): string =>
+    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
+      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+        <wp:simplePos x="0" y="0"/>
+        <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
+        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionV>
+        <wp:extent cx="${emu(WIDTH_PT)}" cy="${emu(BAND_PT)}"/>
+        <wp:effectExtent l="0" t="0" r="0" b="0"/>
+        <wp:wrapSquare wrapText="bothSides"/>
+        <wp:docPr id="${String(id)}" name="${name}"/>
+        <wp:cNvGraphicFramePr/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr txBox="1"/>
+            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(WIDTH_PT)}" cy="${emu(BAND_PT)}"/></a:xfrm>
+              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
+            <wps:txbx><w:txbxContent>${paragraph(exactly, run(`${name} boxed`))}</w:txbxContent></wps:txbx>
+            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
+          </wps:wsp></a:graphicData></a:graphic>
+      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+
+  // The marker keeps 24pt of its own, so the lines under it start at 60 and the
+  // fourth of them holds its text from 147.89 to 162.54 in a box ending at 177.19.
+  // A band is anchored to the marker, whose own top is the page's at 36.
+  const cases = [
+    // A band opening inside the room the fourth line's multiple left below its
+    // text. The whole box reaches past it and the text does not, so this is the
+    // case the two readings differ on: three lines above the band, or four.
+    { name: "a", offsetPt: 133.8 },
+    // A band opening above the fourth line's text, which both readings put three
+    // lines above.
+    { name: "b", offsetPt: 120 },
+    // A band opening below the whole of the fourth line's box, which both put four
+    // lines above.
+    { name: "c", offsetPt: 148 },
+  ];
+
+  return cases
+    .flatMap((each, at) => [
+      paragraph(
+        `<w:pageBreakBefore/>${exactly}`,
+        banded(at + 1, each.name, each.offsetPt) + run(`${each.name} marks`),
+      ),
+      ...Array.from({ length: LINES }, (_, line) =>
+        paragraph(twice, run(`${each.name} ${String(line + 1).padStart(2, "0")}`)),
+      ),
+    ])
+    .join("");
+}
+
 export const NAMED_FIRST_HEADER = paragraph("", run("the first header"));
 export const NAMED_DEFAULT_HEADER = paragraph("", run("the default header"));
 

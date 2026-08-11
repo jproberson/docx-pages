@@ -940,6 +940,32 @@ describe("measureStack around wrapping objects", () => {
     expect(boxes[1]?.lines[0]?.leftPt).toBe(120);
   });
 
+  // What has to clear the top of a band is the text seated in the line and not the
+  // room the line rule opened below it, measured on 2026-08-11 by the authored
+  // `line-into-a-band` document. Under a multiple of two a line holds 13.80 of text
+  // in a box of 27.60, so the band below opens inside the room that leaves and the
+  // one after it opens above the text.
+  const TWICE = `<w:spacing w:line="480" w:lineRule="auto"/>`;
+  const TWO_LINES = `${"a".repeat(40)} ${"b".repeat(40)}`;
+
+  it("keeps a line whose text clears a band above it, room and all", () => {
+    const boxes = wrapped(
+      paragraph(TWICE, TWO_LINES),
+      bandOn(0, { leftPt: 0, rightPt: 530, topPt: 55, bottomPt: 150 }),
+    );
+
+    expect(boxes[0]?.lines.map((line) => line.topPt)).toStrictEqual([36, 150]);
+  });
+
+  it("drops a line whose own text reaches a band", () => {
+    const boxes = wrapped(
+      paragraph(TWICE, TWO_LINES),
+      bandOn(0, { leftPt: 0, rightPt: 530, topPt: 45, bottomPt: 150 }),
+    );
+
+    expect(boxes[0]?.lines.map((line) => line.topPt)).toStrictEqual([150, 150 + ARIAL_12 * 2]);
+  });
+
   it("wraps every line of a paragraph, not only its first", () => {
     const boxes = wrapped(
       paragraph(``, `${"a".repeat(40)} ${"b".repeat(40)}`),

@@ -1911,7 +1911,7 @@ function layOutWholeParagraph(
     );
     const slot = slotFor({
       topPt: input.topPt + beforePt + abovePt,
-      heightPt: height.heightPt,
+      heightPt: height.fittingHeightPt,
       roomAbovePt: beforePt,
       leftPt: frame.leftPt + insets.leftPt,
       rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
@@ -2042,7 +2042,12 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
     const fit = { roomAbovePt, widthPt: leastPt, leftPt: startPt, rightPt: endPt };
 
     let height = heightOfLine(taken.line, at, input);
-    let slot = slotFor({ ...fit, topPt: top, heightPt: height.heightPt, bands: input.bands });
+    let slot = slotFor({
+      ...fit,
+      topPt: top,
+      heightPt: height.fittingHeightPt,
+      bands: input.bands,
+    });
 
     for (let round = 1; round < SETTLING_ROUNDS; round += 1) {
       const narrowedPt = slot.rightPt - slot.leftPt;
@@ -2058,7 +2063,7 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
       if (settled.heightPt === height.heightPt) break;
 
       height = settled;
-      slot = slotFor({ ...fit, topPt: top, heightPt: height.heightPt, bands: input.bands });
+      slot = slotFor({ ...fit, topPt: top, heightPt: height.fittingHeightPt, bands: input.bands });
     }
 
     laid.push({ line: taken.line, slot, height, startsPage });
@@ -2081,7 +2086,13 @@ type Slot = {
 
 // A line is not asked to fit whole, since it is broken again to whatever width it
 // is given: what it asks of a run of space is room for the word it has to start
-// with.
+// with. **Nor does it stand clear of a band with the whole of the room its line
+// rule opened**: what has to clear the top of a band is the text seated in that
+// room, and room a multiple opened below the text hangs into the band as it hangs
+// past the foot of a page. Measured on 2026-08-11 by the authored
+// `line-into-a-band` document, whose lines under a multiple of two hold 14.65 of
+// text in a box of 29.30: a band opening 7.3pt below the fourth line's text keeps
+// four lines above it, and one opening 6.5pt above that text keeps three.
 //
 // **The room a paragraph asks for above itself goes through a wrap with its first
 // line.** What has to clear an object is the room and the line together, so a line
