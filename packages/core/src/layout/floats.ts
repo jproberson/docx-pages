@@ -48,16 +48,19 @@ export type PlacedGroupChild = {
   readonly widthFraction: number;
   readonly heightFraction: number;
   readonly flip: DrawingFlip;
+  readonly turnDegrees: number;
   readonly content: PlacedContent;
 };
 
 export type PlacedFloat = {
   readonly anchor: FloatingAnchor;
   readonly content: PlacedContent;
+  // Where the object stands before it is turned, as an inline drawing's box is.
   readonly leftPt: number;
   readonly topPt: number;
   readonly widthPt: number;
   readonly heightPt: number;
+  readonly turnDegrees: number;
 };
 
 export type PartResolver = (relationshipId: string) => string | null;
@@ -209,5 +212,6 @@ export function placeFloat(input: PlaceFloatInput): PlacedFloat {
     ),
     widthPt,
     heightPt,
+    turnDegrees: anchor.turnDegrees,
   };
 }

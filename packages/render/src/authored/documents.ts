@@ -19,6 +19,8 @@ import {
   overflowingSectionDocument,
   positionedTableDocument,
   resumingDocument,
+  rotatedDrawingDocument,
+  rotatedDrawingTiesDocument,
   sectionCloserDocument,
   sectionFlowDocument,
   sectionPagesDocument,
@@ -77,6 +79,9 @@ export type AuthoredDocument = {
   // character from the emoji face has images in its pdf that nothing in it asked
   // for and nothing here draws as a picture.
   readonly glyphsPaintedAsImages?: number;
+  // Whether Word's own pdf draws one of this document's pictures as more than one
+  // image, which leaves it out of the pairing the pictures are held to.
+  readonly picturesWordDrewInPieces?: boolean;
   // Why this project refuses the document today, where it does. A document is
   // written to ask a question, and a question worth asking is often one nothing
   // here can answer yet: it is committed so that Word's answer can be had by
@@ -400,6 +405,23 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // point, which is the oracle that answers here.
       paragraphsPlaced: 50,
       bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
+    },
+    {
+      id: "rotated-drawings",
+      title: "An inline drawing turned after it was drawn",
+      asks: "what room a turned drawing's line keeps, and where the turned picture is drawn in it",
+      bytes: buildAuthoredDocx({ body: rotatedDrawingDocument(), picture: true }),
+    },
+    {
+      id: "rotated-drawing-ties",
+      title: "A drawing turned exactly between one quarter and the next",
+      asks: "which quarter the room a turned drawing's line keeps is rounded to when it stands between two",
+      // Word draws the picture turned by an eighth in three overlapping pieces and
+      // the one turned by three eighths nowhere at all, so its pdf cannot be paired
+      // with what this project draws. Word's own answer for each paragraph says
+      // what the document asks, which is the room its line kept.
+      picturesWordDrewInPieces: true,
+      bytes: buildAuthoredDocx({ body: rotatedDrawingTiesDocument(), picture: true }),
     },
     {
       id: "breaking",

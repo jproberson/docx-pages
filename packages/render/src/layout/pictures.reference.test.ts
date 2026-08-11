@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  boundsOfTurn,
   layOutDocument,
   lookupFontMetrics,
   type FaceRequest,
@@ -37,7 +38,7 @@ const CASES: readonly Compared[] = [
     },
   })),
   ...(FACE === null ? [] : authoredCases().map((each) => ({ each, metricsFor: authoredMetrics }))),
-].filter(({ each }) => each.renderedPath !== null);
+].filter(({ each }) => each.renderedPath !== null && !each.picturesWordDrewInPieces);
 
 type Box = {
   readonly leftPt: number;
@@ -64,11 +65,15 @@ function uncropped(box: Box, crop: { left: number; top: number; right: number; b
 }
 
 // A picture whose part is missing still takes up its frame, and Word draws
-// something there, so it stands beside the ones that resolved.
+// something there, so it stands beside the ones that resolved. A turned picture is
+// drawn turned, and what a pdf reader hands back is the rectangle that drawing
+// reaches, so ours is turned into the same thing.
 const pictureAt = (each: PlacedFloat | PlacedInline, pageIndex: number): OurPicture | null => {
-  if (each.content.kind === "missing-picture") return { ...each, pageIndex };
+  if (each.content.kind === "missing-picture") {
+    return { ...boundsOfTurn(each, each.turnDegrees), pageIndex };
+  }
   if (each.content.kind !== "picture") return null;
-  return { ...uncropped(each, each.content.crop), pageIndex };
+  return { ...boundsOfTurn(uncropped(each, each.content.crop), each.turnDegrees), pageIndex };
 };
 
 // The header and the footer are drawn again on every page, so every page of the

@@ -1,15 +1,21 @@
 import type { InlineDrawing } from "../docx/inlines.js";
 import { resolveContent, type PartResolver, type PlacedContent } from "./floats.js";
 import type { ParagraphBox } from "./stack.js";
+import { unturnedRect } from "./turns.js";
+import { emuToPoints } from "./units.js";
 import type { Theme } from "../docx/theme.js";
 
 export type PlacedInline = {
   readonly drawing: InlineDrawing;
   readonly content: PlacedContent;
+  // Where the drawing stands before it is turned, which is the size it was stored
+  // at seated in the middle of the room its line kept. The two are the same box
+  // wherever nothing was turned.
   readonly leftPt: number;
   readonly topPt: number;
   readonly widthPt: number;
   readonly heightPt: number;
+  readonly turnDegrees: number;
 };
 
 export type PlaceInlinesInput = {
@@ -42,10 +48,19 @@ export function placeInlines(input: PlaceInlinesInput): readonly PlacedInline[] 
       placed.push({
         drawing,
         content: resolveContent(drawing.content, input.resolvePart, input.theme),
-        leftPt: line.leftPt + segment.offsetPt,
-        topPt: line.baselinePt - segment.heightPt,
-        widthPt: segment.widthPt,
-        heightPt: segment.heightPt,
+        ...unturnedRect(
+          {
+            leftPt: line.leftPt + segment.offsetPt,
+            topPt: line.baselinePt - segment.heightPt,
+            widthPt: segment.widthPt,
+            heightPt: segment.heightPt,
+          },
+          {
+            widthPt: emuToPoints(drawing.widthEmu),
+            heightPt: emuToPoints(drawing.heightEmu),
+          },
+        ),
+        turnDegrees: drawing.turnDegrees,
       });
     }
   }

@@ -25652,6 +25652,342 @@
       ],
       "characters": [],
       "shapes": []
+    },
+    "rotated-drawings": {
+      "paragraphs": [
+        {
+          "index": 1,
+          "page": 1,
+          "topPt": 36.299999,
+          "leftPt": 0
+        },
+        {
+          "index": 2,
+          "page": 1,
+          "topPt": 50.799999,
+          "leftPt": 0
+        },
+        {
+          "index": 3,
+          "page": 1,
+          "topPt": 65.349998,
+          "leftPt": 0
+        },
+        {
+          "index": 4,
+          "page": 1,
+          "topPt": 89.550003,
+          "leftPt": 0
+        },
+        {
+          "index": 5,
+          "page": 1,
+          "topPt": 113.150002,
+          "leftPt": 0
+        },
+        {
+          "index": 6,
+          "page": 1,
+          "topPt": 137.350006,
+          "leftPt": 0
+        },
+        {
+          "index": 7,
+          "page": 1,
+          "topPt": 151.850006,
+          "leftPt": 0
+        },
+        {
+          "index": 8,
+          "page": 1,
+          "topPt": 223.850006,
+          "leftPt": 0
+        },
+        {
+          "index": 9,
+          "page": 1,
+          "topPt": 295.850006,
+          "leftPt": 0
+        },
+        {
+          "index": 10,
+          "page": 1,
+          "topPt": 367.850006,
+          "leftPt": 0
+        },
+        {
+          "index": 11,
+          "page": 1,
+          "topPt": 382.399994,
+          "leftPt": 0
+        },
+        {
+          "index": 12,
+          "page": 1,
+          "topPt": 406.600006,
+          "leftPt": 0
+        },
+        {
+          "index": 13,
+          "page": 1,
+          "topPt": 430.799988,
+          "leftPt": 0
+        },
+        {
+          "index": 14,
+          "page": 1,
+          "topPt": 454.399994,
+          "leftPt": 0
+        },
+        {
+          "index": 15,
+          "page": 1,
+          "topPt": 469.5,
+          "leftPt": 0
+        },
+        {
+          "index": 16,
+          "page": 1,
+          "topPt": 541.5,
+          "leftPt": 0
+        },
+        {
+          "index": 17,
+          "page": 1,
+          "topPt": 613.5,
+          "leftPt": 0
+        },
+        {
+          "index": 18,
+          "page": 1,
+          "topPt": 685.5,
+          "leftPt": 0
+        },
+        {
+          "index": 19,
+          "page": 1,
+          "topPt": 700.049988,
+          "leftPt": 0
+        },
+        {
+          "index": 20,
+          "page": 1,
+          "topPt": 723.650024,
+          "leftPt": 0
+        },
+        {
+          "index": 21,
+          "page": 2,
+          "topPt": 36.299999,
+          "leftPt": 0
+        },
+        {
+          "index": 22,
+          "page": 2,
+          "topPt": 59.900002,
+          "leftPt": 0
+        },
+        {
+          "index": 23,
+          "page": 2,
+          "topPt": 74.400002,
+          "leftPt": 0
+        },
+        {
+          "index": 24,
+          "page": 2,
+          "topPt": 98.599998,
+          "leftPt": 0
+        },
+        {
+          "index": 25,
+          "page": 2,
+          "topPt": 122.800003,
+          "leftPt": 0
+        },
+        {
+          "index": 26,
+          "page": 2,
+          "topPt": 146.399994,
+          "leftPt": 0
+        },
+        {
+          "index": 27,
+          "page": 2,
+          "topPt": 161.550003,
+          "leftPt": 0
+        },
+        {
+          "index": 28,
+          "page": 2,
+          "topPt": 188.75,
+          "leftPt": 0
+        },
+        {
+          "index": 29,
+          "page": 2,
+          "topPt": 216,
+          "leftPt": 0
+        },
+        {
+          "index": 30,
+          "page": 2,
+          "topPt": 243.25,
+          "leftPt": 0
+        },
+        {
+          "index": 31,
+          "page": 2,
+          "topPt": 257.75,
+          "leftPt": 0
+        },
+        {
+          "index": 32,
+          "page": 2,
+          "topPt": 332.75,
+          "leftPt": 0
+        },
+        {
+          "index": 33,
+          "page": 2,
+          "topPt": 407.799988,
+          "leftPt": 0
+        },
+        {
+          "index": 34,
+          "page": 2,
+          "topPt": 483.450012,
+          "leftPt": 0
+        },
+        {
+          "index": 35,
+          "page": 2,
+          "topPt": 497.950012,
+          "leftPt": 0
+        },
+        {
+          "index": 36,
+          "page": 2,
+          "topPt": 525.200012,
+          "leftPt": 0
+        },
+        {
+          "index": 37,
+          "page": 2,
+          "topPt": 552.400024,
+          "leftPt": 0
+        },
+        {
+          "index": 38,
+          "page": 2,
+          "topPt": 579.650024,
+          "leftPt": 0
+        },
+        {
+          "index": 39,
+          "page": 2,
+          "topPt": 594.150024,
+          "leftPt": 0
+        }
+      ],
+      "characters": [],
+      "shapes": []
+    },
+    "rotated-drawing-ties": {
+      "paragraphs": [
+        {
+          "index": 1,
+          "page": 1,
+          "topPt": 36.299999,
+          "leftPt": 0
+        },
+        {
+          "index": 2,
+          "page": 1,
+          "topPt": 50.799999,
+          "leftPt": 0
+        },
+        {
+          "index": 3,
+          "page": 1,
+          "topPt": 65.349998,
+          "leftPt": 0
+        },
+        {
+          "index": 4,
+          "page": 1,
+          "topPt": 137.350006,
+          "leftPt": 0
+        },
+        {
+          "index": 5,
+          "page": 1,
+          "topPt": 209.350006,
+          "leftPt": 0
+        },
+        {
+          "index": 6,
+          "page": 1,
+          "topPt": 281.350006,
+          "leftPt": 0
+        },
+        {
+          "index": 7,
+          "page": 1,
+          "topPt": 295.850006,
+          "leftPt": 0
+        },
+        {
+          "index": 8,
+          "page": 1,
+          "topPt": 320.049988,
+          "leftPt": 0
+        },
+        {
+          "index": 9,
+          "page": 1,
+          "topPt": 343.649994,
+          "leftPt": 0
+        },
+        {
+          "index": 10,
+          "page": 1,
+          "topPt": 367.850006,
+          "leftPt": 0
+        },
+        {
+          "index": 11,
+          "page": 1,
+          "topPt": 382.399994,
+          "leftPt": 0
+        },
+        {
+          "index": 12,
+          "page": 1,
+          "topPt": 454.399994,
+          "leftPt": 0
+        },
+        {
+          "index": 13,
+          "page": 1,
+          "topPt": 526.400024,
+          "leftPt": 0
+        },
+        {
+          "index": 14,
+          "page": 1,
+          "topPt": 598.400024,
+          "leftPt": 0
+        },
+        {
+          "index": 15,
+          "page": 1,
+          "topPt": 613.5,
+          "leftPt": 0
+        }
+      ],
+      "characters": [],
+      "shapes": []
     }
   }
 }

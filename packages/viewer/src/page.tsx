@@ -55,12 +55,18 @@ const pt = (value: number): string => `${String(value)}pt`;
 
 type ObjectDrawable = Extract<Drawable, { kind: "object" }>;
 
+// An object turned after it was drawn is turned about the middle of the box it
+// stands in, which is where a css transform turns an element by default.
+const turn = (turnDegrees: number): CSSProperties =>
+  turnDegrees === 0 ? {} : { transform: `rotate(${String(turnDegrees)}deg)` };
+
 const box = (drawable: ObjectDrawable): CSSProperties => ({
   position: "absolute",
   left: pt(drawable.leftPt),
   top: pt(drawable.topPt),
   width: pt(drawable.widthPt),
   height: pt(drawable.heightPt),
+  ...turn(drawable.turnDegrees),
 });
 
 // srcRect hides a fraction of each edge, so the whole bitmap is larger than the
@@ -244,6 +250,9 @@ function painted(
         top: pt(drawable.topPt - room),
         width: pt(layerWidth),
         height: pt(layerHeight),
+        // The room an outline takes is the same on every side, so this layer keeps
+        // the shape's own middle and turns about it.
+        ...turn(drawable.turnDegrees),
       }}
       viewBox={`${String(-room)} ${String(-room)} ${String(layerWidth)} ${String(layerHeight)}`}
       data-kind={kind}
@@ -481,6 +490,7 @@ function textLayer(
         left: pt(window.leftPt),
         top: pt(window.topPt),
         ...(clipTo === null ? { overflow: "visible" } : {}),
+        ...turn(drawable.turnDegrees),
       }}
       width={pt(window.widthPt)}
       height={pt(window.heightPt)}

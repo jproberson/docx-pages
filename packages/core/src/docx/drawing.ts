@@ -116,6 +116,10 @@ export type GroupChild = {
   readonly widthFraction: number;
   readonly heightFraction: number;
   readonly flip: DrawingFlip;
+  // How far round the child was turned inside its group, which is its own turn and
+  // not the group's: a group flattens onto its children before anything is drawn,
+  // so a group's own turn is added to each of theirs there.
+  readonly turnDegrees: number;
   readonly content: DrawingContent;
 };
 
@@ -221,6 +225,16 @@ const flipIn = (transform: XmlElement | null): DrawingFlip => ({
   vertical: transform !== null && attribute(transform, "", "flipV") === "1",
 });
 
+// A turn is stated in sixtieths of a degree, clockwise, about the middle of the
+// box the shape stands in.
+const SIXTIETHS_OF_A_DEGREE = 60000;
+
+const turnIn = (transform: XmlElement | null): number => {
+  const raw = transform === null ? undefined : attribute(transform, "", "rot");
+  const value = raw === undefined ? Number.NaN : Number(raw);
+  return Number.isFinite(value) ? value / SIXTIETHS_OF_A_DEGREE : 0;
+};
+
 // Where a group's own properties live, which is one name under a group in the
 // flow and another under a group inside one.
 const groupProperties = (group: XmlElement): XmlElement | null =>
@@ -269,6 +283,7 @@ function readGroup(group: XmlElement): DrawingContent {
       widthFraction: at.cx / acrossEmu,
       heightFraction: at.cy / downEmu,
       flip: flipIn(childTransform),
+      turnDegrees: turnIn(childTransform),
       content,
     });
   }
@@ -353,13 +368,19 @@ export type DrawingFlip = {
   readonly vertical: boolean;
 };
 
-export const readDrawingFlip = (drawing: XmlElement): DrawingFlip => {
-  const transform = findOwn(drawing, A_NS, "xfrm");
-  return {
-    horizontal: transform !== null && attribute(transform, "", "flipH") === "1",
-    vertical: transform !== null && attribute(transform, "", "flipV") === "1",
-  };
-};
+export const readDrawingFlip = (drawing: XmlElement): DrawingFlip =>
+  flipIn(findOwn(drawing, A_NS, "xfrm"));
+
+/**
+ * How far round the object itself was turned after it was drawn, clockwise.
+ *
+ * The extent the flow was given is the object the right way up, so a turn is
+ * something the layout has to answer for rather than a matter of paint alone: a
+ * quarter turn leaves a picture as wide as it was tall. What that costs the line
+ * it stands on is `roomForTurn`, and where it is then painted is `boundsOfTurn`.
+ */
+export const readDrawingTurn = (drawing: XmlElement): number =>
+  turnIn(findOwn(drawing, A_NS, "xfrm"));
 
 export function readDrawingContent(drawing: XmlElement): DrawingContent {
   // **The group is asked for first, and that is the whole of why this order

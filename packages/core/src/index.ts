@@ -193,6 +193,9 @@ export type { ColorReference, Theme } from "./docx/theme.js";
 
 export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";
 
+export { boundsOfTurn, roomForTurn, turnedAbout, turnsOnItsSide } from "./layout/turns.js";
+export type { TurnedRect, TurnedSize } from "./layout/turns.js";
+
 export {
   substitutingMetrics,
   WORD_CHARACTER_FALLBACK_FACES,

@@ -905,8 +905,15 @@ const emu = (pt: number): string => String(Math.round(pt * 12700));
 // that stands on a line without being measured from a face. Its run still states
 // a face like any other, which is what says whether the line hears anything the
 // drawing itself does not say.
-const inlinePicture = (id: number, widthPt: number, heightPt: number, mark = ""): string => {
+const inlinePicture = (
+  id: number,
+  widthPt: number,
+  heightPt: number,
+  mark = "",
+  sixtieths = 0,
+): string => {
   const extent = `cx="${emu(widthPt)}" cy="${emu(heightPt)}"`;
+  const turned = sixtieths === 0 ? "" : ` rot="${String(sixtieths)}"`;
   return `<w:r>${mark === "" ? "" : `<w:rPr>${mark}</w:rPr>`}<w:drawing>
     <wp:inline distT="0" distB="0" distL="0" distR="0">
       <wp:extent ${extent}/>
@@ -917,12 +924,75 @@ const inlinePicture = (id: number, widthPt: number, heightPt: number, mark = "")
         <pic:pic xmlns:pic="${PIC_NS}">
           <pic:nvPicPr><pic:cNvPr id="${String(id)}" name="picture-${String(id)}"/><pic:cNvPicPr/></pic:nvPicPr>
           <pic:blipFill><a:blip r:embed="${PICTURE_ID}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
-          <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext ${extent}/></a:xfrm>
+          <pic:spPr><a:xfrm${turned}><a:off x="0" y="0"/><a:ext ${extent}/></a:xfrm>
             <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
         </pic:pic>
       </a:graphicData></a:graphic>
     </wp:inline></w:drawing></w:r>`;
 };
+
+// What a drawing turned after it was drawn takes on its line, and where the turned
+// picture itself is drawn.
+//
+// The extent a rotation is stated beside is the picture the right way up, so a
+// quarter turn either leaves the line holding a box the wrong way round or holds
+// a box as wide as the picture is tall. Three corpus documents of one template
+// turn a picture a quarter and each makes a page more than Word does, which is
+// what asks the question.
+//
+// The picture is three times as wide as it is tall, so every turn below draws a
+// different box, and each case is written out three times so the room its line
+// took is the distance from one drawing to the next rather than a difference of
+// two rounded answers. The turns are the four quarters, the two halves of one, and
+// one that is no fraction of a quarter at all.
+function turnedDrawings(degrees: readonly number[], beside: readonly number[]): string {
+  const SIXTIETHS_OF_A_DEGREE = 60000;
+  const TURNED_WIDE_PT = 72;
+  const TURNED_TALL_PT = 24;
+
+  let drawings = 0;
+  const turned = (angle: number, alongside = ""): string => {
+    drawings += 1;
+    return paragraph(
+      "",
+      inlinePicture(
+        drawings,
+        TURNED_WIDE_PT,
+        TURNED_TALL_PT,
+        "",
+        Math.round(angle * SIXTIETHS_OF_A_DEGREE),
+      ) + alongside,
+    );
+  };
+
+  return [
+    paragraph("", run("above")),
+    ...degrees.flatMap((angle) => [
+      paragraph("", run(`turned by ${String(angle)}`)),
+      ...Array.from({ length: REPEATS }, () => turned(angle)),
+    ]),
+    // Text on the line after the drawing, which is the only thing that says how far
+    // along the line a turned drawing carried it: where the drawing is painted
+    // cannot, since a turn draws outside the room the line kept for it.
+    ...beside.flatMap((angle) => [
+      paragraph("", run(`beside a turn of ${String(angle)}`)),
+      ...Array.from({ length: REPEATS }, () => turned(angle, run("beside"))),
+    ]),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
+export const rotatedDrawingDocument = (): string =>
+  turnedDrawings([0, 90, 180, 270, 30, 26.7], [0, 90, 30]);
+
+// The two turns that fall exactly between one quarter and the next, and the one a
+// half turn from the first. Asked in a document of their own because **Word's own
+// pdf cannot answer for how they are drawn**: it draws a picture turned by an
+// eighth in three overlapping pieces, and one turned by three eighths not at all.
+// What they settle is the room the line keeps either side of the boundary, which
+// Word's own report answers for.
+export const rotatedDrawingTiesDocument = (): string => turnedDrawings([45, 135, 225], []);
 
 // Taller than any line the text of this document would make on its own, so that
 // the drawing is what the line has to hold.

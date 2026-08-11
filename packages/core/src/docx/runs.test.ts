@@ -125,7 +125,21 @@ describe("readRuns", () => {
     const runs = runsOf(`<w:p><w:r>${drawing}</w:r></w:p>`);
 
     expect(runs[0]?.pieces).toStrictEqual([
-      { kind: "drawing", widthEmu: 914400, heightEmu: 457200 },
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 0 },
+    ]);
+  });
+
+  // The extent is the drawing the right way up whatever the turn says, so the turn
+  // is carried beside it rather than worked into it.
+  it("carries how far round a drawing was turned after it was drawn", () => {
+    const drawing = `<w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+      xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+      <wp:inline><wp:extent cx="914400" cy="457200"/>
+        <a:xfrm rot="5400000"><a:ext cx="914400" cy="457200"/></a:xfrm></wp:inline></w:drawing>`;
+    const runs = runsOf(`<w:p><w:r>${drawing}</w:r></w:p>`);
+
+    expect(runs[0]?.pieces).toStrictEqual([
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 90 },
     ]);
   });
 

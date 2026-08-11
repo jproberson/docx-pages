@@ -69,6 +69,7 @@ const NOTHING_MEASURED = {
   metafileRuns: null,
   numbersMatched: null,
   numbersPlaced: null,
+  picturesWordDrewInPieces: false,
   unhonoured: [],
 } as const;
 

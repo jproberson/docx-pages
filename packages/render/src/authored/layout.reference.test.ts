@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  boundsOfTurn,
   layOutDocument,
   openDocx,
   twipsToPoints,
@@ -191,13 +192,9 @@ const placedDrawings = (
 ): readonly (Placed & { readonly widthPt: number; readonly heightPt: number })[] =>
   layout.pages.flatMap((page) =>
     [...page.floats.filter((float) => float.content.kind === "picture"), ...page.inlines].map(
-      (drawing) => ({
-        page: page.index + 1,
-        topPt: drawing.topPt,
-        leftPt: drawing.leftPt,
-        widthPt: drawing.widthPt,
-        heightPt: drawing.heightPt,
-      }),
+      // A turned drawing is drawn turned, and Word's pdf holds the rectangle that
+      // drawing reaches rather than the box the flow kept for it.
+      (drawing) => ({ page: page.index + 1, ...boundsOfTurn(drawing, drawing.turnDegrees) }),
     ),
   );
 
@@ -303,7 +300,10 @@ describe.skipIf(CASES.length === 0 || FACE === null)("authored documents against
         },
       );
 
-      it.runIf(each.renderedPath !== null)(
+      // A document Word draws a picture of in pieces cannot be paired with what
+      // this project draws, and says so; what it asks is answered by the room
+      // Word's own report gives each paragraph above.
+      it.runIf(each.renderedPath !== null && each.picturesWordDrewInPieces !== true)(
         "stands every drawing where Word's own rendering stands it",
         { timeout: RENDERING_TIMEOUT_MS },
         async () => {

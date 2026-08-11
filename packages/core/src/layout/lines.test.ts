@@ -506,7 +506,34 @@ describe("breakLines", () => {
   });
 
   it("gives a drawing the width it takes on the line", () => {
-    const run = piecesRun([{ kind: "drawing", widthEmu: 914400, heightEmu: 457200 }]);
+    const run = piecesRun([
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 0 },
+    ]);
+    const lines = linesOf([run], 200);
+
+    expect(lines[0]?.widthPt).toBeCloseTo(72, 9);
+    expect(lines[0]?.heightPt).toBeCloseTo(36, 9);
+  });
+
+  // Word rounds the turn to the nearest quarter and keeps the extent that way
+  // round, so a picture turned a quarter is held in a box as wide as it was tall.
+  // Measured off Word's own pdf of the authored `rotated-drawings` document.
+  it("gives a drawing turned a quarter the room its turn lays it in", () => {
+    const run = piecesRun([
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 90 },
+    ]);
+    const lines = linesOf([run], 200);
+
+    expect(lines[0]?.widthPt).toBeCloseTo(36, 9);
+    expect(lines[0]?.heightPt).toBeCloseTo(72, 9);
+  });
+
+  // The same picture turned by 30 degrees is drawn 74.35 x 56.78 and is held in
+  // the box it was stored in regardless, which is what Word does.
+  it("gives a drawing turned less than an eighth the room it was stored at", () => {
+    const run = piecesRun([
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 30 },
+    ]);
     const lines = linesOf([run], 200);
 
     expect(lines[0]?.widthPt).toBeCloseTo(72, 9);

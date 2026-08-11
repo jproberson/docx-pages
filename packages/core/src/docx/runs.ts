@@ -1,4 +1,5 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
+import { readDrawingTurn } from "./drawing.js";
 import { WP_NS } from "./inlines.js";
 import { W_NS } from "./section.js";
 import { resolveRuns, type ParagraphMark, type StyleTable } from "./styles.js";
@@ -11,7 +12,14 @@ export type RunPiece =
   // under it on a page of its own. One of type "column" sends the rest of its
   // paragraph to the top of the next column, whatever room is left below it.
   | { readonly kind: "break"; readonly endsPage: boolean; readonly endsColumn: boolean }
-  | { readonly kind: "drawing"; readonly widthEmu: number; readonly heightEmu: number };
+  | {
+      readonly kind: "drawing";
+      readonly widthEmu: number;
+      readonly heightEmu: number;
+      // The extent is the drawing the right way up, so how far round it was turned
+      // is part of how much of the line it takes.
+      readonly turnDegrees: number;
+    };
 
 export type TextRun = {
   readonly mark: ParagraphMark;
@@ -37,7 +45,12 @@ function extentOf(inline: XmlElement): RunPiece {
     const value = raw === undefined ? Number.NaN : Number(raw);
     return Number.isFinite(value) ? value : 0;
   };
-  return { kind: "drawing", widthEmu: size("cx"), heightEmu: size("cy") };
+  return {
+    kind: "drawing",
+    widthEmu: size("cx"),
+    heightEmu: size("cy"),
+    turnDegrees: readDrawingTurn(inline),
+  };
 }
 
 function collectPieces(node: XmlElement, into: RunPiece[]): void {

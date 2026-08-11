@@ -13,6 +13,7 @@ import {
   type MetricsLookup,
 } from "./font-metrics.js";
 import { nextTabStop, type TabStopPt } from "./tab-stops.js";
+import { roomForTurn } from "./turns.js";
 import { emuToPoints } from "./units.js";
 
 export type MetricsResolver = ((request: FaceRequest) => MetricsLookup) & {
@@ -371,12 +372,11 @@ function addPiece(
     // drawing's line is held open by and what a multiple over it is taken of.
     const fontHeightPt = measurer.lineHeight(mark);
     if (fontHeightPt === null) return false;
-    units.push({
-      kind: "drawing",
-      widthPt: emuToPoints(piece.widthEmu),
-      heightPt: emuToPoints(piece.heightEmu),
-      fontHeightPt,
-    });
+    const room = roomForTurn(
+      { widthPt: emuToPoints(piece.widthEmu), heightPt: emuToPoints(piece.heightEmu) },
+      piece.turnDegrees,
+    );
+    units.push({ kind: "drawing", widthPt: room.widthPt, heightPt: room.heightPt, fontHeightPt });
     return true;
   }
 
