@@ -1,5 +1,6 @@
 import { DocxPagesError } from "../errors.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
+import { readRelationships, R_NS } from "./relationships.js";
 import { attribute, descendantsNamed, firstNamed, type XmlElement } from "./xml.js";
 
 export const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -164,11 +165,67 @@ export function sectionsClosedBy(
   return closes;
 }
 
+// The header or footer parts a section names, by the page of it each is drawn on.
+// Null where the section names none of that kind, which is a page that draws no
+// header at all rather than one falling back to another.
+export type SectionStories = {
+  readonly first: string | null;
+  readonly default: string | null;
+  readonly even: string | null;
+};
+
+const NO_STORIES: SectionStories = { first: null, default: null, even: null };
+
 // One of the body's own sections, and the paragraph it ends at. The final section
 // ends at nothing: the body's own `w:sectPr` governs whatever follows the last
 // paragraph carrying one.
 export type BodySection = DocumentSection & {
   readonly endsAt: XmlElement | null;
+  readonly headers: SectionStories;
+  readonly footers: SectionStories;
+  // Whether the section draws something of its own on the page it opens, which is
+  // what `w:titlePg` says. 408 of the 718 corpus documents state it.
+  readonly titlePage: boolean;
+};
+
+// **A page draws its own section's header, and the page a section opens draws that
+// section's first-page one where it says `w:titlePg`.** What stood here read the
+// last `w:headerReference` of type `default` anywhere in the part, which is one
+// section's answer given to every page of the document: a corpus document whose
+// only page is in a section naming nothing but a first-page header was drawn under
+// the *next* section's default header, a full-page background image, and lost the
+// logo and rule its own header holds.
+//
+// **A section stating no reference of a kind inherits that kind from the section
+// before it**, which is how a document writes one header once and runs it through
+// to the end.
+//
+// `even` is read and never chosen. Not one of the 718 corpus documents states
+// `w:evenAndOddHeaders`, though 521 of them name an even-page part, so choosing one
+// would be acting on a setting nothing has turned on and nothing has measured.
+export function storyFor(
+  stories: SectionStories,
+  opensItsSection: boolean,
+  titlePage: boolean,
+): string | null {
+  return opensItsSection && titlePage ? stories.first : stories.default;
+}
+
+const storiesOf = (
+  section: XmlElement,
+  reference: string,
+  partOf: (relationshipId: string) => string | null,
+  inherited: SectionStories,
+): SectionStories => {
+  const stated = new Map<string, string | null>();
+  for (const node of descendantsNamed(section, W_NS, reference)) {
+    const id = attribute(node, R_NS, "id");
+    if (id === undefined) continue;
+    stated.set(attribute(node, W_NS, "type") ?? "default", partOf(id));
+  }
+  const of = (kind: keyof SectionStories): string | null =>
+    stated.has(kind) ? (stated.get(kind) ?? null) : inherited[kind];
+  return { first: of("first"), default: of("default"), even: of("even") };
 };
 
 // The body's sections in the order they run, read off the paragraphs standing in
@@ -182,12 +239,27 @@ export function bodySections(
   const own = body === null ? null : firstNamed(body, W_NS, "sectPr");
   const closers = bodyParagraphs.filter(endsASection);
 
-  const of = (element: XmlElement, endsAt: XmlElement | null): BodySection => ({
-    geometry: geometryOf(element),
-    breakKind: breakOf(element),
-    columns: columnsOf(element),
-    endsAt,
-  });
+  const relationships = readRelationships(pkg, MAIN_DOCUMENT_PART);
+  const partOf = (relationshipId: string): string | null => {
+    const target = relationships.get(relationshipId)?.part;
+    return target !== undefined && pkg.parts.has(target) ? target : null;
+  };
+
+  let headers = NO_STORIES;
+  let footers = NO_STORIES;
+  const of = (element: XmlElement, endsAt: XmlElement | null): BodySection => {
+    headers = storiesOf(element, "headerReference", partOf, headers);
+    footers = storiesOf(element, "footerReference", partOf, footers);
+    return {
+      geometry: geometryOf(element),
+      breakKind: breakOf(element),
+      columns: columnsOf(element),
+      endsAt,
+      headers,
+      footers,
+      titlePage: firstNamed(element, W_NS, "titlePg") !== null,
+    };
+  };
 
   const sections = closers.flatMap((closer) => {
     const properties = sectionClosedBy(closer);
