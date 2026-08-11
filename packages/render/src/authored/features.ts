@@ -570,6 +570,47 @@ export const STATED_FOOTER = paragraph(
   run("the footer"),
 );
 
+// How far a footer that draws nothing holds the text off the bottom margin.
+//
+// A page 792pt tall keeping 36pt of bottom margin ends its body at 756, and
+// keeping 36pt for a footer hangs a 48pt footer's top at 708. Whether the body
+// then stops at 708 or carries on to 756 is two whole lines of the 24pt ones
+// below, so the page each line lands on says which, and the page is the half of
+// Word's own answer that is worth trusting.
+//
+// Five corpus documents turn on it, each making a page more than Word does, and
+// every one of them keeps a footer holding one empty paragraph.
+const FOOTER_ROOM_LINE_PT = 24;
+
+export const EMPTY_FOOTER = paragraph(`<w:spacing w:line="960" w:lineRule="exact"/>`, "");
+export const DRAWN_FOOTER = paragraph(
+  `<w:spacing w:line="960" w:lineRule="exact"/>`,
+  run("the footer"),
+);
+
+// The same empty footer asking for room under itself as well. Whether a story's
+// last paragraph keeps the room it asks for below it decides how far down a page
+// the body may reach, and every corpus document that turns on this keeps a footer
+// whose one paragraph states a space after.
+export const SPACED_FOOTER = paragraph(
+  `<w:spacing w:after="240" w:line="960" w:lineRule="exact"/>`,
+  "",
+);
+
+// Lines of a stated height, numbered, so that which page each landed on says how
+// many the body had room for. Thirty of them fill a body reaching the bottom
+// margin exactly and twenty eight fill one stopping at the footer's top.
+export function footerRoomDocument(): string {
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(FOOTER_ROOM_LINE_PT * 20)}" w:lineRule="exact"/>`;
+
+  return [
+    ...Array.from({ length: 40 }, (_, at) =>
+      paragraph(exactly, run(`line ${String(at + 1).padStart(2, "0")}`)),
+    ),
+    EMPTY,
+  ].join("");
+}
+
 // What a break does to the line under it when there is nothing on that line.
 //
 // Two corpus documents of one converted template are 7 of 45 and 6 of 43 lines

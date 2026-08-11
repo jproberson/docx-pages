@@ -18,6 +18,7 @@ import {
   objectsPastTheFootDocument,
   overflowingSectionDocument,
   positionedTableDocument,
+  footerRoomDocument,
   resumingDocument,
   rotatedDrawingDocument,
   rotatedDrawingTiesDocument,
@@ -44,6 +45,9 @@ import {
   NUMBERING,
   SPACING_STYLES,
   STATED_FOOTER,
+  DRAWN_FOOTER,
+  EMPTY_FOOTER,
+  SPACED_FOOTER,
 } from "./features.js";
 import { buildAuthoredDocx, settingsPart, FACE } from "./package.js";
 
@@ -405,6 +409,24 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // point, which is the oracle that answers here.
       paragraphsPlaced: 50,
       bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
+    },
+    {
+      id: "empty-footer",
+      title: "A footer of a stated height that draws nothing",
+      asks: "whether a footer holding one empty paragraph holds the body off the bottom margin",
+      bytes: buildAuthoredDocx({ body: footerRoomDocument(), footer: EMPTY_FOOTER }),
+    },
+    {
+      id: "drawn-footer",
+      title: "The same footer with a line of text in it",
+      asks: "how far a footer that does draw holds the body off the bottom margin, which the one above is read against",
+      bytes: buildAuthoredDocx({ body: footerRoomDocument(), footer: DRAWN_FOOTER }),
+    },
+    {
+      id: "spaced-footer",
+      title: "A footer that draws nothing and asks for room under itself",
+      asks: "whether the space a footer's last paragraph asks for below it holds the body any further off",
+      bytes: buildAuthoredDocx({ body: footerRoomDocument(), footer: SPACED_FOOTER }),
     },
     {
       id: "rotated-drawings",
