@@ -227,3 +227,123 @@ describe("the paint a shape carries", () => {
     expect(found.kind === "picture" && found.paint.outline?.color?.luminanceScale).toBe(0.5);
   });
 });
+
+const WPG_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
+
+// A group standing in a space of its own, with whatever children are given.
+const group = (space: string, children: string) =>
+  drawing(
+    `<wpg:wgp xmlns:wpg="${WPG_NS}"><wpg:grpSpPr><a:xfrm>` +
+      `<a:off x="0" y="0"/><a:ext cx="1000" cy="1000"/>${space}` +
+      `</a:xfrm></wpg:grpSpPr>${children}</wpg:wgp>`,
+  );
+
+const shapeIn = (transform: string, spPr = "") =>
+  `<wps:wsp xmlns:wps="${WPS_NS}"><wps:spPr><a:xfrm>${transform}</a:xfrm>${spPr}</wps:spPr></wps:wsp>`;
+
+const childrenOf = (content: ReturnType<typeof drawing>) => {
+  if (content.kind !== "group") throw new Error("expected a group");
+  return content.children;
+};
+
+describe("a group of shapes", () => {
+  // **A picture inside a group is not what the group is.** Asking for the picture
+  // first is what drew a photograph's cropped middle where Word draws a diagram of
+  // 323 shapes, with the other 322 drawn nowhere at all.
+  it("is read as the group rather than as the first picture inside it", () => {
+    const inside =
+      `<pic:pic><pic:blipFill><a:blip r:embed="rId7"/></pic:blipFill>` +
+      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="500" cy="500"/></a:xfrm></pic:spPr></pic:pic>`;
+    const content = group(
+      "",
+      `${inside}${shapeIn(`<a:off x="500" y="0"/><a:ext cx="500" cy="500"/>`)}`,
+    );
+
+    expect(content.kind).toBe("group");
+    expect(childrenOf(content).map((each) => each.content.kind)).toStrictEqual([
+      "picture",
+      "shape",
+    ]);
+  });
+
+  it("places a child as the fraction of the group's box it stands in", () => {
+    const content = group(
+      `<a:chOff x="0" y="0"/><a:chExt cx="1000" cy="500"/>`,
+      shapeIn(`<a:off x="250" y="250"/><a:ext cx="500" cy="125"/>`),
+    );
+
+    expect(childrenOf(content)[0]).toMatchObject({
+      leftFraction: 0.25,
+      topFraction: 0.5,
+      widthFraction: 0.5,
+      heightFraction: 0.25,
+    });
+  });
+
+  // The child space has an origin of its own as well as a size, and Word writes one
+  // that is nowhere near the page for a group anything has been moved inside.
+  it("takes the child space's own origin off first", () => {
+    const content = group(
+      `<a:chOff x="100" y="200"/><a:chExt cx="1000" cy="1000"/>`,
+      shapeIn(`<a:off x="600" y="200"/><a:ext cx="100" cy="100"/>`),
+    );
+
+    expect(childrenOf(content)[0]).toMatchObject({ leftFraction: 0.5, topFraction: 0 });
+  });
+
+  // Word writes no child space for a group nothing has been scaled inside, and then
+  // the group's own extent is the space its children stand in.
+  it("stands the children in the group's own extent where it states no child space", () => {
+    const content = group("", shapeIn(`<a:off x="500" y="0"/><a:ext cx="500" cy="1000"/>`));
+
+    expect(childrenOf(content)[0]).toMatchObject({ leftFraction: 0.5, widthFraction: 0.5 });
+  });
+
+  it("reads a group inside a group as a group again", () => {
+    const inner =
+      `<wpg:grpSp xmlns:wpg="${WPG_NS}"><wpg:grpSpPr><a:xfrm>` +
+      `<a:off x="0" y="0"/><a:ext cx="500" cy="1000"/>` +
+      `<a:chOff x="0" y="0"/><a:chExt cx="100" cy="100"/></a:xfrm></wpg:grpSpPr>` +
+      shapeIn(`<a:off x="50" y="0"/><a:ext cx="50" cy="100"/>`) +
+      `</wpg:grpSp>`;
+    const nested = childrenOf(group("", inner))[0];
+
+    expect(nested).toMatchObject({ leftFraction: 0, widthFraction: 0.5 });
+    expect(childrenOf(nested?.content ?? { kind: "unknown" })[0]).toMatchObject({
+      leftFraction: 0.5,
+      widthFraction: 0.5,
+    });
+  });
+
+  it("keeps which way round a child was turned", () => {
+    const content = group(
+      "",
+      shapeIn(`<a:off x="0" y="0"/><a:ext cx="10" cy="10"/>`).replace(
+        "<a:xfrm>",
+        `<a:xfrm flipV="1">`,
+      ),
+    );
+
+    expect(childrenOf(content)[0]?.flip).toStrictEqual({ horizontal: false, vertical: true });
+  });
+});
+
+describe("the preset geometry a shape names", () => {
+  it("reads the ones the corpus draws", () => {
+    const geometryOf = (preset: string) => shapePaint(`<a:prstGeom prst="${preset}"/>`).geometry;
+
+    expect(geometryOf("ellipse")).toBe("ellipse");
+    expect(geometryOf("roundRect")).toBe("rounded-rectangle");
+    expect(geometryOf("triangle")).toBe("triangle");
+    expect(geometryOf("rect")).toBe("rectangle");
+  });
+
+  // A connector is stored as a box with a line across it, exactly as `line` is.
+  it("draws a straight connector as the line it is", () => {
+    expect(shapePaint(`<a:prstGeom prst="straightConnector1"/>`).geometry).toBe("line");
+  });
+
+  it("draws a preset it does not know as the rectangle everything used to be", () => {
+    expect(shapePaint(`<a:prstGeom prst="cloudCallout"/>`).geometry).toBe("rectangle");
+  });
+});

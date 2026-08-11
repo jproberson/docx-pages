@@ -42,7 +42,14 @@ import {
 } from "./stack.js";
 import { columnsAcross } from "./columns.js";
 import { anchorLineFootPt, breakStack, type PageBody, type PageStack } from "./pages.js";
-import { placeFloat, type FloatSize, type PartResolver, type PlacedFloat } from "./floats.js";
+import {
+  placeFloat,
+  type FloatSize,
+  type PartResolver,
+  type PlacedContent,
+  type PlacedFloat,
+  type PlacedGroupChild,
+} from "./floats.js";
 import { placeInlines, type PlacedInline } from "./inlines.js";
 import { layOutTextBox } from "./text-boxes.js";
 import { emuToPoints, twipsToPoints } from "./units.js";
@@ -95,48 +102,109 @@ export type LaidOutDocument = {
 export type DocumentLayout =
   LaidOutDocument | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
-type FloatsInPart = {
+type DrawingsInPart = {
   readonly floats: readonly PlacedFloat[];
+  readonly inlines: readonly PlacedInline[];
   readonly part: string;
 };
 
-type FilledFloats =
-  | { readonly kind: "filled"; readonly floats: readonly (readonly PlacedFloat[])[] }
+type FilledDrawings =
+  | {
+      readonly kind: "filled";
+      readonly floats: readonly (readonly PlacedFloat[])[];
+      readonly inlines: readonly (readonly PlacedInline[])[];
+    }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
-// A text box is placed as a frame first and only then holds text, since its own
-// content is laid out against the rectangle the anchor resolved to.
-function fillTextBoxes(
-  parts: readonly FloatsInPart[],
+type Rect = {
+  readonly leftPt: number;
+  readonly topPt: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+};
+
+type FilledContent =
+  | { readonly kind: "filled"; readonly content: PlacedContent }
+  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
+
+/**
+ * A text box is placed as a frame first and only then holds text, since its own
+ * content is laid out against the rectangle the anchor resolved to.
+ *
+ * **A shape inside a group holds text the same way**, and its rectangle is the
+ * fraction of the group's box it stands in. The labels on a diagram are shapes of
+ * exactly that kind, so a group whose text was never laid out draws its boxes and
+ * none of its words.
+ */
+function fillContent(
+  content: PlacedContent,
+  rect: Rect,
   styles: StyleTable,
   metricsFor: MetricsResolver,
   settings: DocumentSettings,
-): FilledFloats {
-  const filled: (readonly PlacedFloat[])[] = [];
-
-  for (const { floats, part } of parts) {
-    const placed: PlacedFloat[] = [];
-    for (const float of floats) {
-      if (float.content.kind !== "text-box") {
-        placed.push(float);
-        continue;
-      }
-
-      const laid = layOutTextBox({
-        body: float.content.body,
-        rect: float,
+  part: string,
+): FilledContent {
+  if (content.kind === "group") {
+    const children: PlacedGroupChild[] = [];
+    for (const child of content.children) {
+      const filled = fillContent(
+        child.content,
+        {
+          leftPt: rect.leftPt + child.leftFraction * rect.widthPt,
+          topPt: rect.topPt + child.topFraction * rect.heightPt,
+          widthPt: child.widthFraction * rect.widthPt,
+          heightPt: child.heightFraction * rect.heightPt,
+        },
         styles,
         metricsFor,
         settings,
         part,
-      });
-      if (laid.kind === "blocked") return { kind: "blocked", blocker: laid.blocker };
-      placed.push({ ...float, content: { ...float.content, text: laid.text } });
+      );
+      if (filled.kind === "blocked") return filled;
+      children.push({ ...child, content: filled.content });
     }
-    filled.push(placed);
+    return { kind: "filled", content: { kind: "group", children } };
   }
 
-  return { kind: "filled", floats: filled };
+  if (content.kind !== "text-box") return { kind: "filled", content };
+
+  const laid = layOutTextBox({ body: content.body, rect, styles, metricsFor, settings, part });
+  if (laid.kind === "blocked") return { kind: "blocked", blocker: laid.blocker };
+  return { kind: "filled", content: { ...content, text: laid.text } };
+}
+
+// **An inline drawing is filled here too, and until 2026-08-10 nothing filled
+// one.** It never showed, because the only text a shape held was in a box
+// somebody had anchored; a group of shapes is inline as often as not, and the
+// labels on a diagram are shapes inside it holding text.
+function fillTextBoxes(
+  parts: readonly DrawingsInPart[],
+  styles: StyleTable,
+  metricsFor: MetricsResolver,
+  settings: DocumentSettings,
+): FilledDrawings {
+  const filledFloats: (readonly PlacedFloat[])[] = [];
+  const filledInlines: (readonly PlacedInline[])[] = [];
+
+  for (const { floats, inlines, part } of parts) {
+    const placedFloats: PlacedFloat[] = [];
+    for (const float of floats) {
+      const content = fillContent(float.content, float, styles, metricsFor, settings, part);
+      if (content.kind === "blocked") return { kind: "blocked", blocker: content.blocker };
+      placedFloats.push({ ...float, content: content.content });
+    }
+    filledFloats.push(placedFloats);
+
+    const placedInlines: PlacedInline[] = [];
+    for (const inline of inlines) {
+      const content = fillContent(inline.content, inline, styles, metricsFor, settings, part);
+      if (content.kind === "blocked") return { kind: "blocked", blocker: content.blocker };
+      placedInlines.push({ ...inline, content: content.content });
+    }
+    filledInlines.push(placedInlines);
+  }
+
+  return { kind: "filled", floats: filledFloats, inlines: filledInlines };
 }
 
 type FloatFrame = {
@@ -837,9 +905,14 @@ export function layOutDocument(
     [
       ...stories.map((story) => ({
         floats: story.floats,
+        inlines: story.inlines,
         part: story.part ?? MAIN_DOCUMENT_PART,
       })),
-      ...bodyDrawings.map((drawings) => ({ floats: drawings.floats, part: MAIN_DOCUMENT_PART })),
+      ...bodyDrawings.map((drawings) => ({
+        floats: drawings.floats,
+        inlines: drawings.inlines,
+        part: MAIN_DOCUMENT_PART,
+      })),
     ],
     styles,
     metricsFor,
@@ -849,7 +922,11 @@ export function layOutDocument(
   const floatsOfStory = new Map(
     stories.map((story, at) => [story, filled.floats[at] ?? []] as const),
   );
+  const inlinesOfStory = new Map(
+    stories.map((story, at) => [story, filled.inlines[at] ?? []] as const),
+  );
   const pageFloats = filled.floats.slice(stories.length);
+  const pageInlines = filled.inlines.slice(stories.length);
 
   return {
     kind: "laid-out",
@@ -872,7 +949,7 @@ export function layOutDocument(
         body: each.boxes,
         cells: each.cells,
         floats: pageFloats[each.index] ?? [],
-        inlines: bodyDrawings[each.index]?.inlines ?? [],
+        inlines: pageInlines[each.index] ?? [],
         headerTopPt: headerTopOf(geometryAt(each.openedBy)),
         headerHeightPt: drawn.header.heightPt,
         footerTopPt: drawn.footer.topPt,
@@ -882,8 +959,8 @@ export function layOutDocument(
         footerCells: drawn.footer.cells,
         headerFloats: floatsOfStory.get(drawn.header) ?? [],
         footerFloats: floatsOfStory.get(drawn.footer) ?? [],
-        headerInlines: drawn.header.inlines,
-        footerInlines: drawn.footer.inlines,
+        headerInlines: inlinesOfStory.get(drawn.header) ?? [],
+        footerInlines: inlinesOfStory.get(drawn.footer) ?? [],
       };
     }),
   };

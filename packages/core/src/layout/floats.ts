@@ -2,6 +2,7 @@ import type { AnchorOrigin, AnchorPosition, FloatingAnchor } from "../docx/ancho
 import type {
   CropInsets,
   DrawingContent,
+  DrawingFlip,
   ShapeGeometry,
   ShapePaint,
   TextBoxBody,
@@ -36,7 +37,19 @@ export type PlacedContent =
       readonly paint: PlacedPaint;
     }
   | { readonly kind: "shape"; readonly paint: PlacedPaint }
+  // A group's children keep the fractions of its box they stand in, so nothing
+  // above the drawing has to know a group is one object rather than many.
+  | { readonly kind: "group"; readonly children: readonly PlacedGroupChild[] }
   | { readonly kind: "unknown" };
+
+export type PlacedGroupChild = {
+  readonly leftFraction: number;
+  readonly topFraction: number;
+  readonly widthFraction: number;
+  readonly heightFraction: number;
+  readonly flip: DrawingFlip;
+  readonly content: PlacedContent;
+};
 
 export type PlacedFloat = {
   readonly anchor: FloatingAnchor;
@@ -147,6 +160,15 @@ export function resolveContent(
   theme: Theme,
 ): PlacedContent {
   if (content.kind === "unknown") return content;
+  if (content.kind === "group") {
+    return {
+      kind: "group",
+      children: content.children.map((child) => ({
+        ...child,
+        content: resolveContent(child.content, resolvePart, theme),
+      })),
+    };
+  }
 
   const paint = resolvePaint(content.paint, theme);
   if (content.kind === "shape") return { kind: "shape", paint };

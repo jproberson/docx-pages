@@ -7,6 +7,7 @@ import {
   twipsToPoints,
   type BorderStyle,
   type CropInsets,
+  type DrawingFlip,
   type Painted,
   type PaintedFill,
   type PaintedLine,
@@ -224,6 +225,9 @@ function painted(
   const { widthPt, heightPt } = drawable;
   const { outline } = paint;
   if (paint.fillColor === null && outline === null) return null;
+  // A path nothing here plays is drawn as nothing at all rather than as the box it
+  // fits in, which would be a filled rectangle the size of whatever it rules.
+  if (paint.geometry === "custom") return null;
 
   const room = outline === null ? 0 : outline.widthPt;
   const layerWidth = widthPt + room * 2;
@@ -244,20 +248,85 @@ function painted(
       viewBox={`${String(-room)} ${String(-room)} ${String(layerWidth)} ${String(layerHeight)}`}
       data-kind={kind}
     >
-      {paint.geometry === "line" ? (
-        <line x1={0} y1={0} x2={widthPt} y2={heightPt} {...stroke} />
-      ) : (
+      {geometry(paint, widthPt, heightPt, drawable.flip, stroke)}
+    </svg>
+  );
+}
+
+// Word rounds a round rectangle by a share of its shorter side, and states the
+// share in the shape's own adjust list. The default that list stands in for is a
+// sixth, which is what every one of them in the corpus keeps.
+const CORNER = 1 / 6;
+
+type Stroke = {
+  readonly stroke: string | undefined;
+  readonly strokeWidth: number | undefined;
+};
+
+/**
+ * The preset the shape names, drawn in the box the object stands in.
+ *
+ * **A flip decides which corners a line runs between and nothing else here.** A
+ * connector is stored as a box with a line across it, so the two corners it joins
+ * are the ones the flips choose; a shape with a symmetry either way is drawn the
+ * same however it was turned.
+ */
+function geometry(
+  paint: PlacedPaint,
+  widthPt: number,
+  heightPt: number,
+  flip: DrawingFlip,
+  stroke: Stroke,
+): ReactElement {
+  const fill = paint.fillColor ?? "none";
+
+  switch (paint.geometry) {
+    case "line": {
+      const [x1, x2] = flip.horizontal ? [widthPt, 0] : [0, widthPt];
+      const [y1, y2] = flip.vertical ? [heightPt, 0] : [0, heightPt];
+      return <line x1={x1} y1={y1} x2={x2} y2={y2} {...stroke} />;
+    }
+    case "ellipse":
+      return (
+        <ellipse
+          cx={widthPt / 2}
+          cy={heightPt / 2}
+          rx={widthPt / 2}
+          ry={heightPt / 2}
+          fill={fill}
+          {...stroke}
+        />
+      );
+    case "rounded-rectangle": {
+      const radius = Math.min(widthPt, heightPt) * CORNER;
+      return (
         <rect
           x={0}
           y={0}
           width={widthPt}
           height={heightPt}
-          fill={paint.fillColor ?? "none"}
+          rx={radius}
+          ry={radius}
+          fill={fill}
           {...stroke}
         />
-      )}
-    </svg>
-  );
+      );
+    }
+    case "triangle": {
+      const apex = flip.vertical ? heightPt : 0;
+      const base = flip.vertical ? 0 : heightPt;
+      return (
+        <polygon
+          points={`${String(widthPt / 2)},${String(apex)} ${String(widthPt)},${String(base)} 0,${String(base)}`}
+          fill={fill}
+          {...stroke}
+        />
+      );
+    }
+    case "custom":
+    case "rectangle":
+      return <rect x={0} y={0} width={widthPt} height={heightPt} fill={fill} {...stroke} />;
+  }
 }
 
 function frame(drawable: ObjectDrawable, kind: string, frames: FrameStyle): ReactElement | null {
@@ -541,6 +610,10 @@ function renderObject(
       return paint("text-box", content.paint);
     case "shape":
       return paint("shape", content.paint);
+    // A group is flattened into one item per shape inside it before a renderer
+    // sees anything, which is where the rule about what covers what belongs.
+    case "group":
+      return [];
     case "unknown":
       return shown("unknown");
   }
