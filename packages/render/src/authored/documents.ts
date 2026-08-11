@@ -20,6 +20,7 @@ import {
   positionedTableDocument,
   footerRoomDocument,
   lineMultipleDocument,
+  twipGridDocument,
   resumingDocument,
   rotatedDrawingDocument,
   rotatedDrawingTiesDocument,
@@ -410,6 +411,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // point, which is the oracle that answers here.
       paragraphsPlaced: 50,
       bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
+    },
+    {
+      id: "twip-grid",
+      title: "Lines whose height falls between two twips, stacked until the page ends",
+      asks: "whether a line's height is rounded to the twip before it is stacked down the page",
+      bytes: buildAuthoredDocx({ body: twipGridDocument() }),
     },
     {
       id: "line-multiple",

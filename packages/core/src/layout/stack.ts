@@ -106,6 +106,20 @@ export type PlacedLine = {
   // How far down that room the line of text itself starts, which is nothing until
   // a rule opens room above it. Word answers for a paragraph from here.
   readonly seatPt: number;
+  /**
+   * How much of the line has to fit on the page for the line to stay on it.
+   *
+   * **The room a multiple opens below the text hangs past the foot rather than
+   * moving the line on.** Measured on 2026-08-11 by the authored `twip-grid`
+   * document, whose four cases stack lines under a multiple until the page runs
+   * out: one keeps 39 lines whose boxes come to 720.46 in a body of 720, its 39th
+   * ending 8.8pt above the foot with the multiple's own room hanging past it.
+   *
+   * A rule stating an exact height is the other way round and answers for the
+   * whole of what it asks for, since there the room is a slot the text is dropped
+   * into rather than room opened under a line that measured itself.
+   */
+  readonly fittingHeightPt: number;
   readonly baselinePt: number;
   // Whether a page break in the paragraph's own text put this line at the head of
   // a page. Only the break itself can act on it.
@@ -1941,6 +1955,7 @@ function layOutWholeParagraph(
       topPt: each.slot.topPt,
       heightPt: each.height.heightPt,
       seatPt: each.height.seatPt,
+      fittingHeightPt: each.height.fittingHeightPt,
       baselinePt: each.slot.topPt + each.height.baseFromTopPt,
       startsPage: each.startsPage,
     };
@@ -2115,6 +2130,7 @@ function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): 
 type LineHeight = {
   readonly heightPt: number;
   readonly seatPt: number;
+  readonly fittingHeightPt: number;
   readonly baseFromTopPt: number;
 };
 
@@ -2142,12 +2158,22 @@ type NaturalLine = {
 function seatedHeight(line: NaturalLine, frame: ParagraphFrame): LineHeight {
   const heightPt = spacedHeightPt(line, frame);
   if (frame.lineTwips !== null && frame.lineRule === "exact") {
-    return { heightPt, seatPt: 0, baseFromTopPt: heightPt * EXACT_BASELINE };
+    return {
+      heightPt,
+      seatPt: 0,
+      fittingHeightPt: heightPt,
+      baseFromTopPt: heightPt * EXACT_BASELINE,
+    };
   }
 
   const openedPt = frame.lineRule === "atLeast" ? Math.max(0, heightPt - line.naturalPt) : 0;
   const seatPt = openedPt + line.seatPt;
-  return { heightPt, seatPt, baseFromTopPt: seatPt + line.ascentPt };
+  return {
+    heightPt,
+    seatPt,
+    fittingHeightPt: seatPt + line.naturalPt,
+    baseFromTopPt: seatPt + line.ascentPt,
+  };
 }
 
 // Room is a difference of exact ratios, so only the last bits of one need absorbing.

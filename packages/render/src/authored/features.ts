@@ -571,6 +571,54 @@ export const STATED_FOOTER = paragraph(
 );
 
 /**
+ * Whether a line's height is rounded to the twip before it is stacked.
+ *
+ * Word's own arithmetic runs on twentieths of a point and this project's runs on
+ * doubles, and one instance of the difference is already measured and built:
+ * `roundsAnchorsToTwips`. What it costs the flow has never been asked, and it is
+ * what `8d6be805eab0` turns on, which makes a page more than Word does on 0.56pt
+ * of arithmetic.
+ *
+ * A line lands off the grid whenever a face's own height is multiplied by
+ * anything, so each case below is a size and a multiple whose line falls between
+ * two twips, stacked until the page runs out. **The answer is a page number**,
+ * which is the half of Word's own report worth trusting: the body of an authored
+ * page is 720pt, and each case is chosen so that one more line fits under one
+ * reading of the rounding than under the other.
+ *
+ * Two of the four round up and two round down, so truncating to the twip answers
+ * differently from rounding to the nearest one, and doing neither differently
+ * again.
+ */
+export function twipGridDocument(): string {
+  const cases = [
+    // line 10.1318, which is 10.15 rounded and 10.10 truncated: 71 of them fit
+    // 720pt as they are and 70 rounded.
+    { name: "a", halfPoints: 16, twips: 249, lines: 74 },
+    // 13.5752, which is 13.60 and 13.55: 53 as they are, 52 rounded.
+    { name: "b", halfPoints: 17, twips: 314, lines: 56 },
+    // 18.4733, which is 18.45 both ways: 38 as they are, 39 rounded.
+    { name: "c", halfPoints: 16, twips: 454, lines: 42 },
+    // 12.8708, which is 12.85 both ways: 55 as they are, 56 rounded.
+    { name: "d", halfPoints: 21, twips: 241, lines: 59 },
+  ];
+
+  return [
+    ...cases.flatMap((each) => {
+      const size = `<w:sz w:val="${String(each.halfPoints)}"/><w:szCs w:val="${String(each.halfPoints)}"/>`;
+      const rule = `<w:spacing w:before="0" w:after="0" w:line="${String(each.twips)}" w:lineRule="auto"/>`;
+      return Array.from({ length: each.lines }, (_, at) =>
+        paragraph(
+          `${at === 0 ? `<w:pageBreakBefore/>` : ""}${rule}`,
+          run(`${each.name}${String(at + 1).padStart(2, "0")}`, size),
+        ),
+      );
+    }),
+    EMPTY,
+  ].join("");
+}
+
+/**
  * What a line multiple is a multiple of, and where the room it opens goes.
  *
  * A multiple is the one line rule whose answer this project has never read off a

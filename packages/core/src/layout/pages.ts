@@ -234,7 +234,7 @@ function breakOnce(
         // whatever room was left below, and widow control has no say in where a break
         // the document asked for falls.
         const asked = line.startsPage;
-        if (!asked && !overflows(line.topPt, line.heightPt)) {
+        if (!asked && !overflows(line.topPt, line.fittingHeightPt)) {
           at += 1;
           continue;
         }
@@ -324,7 +324,7 @@ function overflowsAtItsStart(
   const first = box.lines[0];
   return first === undefined
     ? overflows(box.topPt, box.contentBottomPt - box.topPt)
-    : overflows(first.topPt, first.heightPt);
+    : overflows(first.topPt, first.fittingHeightPt);
 }
 
 // A cell is cut by the pages the text broke into rather than breaking them: the
