@@ -19,6 +19,7 @@ import {
   overflowingSectionDocument,
   positionedTableDocument,
   footerRoomDocument,
+  breakLineMarkDocument,
   headerNotNamedDocument,
   sectionsAndTheFirstPageDocument,
   lineMultipleDocument,
@@ -438,6 +439,12 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
         titlePage: true,
         sectionType: "continuous",
       }),
+    },
+    {
+      id: "break-line-mark",
+      title: "The line a break opens, and whose size it takes",
+      asks: "whether the line a break opens is measured from the run holding the break or from the paragraph's mark",
+      bytes: buildAuthoredDocx({ body: breakLineMarkDocument() }),
     },
     {
       id: "twip-grid",

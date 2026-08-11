@@ -584,6 +584,63 @@ export const STATED_FOOTER = paragraph(
  * pdf is the answer. The body is two pages of numbered lines, so the second page
  * exists whatever the header does.
  */
+/**
+ * Which mark the line a break opens under it is measured from.
+ *
+ * That a break opens a line at all is measured and built, by the
+ * `breaks-in-a-paragraph` document; every run in it is one size, so it could not
+ * say **whose** line it is. A corpus document says the two answers differ: a
+ * paragraph holding a space in 11pt Arial and then a break in a run stating no
+ * face or size of its own comes out 1.15pt taller here than in Word, which is a
+ * line of 12.65 against one of 11.50, and 11.50 is that face at the 10pt Word
+ * falls back to. Its page then holds a picture that Word fits and this project
+ * moves on, for want of that one line.
+ *
+ * The two cases below are complementary and either answer is plain in them: one
+ * states the size on the break's own run and leaves the paragraph mark alone, the
+ * other states it on the mark and leaves the break's run alone. A line measured
+ * from the run is twice as tall in the first and not the second; a line measured
+ * from the mark is the other way round.
+ */
+export function breakLineMarkDocument(): string {
+  const large = `<w:sz w:val="48"/><w:szCs w:val="48"/>`;
+  const broken = (mark: string): string =>
+    `<w:r>${mark === "" ? "" : `<w:rPr>${mark}</w:rPr>`}<w:br/></w:r>`;
+
+  const cases = [
+    // Everything at the size the document is written in, which the two below are
+    // read against.
+    { name: "plain", properties: "", run: "", brk: "" },
+    // The break's own run is twice the size, and nothing else is.
+    { name: "broken large", properties: "", run: "", brk: large },
+    // The paragraph's mark is twice the size, and nothing else is.
+    { name: "mark large", properties: `<w:rPr>${large}</w:rPr>`, run: "", brk: "" },
+    // The text run is twice the size, which says whether a line holding text is
+    // measured from the run that wrote it, as it must be.
+    { name: "run large", properties: "", run: large, brk: "" },
+    // **A line holding nothing but a space**, written in a run twice the size. Word
+    // takes a space's width from its own face and its height from nothing at all,
+    // so what such a line is measured from is a question of its own, and it is the
+    // shape the corpus document that asked all this actually holds.
+    { name: "space large", properties: "", run: large, brk: "", spaceOnly: true },
+  ];
+
+  return [
+    paragraph("", run("above")),
+    ...cases.flatMap((each) => [
+      paragraph("", run(each.name)),
+      ...Array.from({ length: REPEATS }, () =>
+        paragraph(
+          each.properties,
+          run(each.spaceOnly === true ? " " : SHORT, each.run) + broken(each.brk),
+        ),
+      ),
+    ]),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
 export const NAMED_FIRST_HEADER = paragraph("", run("the first header"));
 export const NAMED_DEFAULT_HEADER = paragraph("", run("the default header"));
 
