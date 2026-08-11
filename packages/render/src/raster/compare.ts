@@ -52,6 +52,13 @@ export function workspaceIn(directory: string, keep: boolean): Workspace {
   };
 }
 
+// One page of the two drawings: cells one side or the other drew in, and how many
+// of those the two do not agree about.
+export type PageLooks = {
+  readonly interesting: number;
+  readonly differing: number;
+};
+
 export type Looks = {
   readonly id: string;
   readonly outcome: "compared" | "blocked" | "threw" | "not drawn";
@@ -59,10 +66,13 @@ export type Looks = {
   readonly pagesWord: number;
   readonly facesStoodIn: number;
   readonly asks: readonly string[];
-  // Cells one side or the other drew in, and how many of those the two do not
-  // agree about.
   readonly interesting: number;
   readonly differing: number;
+  // Kept per page as well as summed, because **a document's share dilutes a long
+  // document**: one badly wrong page in a document of twenty-two moves its total
+  // about two percent, where the same page alone is the whole of a one-pager. A
+  // queue read off the total is a queue sorted by how short a document is.
+  readonly pages: readonly PageLooks[];
   readonly detail: string;
 };
 
@@ -75,11 +85,32 @@ const empty = (id: string, outcome: Looks["outcome"], detail: string): Looks => 
   asks: [],
   interesting: 0,
   differing: 0,
+  pages: [],
   detail,
 });
 
-export const shareOfLooks = (looks: Looks): number =>
-  looks.interesting === 0 ? 0 : looks.differing / looks.interesting;
+export const shareOf = (page: PageLooks): number =>
+  page.interesting === 0 ? 0 : page.differing / page.interesting;
+
+export const shareOfLooks = (looks: Looks): number => shareOf(looks);
+
+// A page holding almost nothing can be wholly wrong about the little it holds, so
+// a page has to draw something before it can lead a ranking. A twentieth of a
+// letter page's cells, which is about three lines of text.
+const ENOUGH = 250;
+
+/**
+ * The worst single page, which is what a queue should be read off. A document's
+ * own share answers a different question: how much of this document is wrong,
+ * rather than how wrong is the worst thing in it.
+ *
+ * Falls back to the document's share where no page draws enough to judge.
+ */
+export function worstPageOf(looks: Looks): number {
+  const judged = looks.pages.filter((each) => each.interesting >= ENOUGH);
+  if (judged.length === 0) return shareOf(looks);
+  return Math.max(...judged.map(shareOf));
+}
 
 export type OurPages = {
   readonly pages: readonly RasterImage[];
@@ -190,13 +221,12 @@ export async function looksOf(
     return empty(id, "not drawn", thrown instanceof Error ? thrown.message : String(thrown));
   }
 
-  let interesting = 0;
-  let differing = 0;
+  const pages: PageLooks[] = [];
   for (let at = 0; at < Math.max(ours.length, theirs.length); at += 1) {
-    const difference = differenceBetween(ours[at] ?? null, theirs[at] ?? null, tolerances);
-    interesting += difference.interesting;
-    differing += difference.differing;
+    pages.push(differenceBetween(ours[at] ?? null, theirs[at] ?? null, tolerances));
   }
+  const interesting = pages.reduce((sum, each) => sum + each.interesting, 0);
+  const differing = pages.reduce((sum, each) => sum + each.differing, 0);
 
   return {
     id,
@@ -207,6 +237,7 @@ export async function looksOf(
     asks: rest.asks,
     interesting,
     differing,
+    pages,
     detail: ours.length === theirs.length ? "" : "a different number of pages",
   };
 }

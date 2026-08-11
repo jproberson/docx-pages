@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   looksOf,
+  shareOf,
   shareOfLooks,
   workspaceIn,
+  worstPageOf,
   type Looks,
   type Workspace,
 } from "../raster/compare.js";
@@ -102,18 +104,25 @@ export function reportOf(rows: readonly Looks[], lines: ReadonlyMap<string, Line
     totals(compared),
     "documents needing no face stood in, which are the ones worth ranking by:",
     totals(clean),
-    "the worst of those, by how much of the page does not match:",
-    `  ${"document".padEnd(14)} ${"different".padStart(9)} ${"cells".padStart(7)} ${"pages".padStart(7)} ${"lines placed".padStart(12)}  asks`,
+    // **Ranked by the worst page and not by the document.** A document's own share
+    // answers how much of it is wrong, which is not the question a queue asks: one
+    // badly wrong page moves a document of twenty-two by about two percent and is
+    // the whole of a one-pager, so a ranking read off the total is sorted by how
+    // short a document is. `page` says which page to put up beside Word's.
+    "the worst of those, by the worst page each of them draws:",
+    `  ${"document".padEnd(14)} ${"page".padStart(6)} ${"of it".padStart(6)} ${"whole".padStart(6)} ` +
+      `${"cells".padStart(7)} ${"pages".padStart(7)} ${"lines placed".padStart(12)}  asks`,
   ];
 
-  const worst = [...clean]
-    .sort((one, other) => shareOfLooks(other) - shareOfLooks(one))
-    .slice(0, 40);
+  const worst = [...clean].sort((one, other) => worstPageOf(other) - worstPageOf(one)).slice(0, 40);
   for (const each of worst) {
     const line = lines.get(each.id);
     const placed = line === undefined ? "" : `${String(line.placed)}/${String(line.lines)}`;
+    const at = each.pages.findIndex((page) => shareOf(page) === worstPageOf(each));
     out.push(
-      `  ${each.id.padEnd(14)} ${share(each.differing, each.interesting).padStart(9)} ` +
+      `  ${each.id.padEnd(14)} ${String(at + 1).padStart(6)} ` +
+        `${`${(worstPageOf(each) * 100).toFixed(1)}%`.padStart(6)} ` +
+        `${share(each.differing, each.interesting).padStart(6)} ` +
         `${String(each.interesting).padStart(7)} ` +
         `${`${String(each.pagesOurs)}/${String(each.pagesWord)}`.padStart(7)} ` +
         `${placed.padStart(12)}  ${[...new Set(each.asks)].join(" ")}`,
