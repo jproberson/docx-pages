@@ -24,11 +24,13 @@ const line = (topPt: number, heightPt: number, text: string): PlacedLine => ({
     ascentPt: heightPt * 0.8,
     seatPt: 0,
     fontHeightPt: heightPt,
+    heldOpenPt: null,
   },
   leftPt: 0,
   topPt,
   heightPt,
   seatPt: 0,
+  fittingHeightPt: heightPt,
   baselinePt: topPt + heightPt * 0.8,
   startsPage: false,
 });
@@ -62,6 +64,7 @@ function stack(
       index,
       topPt: top,
       anchorTopPt: top,
+      resumesUnderPt: 0,
       heightPt: lineTop - top,
       lines,
       marker: null,
@@ -136,6 +139,38 @@ describe("breakStack", () => {
 
     expect(pages).toHaveLength(1);
     expect(indexesOn(pages[0] ?? { boxes: [] })).toStrictEqual([0, 1, 2]);
+  });
+
+  // Measured on 2026-08-11 by the authored `twip-grid` document: one of its cases
+  // keeps 39 lines whose boxes come to 720.46 in a body of 720, and its last line
+  // ends 8.8pt above the foot with the room its multiple opened hanging past it.
+  it("keeps a line whose text fits though the room its rule opened below does not", () => {
+    const boxes = stack([[10], [10]]).map((box, at) =>
+      at === 1
+        ? {
+            ...box,
+            lines: box.lines.map((each) => ({ ...each, heightPt: 20, fittingHeightPt: 10 })),
+          }
+        : box,
+    );
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 125 });
+
+    expect(pages).toHaveLength(1);
+    expect(indexesOn(pages[0] ?? { boxes: [] })).toStrictEqual([0, 1]);
+  });
+
+  it("moves a line whose own text crosses the foot however little the rule opened", () => {
+    const boxes = stack([[10], [10]]).map((box, at) =>
+      at === 1
+        ? {
+            ...box,
+            lines: box.lines.map((each) => ({ ...each, heightPt: 20, fittingHeightPt: 20 })),
+          }
+        : box,
+    );
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 125 });
+
+    expect(pages).toHaveLength(2);
   });
 
   it("moves the paragraph that would cross the bottom onto the next page", () => {
@@ -260,6 +295,7 @@ describe("breakStack", () => {
     index,
     topPt,
     anchorTopPt: topPt,
+    resumesUnderPt: 0,
     heightPt: markPt + afterPt,
     lines: [],
     marker: null,

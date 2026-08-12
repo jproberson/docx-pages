@@ -36,6 +36,25 @@ type Drawn = {
 };
 
 const DRAWN: Readonly<Record<string, Drawn>> = {
+  // Every line of all six cases: a marker, a table of five rows and four cells, and
+  // a line under it. Word's own pdf is the oracle, since every one of the thirteen
+  // conditional formats states an indent and a left is what says which of them won.
+  "conditional-table": { lines: 132, runs: 132, numbers: 0 },
+  // Forty two of the forty three lines of all seven cases, in both documents: a
+  // marker, the numbered paragraph's own lines and a line under it. The one left out
+  // is case e's first line, where the level's suffix is `nothing` and Word draws the
+  // number against the text as a single item: our line holds the text alone, so
+  // there is nothing in the pdf carrying the same characters to pair it with. Where
+  // that line starts is still read, by the case either side of it.
+  // Four of the five numbers, for the same reason: the fifth is drawn against its
+  // own text rather than as an item of its own.
+  "numbered-first-line": { lines: 42, runs: 42, numbers: 4 },
+  "legacy-numbered-first-line": { lines: 42, runs: 42, numbers: 4 },
+  // Every line of all nine cases, in both documents: a marker, the case's table and
+  // a line under it. The swallowed cells of case g hold a 40pt line each and Word
+  // draws none of them, which is why the count is the same either way.
+  "merged-cells": { lines: 86, runs: 86, numbers: 0 },
+  "legacy-merged-cells": { lines: 86, runs: 86, numbers: 0 },
   // Every line, tabs and all. Word draws a tab as a space stretched to the width
   // of the gap it opened, though the line holds no character for it, which is why
   // a line here is spelled out of what carries ink rather than of every character
@@ -54,6 +73,12 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Every line of all eight cases, the fillers holding them down the page
   // included: a case is nine lines of its own and the row it asks about.
   tearing: { lines: 154, runs: 154, numbers: 0 },
+  // Every line of all eight cases in both documents: nine holding each case down
+  // its page, and between three and eight of the case's own. The two documents
+  // differ in nothing but the left, since an old document measures a table's
+  // indent to the text inside its first cell.
+  resuming: { lines: 121, runs: 121, numbers: 0 },
+  "legacy-resuming": { lines: 121, runs: 121, numbers: 0 },
   // Twenty lines out of thirty two paragraphs: the twelve holding nothing but a
   // space or a tab draw no ink at all, which is the whole of what the document is
   // asking about and the reason Word's report is the oracle for it. The three runs
@@ -108,12 +133,16 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // document asks, so what is counted here is what is left: 46 of the 8 cases' own
   // lines and the marks either side of them.
   "breaks-in-a-paragraph": { lines: 46, runs: 46, numbers: 0 },
-  // The document is read by Word's own drawing and disagrees with it on purpose: a
-  // line Word squeezed is drawn as one item and a line it would not squeeze in as
-  // many pieces as it has words, so of the 248 items Word drew, 89 are lines this
-  // project drew too and five of those are in the wrong place. Every number here
-  // falls as the squeeze is built.
-  "justified-fitting": { lines: 89, runs: 140, numbers: 0, placed: 84, runsPlaced: 140 },
+  // Sixty seven cases of a marker and three repeats, and the second line of each.
+  // Every one of them lands where Word drew it, which twenty four did not until the
+  // squeeze was measured against the advance of the word being taken rather than
+  // against the size its text is set in. See **Settled recently** in `docs/gaps.md`.
+  "justified-fitting": { lines: 570, runs: 681, numbers: 0 },
+  // Every line of the same body in a document that declares no compatibility mode,
+  // where no line is squeezed at all and every one of them lands where Word drew it.
+  // Word draws more of its lines in pieces than the modern one's, which is why the
+  // count is higher: a line it stretched is an item a word.
+  "legacy-justified-fitting": { lines: 615, runs: 735, numbers: 0 },
   // Every line of all eleven cases: a marker, four rows of two cells and a line
   // under the table. Word's own pdf is the oracle this document is read by, since
   // its report puts the last row of four of the cases 0.55 to 0.7pt below where its
@@ -173,11 +202,22 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
 const UNHONOURED: Readonly<Record<string, readonly string[]>> = {
   // A bar stop draws a line down the page, which nothing here draws.
   tabs: ["bar-tab-stop"],
+  // The document states w:titlePg, which is what it was written to ask about: the
+  // report names it whether or not the page it governs comes out right.
+  "header-not-named": ["alternate-first-or-even-page"],
+  // The document states w:titlePg, which is what it was written to ask about. The
+  // report names a gap once however many sections state it.
+  "sections-and-the-first-page": ["alternate-first-or-even-page"],
   // The one column break of the six cases that stands between two runs of one
   // paragraph, which is a place inside a block rather than between two.
   columns: ["column-break"],
   // The wave borders, which are drawn as plain lines of the stated width.
   borders: ["approximated-border"],
+  // Where a merged cell puts its text is built and the lines round one are not, so
+  // both documents still state the gap they were written to close. Neither table
+  // draws a line at all, which is why every one of their 86 lines lands anyway.
+  "merged-cells": ["merged-cells"],
+  "legacy-merged-cells": ["merged-cells"],
 };
 
 // Images in Word's pdf that are no picture of the document's. Word draws a glyph
@@ -202,6 +242,7 @@ const EMPTY = {
   renderedPageIndexes: null,
   picturesWordDrewWithoutAnImage: 0,
   imagesWordDrewOutsideAPicture: 0,
+  picturesWordDrewInPieces: false,
   unrenderablePictures: 0,
   unknownDrawings: 0,
   metafileFills: null,
@@ -258,6 +299,7 @@ export function authoredCases(): readonly ReferenceCase[] {
         ...drawnBy(each.id),
         ...(UNHONOURED[each.id] === undefined ? {} : { unhonoured: UNHONOURED[each.id] }),
         imagesWordDrewOutsideAPicture: IMAGES_THAT_ARE_GLYPHS[each.id] ?? 0,
+        picturesWordDrewInPieces: each.picturesWordDrewInPieces ?? false,
         id: `authored-${each.id}`,
         documentPath,
         renderedPath: renderedPath(each.id),

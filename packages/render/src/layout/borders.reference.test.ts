@@ -61,8 +61,8 @@ type Drawn = {
 
 function paintedIn(layout: LaidOutDocument): readonly Drawn[] {
   return layout.pages.map((page) => {
-    const cells = [...layout.headerCells, ...page.cells, ...layout.footerCells];
-    const boxes = [...layout.header, ...page.body, ...layout.footer];
+    const cells = [...page.headerCells, ...page.cells, ...page.footerCells];
+    const boxes = [...page.header, ...page.body, ...page.footer];
     const painted = [
       ...cells.map((cell) => paintOfCell(cell)),
       ...boxes.flatMap((box) =>

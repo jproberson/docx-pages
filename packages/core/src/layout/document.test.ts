@@ -67,7 +67,7 @@ describe("where a page starts its body", () => {
   it("starts under a header that reaches past the top margin", () => {
     const laid = laidOut(20, 720, true);
 
-    expect(laid.bodyTopPt).toBe(laid.headerTopPt + laid.headerHeightPt);
+    expect(laid.bodyTopPt).toBe(laid.headerTopPt + (laid.pages[0]?.headerHeightPt ?? 0));
     expect(laid.bodyTopPt).toBeGreaterThan(36);
   });
 
@@ -75,5 +75,55 @@ describe("where a page starts its body", () => {
     const laid = laidOut(5760, 720, true);
 
     expect(laid.bodyTopPt).toBe(288);
+  });
+});
+
+// A document of two pages, each opened by a section keeping its own room above its
+// header. The first section ends at the first paragraph, so the second's text opens
+// a page of its own.
+function twoSections(firstHeaderTwips: number, lastHeaderTwips: number): LaidOutDocument {
+  const body =
+    `<w:p><w:pPr>${section(1440, firstHeaderTwips, true)}</w:pPr>` +
+    `<w:r><w:t>first</w:t></w:r></w:p>` +
+    `<w:p><w:r><w:t>second</w:t></w:r></w:p>` +
+    section(1440, lastHeaderTwips, true);
+  const bytes = buildDocx({
+    "word/document.xml":
+      `<?xml version="1.0"?><w:document xmlns:w="${WORDPROCESSING_NS}" xmlns:r="${R_NS}">` +
+      `<w:body>${body}</w:body></w:document>`,
+    ...HEADER_PARTS,
+  });
+  const laid = layOutDocument(openDocx(bytes), bestEffortMetrics([], DEFAULTS));
+  if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+  return laid;
+}
+
+// **How far down a page its header starts is its own section's business.** Read
+// off the last section alone until 2026-08-10, which put 404 of the 556 header
+// pictures in the corpus exactly 31.5pt below where Word drew them: a section
+// keeping 90 twips above its header under a document whose last section keeps 720.
+describe("where a page hangs its header", () => {
+  it("hangs it from the room its own section keeps for it", () => {
+    const laid = twoSections(90, 720);
+
+    expect(laid.pages).toHaveLength(2);
+    expect(laid.pages[0]?.headerTopPt).toBe(4.5);
+    expect(laid.pages[1]?.headerTopPt).toBe(36);
+  });
+
+  // One part drawn under two sections that keep different room for it is two
+  // drawings and not one, which a story remembered by its part alone got wrong.
+  it("draws the one part it names at both heights", () => {
+    const laid = twoSections(90, 720);
+    const topOf = (at: number): number | undefined => laid.pages[at]?.header[0]?.topPt;
+
+    expect(topOf(1)).toBe((topOf(0) ?? 0) + 31.5);
+  });
+
+  it("hangs it in one place where both sections keep the same room", () => {
+    const laid = twoSections(720, 720);
+
+    expect(laid.pages[0]?.headerTopPt).toBe(36);
+    expect(laid.pages[1]?.headerTopPt).toBe(36);
   });
 });

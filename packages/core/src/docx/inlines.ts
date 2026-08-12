@@ -1,5 +1,5 @@
 import type { Paragraph } from "./blocks.js";
-import { readDrawingContent, type DrawingContent } from "./drawing.js";
+import { readDrawingContent, readDrawingTurn, type DrawingContent } from "./drawing.js";
 import { paragraphOwnDrawings } from "./paragraphs.js";
 import { attribute, firstNamed } from "./xml.js";
 
@@ -10,6 +10,9 @@ export type InlineDrawing = {
   readonly name: string;
   readonly widthEmu: number;
   readonly heightEmu: number;
+  // How far round the drawing was turned after it was drawn, clockwise. The extent
+  // above is the drawing the right way up whatever this says.
+  readonly turnDegrees: number;
   readonly content: DrawingContent;
 };
 
@@ -28,6 +31,7 @@ export function readInlines(paragraph: Paragraph): readonly InlineDrawing[] {
       name: docPr === null ? "" : (attribute(docPr, "", "name") ?? ""),
       widthEmu: extent === null ? 0 : numberAttribute(extent, "cx"),
       heightEmu: extent === null ? 0 : numberAttribute(extent, "cy"),
+      turnDegrees: readDrawingTurn(inline),
       content: readDrawingContent(inline),
     };
   });

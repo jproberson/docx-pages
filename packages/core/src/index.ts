@@ -61,8 +61,14 @@ export type {
   SuppliedFace,
 } from "./layout/font-metrics.js";
 
-export { readFontFile, readFontMetrics, readGlyphIndex } from "./layout/font-file.js";
+export {
+  readFontFaces,
+  readFontFile,
+  readFontMetrics,
+  readGlyphIndex,
+} from "./layout/font-file.js";
 export type {
+  FontFaceName,
   FontFileFormat,
   ReadFontFileResult,
   ReadFontMetricsResult,
@@ -200,6 +206,9 @@ export { readColorReference, readTheme, themeColor, NO_THEME, THEME_PART } from 
 export type { ColorReference, Theme } from "./docx/theme.js";
 
 export { emuToPoints, twipsToPoints, EMU_PER_POINT, TWIPS_PER_POINT } from "./layout/units.js";
+
+export { boundsOfTurn, roomForTurn, turnedAbout, turnsOnItsSide } from "./layout/turns.js";
+export type { TurnedRect, TurnedSize } from "./layout/turns.js";
 
 export {
   substitutingMetrics,

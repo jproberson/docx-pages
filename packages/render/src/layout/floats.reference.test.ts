@@ -24,8 +24,11 @@ const layoutOf = (each: ReferenceCase) => {
 const bodyFloatsOf = (each: ReferenceCase): readonly PlacedFloat[] =>
   layoutOf(each).pages.flatMap((page) => page.floats);
 
+const headerFloatsOf = (each: ReferenceCase): readonly PlacedFloat[] =>
+  layoutOf(each).pages[0]?.headerFloats ?? [];
+
 const floatsOf = (each: ReferenceCase): readonly PlacedFloat[] => [
-  ...layoutOf(each).headerFloats,
+  ...headerFloatsOf(each),
   ...bodyFloatsOf(each),
 ];
 
@@ -89,7 +92,7 @@ describe.skipIf(CASES.length === 0)("float placement against Word", () => {
       }
 
       it.runIf(each.headerFloatCount !== null)("finds every float in the header", () => {
-        expect(layoutOf(each).headerFloats).toHaveLength(each.headerFloatCount ?? 0);
+        expect(headerFloatsOf(each)).toHaveLength(each.headerFloatCount ?? 0);
       });
 
       it.runIf(each.leastBodyFloatCount !== null)("finds every float in the body", () => {
@@ -99,9 +102,11 @@ describe.skipIf(CASES.length === 0)("float placement against Word", () => {
       // A negative paragraph-relative offset is the case other engines get wrong:
       // the object belongs above the paragraph that anchors it, not clamped to it.
       it("lets a negatively offset float rise above the paragraph that anchors it", () => {
-        const { header, headerFloats, pages } = layoutOf(each);
+        const { pages } = layoutOf(each);
         const rising = [
-          ...headerFloats.map((float) => ({ float, boxes: header })),
+          ...pages.flatMap((page) =>
+            page.headerFloats.map((float) => ({ float, boxes: page.header })),
+          ),
           ...pages.flatMap((page) => page.floats.map((float) => ({ float, boxes: page.body }))),
         ].filter(
           ({ float }) =>

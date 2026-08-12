@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import { isDocxPagesError, DocxPagesError } from "../errors.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { openDocx, partXml } from "./package.js";
-import { endsASection, readSectionGeometry, readSections, W_NS } from "./section.js";
+import { R_NS } from "./relationships.js";
+import {
+  bodySections,
+  endsASection,
+  readSectionGeometry,
+  readSections,
+  storyFor,
+  W_NS,
+} from "./section.js";
 import { descendantsNamed, firstNamed, type XmlElement } from "./xml.js";
 
 const LETTER_SECTION = `
@@ -191,5 +199,109 @@ describe("endsASection", () => {
 
   it("says an ordinary paragraph closes none", () => {
     expect(endsASection(firstParagraphOf(`<w:p><w:r><w:t>a</w:t></w:r></w:p>`))).toBe(false);
+  });
+});
+
+describe("the header and footer a section names", () => {
+  const REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
+  const HEADER = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+  const FOOTER = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
+
+  const HEADERS = ["header1.xml", "header2.xml", "header3.xml"];
+  const FOOTERS = ["footer1.xml", "footer2.xml"];
+
+  const stories: Record<string, string> = {};
+  for (const name of HEADERS)
+    stories[`word/${name}`] = `<?xml version="1.0"?><w:hdr xmlns:w="${W_NS}"><w:p/></w:hdr>`;
+  for (const name of FOOTERS)
+    stories[`word/${name}`] = `<?xml version="1.0"?><w:ftr xmlns:w="${W_NS}"><w:p/></w:ftr>`;
+
+  const RELS = `<?xml version="1.0"?><Relationships xmlns="${REL_NS}">${[
+    ...HEADERS.map(
+      (name, at) => `<Relationship Id="h${String(at + 1)}" Type="${HEADER}" Target="${name}"/>`,
+    ),
+    ...FOOTERS.map(
+      (name, at) => `<Relationship Id="f${String(at + 1)}" Type="${FOOTER}" Target="${name}"/>`,
+    ),
+  ].join("")}</Relationships>`;
+
+  // Written out rather than built by `wordDocument`, which binds the
+  // wordprocessing namespace and nothing else: a header reference names its part
+  // through `r:id`.
+  const documentOf = (bodyXml: string) =>
+    `<?xml version="1.0"?><w:document xmlns:w="${W_NS}" xmlns:r="${R_NS}"><w:body>${bodyXml}</w:body></w:document>`;
+
+  const sectionsOfBody = (bodyXml: string) => {
+    const pkg = openDocx(
+      buildDocx({
+        "word/document.xml": documentOf(bodyXml),
+        "word/_rels/document.xml.rels": RELS,
+        ...stories,
+      }),
+    );
+    const root = partXml(pkg, "word/document.xml");
+    const body = firstNamed(root, W_NS, "body");
+    return bodySections(pkg, descendantsNamed(body ?? root, W_NS, "p"));
+  };
+
+  const PAGE = `<w:pgSz w:w="12240" w:h="15840"/>`;
+
+  it("reads a reference of each kind", () => {
+    const [section] = sectionsOfBody(`<w:p/><w:sectPr>
+      <w:headerReference w:type="first" r:id="h1"/>
+      <w:headerReference w:type="default" r:id="h2"/>
+      <w:headerReference w:type="even" r:id="h3"/>${PAGE}</w:sectPr>`);
+    expect(section?.headers).toStrictEqual({
+      first: "word/header1.xml",
+      default: "word/header2.xml",
+      even: "word/header3.xml",
+    });
+  });
+
+  it("says a section names none where it references none", () => {
+    const [section] = sectionsOfBody(`<w:p/><w:sectPr>${PAGE}</w:sectPr>`);
+    expect(section?.headers).toStrictEqual({ first: null, default: null, even: null });
+    expect(section?.footers).toStrictEqual({ first: null, default: null, even: null });
+  });
+
+  it("carries a kind the section states nothing about down from the section above", () => {
+    const sections = sectionsOfBody(
+      `<w:p><w:pPr><w:sectPr>
+         <w:headerReference w:type="default" r:id="h1"/>
+         <w:footerReference w:type="default" r:id="f1"/>${PAGE}</w:sectPr></w:pPr></w:p>
+       <w:p/><w:sectPr>
+         <w:footerReference w:type="default" r:id="f2"/>${PAGE}</w:sectPr>`,
+    );
+    expect(sections[1]?.headers.default).toBe("word/header1.xml");
+    expect(sections[1]?.footers.default).toBe("word/footer2.xml");
+  });
+
+  it("reads whether the section draws something of its own on the page it opens", () => {
+    const [with_] = sectionsOfBody(`<w:p/><w:sectPr><w:titlePg/>${PAGE}</w:sectPr>`);
+    const [without] = sectionsOfBody(`<w:p/><w:sectPr>${PAGE}</w:sectPr>`);
+    expect(with_?.titlePage).toBe(true);
+    expect(without?.titlePage).toBe(false);
+  });
+});
+
+describe("storyFor", () => {
+  const STORIES = { first: "word/header1.xml", default: "word/header2.xml", even: null };
+
+  it("gives the page a section opens its first-page story where the section says so", () => {
+    expect(storyFor(STORIES, true, true)).toBe("word/header1.xml");
+  });
+
+  it("gives every other page of it the default", () => {
+    expect(storyFor(STORIES, false, true)).toBe("word/header2.xml");
+    expect(storyFor(STORIES, true, false)).toBe("word/header2.xml");
+  });
+
+  // A corpus document whose only page stands in a section naming nothing but a
+  // first-page header draws that one and no other: falling back to the default
+  // would have taken the next section's, which is what used to happen.
+  it("draws nothing where the section says so and names no first-page story", () => {
+    expect(
+      storyFor({ first: null, default: "word/header2.xml", even: null }, true, true),
+    ).toBeNull();
   });
 });

@@ -409,7 +409,11 @@ describe("a paragraph inside a table", () => {
     const styles = readStyleTable(pkg);
     const paragraph = readParagraphs(pkg)[0];
     if (paragraph === undefined) throw new Error("no paragraph");
-    return resolveParagraphFrame(paragraph, styles, tableStyleId);
+    return resolveParagraphFrame(
+      paragraph,
+      styles,
+      tableStyleId === null ? null : { styleId: tableStyleId, at: null },
+    );
   };
 
   it("keeps the document's own defaults outside a table", () => {

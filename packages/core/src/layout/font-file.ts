@@ -25,6 +25,14 @@ export type UnderlineMetrics = {
   readonly thickness: number;
 };
 
+// What one face in a font file calls itself. A file may hold several.
+export type FontFaceName = {
+  readonly family: string;
+  readonly fullName: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
+};
+
 export type ReadFontFileResult = ReadFontMetricsResult & {
   readonly advances: AdvanceTable;
   // Whether the face draws its letters without serifs, which is the half of the
@@ -144,13 +152,13 @@ const FULL_NAME = 4;
 // wide character is the whole of it.
 const MACINTOSH_PLATFORM = 1;
 
-function namesOf(table: Uint8Array): readonly string[] {
-  if (table.byteLength < 6) return [];
+function namesOf(table: Uint8Array): ReadonlyMap<number, string> {
+  const found = new Map<number, string>();
+  if (table.byteLength < 6) return found;
   const view = viewOf(table);
   const count = view.getUint16(2);
   const stringsAt = view.getUint16(4);
 
-  const found: string[] = [];
   for (let index = 0; index < count; index += 1) {
     const record = 6 + index * 12;
     if (record + 12 > table.byteLength) break;
@@ -169,9 +177,26 @@ function namesOf(table: Uint8Array): readonly string[] {
     for (let byte = wide ? 1 : 0; byte < bytes.byteLength; byte += step) {
       name += String.fromCharCode(bytes[byte] ?? 0);
     }
-    found.push(name);
+    // The first record of an id wins, which is the Macintosh one where a face
+    // writes both. They say the same thing, and reading either twice is waste.
+    if (!found.has(nameId)) found.set(nameId, name);
   }
   return found;
+}
+
+// Whether a face says it is bold or italic, which `head` carries in two bits and
+// every sfnt has. A face names its weight in its own full name too, but only
+// these say so in a way that does not have to be parsed out of English.
+const MAC_STYLE_AT = 44;
+const BOLD_BIT = 1;
+const ITALIC_BIT = 2;
+
+function styleOf(tables: ReadonlyMap<string, Uint8Array>): { bold: boolean; italic: boolean } {
+  const head = tables.get(HEAD);
+  if (head === undefined || head.byteLength < MAC_STYLE_AT + 2)
+    return { bold: false, italic: false };
+  const macStyle = viewOf(head).getUint16(MAC_STYLE_AT);
+  return { bold: (macStyle & BOLD_BIT) !== 0, italic: (macStyle & ITALIC_BIT) !== 0 };
 }
 
 const normalise = (name: string): string => name.trim().toLowerCase();
@@ -183,13 +208,18 @@ const normalise = (name: string): string => name.trim().toLowerCase();
 // letter and a hyphen from, is the second face of `Cambria.ttc`. It is asked for
 // by name rather than by index, since where a face sits in the file is the
 // business of whoever shipped it.
-function faceOfCollection(bytes: Uint8Array, wanted: string | undefined): number {
+function collectionOffsets(bytes: Uint8Array): readonly number[] {
   const view = viewOf(bytes);
   const count = bytes.byteLength < 16 ? 0 : view.getUint32(8);
   const offsets: number[] = [];
   for (let index = 0; index < count && 16 + index * 4 <= bytes.byteLength; index += 1) {
     offsets.push(view.getUint32(12 + index * 4));
   }
+  return offsets;
+}
+
+function faceOfCollection(bytes: Uint8Array, wanted: string | undefined): number {
+  const offsets = collectionOffsets(bytes);
 
   const first = offsets[0];
   if (first === undefined) throw unreadable("the font collection holds no faces", bytes.byteLength);
@@ -198,7 +228,8 @@ function faceOfCollection(bytes: Uint8Array, wanted: string | undefined): number
   const key = normalise(wanted);
   for (const at of offsets) {
     const table = readSfntTables(bytes, at).get(NAME);
-    if (table !== undefined && namesOf(table).some((each) => normalise(each) === key)) return at;
+    if (table === undefined) continue;
+    if ([...namesOf(table).values()].some((each) => normalise(each) === key)) return at;
   }
 
   throw new DocxPagesError({
@@ -372,4 +403,40 @@ export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFile
 export function readFontMetrics(bytes: Uint8Array): ReadFontMetricsResult {
   const { format, metrics } = readFontFile(bytes);
   return { format, metrics };
+}
+
+/**
+ * What a font file calls the faces in it, without reading a glyph.
+ *
+ * A file on disk is named for whoever shipped it and not for what a document asks
+ * for: `seguisb.ttf` is Segoe UI Semibold and `calibril.ttf` is Calibri Light, and
+ * a collection holds several faces behind one name. So a machine's fonts can only
+ * be offered to a layout by opening each one and asking it, which is what this
+ * answers. Reading a whole face costs the advance of every glyph in it; this reads
+ * two tables.
+ *
+ * The family is what a document names in `w:rFonts` and the bold and italic are
+ * what it asks for beside it. `fullName` is the face's whole name, which is a
+ * family of its own to a document that names it there.
+ */
+export function readFontFaces(bytes: Uint8Array): readonly FontFaceName[] {
+  if (bytes.byteLength < 12)
+    throw unreadable("the file is too short to be a font", bytes.byteLength);
+
+  const signature = tagAt(bytes, 0);
+  if (signature === "ttcf") {
+    return collectionOffsets(bytes).map((at) => faceNameOf(readSfntTables(bytes, at)));
+  }
+  if (signature === "wOFF") return [faceNameOf(readWoffTables(bytes))];
+  return [faceNameOf(readSfntTables(bytes, 0))];
+}
+
+function faceNameOf(tables: ReadonlyMap<string, Uint8Array>): FontFaceName {
+  const names = namesOf(tables.get(NAME) ?? new Uint8Array(0));
+  const family = names.get(FAMILY_NAME) ?? "";
+  return {
+    family,
+    fullName: names.get(FULL_NAME) ?? family,
+    ...styleOf(tables),
+  };
 }

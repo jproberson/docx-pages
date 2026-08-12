@@ -1,3 +1,5 @@
+import { borderExtentPt } from "../docx/borders.js";
+import type { Border } from "../docx/borders.js";
 import type { AnchoredObject, ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
 
 // The run of a page the body's text may stand in: where it begins under the
@@ -32,7 +34,13 @@ export type BreakStackInput = {
   // once, of the paragraph that opens it, and holds what it answered to its foot: a
   // continuous section beginning partway down a page is drawn on the page it found,
   // and makes only the pages its own text runs on to.
-  readonly bodyOf?: (box: ParagraphBox) => PageBody;
+  //
+  // `after` is the paragraph that opened the page above, which is the whole of what
+  // says whether this one opens a section: a page opened by a paragraph of another
+  // section than the one above it is that section's first, and the first page of the
+  // document opens after nothing. Only the caller knows which section a paragraph
+  // stands in, so only the caller can answer.
+  readonly bodyOf?: (box: ParagraphBox, after: number | null) => PageBody;
 };
 
 // Where a page started in the stack, what it keeps for the body, and the paragraph
@@ -77,14 +85,14 @@ function breakOnce(
   moved: ReadonlySet<number>,
 ): { readonly pages: readonly PageStack[]; readonly split: number | null } {
   const everyPage: PageBody = { topPt: input.topPt, bottomPt: input.bottomPt };
-  const bodyOf = (box: ParagraphBox | undefined): PageBody =>
-    box === undefined ? everyPage : (input.bodyOf?.(box) ?? everyPage);
+  const bodyOf = (box: ParagraphBox | undefined, after: number | null): PageBody =>
+    box === undefined ? everyPage : (input.bodyOf?.(box, after) ?? everyPage);
 
   const pages: ParagraphBox[][] = [[]];
   const first = input.boxes[0];
   // What the page being filled keeps for the body, which is what the paragraph that
   // opened it asked for.
-  let body = bodyOf(first);
+  let body = bodyOf(first, null);
   let shiftPt = 0;
   // Where in the stack each page started and what it kept, which is what the cells
   // are cut by once the text has said where the pages fall.
@@ -140,7 +148,7 @@ function breakOnce(
   for (const [place, box] of input.boxes.entries()) {
     // What a page this paragraph opens keeps for the body, which is its own
     // section's and not the page it may be standing at the foot of.
-    const opens = bodyOf(box);
+    const opens = bodyOf(box, opened[opened.length - 1]?.openedBy ?? null);
     const carriedForward = moved.has(box.index) && !moved.has(input.boxes[place - 1]?.index ?? -1);
     if (broken || box.startsPage || carriedForward) {
       // **A page a section break opens keeps the room the paragraph opening it asks
@@ -154,7 +162,7 @@ function breakOnce(
       const opensAt =
         brokenAtASection && !box.startsPage && !carriedForward
           ? box.topPt
-          : (box.lines[0]?.topPt ?? box.topPt);
+          : (box.lines[0]?.topPt ?? box.topPt) - box.resumesUnderPt;
       leave(opensAt, opens, box.index);
     }
     broken = box.endsPage;
@@ -209,7 +217,7 @@ function breakOnce(
     // past the foot of the page rather than moving it on.
     if (box.lines.length === 0) {
       if (overflows(box.topPt, box.contentBottomPt - box.topPt)) {
-        shiftPt = box.topPt - opens.topPt;
+        shiftPt = box.topPt - opens.topPt - box.resumesUnderPt;
         open(opens, box.index);
       }
       put(partOf(box, 0, 0, shiftPt));
@@ -226,16 +234,18 @@ function breakOnce(
         // whatever room was left below, and widow control has no say in where a break
         // the document asked for falls.
         const asked = line.startsPage;
-        if (!asked && !overflows(line.topPt, line.heightPt)) {
+        if (!asked && !overflows(line.topPt, line.fittingHeightPt)) {
           at += 1;
           continue;
         }
 
         // The lines between the cut and the line that overflowed are on the next
-        // page now, so they are looked at again from there.
+        // page now, so they are looked at again from there. A line inside a table
+        // lands as far below the top of the page as its row draws furniture above
+        // it, which is what a torn row resumes under.
         const cut = asked ? at : cutFor(box, { from, at, shiftPt, topPt: opens.topPt });
         if (cut > from) put(partOf(box, from, cut, shiftPt));
-        shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - opens.topPt;
+        shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - opens.topPt - box.resumesUnderPt;
         open(opens, box.index);
         from = cut;
         at = cut + 1;
@@ -314,7 +324,7 @@ function overflowsAtItsStart(
   const first = box.lines[0];
   return first === undefined
     ? overflows(box.topPt, box.contentBottomPt - box.topPt)
-    : overflows(first.topPt, first.heightPt);
+    : overflows(first.topPt, first.fittingHeightPt);
 }
 
 // A cell is cut by the pages the text broke into rather than breaking them: the
@@ -330,18 +340,31 @@ function cellsOn(
   const { shiftPt, body } = page;
   const fromPt = body.topPt + shiftPt;
   const next = opened[index + 1];
-  const toPt = Math.min(
-    next === undefined ? Number.POSITIVE_INFINITY : next.body.topPt + next.shiftPt,
-    fromPt + (body.bottomPt - body.topPt),
-  );
+  const nextPt = next === undefined ? Number.POSITIVE_INFINITY : next.body.topPt + next.shiftPt;
+  const footPt = fromPt + (body.bottomPt - body.topPt);
 
   return input.cells.flatMap((cell) => {
-    const topPt = Math.max(cell.topPt, fromPt);
-    const bottomPt = Math.min(cell.topPt + cell.heightPt, toPt);
+    // **A cell the break runs through runs on to the foot of the page**, and one
+    // that begins after the break stands on the next page rather than leaving a
+    // sliver of itself at the foot of this one. The two are the same thing only
+    // where a page ends exactly where the next one takes up, which a torn row is
+    // the case against: the room the row keeps above its text on the page below is
+    // room the page above never had.
+    const cutPt = cell.topPt < nextPt && cell.topPt + cell.heightPt > nextPt ? footPt : nextPt;
+    const topPt = Math.max(cell.topPt, fromPt + halfPt(cell.borders.top));
+    const bottomPt = Math.min(cell.topPt + cell.heightPt, cutPt - halfPt(cell.borders.bottom));
     if (bottomPt - topPt <= 0) return [];
     return [{ ...cell, topPt: topPt - shiftPt, heightPt: bottomPt - topPt }];
   });
 }
+
+// **A row a break runs through keeps the line closing it inside the page**, at
+// both ends: the edge a cut leaves is half a border in from where the page ends
+// rather than on it. Measured on 2026-08-10 by the authored `resuming` document,
+// whose 3pt-bordered row was torn with 96pt of it on each page: Word drew the line
+// closing the first piece over the last 2.88pt of the body and the one opening the
+// second over the first 2.88pt of it.
+const halfPt = (border: Border | null): number => borderExtentPt(border) / 2;
 
 type Cut = {
   // The first of the paragraph's lines still to be placed, and the one whose own
@@ -400,6 +423,7 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
       to === box.lines.length || last === undefined
         ? box.contentBottomPt - shiftPt
         : last.topPt + last.heightPt - shiftPt,
+    resumesUnderPt: box.resumesUnderPt,
     widowControl: box.widowControl,
     // What the paragraph asked of the pages either side of it belongs to the part
     // of it that stands there, and what it holds is held by the part carrying its

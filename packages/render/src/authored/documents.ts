@@ -5,16 +5,30 @@ import {
   characterSpacingDocument,
   columnsDocument,
   compatibilityDocument,
+  conditionalTableDocument,
   drawingDocument,
   insignificantSpaceDocument,
   justifiedFittingDocument,
   keepingDocument,
   linedRowsDocument,
+  mergedCellsDocument,
+  numberedFirstLineDocument,
   numberingDocument,
   objectsAndTheFooterDocument,
   objectsPastTheFootDocument,
   overflowingSectionDocument,
   positionedTableDocument,
+  footerRoomDocument,
+  breakLineMarkDocument,
+  emptyLineSizeDocument,
+  lineIntoABandDocument,
+  headerNotNamedDocument,
+  sectionsAndTheFirstPageDocument,
+  lineMultipleDocument,
+  twipGridDocument,
+  resumingDocument,
+  rotatedDrawingDocument,
+  rotatedDrawingTiesDocument,
   sectionCloserDocument,
   sectionFlowDocument,
   sectionPagesDocument,
@@ -33,9 +47,16 @@ import {
   unmappedInTextFaceDocument,
   wrappingDocument,
   wrapSidesDocument,
+  CONDITIONAL_STYLES,
+  FIRST_LINE_NUMBERING,
   NUMBERING,
   SPACING_STYLES,
   STATED_FOOTER,
+  DRAWN_FOOTER,
+  EMPTY_FOOTER,
+  SPACED_FOOTER,
+  NAMED_FIRST_HEADER,
+  NAMED_DEFAULT_HEADER,
 } from "./features.js";
 import { buildAuthoredDocx, settingsPart, FACE } from "./package.js";
 
@@ -71,6 +92,9 @@ export type AuthoredDocument = {
   // character from the emoji face has images in its pdf that nothing in it asked
   // for and nothing here draws as a picture.
   readonly glyphsPaintedAsImages?: number;
+  // Whether Word's own pdf draws one of this document's pictures as more than one
+  // image, which leaves it out of the pairing the pictures are held to.
+  readonly picturesWordDrewInPieces?: boolean;
   // Why this project refuses the document today, where it does. A document is
   // written to ask a question, and a question worth asking is often one nothing
   // here can answer yet: it is committed so that Word's answer can be had by
@@ -304,12 +328,21 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       id: "justified-fitting",
       title: "The word a justified line is squeezed to take",
       asks: "how far past its own room a justified line's text may reach before the last word is sent down",
-      // Measured and not built: this project breaks a justified line at its natural
-      // width and Word squeezes the spaces to take one word more, so the 26 that
-      // disagree are the second line of every case Word squeezed and the paragraphs
-      // under it.
-      paragraphsPlaced: 91,
+      // One family is written in Times New Roman, whose space is a quarter of its em
+      // where Calibri's is 0.2261: that is what says whether the ceiling on the
+      // squeeze is a length of the em or of the space.
+      statedFaces: ["Times New Roman"],
       bytes: buildAuthoredDocx({ body: justifiedFittingDocument() }),
+    },
+    {
+      id: "legacy-justified-fitting",
+      title: "The same question of a document that declares no compatibility mode",
+      asks: "whether a justified line is squeezed at all in an old document",
+      statedFaces: ["Times New Roman"],
+      bytes: buildAuthoredDocx({
+        body: justifiedFittingDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
     },
     {
       id: "objects-and-the-footer",
@@ -385,6 +418,94 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // point, which is the oracle that answers here.
       paragraphsPlaced: 50,
       bytes: buildAuthoredDocx({ body: drawingDocument(), picture: true }),
+    },
+    {
+      id: "header-not-named",
+      title: "A section naming a first-page header and no other",
+      asks: "what a page draws where its section names no header for the kind of page it is",
+      bytes: buildAuthoredDocx({
+        body: headerNotNamedDocument(),
+        headers: { first: NAMED_FIRST_HEADER },
+        titlePage: true,
+      }),
+    },
+    {
+      id: "sections-and-the-first-page",
+      title: "A second section that began part way down a page, and the header it draws next",
+      asks: "whether a page after a section that opened mid-page draws that section's first-page header",
+      bytes: buildAuthoredDocx({
+        body: sectionsAndTheFirstPageDocument(),
+        headers: { first: NAMED_FIRST_HEADER, default: NAMED_DEFAULT_HEADER },
+        // The last section names neither, so it draws whatever the first named.
+        namesHeaders: [],
+        titlePage: true,
+        sectionType: "continuous",
+      }),
+    },
+    {
+      id: "break-line-mark",
+      title: "The line a break opens, and whose size it takes",
+      asks: "whether the line a break opens is measured from the run holding the break or from the paragraph's mark",
+      bytes: buildAuthoredDocx({ body: breakLineMarkDocument() }),
+    },
+    {
+      id: "empty-line-size",
+      title: "Lines a paragraph holds open with nothing written on them",
+      asks: "whose size a line carrying no text takes, and which line the paragraph's mark is measured on",
+      bytes: buildAuthoredDocx({ body: emptyLineSizeDocument() }),
+    },
+    {
+      id: "line-into-a-band",
+      title: "Lines under a multiple meeting the top of a wrapped object's band",
+      asks: "how much of a line has to stand clear of a band's top for the line to stay above it",
+      bytes: buildAuthoredDocx({ body: lineIntoABandDocument() }),
+    },
+    {
+      id: "twip-grid",
+      title: "Lines whose height falls between two twips, stacked until the page ends",
+      asks: "whether a line's height is rounded to the twip before it is stacked down the page",
+      bytes: buildAuthoredDocx({ body: twipGridDocument() }),
+    },
+    {
+      id: "line-multiple",
+      title: "Lines under a rule asking for a multiple of one",
+      asks: "what a line multiple is a multiple of, and which side of the text the room it opens falls",
+      bytes: buildAuthoredDocx({ body: lineMultipleDocument() }),
+    },
+    {
+      id: "empty-footer",
+      title: "A footer of a stated height that draws nothing",
+      asks: "whether a footer holding one empty paragraph holds the body off the bottom margin",
+      bytes: buildAuthoredDocx({ body: footerRoomDocument(), footer: EMPTY_FOOTER }),
+    },
+    {
+      id: "drawn-footer",
+      title: "The same footer with a line of text in it",
+      asks: "how far a footer that does draw holds the body off the bottom margin, which the one above is read against",
+      bytes: buildAuthoredDocx({ body: footerRoomDocument(), footer: DRAWN_FOOTER }),
+    },
+    {
+      id: "spaced-footer",
+      title: "A footer that draws nothing and asks for room under itself",
+      asks: "whether the space a footer's last paragraph asks for below it holds the body any further off",
+      bytes: buildAuthoredDocx({ body: footerRoomDocument(), footer: SPACED_FOOTER }),
+    },
+    {
+      id: "rotated-drawings",
+      title: "An inline drawing turned after it was drawn",
+      asks: "what room a turned drawing's line keeps, and where the turned picture is drawn in it",
+      bytes: buildAuthoredDocx({ body: rotatedDrawingDocument(), picture: true }),
+    },
+    {
+      id: "rotated-drawing-ties",
+      title: "A drawing turned exactly between one quarter and the next",
+      asks: "which quarter the room a turned drawing's line keeps is rounded to when it stands between two",
+      // Word draws the picture turned by an eighth in three overlapping pieces and
+      // the one turned by three eighths nowhere at all, so its pdf cannot be paired
+      // with what this project draws. Word's own answer for each paragraph says
+      // what the document asks, which is the room its line kept.
+      picturesWordDrewInPieces: true,
+      bytes: buildAuthoredDocx({ body: rotatedDrawingTiesDocument(), picture: true }),
     },
     {
       id: "breaking",
@@ -543,6 +664,49 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       bytes: buildAuthoredDocx({ body: statedRowHeightsDocument() }),
     },
     {
+      id: "conditional-table",
+      title: "A table style that formats one place differently from another",
+      asks: "which of a style's conditional formats reach a cell, in what order, and which of them w:tblLook turns off",
+      bytes: buildAuthoredDocx({
+        body: conditionalTableDocument(),
+        extraStyles: CONDITIONAL_STYLES,
+      }),
+    },
+    {
+      id: "numbered-first-line",
+      title: "The room the first line of a numbered paragraph has",
+      asks: "whether a first line whose number tabbed short of the left indent runs the whole way to the right one",
+      bytes: buildAuthoredDocx({
+        body: numberedFirstLineDocument(),
+        numbering: FIRST_LINE_NUMBERING,
+      }),
+    },
+    {
+      id: "legacy-numbered-first-line",
+      title: "The same first lines in a document that declares no compatibility mode",
+      asks: "whether declaring 15 changes the room a numbered first line has",
+      bytes: buildAuthoredDocx({
+        body: numberedFirstLineDocument(),
+        numbering: FIRST_LINE_NUMBERING,
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
+    },
+    {
+      id: "merged-cells",
+      title: "A cell merged down a run of rows",
+      asks: "where a merged cell's text sits, what its rows are worth, and where the room it is short comes from",
+      bytes: buildAuthoredDocx({ body: mergedCellsDocument() }),
+    },
+    {
+      id: "legacy-merged-cells",
+      title: "The same merges in a document that declares no compatibility mode",
+      asks: "whether declaring 15 changes what a merge is worth",
+      bytes: buildAuthoredDocx({
+        body: mergedCellsDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
+    },
+    {
       id: "tearing",
       title: "A table row the foot of a page falls in",
       asks: "whether a row too tall for the room left is torn across the break or moved whole",
@@ -554,6 +718,27 @@ export function authoredDocuments(): readonly AuthoredDocument[] {
       // where the pdf has it.
       paragraphsPlaced: 160,
       bytes: buildAuthoredDocx({ body: tearingDocument() }),
+    },
+    {
+      id: "resuming",
+      title: "The page a torn row resumes on",
+      asks: "what a row puts above its own text where it resumes, and what closes a cell holding a table",
+      // Four of the 142 in each document, which Word's own report puts between 0.43
+      // and 0.6pt below where its own pdf draws them. Every one of the document's
+      // 121 drawn lines lands where the pdf has it, in both documents, and two of
+      // the four stand in a case with no border in it at all: nothing here rounds.
+      paragraphsPlaced: 138,
+      bytes: buildAuthoredDocx({ body: resumingDocument() }),
+    },
+    {
+      id: "legacy-resuming",
+      title: "The same rows in a document that declares no compatibility mode",
+      asks: "whether declaring 15 changes where a torn row resumes",
+      paragraphsPlaced: 138,
+      bytes: buildAuthoredDocx({
+        body: resumingDocument(),
+        settings: settingsPart({ compatibilityMode: null }),
+      }),
     },
     {
       id: "trailing-space",

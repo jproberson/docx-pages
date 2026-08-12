@@ -1,4 +1,4 @@
-import { LEFT_PT, PICTURE_ID, RIGHT_PT, TOP_PT } from "./package.js";
+import { sectionBreak, LEFT_PT, PICTURE_ID, RIGHT_PT, TOP_PT } from "./package.js";
 
 // The bodies of the authored documents that ask about a feature of the flowing
 // text rather than about a shape. Each paragraph is written so that the rule it
@@ -570,6 +570,400 @@ export const STATED_FOOTER = paragraph(
   run("the footer"),
 );
 
+/**
+ * What a page draws where its section names no header for the kind of page it is.
+ *
+ * Two corpus documents draw a logo and a footer on a second page where Word draws
+ * neither, and the file says why: their first section states a `headerReference`
+ * of type `first` and **no default at all**. Whether Word then draws nothing on a
+ * page that is not the first, or falls back to the one header the section does
+ * name, is the whole question, and only a page that draws or does not draw a word
+ * can answer it.
+ *
+ * The header holds text of its own, so which pages hold that text in Word's own
+ * pdf is the answer. The body is two pages of numbered lines, so the second page
+ * exists whatever the header does.
+ */
+/**
+ * Which mark the line a break opens under it is measured from.
+ *
+ * That a break opens a line at all is measured and built, by the
+ * `breaks-in-a-paragraph` document; every run in it is one size, so it could not
+ * say **whose** line it is. A corpus document says the two answers differ: a
+ * paragraph holding a space in 11pt Arial and then a break in a run stating no
+ * face or size of its own comes out 1.15pt taller here than in Word, which is a
+ * line of 12.65 against one of 11.50, and 11.50 is that face at the 10pt Word
+ * falls back to. Its page then holds a picture that Word fits and this project
+ * moves on, for want of that one line.
+ *
+ * The two cases below are complementary and either answer is plain in them: one
+ * states the size on the break's own run and leaves the paragraph mark alone, the
+ * other states it on the mark and leaves the break's run alone. A line measured
+ * from the run is twice as tall in the first and not the second; a line measured
+ * from the mark is the other way round.
+ */
+export function breakLineMarkDocument(): string {
+  const large = `<w:sz w:val="48"/><w:szCs w:val="48"/>`;
+  const broken = (mark: string): string =>
+    `<w:r>${mark === "" ? "" : `<w:rPr>${mark}</w:rPr>`}<w:br/></w:r>`;
+
+  const cases = [
+    // Everything at the size the document is written in, which the two below are
+    // read against.
+    { name: "plain", properties: "", run: "", brk: "" },
+    // The break's own run is twice the size, and nothing else is.
+    { name: "broken large", properties: "", run: "", brk: large },
+    // The paragraph's mark is twice the size, and nothing else is.
+    { name: "mark large", properties: `<w:rPr>${large}</w:rPr>`, run: "", brk: "" },
+    // The text run is twice the size, which says whether a line holding text is
+    // measured from the run that wrote it, as it must be.
+    { name: "run large", properties: "", run: large, brk: "" },
+    // **A line holding nothing but a space**, written in a run twice the size. Word
+    // takes a space's width from its own face and its height from nothing at all,
+    // so what such a line is measured from is a question of its own, and it is the
+    // shape the corpus document that asked all this actually holds.
+    { name: "space large", properties: "", run: large, brk: "", spaceOnly: true },
+  ];
+
+  return [
+    paragraph("", run("above")),
+    ...cases.flatMap((each) => [
+      paragraph("", run(each.name)),
+      ...Array.from({ length: REPEATS }, () =>
+        paragraph(
+          each.properties,
+          run(each.spaceOnly === true ? " " : SHORT, each.run) + broken(each.brk),
+        ),
+      ),
+    ]),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
+/**
+ * Whose size a line carrying no text at all takes, when it is not the paragraph's
+ * last line.
+ *
+ * `break-line-mark` asked whose size the line under a break takes and every one of
+ * its paragraphs wrote text before the break, so the empty line was always the
+ * last one and the mark was always on it. The corpus document that raised it holds
+ * the other shape: a break in front of everything, so the empty line is the first
+ * of two, and it comes out 1.15pt taller here than in Word. Its mark states 11pt
+ * Arial and the line Word drew is 11.50, which is that face at the 10pt Word falls
+ * back to where nothing states a size, so the empty line there is not the mark's.
+ *
+ * Three answers fit that one document: the empty line follows the run the break
+ * stands in, or it follows what a run stating nothing would resolve to in that
+ * paragraph, or the mark is measured on the last line alone and an empty line
+ * anywhere else is neither. The cases below tell them apart, and the last of them
+ * asks the same question from the other end: whether a line that does hold text is
+ * measured against the mark as well.
+ */
+export function emptyLineSizeDocument(): string {
+  const large = `<w:sz w:val="48"/><w:szCs w:val="48"/>`;
+  const broken = (properties: string): string =>
+    `<w:r>${properties === "" ? "" : `<w:rPr>${properties}</w:rPr>`}<w:br/></w:r>`;
+
+  const cases = [
+    // Two lines, both empty and both at the size the document is written in, which
+    // the four below are read against.
+    { name: "plain", properties: "", content: broken("") },
+    // The mark is twice the size and the break's run is not. A first line following
+    // the mark makes this as tall as two large lines.
+    { name: "mark large", properties: `<w:rPr>${large}</w:rPr>`, content: broken("") },
+    // The break's own run is twice the size and the mark is not, which is the only
+    // case that separates the run the break stands in from what the paragraph
+    // resolves for a run stating nothing.
+    { name: "break large", properties: "", content: broken(large) },
+    // Two breaks and a large mark: three lines, of which the first two carry
+    // nothing. One empty line answering to the mark and the other not would show up
+    // nowhere else.
+    { name: "two breaks", properties: `<w:rPr>${large}</w:rPr>`, content: broken("") + broken("") },
+    // One line, holding text at the size the document is written in against a mark
+    // twice that. The mark sits at the end of the last line whatever else is on it,
+    // so a line holding text is as tall as the mark or it is not.
+    { name: "mark over text", properties: `<w:rPr>${large}</w:rPr>`, content: run(SHORT) },
+  ];
+
+  return [
+    paragraph("", run("above")),
+    ...cases.flatMap((each) => [
+      paragraph("", run(each.name)),
+      ...Array.from({ length: REPEATS }, () => paragraph(each.properties, each.content)),
+    ]),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
+/**
+ * How much of a line has to stand clear of a wrap band for the line to stay above
+ * it: the whole of the room its line rule opened, or only the text seated in that
+ * room.
+ *
+ * **The page foot already answers this question one way.** A multiple opens its
+ * room below the text, and `twip-grid` measured that the room hangs past the foot
+ * of the page rather than moving the line on to the next one. Nothing has asked
+ * whether the top of a band answers as the page foot does, and two corpus
+ * documents of one template turn on it: a line under a 1.15 multiple there reaches
+ * 13.89pt with 12.07 of text in it, and the 1.8 the multiple opened below carries
+ * it past the top of a `wrapSquare` picture. Word keeps the line above the
+ * picture.
+ *
+ * Each case is a page of its own: a marker line of an exact height, the object
+ * anchored to it at a stated offset, and eight lines under a multiple of two, so
+ * that a line's box is 29.28 and the text in it 14.65. The room below the text is
+ * then 14.65 wide and no arithmetic here turns on a tenth of a point. Which lines
+ * Word left above the band is the whole of the answer, and Word's own report of
+ * where each paragraph landed says it: every line is a paragraph of its own for
+ * that reason.
+ */
+export function lineIntoABandDocument(): string {
+  const MARKER_PT = 24;
+  const BAND_PT = 100;
+  const WIDTH_PT = RIGHT_PT - LEFT_PT;
+  const LINES = 8;
+
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(MARKER_PT * 20)}" w:lineRule="exact"/>`;
+  const twice = `<w:spacing w:before="0" w:after="0" w:line="480" w:lineRule="auto"/>`;
+
+  const banded = (id: number, name: string, offsetPt: number): string =>
+    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
+      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+        <wp:simplePos x="0" y="0"/>
+        <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
+        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionV>
+        <wp:extent cx="${emu(WIDTH_PT)}" cy="${emu(BAND_PT)}"/>
+        <wp:effectExtent l="0" t="0" r="0" b="0"/>
+        <wp:wrapSquare wrapText="bothSides"/>
+        <wp:docPr id="${String(id)}" name="${name}"/>
+        <wp:cNvGraphicFramePr/>
+        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+          <wps:wsp><wps:cNvSpPr txBox="1"/>
+            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(WIDTH_PT)}" cy="${emu(BAND_PT)}"/></a:xfrm>
+              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
+            <wps:txbx><w:txbxContent>${paragraph(exactly, run(`${name} boxed`))}</w:txbxContent></wps:txbx>
+            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
+          </wps:wsp></a:graphicData></a:graphic>
+      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+
+  // The marker keeps 24pt of its own, so the lines under it start at 60 and the
+  // fourth of them holds its text from 147.89 to 162.54 in a box ending at 177.19.
+  // A band is anchored to the marker, whose own top is the page's at 36.
+  const cases = [
+    // A band opening inside the room the fourth line's multiple left below its
+    // text. The whole box reaches past it and the text does not, so this is the
+    // case the two readings differ on: three lines above the band, or four.
+    { name: "a", offsetPt: 133.8 },
+    // A band opening above the fourth line's text, which both readings put three
+    // lines above.
+    { name: "b", offsetPt: 120 },
+    // A band opening below the whole of the fourth line's box, which both put four
+    // lines above.
+    { name: "c", offsetPt: 148 },
+  ];
+
+  return cases
+    .flatMap((each, at) => [
+      paragraph(
+        `<w:pageBreakBefore/>${exactly}`,
+        banded(at + 1, each.name, each.offsetPt) + run(`${each.name} marks`),
+      ),
+      ...Array.from({ length: LINES }, (_, line) =>
+        paragraph(twice, run(`${each.name} ${String(line + 1).padStart(2, "0")}`)),
+      ),
+    ])
+    .join("");
+}
+
+export const NAMED_FIRST_HEADER = paragraph("", run("the first header"));
+export const NAMED_DEFAULT_HEADER = paragraph("", run("the default header"));
+
+/**
+ * Which page a section's own first-page header is drawn on when the section began
+ * part way down a page.
+ *
+ * Two corpus documents draw a header on a second page where Word draws none, and
+ * the shape is the same in both: two sections, both `continuous`, the second
+ * naming no header of its own and so inheriting the first's, and `w:titlePg` on.
+ * This project reads the second page as opening the second section, so the
+ * inherited first-page header is drawn there.
+ *
+ * The two readings that fit are that a section which began part way down a page
+ * has already opened and its next page opens nothing, or that `w:titlePg` governs
+ * the document's own first page and no other. **Both headers draw words of their
+ * own here**, so the page that follows says which was chosen rather than leaving
+ * nothing to read: the corpus documents could not answer because the part their
+ * second section named was empty.
+ */
+export function sectionsAndTheFirstPageDocument(): string {
+  const LINE_PT = 24;
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const lines = (name: string, count: number): readonly string[] =>
+    Array.from({ length: count }, (_, at) =>
+      paragraph(exactly, run(`${name} ${String(at + 1).padStart(2, "0")}`)),
+    );
+
+  // The first section is five lines and closes part way down the page. **What
+  // makes the second one carry on down that page is the second one's own type**,
+  // stated where the document's last section is written, since `w:type` describes
+  // the section it stands in rather than the one after it.
+  const closing = sectionBreak({ headers: ["first", "default"], titlePage: true });
+
+  return [
+    ...lines("one", 4),
+    paragraph(`${exactly}${closing}`, run("one 05")),
+    ...lines("two", 40),
+    EMPTY,
+  ].join("");
+}
+
+export function headerNotNamedDocument(): string {
+  const LINE_PT = 24;
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+
+  // The body of an authored page is 720pt, so 30 of these fill one and 45 make a
+  // second page that is plainly the second.
+  return [
+    ...Array.from({ length: 45 }, (_, at) =>
+      paragraph(exactly, run(`line ${String(at + 1).padStart(2, "0")}`)),
+    ),
+    EMPTY,
+  ].join("");
+}
+
+/**
+ * Whether a line's height is rounded to the twip before it is stacked.
+ *
+ * Word's own arithmetic runs on twentieths of a point and this project's runs on
+ * doubles, and one instance of the difference is already measured and built:
+ * `roundsAnchorsToTwips`. What it costs the flow has never been asked, and it is
+ * what `8d6be805eab0` turns on, which makes a page more than Word does on 0.56pt
+ * of arithmetic.
+ *
+ * A line lands off the grid whenever a face's own height is multiplied by
+ * anything, so each case below is a size and a multiple whose line falls between
+ * two twips, stacked until the page runs out. **The answer is a page number**,
+ * which is the half of Word's own report worth trusting: the body of an authored
+ * page is 720pt, and each case is chosen so that one more line fits under one
+ * reading of the rounding than under the other.
+ *
+ * Two of the four round up and two round down, so truncating to the twip answers
+ * differently from rounding to the nearest one, and doing neither differently
+ * again.
+ */
+export function twipGridDocument(): string {
+  const cases = [
+    // line 10.1318, which is 10.15 rounded and 10.10 truncated: 71 of them fit
+    // 720pt as they are and 70 rounded.
+    { name: "a", halfPoints: 16, twips: 249, lines: 74 },
+    // 13.5752, which is 13.60 and 13.55: 53 as they are, 52 rounded.
+    { name: "b", halfPoints: 17, twips: 314, lines: 56 },
+    // 18.4733, which is 18.45 both ways: 38 as they are, 39 rounded.
+    { name: "c", halfPoints: 16, twips: 454, lines: 42 },
+    // 12.8708, which is 12.85 both ways: 55 as they are, 56 rounded.
+    { name: "d", halfPoints: 21, twips: 241, lines: 59 },
+  ];
+
+  return [
+    ...cases.flatMap((each) => {
+      const size = `<w:sz w:val="${String(each.halfPoints)}"/><w:szCs w:val="${String(each.halfPoints)}"/>`;
+      const rule = `<w:spacing w:before="0" w:after="0" w:line="${String(each.twips)}" w:lineRule="auto"/>`;
+      return Array.from({ length: each.lines }, (_, at) =>
+        paragraph(
+          `${at === 0 ? `<w:pageBreakBefore/>` : ""}${rule}`,
+          run(`${each.name}${String(at + 1).padStart(2, "0")}`, size),
+        ),
+      );
+    }),
+    EMPTY,
+  ].join("");
+}
+
+/**
+ * What a line multiple is a multiple of, and where the room it opens goes.
+ *
+ * A multiple is the one line rule whose answer this project has never read off a
+ * repeat: the `spacing` document asks it once, at 1.5, and Word's own answer for a
+ * paragraph is rounded to the point, which is coarser than the question. Five
+ * corpus documents make a page more than Word does and every one of them turns on
+ * about four tenths of a point per paragraph under a rule of 1.1.
+ *
+ * Calibri at 12pt makes a line of 14.65pt and stands 12.00pt of it above and below
+ * the baseline, the rest being the gap the face keeps between one line and the
+ * next. So the three readings worth telling apart are far enough apart to name at
+ * 1.5: a multiple of the whole line gives 21.98, a line plus a share of the face
+ * gives 20.65, and a multiple of the face alone gives 18.00. Each case is written
+ * out three times, so the height is the distance from one repeat to the next.
+ */
+export function lineMultipleDocument(): string {
+  const multiples = [240, 264, 276, 360, 480];
+
+  const rule = (twips: number): string =>
+    `<w:spacing w:before="0" w:after="0" w:line="${String(twips)}" w:lineRule="auto"/>`;
+
+  // The same rule over text twice the size, which tells a share of the face from a
+  // constant: everything the rule opens doubles with the face or none of it does.
+  const sizes = [
+    { name: "plain", mark: "" },
+    { name: "large", mark: `<w:sz w:val="48"/><w:szCs w:val="48"/>` },
+  ];
+
+  return [
+    paragraph("", run("above")),
+    ...sizes.flatMap((size) =>
+      multiples.flatMap((twips) => [
+        paragraph("", run(`${size.name} ${String(twips)}`)),
+        ...Array.from({ length: REPEATS }, () => paragraph(rule(twips), run(SHORT, size.mark))),
+      ]),
+    ),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
+// How far a footer that draws nothing holds the text off the bottom margin.
+//
+// A page 792pt tall keeping 36pt of bottom margin ends its body at 756, and
+// keeping 36pt for a footer hangs a 48pt footer's top at 708. Whether the body
+// then stops at 708 or carries on to 756 is two whole lines of the 24pt ones
+// below, so the page each line lands on says which, and the page is the half of
+// Word's own answer that is worth trusting.
+//
+// Five corpus documents turn on it, each making a page more than Word does, and
+// every one of them keeps a footer holding one empty paragraph.
+const FOOTER_ROOM_LINE_PT = 24;
+
+export const EMPTY_FOOTER = paragraph(`<w:spacing w:line="960" w:lineRule="exact"/>`, "");
+export const DRAWN_FOOTER = paragraph(
+  `<w:spacing w:line="960" w:lineRule="exact"/>`,
+  run("the footer"),
+);
+
+// The same empty footer asking for room under itself as well. Whether a story's
+// last paragraph keeps the room it asks for below it decides how far down a page
+// the body may reach, and every corpus document that turns on this keeps a footer
+// whose one paragraph states a space after.
+export const SPACED_FOOTER = paragraph(
+  `<w:spacing w:after="240" w:line="960" w:lineRule="exact"/>`,
+  "",
+);
+
+// Lines of a stated height, numbered, so that which page each landed on says how
+// many the body had room for. Thirty of them fill a body reaching the bottom
+// margin exactly and twenty eight fill one stopping at the footer's top.
+export function footerRoomDocument(): string {
+  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(FOOTER_ROOM_LINE_PT * 20)}" w:lineRule="exact"/>`;
+
+  return [
+    ...Array.from({ length: 40 }, (_, at) =>
+      paragraph(exactly, run(`line ${String(at + 1).padStart(2, "0")}`)),
+    ),
+    EMPTY,
+  ].join("");
+}
+
 // What a break does to the line under it when there is nothing on that line.
 //
 // Two corpus documents of one converted template are 7 of 45 and 6 of 43 lines
@@ -634,7 +1028,7 @@ export function breaksInAParagraphDocument(): string {
 // width and never squeezes it, so it breaks a word earlier and the whole paragraph
 // is a line long.
 //
-// Twenty seven cases, each written out three times, each a justified paragraph
+// Sixty seven cases, each written out three times, each a justified paragraph
 // whose last word overflows the room by a stated amount. Where Word draws that word
 // says what it will accept, and the three digits opening every case say which case
 // and which repeat a line belongs to.
@@ -657,6 +1051,10 @@ export function justifiedFittingDocument(): string {
     readonly word: string;
     readonly words: number;
     readonly sizePt: number;
+    // A face of its own where the question is about the face: Times New Roman makes
+    // its space a quarter of the em where Calibri makes it 0.2261, so the two say
+    // differently whether the ceiling below is a length of the em or of the space.
+    readonly face?: string;
     // The room that leaves the line exactly the width of its own text, in twips off
     // the right of a 540pt frame.
     readonly indentTwips: number;
@@ -675,6 +1073,13 @@ export function justifiedFittingDocument(): string {
   // a length or a fraction of the size the text is set in. Each sweep is close
   // around where the line stopped taking the word, and holds one wide case either
   // side of it for the record.
+  // The first four are the shapes that killed every rule of one term: four spaces,
+  // twelve, three on a line half again as wide, and the first again at half the
+  // size, each holding the widest overflow Word took and the narrowest it refused.
+  // The six after them vary nothing but how many spaces the line holds, since that
+  // is the axis a rule of one term and a rule of two disagree on: a rule per space
+  // rises straight from three spaces to twelve, and one that also holds a floor of
+  // its own is flat until the spaces are worth more than the floor.
   const FAMILIES: readonly Family[] = [
     {
       name: "few",
@@ -683,7 +1088,7 @@ export function justifiedFittingDocument(): string {
       sizePt: 24,
       indentTwips: 3502,
       characters: 23,
-      overflowsPt: [0, 4, 4.2, 4.3, 4.4, 4.6, 6],
+      overflowsPt: [4.6, 6],
     },
     {
       name: "many",
@@ -692,7 +1097,7 @@ export function justifiedFittingDocument(): string {
       sizePt: 24,
       indentTwips: 3251,
       characters: 39,
-      overflowsPt: [0, 6, 7, 7.2, 7.3, 7.4, 7.6, 12],
+      overflowsPt: [7.6, 12],
     },
     {
       name: "wide",
@@ -701,7 +1106,7 @@ export function justifiedFittingDocument(): string {
       sizePt: 24,
       indentTwips: 543,
       characters: 30,
-      overflowsPt: [0, 5, 5.4, 5.6, 5.7, 5.8, 6],
+      overflowsPt: [4, 5],
     },
     {
       name: "small",
@@ -710,7 +1115,116 @@ export function justifiedFittingDocument(): string {
       sizePt: 12,
       indentTwips: 7151,
       characters: 23,
-      overflowsPt: [0, 2, 2.1, 2.15, 2.2, 2.3, 3],
+      overflowsPt: [2.2, 2.3],
+    },
+    {
+      name: "three",
+      word: "aa",
+      words: 3,
+      sizePt: 24,
+      indentTwips: 8365,
+      characters: 12,
+      overflowsPt: [4, 4.4],
+    },
+    {
+      name: "four",
+      word: "aa",
+      words: 4,
+      sizePt: 24,
+      indentTwips: 7797,
+      characters: 15,
+      overflowsPt: [5.2, 5.6, 6, 6.4],
+    },
+    {
+      name: "six",
+      word: "aa",
+      words: 6,
+      sizePt: 24,
+      indentTwips: 6660,
+      characters: 21,
+      overflowsPt: [6, 7, 8, 8.4, 8.8, 9.6],
+    },
+    {
+      name: "eight",
+      word: "aa",
+      words: 8,
+      sizePt: 24,
+      indentTwips: 5523,
+      characters: 27,
+      overflowsPt: [10.2, 10.4, 10.6, 10.8, 11],
+    },
+    {
+      name: "ten",
+      word: "aa",
+      words: 10,
+      sizePt: 24,
+      indentTwips: 4387,
+      characters: 33,
+      overflowsPt: [10.1, 10.2, 10.4, 10.6],
+    },
+    {
+      name: "half",
+      word: "aa",
+      words: 12,
+      sizePt: 12,
+      indentTwips: 7025,
+      characters: 39,
+      overflowsPt: [4.6, 5, 5.2, 5.4, 6, 7, 8],
+    },
+    {
+      name: "sixteen",
+      word: "aa",
+      words: 16,
+      sizePt: 24,
+      indentTwips: 976,
+      characters: 51,
+      overflowsPt: [10, 10.2, 10.4, 10.6, 11],
+    },
+    {
+      name: "sixteen wide",
+      word: "aa",
+      words: 16,
+      sizePt: 24,
+      indentTwips: 976,
+      characters: 51,
+      overflowsPt: [9.5, 9.6, 9.7, 9.8, 9.9],
+    },
+    {
+      name: "sixteen small",
+      word: "aa",
+      words: 16,
+      sizePt: 12,
+      indentTwips: 5888,
+      characters: 51,
+      overflowsPt: [4, 4.6, 4.8, 5, 5.4],
+    },
+    {
+      name: "twenty four small",
+      word: "aa",
+      words: 24,
+      sizePt: 12,
+      indentTwips: 3615,
+      characters: 75,
+      overflowsPt: [4, 4.6, 4.8, 5, 5.4],
+    },
+    {
+      name: "roman",
+      word: "aa",
+      words: 12,
+      sizePt: 24,
+      face: "Times New Roman",
+      indentTwips: 3527,
+      characters: 39,
+      overflowsPt: [9.6, 10, 10.4, 10.8, 11.2, 11.6],
+    },
+    {
+      name: "twelve",
+      word: "aa",
+      words: 12,
+      sizePt: 24,
+      indentTwips: 3250,
+      characters: 39,
+      overflowsPt: [10.1, 10.2, 10.4, 10.6],
     },
   ];
 
@@ -721,7 +1235,11 @@ export function justifiedFittingDocument(): string {
   return [
     ...cases.flatMap(({ family, overflowPt }, at) => {
       const number = String(at + 1).padStart(2, "0");
-      const size = `<w:sz w:val="${String(family.sizePt * 2)}"/><w:szCs w:val="${String(family.sizePt * 2)}"/>`;
+      const face =
+        family.face === undefined
+          ? ""
+          : `<w:rFonts w:ascii="${family.face}" w:hAnsi="${family.face}" w:cs="${family.face}"/>`;
+      const size = `${face}<w:sz w:val="${String(family.sizePt * 2)}"/><w:szCs w:val="${String(family.sizePt * 2)}"/>`;
       const indent = `<w:ind w:right="${String(family.indentTwips + Math.round(overflowPt * 20))}"/>`;
       const words = Array.from({ length: family.words }, () => family.word).join(" ");
       return [
@@ -781,8 +1299,15 @@ const emu = (pt: number): string => String(Math.round(pt * 12700));
 // that stands on a line without being measured from a face. Its run still states
 // a face like any other, which is what says whether the line hears anything the
 // drawing itself does not say.
-const inlinePicture = (id: number, widthPt: number, heightPt: number, mark = ""): string => {
+const inlinePicture = (
+  id: number,
+  widthPt: number,
+  heightPt: number,
+  mark = "",
+  sixtieths = 0,
+): string => {
   const extent = `cx="${emu(widthPt)}" cy="${emu(heightPt)}"`;
+  const turned = sixtieths === 0 ? "" : ` rot="${String(sixtieths)}"`;
   return `<w:r>${mark === "" ? "" : `<w:rPr>${mark}</w:rPr>`}<w:drawing>
     <wp:inline distT="0" distB="0" distL="0" distR="0">
       <wp:extent ${extent}/>
@@ -793,12 +1318,75 @@ const inlinePicture = (id: number, widthPt: number, heightPt: number, mark = "")
         <pic:pic xmlns:pic="${PIC_NS}">
           <pic:nvPicPr><pic:cNvPr id="${String(id)}" name="picture-${String(id)}"/><pic:cNvPicPr/></pic:nvPicPr>
           <pic:blipFill><a:blip r:embed="${PICTURE_ID}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
-          <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext ${extent}/></a:xfrm>
+          <pic:spPr><a:xfrm${turned}><a:off x="0" y="0"/><a:ext ${extent}/></a:xfrm>
             <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
         </pic:pic>
       </a:graphicData></a:graphic>
     </wp:inline></w:drawing></w:r>`;
 };
+
+// What a drawing turned after it was drawn takes on its line, and where the turned
+// picture itself is drawn.
+//
+// The extent a rotation is stated beside is the picture the right way up, so a
+// quarter turn either leaves the line holding a box the wrong way round or holds
+// a box as wide as the picture is tall. Three corpus documents of one template
+// turn a picture a quarter and each makes a page more than Word does, which is
+// what asks the question.
+//
+// The picture is three times as wide as it is tall, so every turn below draws a
+// different box, and each case is written out three times so the room its line
+// took is the distance from one drawing to the next rather than a difference of
+// two rounded answers. The turns are the four quarters, the two halves of one, and
+// one that is no fraction of a quarter at all.
+function turnedDrawings(degrees: readonly number[], beside: readonly number[]): string {
+  const SIXTIETHS_OF_A_DEGREE = 60000;
+  const TURNED_WIDE_PT = 72;
+  const TURNED_TALL_PT = 24;
+
+  let drawings = 0;
+  const turned = (angle: number, alongside = ""): string => {
+    drawings += 1;
+    return paragraph(
+      "",
+      inlinePicture(
+        drawings,
+        TURNED_WIDE_PT,
+        TURNED_TALL_PT,
+        "",
+        Math.round(angle * SIXTIETHS_OF_A_DEGREE),
+      ) + alongside,
+    );
+  };
+
+  return [
+    paragraph("", run("above")),
+    ...degrees.flatMap((angle) => [
+      paragraph("", run(`turned by ${String(angle)}`)),
+      ...Array.from({ length: REPEATS }, () => turned(angle)),
+    ]),
+    // Text on the line after the drawing, which is the only thing that says how far
+    // along the line a turned drawing carried it: where the drawing is painted
+    // cannot, since a turn draws outside the room the line kept for it.
+    ...beside.flatMap((angle) => [
+      paragraph("", run(`beside a turn of ${String(angle)}`)),
+      ...Array.from({ length: REPEATS }, () => turned(angle, run("beside"))),
+    ]),
+    paragraph("", run("below")),
+    EMPTY,
+  ].join("");
+}
+
+export const rotatedDrawingDocument = (): string =>
+  turnedDrawings([0, 90, 180, 270, 30, 26.7], [0, 90, 30]);
+
+// The two turns that fall exactly between one quarter and the next, and the one a
+// half turn from the first. Asked in a document of their own because **Word's own
+// pdf cannot answer for how they are drawn**: it draws a picture turned by an
+// eighth in three overlapping pieces, and one turned by three eighths not at all.
+// What they settle is the room the line keeps either side of the boundary, which
+// Word's own report answers for.
+export const rotatedDrawingTiesDocument = (): string => turnedDrawings([45, 135, 225], []);
 
 // Taller than any line the text of this document would make on its own, so that
 // the drawing is what the line has to hold.
@@ -2229,6 +2817,128 @@ export function tearingDocument(): string {
   ].join("");
 }
 
+// Where a row torn across a page resumes on the next one, and what a cell's own
+// furniture is worth there.
+//
+// `tearing` asks which side of a break a row lands on. This asks the question
+// under that one: given that the row was torn, what stands above the first line of
+// it on the page below. A row carries a top border and a cell top margin above its
+// text on the page it opens, and whether either is drawn again where it resumes has
+// never been asked.
+//
+// Every case fills its page from a known place, exactly as `tearing` does: a
+// marker, seven fillers and a shim leave 102pt of room, which four of the 24pt
+// lines fit in with six to spare. Case a holds no table at all, so the line it
+// resumes with stands at the top of the body and every other case is read against
+// it: the difference is what the row put above its own text.
+//
+// The last three ask what closes a cell rather than what opens one. A cell must end
+// in a paragraph, so a cell whose last content is a nested table carries an empty
+// one after it, and a corpus document says Word gives that paragraph no room at
+// all. They stand on one page each, since what is being asked is a height and not a
+// break.
+export function resumingDocument(): string {
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const FILLERS = 7;
+  const FILLER_PT = 72;
+  const MARKER_PT = 24;
+  const BLOCK_PT = 720;
+  const LINE_PT = 24;
+  const ROOM_PT = 102;
+
+  const WIDTH = 10800;
+  const NESTED_WIDTH = 5400;
+
+  // Three points, which is thick enough that no rounding can be mistaken for it
+  // and is the width the corpus document that raised the question states.
+  const BORDER_EIGHTHS = 24;
+  const bordered = `<w:tblBorders>${["top", "left", "bottom", "right"]
+    .map(
+      (side) =>
+        `<w:${side} w:val="single" w:sz="${String(BORDER_EIGHTHS)}" w:space="0" w:color="000000"/>`,
+    )
+    .join("")}</w:tblBorders>`;
+
+  // An authored document declares no table style, so a table stating no margins is
+  // held off its walls by nothing at all. Above and below they are nought unless
+  // the case is asking what a top margin is worth.
+  const margins = (topTwips: number): string =>
+    `<w:tblCellMar>
+      <w:top w:w="${String(topTwips)}" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/>
+    </w:tblCellMar>`;
+
+  const cell = (widthTwips: number, content: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(widthTwips)}" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+
+  const table = (widthTwips: number, properties: string, rows: readonly string[]): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(widthTwips)}" w:type="dxa"/><w:tblInd w:w="0" w:type="dxa"/>${properties}</w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="${String(widthTwips)}"/></w:tblGrid>` +
+    rows.map((content) => `<w:tr>${cell(widthTwips, content)}</w:tr>`).join("") +
+    `</w:tbl>`;
+
+  const named = (name: string, at: number): string => `${name} ${String(at).padStart(2, "0")}`;
+
+  const lines = (name: string, from: number, to: number): string =>
+    Array.from({ length: to - from + 1 }, (_, at) =>
+      paragraph(exactly(LINE_PT), run(named(name, from + at))),
+    ).join("");
+
+  const block = (name: string, content: string): readonly string[] => [
+    paragraph(`<w:pageBreakBefore/>${exactly(MARKER_PT)}`, run(`case ${name}`)),
+    ...Array.from({ length: FILLERS }, (_, at) =>
+      paragraph(exactly(FILLER_PT), run(`${name} fill ${String(at + 1)}`)),
+    ),
+    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - ROOM_PT), run(`${name} shim`)),
+    content,
+  ];
+
+  // A nested table of its own rows, with the empty paragraph a cell holding one
+  // has to end with.
+  const nested = (name: string, from: number, to: number, closer: string): string =>
+    table(
+      NESTED_WIDTH,
+      `${bordered}${margins(0)}`,
+      Array.from({ length: to - from + 1 }, (_, at) => lines(name, from + at, from + at)),
+    ) + closer;
+
+  const CLOSED_EMPTY = paragraph(exactly(LINE_PT), "");
+
+  return [
+    // No table at all, so the line this resumes with stands at the top of the body
+    // and is what every case below is read against.
+    ...block("a", lines("a", 1, 8)),
+    // A row with neither a border nor a top margin, which says whether a row
+    // resumes where an ordinary paragraph does.
+    ...block("b", table(WIDTH, margins(0), [lines("b", 1, 8)])),
+    // The same row held 12pt off the top of its cell, which says whether the margin
+    // is opened again on the page the row resumes on.
+    ...block("c", table(WIDTH, margins(240), [lines("c", 1, 8)])),
+    // The same row inside a 3pt border, which says whether the border is drawn
+    // again there and whether it takes room when it is.
+    ...block("d", table(WIDTH, `${bordered}${margins(0)}`, [lines("d", 1, 8)])),
+    // A row whose cell holds four lines and then a bordered table of its own, so
+    // that the tear falls between the two and the page below opens on the nested
+    // table's own top border. This is the shape the corpus document is.
+    ...block("e", table(WIDTH, margins(0), [lines("e", 1, 4) + nested("e", 5, 7, CLOSED_EMPTY)])),
+    // A nested table and the empty paragraph closing the cell after it, whole on
+    // one page: where the row under it starts says what that paragraph was worth.
+    ...block("f", table(WIDTH, margins(0), [nested("f", 1, 2, CLOSED_EMPTY), lines("f", 3, 3)])),
+    // The same with a word in the closing paragraph, which has to take a line.
+    ...block(
+      "g",
+      table(WIDTH, margins(0), [nested("g", 1, 2, lines("g", 3, 3)), lines("g", 4, 4)]),
+    ),
+    // The same closing paragraph after a line rather than after a nested table,
+    // which says whether it is the paragraph or what stands above it that decides.
+    ...block("h", table(WIDTH, margins(0), [lines("h", 1, 2) + CLOSED_EMPTY, lines("h", 3, 3)])),
+    // A table is the last thing in the body, which Word will not have.
+    EMPTY,
+  ].join("");
+}
+
 // Whether a space raises the line it stands on, and how tall a paragraph holding
 // nothing but spaces comes out.
 //
@@ -3180,3 +3890,381 @@ export function insignificantSpaceDocument(): string {
     EMPTY,
   ].join("");
 }
+
+// A cell merged down a run of rows: where its text sits, what its rows are worth,
+// and what becomes of the cells the merge swallowed.
+//
+// Ten of the 966 state `w:vMerge` and one of them holds 635 lines this project
+// places 142 of, so the question is not academic. Nothing here is built: a
+// continuation cell is laid out today as a cell of its own, and the restart cell's
+// whole content is charged to the one row it opens.
+//
+// Every case is four rows of two cells with one 20pt line in the right hand one, so
+// a row's height is the distance from one repeat to the next. The left hand column
+// is what the case varies. Word's own pdf is the oracle: its report answers for the
+// row, and every question here is about a cell.
+export function mergedCellsDocument(): string {
+  const CELL_TWIPS = 2880;
+  const LINE_PT = 20;
+  const ROWS = 4;
+
+  const exactly = (pt: number): string =>
+    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
+
+  const line = (name: string, pt = LINE_PT): string => paragraph(exactly(pt), run(name));
+
+  // An authored document declares no table style, so a table stating no margins is
+  // held off its walls by nothing at all, and a row is exactly as tall as its lines.
+  const NO_MARGINS = `<w:tblCellMar>
+      <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+    </w:tblCellMar>`;
+
+  // Fixed, so that a cell stating no width of its own is the grid it stands on
+  // rather than whatever Word would rather it were.
+  const table = (columnTwips: readonly number[], rows: string): string =>
+    `<w:tbl><w:tblPr><w:tblW w:w="${String(columnTwips.reduce((a, b) => a + b, 0))}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>${NO_MARGINS}</w:tblPr>
+      <w:tblGrid>${columnTwips.map((twips) => `<w:gridCol w:w="${String(twips)}"/>`).join("")}</w:tblGrid>
+      ${rows}</w:tbl>`;
+
+  const cell = (properties: string, content: string): string =>
+    `<w:tc><w:tcPr>${properties}</w:tcPr>${content}</w:tc>`;
+
+  const width = (twips: number): string => `<w:tcW w:w="${String(twips)}" w:type="dxa"/>`;
+
+  const RESTART = `<w:vMerge w:val="restart"/>`;
+  const CONTINUE = `<w:vMerge/>`;
+
+  // The right hand column of every case: one 20pt line a row, naming its row, which
+  // is what every height here is read off.
+  const marker = (name: string, at: number): string =>
+    cell(width(CELL_TWIPS), line(`${name}${String(at)} right`));
+
+  const merged = (name: string, lines: number, properties = ""): string =>
+    cell(
+      `${width(CELL_TWIPS)}${properties}${RESTART}`,
+      Array.from({ length: lines }, (_, at) => line(`${name} m${String(at + 1)}`)).join(""),
+    );
+
+  const swallowed = (content = EMPTY): string => cell(`${width(CELL_TWIPS)}${CONTINUE}`, content);
+
+  // A merge opening at the first row and running to the row named, the rows after it
+  // holding an ordinary cell of their own.
+  const mergedTable = (
+    name: string,
+    lines: number,
+    through: number,
+    options: { readonly restart?: string; readonly swallowedContent?: string } = {},
+  ): string =>
+    table(
+      [CELL_TWIPS, CELL_TWIPS],
+      Array.from({ length: ROWS }, (_, at) => {
+        const left =
+          at === 0
+            ? merged(name, lines, options.restart ?? "")
+            : at < through
+              ? swallowed(options.swallowedContent)
+              : cell(width(CELL_TWIPS), line(`${name}${String(at + 1)} left`));
+        return `<w:tr>${left}${marker(name, at + 1)}</w:tr>`;
+      }).join(""),
+    );
+
+  // A line of its own either side of each table, so where the table starts and where
+  // it ends are read as well as the distance from row to row.
+  const block = (name: string, content: string): string =>
+    paragraph(`<w:pageBreakBefore/>${exactly(LINE_PT)}`, run(`case ${name}`)) +
+    content +
+    paragraph(exactly(LINE_PT), run(`${name} after`));
+
+  // Three grid columns where the first two are spanned by one cell, so that the left
+  // of the third column's text says what a span is worth. The second row spans
+  // nothing, and is what the first is read against.
+  const SPAN_TWIPS = [1440, 1440, 2880] as const;
+
+  const spanTable = (name: string, statesItsWidth: boolean): string =>
+    table(
+      SPAN_TWIPS,
+      `<w:tr>${cell(
+        `${statesItsWidth ? width(SPAN_TWIPS[0] + SPAN_TWIPS[1]) : ""}<w:gridSpan w:val="2"/>`,
+        line(`${name}1 spanning`),
+      )}${cell(width(SPAN_TWIPS[2]), line(`${name}1 third`))}</w:tr>` +
+        `<w:tr>${cell(width(SPAN_TWIPS[0]), line(`${name}2 first`))}${cell(
+          width(SPAN_TWIPS[1]),
+          line(`${name}2 second`),
+        )}${cell(width(SPAN_TWIPS[2]), line(`${name}2 third`))}</w:tr>`,
+    );
+
+  return [
+    // One line in a cell merged down the whole table. Says where the text of a merged
+    // cell sits, and whether the cells it swallowed are worth anything at all: four
+    // rows 20pt apart say they are not.
+    block("a", mergedTable("a", 1, ROWS)),
+    // Content that fits inside the merge with room to spare, which is the case a real
+    // document is mostly made of.
+    block("b", mergedTable("b", 3, ROWS)),
+    // Six 20pt lines in a merge worth 80pt. The 40pt over says where the room a merge
+    // is short comes from: rows at 20, 20, 20, 60 say it is the last row of the merge,
+    // and rows at 30 each say it is shared out.
+    block("c", mergedTable("c", 6, ROWS)),
+    // The same again at ten lines, so that a rule read off one case is read again at
+    // three times the deficit.
+    block("d", mergedTable("d", 10, ROWS)),
+    // A merge closing at the second row with two ordinary rows under it, and six lines
+    // in it. Read against c, this says whether what a merge is short falls on the last
+    // row of the merge or on the last row of the table.
+    block("e", mergedTable("e", 6, 2)),
+    // One line in a merge asking to be seated in the middle of itself, which says
+    // whether a merged cell is seated in its own row or in the whole run of them.
+    block("f", mergedTable("f", 1, ROWS, { restart: `<w:vAlign w:val="center"/>` })),
+    // A swallowed cell holding a 40pt line of its own. If Word draws it, or if the row
+    // grows to hold it, a continuation cell is not the nothing the rest of this
+    // assumes.
+    block("g", mergedTable("g", 1, ROWS, { swallowedContent: line("g spare", 40) })),
+    // A cell spanning two grid columns and stating no width of its own, which says
+    // whether a span is worth the columns under it.
+    block("h", spanTable("h", false)),
+    // And the same span stating the width of both columns, which is how a real
+    // document writes it.
+    block("i", spanTable("i", true)),
+    // A table is the last thing in the body, which Word will not have.
+    EMPTY,
+  ].join("");
+}
+
+// How much room the first line of a numbered paragraph has.
+//
+// The number sits at the hanging position and the text after it starts wherever the
+// level's suffix moves on to, which `startOfText` already reads off the paragraph's
+// own tab stops. What nothing has asked is how wide the line that text stands on
+// then is. What is built gives it the room between the two indents, on the reading
+// that a number hanging in front of the text leaves the text starting at the left
+// indent like every line under it.
+//
+// **A real document breaks that reading.** One of the 966 states stops at 907 and
+// 1441 twips against a left indent of 1441 and a hanging of 744: its number tabs to
+// the first stop, which is 26.7pt short of the indent, so its first line starts
+// there and runs the whole way to the right indent. Word fits 29 characters on that
+// line where this project fits 11.
+//
+// Each case is a marker, the case, and a plain line under it. The words are three
+// characters each and numbered, so which of them Word put on the first line says
+// where that line ended to within about 19pt, and the readings being compared are
+// 36pt apart.
+export function numberedFirstLineDocument(): string {
+  // A column 162pt wide from the text start and 126 from the left indent, which is
+  // the whole of what the cases disagree about.
+  const LEFT_TWIPS = 2880;
+  const HANGING_TWIPS = 1440;
+  const RIGHT_TWIPS = 5400;
+  // Short of the left indent by 36pt, and past where any of the numbers end.
+  const STOP_TWIPS = 2160;
+
+  const words = (name: string): string =>
+    Array.from({ length: 24 }, (_, at) => `${name}${String(at + 1).padStart(2, "0")}`).join(" ");
+
+  const indent = (hangingTwips: number, firstLineTwips: number | null): string =>
+    `<w:ind w:left="${String(LEFT_TWIPS)}" w:right="${String(RIGHT_TWIPS)}"` +
+    (firstLineTwips === null
+      ? ` w:hanging="${String(hangingTwips)}"`
+      : ` w:firstLine="${String(firstLineTwips)}"`) +
+    `/>`;
+
+  const stops = (positions: readonly number[]): string =>
+    positions.length === 0
+      ? ""
+      : `<w:tabs>${positions.map((at) => `<w:tab w:val="left" w:pos="${String(at)}"/>`).join("")}</w:tabs>`;
+
+  type Case = {
+    readonly name: string;
+    readonly numId: number | null;
+    readonly stops: readonly number[];
+    readonly firstLineTwips?: number;
+  };
+
+  const block = (of: Case): string =>
+    paragraph(`<w:pageBreakBefore/>`, run(`case ${of.name}`)) +
+    paragraph(
+      (of.numId === null
+        ? ""
+        : `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${String(of.numId)}"/></w:numPr>`) +
+        stops(of.stops) +
+        indent(HANGING_TWIPS, of.firstLineTwips ?? null),
+      run(words(of.name)),
+    ) +
+    paragraph("", run(`${of.name} after`));
+
+  return [
+    // A stop short of the left indent, which is what the real document holds: the
+    // number tabs to it and the text starts 36pt in front of the indent. Whether
+    // the line ends at the right indent or 36pt short of it is the whole question.
+    block({ name: "a", numId: 1, stops: [STOP_TWIPS] }),
+    // The same with no stop of its own, so the number's tab moves on to the implicit
+    // one at the left indent. This is the case the built reading assumes, and it has
+    // to come out unchanged.
+    block({ name: "b", numId: 1, stops: [] }),
+    // A number wider than the room in front of the indent, so the text is pushed
+    // past the indent instead of standing short of it. Says whether a first line
+    // loses room as readily as it gains it.
+    block({ name: "c", numId: 2, stops: [] }),
+    // A suffix that puts a single space after the number rather than a tab, so the
+    // text starts wherever the number ended and no stop is consulted at all.
+    block({ name: "d", numId: 3, stops: [] }),
+    // And a suffix that puts nothing after it.
+    block({ name: "e", numId: 4, stops: [] }),
+    // The same indents with no number at all, which is the rule this one is read
+    // against: a hanging indent leaves its first line wider than the rest.
+    block({ name: "f", numId: null, stops: [] }),
+    // And a first line indented the other way, which leaves it narrower.
+    block({ name: "g", numId: null, stops: [], firstLineTwips: 720 }),
+    EMPTY,
+  ].join("");
+}
+
+// One list a case, so that a suffix and a width of number can be varied without
+// disturbing the others. Every level states the same indents the paragraphs do, so
+// nothing here turns on which of the two Word reads.
+export const FIRST_LINE_NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  ${[
+    { id: 0, text: "%1.", suffix: null },
+    { id: 1, text: "Section %1.%1.%1:", suffix: null },
+    { id: 2, text: "%1.", suffix: "space" },
+    { id: 3, text: "%1.", suffix: "nothing" },
+  ]
+    .map(
+      (each) => `<w:abstractNum w:abstractNumId="${String(each.id)}">
+    <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/>
+      <w:lvlText w:val="${each.text}"/><w:lvlJc w:val="left"/>
+      ${each.suffix === null ? "" : `<w:suff w:val="${each.suffix}"/>`}
+      <w:pPr><w:ind w:left="2880" w:right="5400" w:hanging="1440"/></w:pPr></w:lvl>
+  </w:abstractNum>`,
+    )
+    .join("")}
+  ${[0, 1, 2, 3]
+    .map(
+      (id) => `<w:num w:numId="${String(id + 1)}"><w:abstractNumId w:val="${String(id)}"/></w:num>`,
+    )
+    .join("")}
+</w:numbering>`;
+
+// Which of a table style's conditional formats reach a cell, and in what order they
+// stand in front of each other.
+//
+// A `w:tblStylePr` names a place in the table and holds the same `w:pPr` and
+// `w:rPr` a style itself does. Nothing here read them at all, and three of the 718
+// turn on it: one centres the text of its first column and this project drew it
+// left, 27pt out on the shortest of its cells.
+//
+// **Every format asked about here states an indent and nothing else**, and each a
+// different one, so where Word drew a cell's line says which format reached it and
+// which of two reaching it won. An indent is one value and the last writer takes it,
+// so the drawn left names the winner outright. Five points apart over thirteen
+// places, in cells 135pt wide, so nothing is pushed out of its cell and no sum of
+// two could be mistaken for a third.
+export function conditionalTableDocument(): string {
+  const CELL_TWIPS = 2700;
+  const COLUMNS = 4;
+  const ROWS = 5;
+
+  const cell = (content: string): string =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/></w:tcPr>${content}</w:tc>`;
+
+  const line = (name: string): string => paragraph("", run(name));
+
+  // A table's own look decides which of the formats are asked for at all.
+  const look = (attributes: string): string => `<w:tblLook ${attributes}/>`;
+
+  const table = (name: string, styleId: string, lookAttributes: string): string =>
+    `<w:tbl><w:tblPr><w:tblStyle w:val="${styleId}"/>
+      <w:tblW w:w="${String(CELL_TWIPS * COLUMNS)}" w:type="dxa"/>
+      <w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>
+      <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+        <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>
+      ${look(lookAttributes)}</w:tblPr>
+      <w:tblGrid>${Array.from({ length: COLUMNS }, () => `<w:gridCol w:w="${String(CELL_TWIPS)}"/>`).join("")}</w:tblGrid>
+      ${Array.from(
+        { length: ROWS },
+        (_, row) =>
+          `<w:tr>${Array.from({ length: COLUMNS }, (_, column) =>
+            cell(line(`${name}r${String(row + 1)}c${String(column + 1)}`)),
+          ).join("")}</w:tr>`,
+      ).join("")}</w:tbl>`;
+
+  const block = (name: string, styleId: string, lookAttributes: string): string =>
+    paragraph(`<w:pageBreakBefore/>`, run(`case ${name}`)) +
+    table(name, styleId, lookAttributes) +
+    paragraph("", run(`${name} after`));
+
+  const ALL_ON = `w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="0" w:noVBand="0"`;
+
+  return [
+    // Every switch on, so each of the eight places states an indent of its own and
+    // where a line landed says which of them reached it. A corner cell is in four of
+    // them at once, which is what says the order.
+    block("a", "Conditional", ALL_ON),
+    // The same table with every switch off, which is what the rest are read against:
+    // no format may reach anything.
+    block("b", "Conditional", `w:val="0000"`),
+    // The rows and columns on and the banding off, and then the other way round.
+    block(
+      "c",
+      "Conditional",
+      `w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"`,
+    ),
+    block(
+      "d",
+      "Conditional",
+      `w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"`,
+    ),
+    // The switches written only as the hex mask an older file carries, which is
+    // Word's own default: the first row, the first column, and no vertical banding.
+    block("e", "Conditional", `w:val="04A0"`),
+    // Bands two rows and two columns deep, which says where a band starts counting.
+    block("f", "WideBands", ALL_ON),
+    EMPTY,
+  ].join("");
+}
+
+// One indent a place, each 10pt apart, and nothing else stated anywhere: a line's
+// left is then the whole of what the document answers.
+export const CONDITIONAL_STYLES = [
+  {
+    id: "Conditional",
+    rowBand: 1,
+    columnBand: 1,
+  },
+  {
+    id: "WideBands",
+    rowBand: 2,
+    columnBand: 2,
+  },
+]
+  .map(
+    ({ id, rowBand, columnBand }) => `<w:style w:type="table" w:styleId="${id}">
+    <w:name w:val="${id}"/>
+    <w:tblPr><w:tblStyleRowBandSize w:val="${String(rowBand)}"/>
+      <w:tblStyleColBandSize w:val="${String(columnBand)}"/></w:tblPr>
+    ${[
+      ["wholeTable", 0],
+      ["band1Vert", 5],
+      ["band2Vert", 10],
+      ["band1Horz", 15],
+      ["band2Horz", 20],
+      ["firstCol", 25],
+      ["lastCol", 30],
+      ["firstRow", 35],
+      ["lastRow", 40],
+      ["nwCell", 45],
+      ["neCell", 50],
+      ["swCell", 55],
+      ["seCell", 60],
+    ]
+      .map(
+        ([type, indentPt]) =>
+          `<w:tblStylePr w:type="${String(type)}"><w:pPr><w:ind w:left="${String(Number(indentPt) * 20)}"/></w:pPr></w:tblStylePr>`,
+      )
+      .join("")}
+  </w:style>`,
+  )
+  .join("");

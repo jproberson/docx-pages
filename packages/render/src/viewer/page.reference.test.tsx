@@ -68,10 +68,10 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
       it("draws every picture the layout resolved, or marks the ones it cannot", () => {
         const { html, layout } = rendered(each);
         const surrounding = [
-          ...layout.headerFloats,
-          ...layout.footerFloats,
-          ...layout.headerInlines,
-          ...layout.footerInlines,
+          ...(layout.pages[0]?.headerFloats ?? []),
+          ...(layout.pages[0]?.footerFloats ?? []),
+          ...(layout.pages[0]?.headerInlines ?? []),
+          ...(layout.pages[0]?.footerInlines ?? []),
         ];
         const drawn = layout.pages.flatMap((page) => [
           ...surrounding,
@@ -92,7 +92,7 @@ describe.skipIf(CASES.length === 0)("rendering a real document", () => {
       it("paints every shape in the colour the theme resolved for it", () => {
         const { html, layout } = rendered(each);
         const painted = layout.pages.flatMap((page) =>
-          [...layout.headerFloats, ...layout.footerFloats, ...page.floats].flatMap((placed) =>
+          [...page.headerFloats, ...page.footerFloats, ...page.floats].flatMap((placed) =>
             "paint" in placed.content ? [placed.content.paint] : [],
           ),
         );

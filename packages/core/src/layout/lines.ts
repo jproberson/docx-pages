@@ -13,6 +13,7 @@ import {
   type MetricsLookup,
 } from "./font-metrics.js";
 import { nextTabStop, type TabStopPt } from "./tab-stops.js";
+import { roomForTurn } from "./turns.js";
 import { emuToPoints } from "./units.js";
 
 export type MetricsResolver = ((request: FaceRequest) => MetricsLookup) & {
@@ -57,6 +58,13 @@ export type TextLine = {
   // without being measured from a face. This is what a line multiple is taken of,
   // and what a line holding nothing but a drawing is never shorter than.
   readonly fontHeightPt: number;
+  // The line the run holding the break at the end of this one would have made, for
+  // a line with nothing measured on it to be held open by. **Word measures such a
+  // line from that run rather than from the paragraph's mark**, which only the
+  // paragraph's last line answers to: measured on 2026-08-11 by the authored
+  // `empty-line-size` document. Null on a line no break ends, which is where the
+  // mark stands.
+  readonly heldOpenPt: number | null;
 };
 
 export type MeasureFailure =
@@ -121,6 +129,9 @@ export type FlowInput = {
   readonly runs: readonly TextRun[];
   readonly metricsFor: MetricsResolver;
   readonly tabs?: LineTabs;
+  // Whether the paragraph fills its lines out to both edges, which is what lets a
+  // line take a word it has not the room for.
+  readonly justified?: boolean;
 };
 
 export type BreakLinesInput = FlowInput & {
@@ -169,7 +180,13 @@ type Fragment = {
 type Unit =
   | { readonly kind: "word" | "space"; readonly fragments: readonly Fragment[] }
   | { readonly kind: "tab" }
-  | { readonly kind: "break"; readonly endsPage: boolean }
+  | {
+      readonly kind: "break";
+      readonly endsPage: boolean;
+      // The line the break's own run would have made had it held text, which is
+      // what holds open a line the break leaves nothing measured on.
+      readonly heightPt: number;
+    }
   | {
       readonly kind: "drawing";
       readonly widthPt: number;
@@ -360,7 +377,11 @@ function addPiece(
     return true;
   }
   if (piece.kind === "break") {
-    units.push({ kind: "break", endsPage: piece.endsPage });
+    // The break's run is asked for nothing but its line height, which is what a
+    // line the break leaves nothing on is held open by.
+    const heightPt = measurer.lineHeight(mark);
+    if (heightPt === null) return false;
+    units.push({ kind: "break", endsPage: piece.endsPage, heightPt });
     return true;
   }
   if (piece.kind === "drawing") {
@@ -368,12 +389,11 @@ function addPiece(
     // drawing's line is held open by and what a multiple over it is taken of.
     const fontHeightPt = measurer.lineHeight(mark);
     if (fontHeightPt === null) return false;
-    units.push({
-      kind: "drawing",
-      widthPt: emuToPoints(piece.widthEmu),
-      heightPt: emuToPoints(piece.heightEmu),
-      fontHeightPt,
-    });
+    const room = roomForTurn(
+      { widthPt: emuToPoints(piece.widthEmu), heightPt: emuToPoints(piece.heightEmu) },
+      piece.turnDegrees,
+    );
+    units.push({ kind: "drawing", widthPt: room.widthPt, heightPt: room.heightPt, fontHeightPt });
     return true;
   }
 
@@ -464,7 +484,44 @@ class LineBuilder {
     // The line above ended because it filled up, so a gap at the head of this one
     // hangs there rather than opening this one.
     private readonly wrapped: boolean,
+    private readonly justified: boolean,
   ) {}
+
+  // **A justified line takes a word it has not the room for so long as its own
+  // spaces can give up the difference: every space gives up at most a quarter of
+  // itself, and the line at most a third of the advance of the word it is being
+  // asked to take, counting the space in front of it, plus 0.2307 of that advance
+  // over the line's spaces less a half.**
+  //
+  // Measured on 2026-08-10 off Word's own pdf, over 18 sweeps a twip apart: four to
+  // thirty two spaces, three sizes, two faces, and words advancing from 5.6pt to
+  // 43.8pt. The quarter is the bound where the word is a wide one, and Word took
+  // 10.8125pt of a line offering 10.8516 and refused 10.8625. Everywhere else the
+  // word's own advance is the bound, and it is that advance and not the em: a line
+  // in Times New Roman, whose space is a quarter of its em where Calibri's is
+  // 0.2261, stopped at the same fraction of it. The line's width does not enter at
+  // all, a line of `mm` seven times ending in a short word stopping where the same
+  // short word did on a line half as wide. The 0.2307 is bracketed to 0.2299-0.2315
+  // by the eight and sixteen space sweeps, and the third is what the sweeps out to
+  // thirty two spaces settle on.
+  //
+  // The squeeze itself is on the spaces and nowhere else, which Word's own report of
+  // every character of such a line says: the letters advance by what the face makes
+  // them and the spaces come out at 78% of theirs.
+  private squeezePt(fragments: readonly Fragment[]): number {
+    if (!this.justified) return 0;
+    const held = [...this.segments, ...this.pending];
+    const gapsPt = held.reduce(
+      (widthPt, segment) => widthPt + (spaceCountOf(segment) === 0 ? 0 : segment.widthPt),
+      0,
+    );
+    const spaces = held.reduce((count, segment) => count + spaceCountOf(segment), 0);
+    if (spaces === 0) return 0;
+
+    const advancePt =
+      widthOf(fragments) + this.pending.reduce((widthPt, segment) => widthPt + segment.widthPt, 0);
+    return Math.min(gapsPt / 4, advancePt * (1 / 3 + 0.2307 / (spaces - 0.5)));
+  }
 
   // A line reaches as far above the baseline as the highest thing on it and as far
   // below as the deepest, which are not always the same thing: a drawing reaches
@@ -513,6 +570,7 @@ class LineBuilder {
       ascentPt: this.ascentPt,
       seatPt: heightPt - contentPt,
       fontHeightPt: this.fontHeightPt,
+      heldOpenPt: null,
     };
   }
 
@@ -558,7 +616,7 @@ class LineBuilder {
 
   word(fragments: readonly Fragment[], cutting: boolean): Taken {
     const widthPt = widthOf(fragments);
-    if (this.filled + widthPt <= this.room + EPSILON) {
+    if (this.filled + widthPt <= this.room + this.squeezePt(fragments) + EPSILON) {
       this.take(fragments);
       return TAKEN;
     }
@@ -607,16 +665,18 @@ const START: Cursor = {
 
 // The line a break leaves behind it where nothing stood on it. **Every break opens
 // a line under it, and that line stands whether anything is written on it or not**,
-// so this is handed back rather than stepped over. It is measured from the
-// paragraph's own mark, as any other line with nothing on it is.
-const EMPTY_LINE: TextLine = {
+// so this is handed back rather than stepped over. A line a break ends is held open
+// by the run that break stands in; one the paragraph merely ran out on is held open
+// by the paragraph's mark, which is what `heldOpenPt` of null asks for.
+const emptyLine = (heldOpenPt: number | null): TextLine => ({
   segments: [],
   widthPt: 0,
   heightPt: 0,
   ascentPt: 0,
   seatPt: 0,
   fontHeightPt: 0,
-};
+  heldOpenPt,
+});
 
 // One line's worth of units, or nothing left to draw one from. A line held open by
 // nothing but a line break carries no text and takes no room, so the flow steps
@@ -624,6 +684,7 @@ const EMPTY_LINE: TextLine = {
 function buildLine(
   units: readonly Unit[],
   tabs: LineTabs,
+  justified: boolean,
   from: Cursor,
   roomPt: number,
   cutting = true,
@@ -631,27 +692,32 @@ function buildLine(
   let cursor = from;
 
   for (;;) {
-    const built = fillLine(units, tabs, cursor, roomPt, cutting);
+    const built = fillLine(units, tabs, justified, cursor, roomPt, cutting);
     if (built === null) return null;
     if (built.line !== null) {
       return {
         line: built.line,
-        rest: flowFrom(units, tabs, { ...built.cursor, index: cursor.index + 1 }),
+        rest: flowFrom(units, tabs, justified, { ...built.cursor, index: cursor.index + 1 }),
       };
     }
     cursor = built.cursor;
   }
 }
 
-const flowFrom = (units: readonly Unit[], tabs: LineTabs, cursor: Cursor): LineFlow => ({
+const flowFrom = (
+  units: readonly Unit[],
+  tabs: LineTabs,
+  justified: boolean,
+  cursor: Cursor,
+): LineFlow => ({
   // Room below nothing is the same as none. A paragraph can ask for indents wider
   // than the frame it stands in, which a real document does inside a narrow cell,
   // and the width left over is then negative. Given that, the builder took nothing
   // and the cursor never moved, so `buildLine` asked again for ever: a document out
   // of the wild hung the layout outright. Nothing here decides what such a
   // paragraph should look like, only that it is measured at all.
-  next: (roomPt) => buildLine(units, tabs, cursor, Math.max(0, roomPt)),
-  leastPt: leastRoomPt(units, tabs, cursor),
+  next: (roomPt) => buildLine(units, tabs, justified, cursor, Math.max(0, roomPt)),
+  leastPt: leastRoomPt(units, tabs, justified, cursor),
   startsPage: cursor.startsPage,
 });
 
@@ -659,8 +725,13 @@ const flowFrom = (units: readonly Unit[], tabs: LineTabs, cursor: Cursor): LineF
 // to cut a word in two: it runs to the first place a break is legal, and how far
 // that reaches is what any run of space has to hold. A word is unbreakable, a tab
 // holds the line open to the stop it reached, and a gap hangs past the edge.
-function leastRoomPt(units: readonly Unit[], tabs: LineTabs, cursor: Cursor): number {
-  return buildLine(units, tabs, cursor, 0, false)?.line.widthPt ?? 0;
+function leastRoomPt(
+  units: readonly Unit[],
+  tabs: LineTabs,
+  justified: boolean,
+  cursor: Cursor,
+): number {
+  return buildLine(units, tabs, justified, cursor, 0, false)?.line.widthPt ?? 0;
 }
 
 type Filled = { readonly line: TextLine | null; readonly cursor: Cursor };
@@ -668,11 +739,12 @@ type Filled = { readonly line: TextLine | null; readonly cursor: Cursor };
 function fillLine(
   units: readonly Unit[],
   tabs: LineTabs,
+  justified: boolean,
   cursor: Cursor,
   roomPt: number,
   cutting: boolean,
 ): Filled | null {
-  const builder = new LineBuilder(roomPt, tabs, cursor.index, cursor.wrapped);
+  const builder = new LineBuilder(roomPt, tabs, cursor.index, cursor.wrapped, justified);
   let at = cursor.at;
 
   if (cursor.rest !== null) {
@@ -704,7 +776,7 @@ function fillLine(
     if (unit.kind === "break") {
       const line = builder.finish();
       return {
-        line: line ?? EMPTY_LINE,
+        line: line === null ? emptyLine(unit.heightPt) : { ...line, heldOpenPt: unit.heightPt },
         cursor: {
           at,
           rest: null,
@@ -746,7 +818,7 @@ function fillLine(
   // Nothing left to write, and a break that opened a line for it: the line is
   // handed back empty, which is what makes a paragraph ending in a break one line
   // taller than its text.
-  if (line === null) return cursor.opened ? { line: EMPTY_LINE, cursor: spent } : null;
+  if (line === null) return cursor.opened ? { line: emptyLine(null), cursor: spent } : null;
   return { line, cursor: spent };
 }
 
@@ -861,10 +933,15 @@ function splitFragment(
 // none, since it holds the stop it reached; a no-break space takes none either,
 // being part of the word around it rather than a gap between words; and a space
 // the line ended on has already hung past the edge and is not on the line at all.
+//
+// The share is negative where the line took a word it had not the room for, and the
+// spaces give it back: measured over every character of such a line, they come out
+// at 78% of the width the face makes them and the letters at the width they always
+// were.
 export function justifyLine(line: TextLine, roomPt: number): TextLine {
   const slackPt = roomPt - line.widthPt;
   const spaces = line.segments.reduce((count, segment) => count + spaceCountOf(segment), 0);
-  if (slackPt <= EPSILON || spaces === 0) return line;
+  if (Math.abs(slackPt) <= EPSILON || spaces === 0) return line;
 
   const sharePt = slackPt / spaces;
   let shiftPt = 0;
@@ -922,7 +999,7 @@ export function beginLines(input: FlowInput): LineFlowStart {
   }
 
   const tabs = input.tabs ?? NO_TABS;
-  return { kind: "flow", flow: flowFrom(tokens.value, tabs, START) };
+  return { kind: "flow", flow: flowFrom(tokens.value, tabs, input.justified === true, START) };
 }
 
 // Every line of a paragraph at one width, which is what a stack with nothing

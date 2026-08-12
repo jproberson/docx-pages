@@ -1,11 +1,13 @@
+import type { DrawingFlip } from "../docx/drawing.js";
 import type { LaidOutDocument, LaidOutPage } from "./document.js";
 import type { PlacedContent, PlacedFloat } from "./floats.js";
 import type { PlacedInline } from "./inlines.js";
-import type { ClipRect, ParagraphBox, ParagraphPaint, PlacedCell } from "./stack.js";
+import type { ParagraphBox, ParagraphPaint, PlacedCell } from "./stack.js";
+import { turnedAbout } from "./turns.js";
 
 // What a page draws and the order it draws it in, as one flat list. Layout says
 // where everything sits; this says which of it is painted over which, which is
-// the same question whatever the drawing is done with. Both backends walk this,
+// the same question whatever the drawing is done with. Every backend walks this,
 // so a rule about stacking is settled here once rather than answered twice.
 
 // A paragraph's own fill and border, with the room its lines took: how far up and
@@ -26,6 +28,12 @@ export type Drawable =
       readonly topPt: number;
       readonly widthPt: number;
       readonly heightPt: number;
+      // Which way round the shape was turned, which a connector inside a group
+      // states and decides which corners its line runs between.
+      readonly flip: DrawingFlip;
+      // How far clockwise the shape is turned about the middle of the box above,
+      // which is the box it stands in before it is turned.
+      readonly turnDegrees: number;
     }
   | {
       readonly kind: "text";
@@ -33,7 +41,10 @@ export type Drawable =
       readonly boxes: readonly ParagraphBox[];
       // The rectangle the text is cut to, which a shape's own text has and the
       // text a story flowed down the page does not.
-      readonly clipTo: ClipRect | null;
+      readonly clipTo: Rect | null;
+      // A shape's text is turned with the shape, about the middle of that same
+      // rectangle. Text a story flowed down the page is never turned.
+      readonly turnDegrees: number;
     }
   // Everything drawn behind the text of a story: the cells of its tables and the
   // fills and borders its paragraphs ask for. One layer holds them all, since they
@@ -45,27 +56,105 @@ export type Drawable =
       readonly paragraphs: readonly PaintedParagraph[];
     };
 
-const fromFloat = (float: PlacedFloat, key: string): Drawable => ({
-  kind: "object",
-  key,
-  name: float.anchor.name,
-  content: float.content,
-  leftPt: float.leftPt,
-  topPt: float.topPt,
-  widthPt: float.widthPt,
-  heightPt: float.heightPt,
-});
+export type Rect = {
+  readonly leftPt: number;
+  readonly topPt: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+};
 
-const fromInline = (inline: PlacedInline, key: string): Drawable => ({
-  kind: "object",
-  key,
-  name: inline.drawing.name,
-  content: inline.content,
-  leftPt: inline.leftPt,
-  topPt: inline.topPt,
-  widthPt: inline.widthPt,
-  heightPt: inline.heightPt,
-});
+// An object standing somewhere, before it is known whether it is one thing to
+// draw or a group of them.
+type Standing = {
+  readonly name: string;
+  readonly content: PlacedContent;
+  readonly leftPt: number;
+  readonly topPt: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+  readonly flip: DrawingFlip;
+  readonly turnDegrees: number;
+};
+
+const UNFLIPPED: DrawingFlip = { horizontal: false, vertical: false };
+
+/**
+ * What a painter walks for one object, which for a group is one item per shape
+ * inside it and for a group inside a group is that again.
+ *
+ * **A group is flattened here and nowhere else.** Each child keeps the fraction of
+ * its group's box it stands in, so multiplying that by the room the flow gave the
+ * group is the whole of the arithmetic, and it is the same arithmetic at every
+ * depth. A renderer therefore never learns that a group exists.
+ */
+function objectsOf(standing: Standing, key: string): readonly Drawable[] {
+  const { content } = standing;
+  if (content.kind === "group") {
+    // A group turned as a whole carries its children round with it, so each one is
+    // swung about the group's middle and turned that much further itself.
+    const middle = {
+      xPt: standing.leftPt + standing.widthPt / 2,
+      yPt: standing.topPt + standing.heightPt / 2,
+    };
+    return content.children.flatMap((child, at) => {
+      const widthPt = child.widthFraction * standing.widthPt;
+      const heightPt = child.heightFraction * standing.heightPt;
+      const stands = turnedAbout(
+        {
+          xPt: standing.leftPt + child.leftFraction * standing.widthPt + widthPt / 2,
+          yPt: standing.topPt + child.topFraction * standing.heightPt + heightPt / 2,
+        },
+        middle,
+        standing.turnDegrees,
+      );
+      return objectsOf(
+        {
+          name: standing.name,
+          content: child.content,
+          leftPt: stands.xPt - widthPt / 2,
+          topPt: stands.yPt - heightPt / 2,
+          widthPt,
+          heightPt,
+          flip: child.flip,
+          turnDegrees: standing.turnDegrees + child.turnDegrees,
+        },
+        `${key}-${String(at)}`,
+      );
+    });
+  }
+
+  return [{ kind: "object", key, ...standing }, ...textOf(standing, key)];
+}
+
+const fromFloat = (float: PlacedFloat, key: string): readonly Drawable[] =>
+  objectsOf(
+    {
+      name: float.anchor.name,
+      content: float.content,
+      leftPt: float.leftPt,
+      topPt: float.topPt,
+      widthPt: float.widthPt,
+      heightPt: float.heightPt,
+      flip: UNFLIPPED,
+      turnDegrees: float.turnDegrees,
+    },
+    key,
+  );
+
+const fromInline = (inline: PlacedInline, key: string): readonly Drawable[] =>
+  objectsOf(
+    {
+      name: inline.drawing.name,
+      content: inline.content,
+      leftPt: inline.leftPt,
+      topPt: inline.topPt,
+      widthPt: inline.widthPt,
+      heightPt: inline.heightPt,
+      flip: UNFLIPPED,
+      turnDegrees: inline.turnDegrees,
+    },
+    key,
+  );
 
 const hasText = (boxes: readonly ParagraphBox[]): boolean =>
   boxes.some((box) => box.lines.length > 0);
@@ -77,21 +166,24 @@ const hasText = (boxes: readonly ParagraphBox[]): boolean =>
 // grown to hold all of it and loses nothing, but one that was not keeps the size
 // it was stored at and shows only as much as fits: the rest is not moved
 // anywhere, it is simply not drawn.
-function textOf(float: PlacedFloat, key: string): readonly Drawable[] {
-  const { content } = float;
+function textOf(standing: Standing, key: string): readonly Drawable[] {
+  const { content } = standing;
   if (content.kind !== "text-box" || content.text === null) return [];
 
   const clipTo = {
-    leftPt: float.leftPt,
-    topPt: float.topPt,
-    widthPt: float.widthPt,
-    heightPt: float.heightPt,
+    leftPt: standing.leftPt,
+    topPt: standing.topPt,
+    widthPt: standing.widthPt,
+    heightPt: standing.heightPt,
   };
   const { boxes, cells } = content.text;
   const painted = paintLayer(cells, boxes, `${key}-paint`);
+  const turnDegrees = standing.turnDegrees;
   return [
     ...painted,
-    ...(hasText(boxes) ? [{ kind: "text" as const, key: `${key}-text`, boxes, clipTo }] : []),
+    ...(hasText(boxes)
+      ? [{ kind: "text" as const, key: `${key}-text`, boxes, clipTo, turnDegrees }]
+      : []),
   ];
 }
 
@@ -119,13 +211,15 @@ function stacked(floats: readonly PlacedFloat[], prefix: string): readonly Drawa
   return floats
     .map((float, at) => ({ float, key: `${prefix}-${String(at)}` }))
     .sort((one, other) => one.float.anchor.relativeHeight - other.float.anchor.relativeHeight)
-    .flatMap(({ float, key }) => [fromFloat(float, key), ...textOf(float, key)]);
+    .flatMap(({ float, key }) => fromFloat(float, key));
 }
 
 // The text a story flowed down the page, which nothing cuts off.
 function flowedText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
   const uncut = boxes.filter((box) => box.clipTo === null);
-  return hasText(uncut) ? [{ kind: "text", key: "flowed-text", boxes: uncut, clipTo: null }] : [];
+  return hasText(uncut)
+    ? [{ kind: "text", key: "flowed-text", boxes: uncut, clipTo: null, turnDegrees: 0 }]
+    : [];
 }
 
 // A paragraph in a row told exactly how tall to be is drawn in a layer that is
@@ -135,7 +229,15 @@ function cutText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
   return boxes.flatMap((box, at) => {
     const clipTo = box.clipTo;
     if (clipTo === null || !hasText([box])) return [];
-    return [{ kind: "text" as const, key: `cut-text-${String(at)}`, boxes: [box], clipTo }];
+    return [
+      {
+        kind: "text" as const,
+        key: `cut-text-${String(at)}`,
+        boxes: [box],
+        clipTo,
+        turnDegrees: 0,
+      },
+    ];
   });
 }
 
@@ -156,16 +258,16 @@ function paintedParagraphs(boxes: readonly ParagraphBox[]): readonly PaintedPara
 }
 
 export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonly Drawable[] {
-  const inlines = [...layout.headerInlines, ...page.inlines, ...layout.footerInlines].map(
+  const inlines = [...page.headerInlines, ...page.inlines, ...page.footerInlines].flatMap(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
   );
 
-  const flowed = [...layout.header, ...page.body, ...layout.footer];
+  const flowed = [...page.header, ...page.body, ...page.footer];
   const text = [...flowedText(flowed), ...cutText(flowed)];
-  const cells = [...layout.headerCells, ...page.cells, ...layout.footerCells];
+  const cells = [...page.headerCells, ...page.cells, ...page.footerCells];
 
   return [
-    ...stacked([...layout.headerFloats, ...layout.footerFloats], "story"),
+    ...stacked([...page.headerFloats, ...page.footerFloats], "story"),
     ...paintLayer(cells, flowed, "paint"),
     ...text,
     ...inlines,

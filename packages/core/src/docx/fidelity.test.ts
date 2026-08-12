@@ -179,13 +179,60 @@ describe("readUnhonoured", () => {
   });
 
   it("reads the styles and the settings as well as the flow", () => {
+    // A conditional format holding a `w:pPr` alone is read now, so the one this
+    // asks about shades a cell, which is not.
     const styles = `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
-      <w:style w:type="table" w:styleId="Grid"><w:tblStylePr w:type="firstRow"/></w:style></w:styles>`;
+      <w:style w:type="table" w:styleId="Grid"><w:tblStylePr w:type="firstRow">
+        <w:tcPr><w:shd w:val="clear" w:fill="FF0000"/></w:tcPr></w:tblStylePr></w:style></w:styles>`;
     const settings = `<?xml version="1.0"?><w:settings xmlns:w="${WORDPROCESSING_NS}">
       <w:autoHyphenation/></w:settings>`;
+    const table = `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>
+      <w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>`;
     expect(
-      kinds(reportOf(`<w:p/>`, { "word/styles.xml": styles, "word/settings.xml": settings })),
+      kinds(reportOf(table, { "word/styles.xml": styles, "word/settings.xml": settings })),
     ).toStrictEqual(["automatic-hyphenation", "table-style-conditional-formatting"]);
+  });
+
+  // What a conditional format says about a paragraph or a run is read, so a format
+  // stating only those asks for nothing it does not get.
+  it("passes over a conditional format it reads the whole of", () => {
+    const styles = `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
+      <w:style w:type="table" w:styleId="Grid"><w:tblStylePr w:type="firstRow">
+        <w:pPr><w:jc w:val="center"/></w:pPr></w:tblStylePr></w:style></w:styles>`;
+    const table = `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>
+      <w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>`;
+    expect(kinds(reportOf(table, { "word/styles.xml": styles }))).toStrictEqual([]);
+  });
+
+  // 481 of the 718 corpus documents state `w:kern` on a style alone, and the row
+  // that led the ranking for days was counting every one of them.
+  it("passes over a style nothing in the flow is written in", () => {
+    const styles = (used: string) => `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
+      <w:style w:type="paragraph" w:styleId="${used}"><w:rPr><w:kern w:val="16"/></w:rPr></w:style>
+      </w:styles>`;
+    expect(kinds(reportOf(`<w:p/>`, { "word/styles.xml": styles("Body") }))).toStrictEqual([]);
+    expect(
+      kinds(
+        reportOf(`<w:p><w:pPr><w:pStyle w:val="Body"/></w:pPr></w:p>`, {
+          "word/styles.xml": styles("Body"),
+        }),
+      ),
+    ).toStrictEqual(["character-kerning"]);
+  });
+
+  it("reads the style a paragraph's own style is based on, and the default one", () => {
+    const styles = `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
+      <w:style w:type="paragraph" w:styleId="Base"><w:rPr><w:kern w:val="16"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Body"><w:basedOn w:val="Base"/></w:style>
+      <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:rPr><w:caps/></w:rPr></w:style>
+      </w:styles>`;
+    expect(
+      kinds(
+        reportOf(`<w:p><w:pPr><w:pStyle w:val="Body"/></w:pPr></w:p>`, {
+          "word/styles.xml": styles,
+        }),
+      ),
+    ).toStrictEqual(["capitals", "character-kerning"]);
   });
 
   it("gathers every place a kind was met into the one entry", () => {

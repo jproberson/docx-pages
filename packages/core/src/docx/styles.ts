@@ -114,6 +114,13 @@ type PartialNumbering = {
   readonly ilvl: number | undefined;
 };
 
+// What a table style says about a cell standing in one of the places it names.
+// Word writes each as a `w:tblStylePr` under the style, and the type is the place.
+type ConditionalFormat = {
+  readonly mark: PartialMark;
+  readonly frame: PartialFrame;
+};
+
 type StyleDefinition = {
   readonly id: string;
   readonly basedOn: string | undefined;
@@ -121,6 +128,13 @@ type StyleDefinition = {
   readonly frame: PartialFrame;
   readonly numbering: PartialNumbering;
   readonly tableBorders: TableBorders;
+  // Empty for everything that is not a table style, and for a table style that
+  // formats every cell alike.
+  readonly conditional: ReadonlyMap<string, ConditionalFormat>;
+  // How many rows and columns a band is, which a table style states and a table
+  // may state again over it.
+  readonly rowBandSize: number | undefined;
+  readonly columnBandSize: number | undefined;
 };
 
 export type StyleTable = {
@@ -452,6 +466,9 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       frame: readFrame(style),
       numbering: readNumbering(style),
       tableBorders: readTableBorders(firstNamed(style, W_NS, "tblPr")),
+      conditional: readConditionalFormats(style, themeFonts),
+      rowBandSize: bandSizeOf(style, "tblStyleRowBandSize"),
+      columnBandSize: bandSizeOf(style, "tblStyleColBandSize"),
     });
     const isParagraph = (attribute(style, W_NS, "type") ?? "paragraph") === "paragraph";
     if (isParagraph && attribute(style, W_NS, "default") === "1") defaultParagraphStyleId = id;
@@ -480,21 +497,166 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
 // after a paragraph and single line spacing, `docDefaults` for 8pt and 1.08, and
 // leaving the table style out made every row 23.0pt tall against the 13.9pt Word
 // drew. The error accumulates down the page, so nothing below the first row lands.
-const framesOver = (table: StyleTable, tableStyleId: string | null): PartialFrame => {
+// Where a cell stands in its table, which is what decides which of the table
+// style's conditional formats reach the paragraphs inside it. A cell in no table
+// stands nowhere.
+export type CellPosition = {
+  readonly firstRow: boolean;
+  readonly lastRow: boolean;
+  readonly firstColumn: boolean;
+  readonly lastColumn: boolean;
+  // Which band the cell's row and its column fall in, or null where the table asks
+  // for no banding on that axis.
+  readonly rowBand: 1 | 2 | null;
+  readonly columnBand: 1 | 2 | null;
+};
+
+export type InTable = {
+  readonly styleId: string | null;
+  // Null for a paragraph that reads the table's style without standing in a cell of
+  // it, which is what asking about the table itself does.
+  readonly at: CellPosition | null;
+};
+
+// **The order the conditional formats are applied in, each standing in front of the
+// one before it**: the bands, then the edges, then the corners.
+//
+// Measured on 2026-08-10 by the authored `conditional-table` document, where each of
+// the thirteen places states an indent of its own five points from its neighbours',
+// so the left Word drew a cell's line at names the format that won it outright. A
+// table with every switch on drew its interior at the **vertical** band's indent
+// wherever both bands reached it, its first and last columns at those columns'
+// indents over any band, its first and last rows at those rows' over the columns',
+// and each of its four corners at that corner's over all of them.
+//
+// **A vertical band beats a horizontal one**, which is the way round nothing would
+// guess: the interior of the five by four table came out at 5pt and 10pt, the two
+// vertical bands, and never at the 15 or 20 the horizontal ones asked for.
+const CONDITIONAL_ORDER = [
+  "wholeTable",
+  "band1Horz",
+  "band2Horz",
+  "band1Vert",
+  "band2Vert",
+  "firstCol",
+  "lastCol",
+  "firstRow",
+  "lastRow",
+  "nwCell",
+  "neCell",
+  "swCell",
+  "seCell",
+] as const;
+
+function reaches(type: (typeof CONDITIONAL_ORDER)[number], at: CellPosition): boolean {
+  switch (type) {
+    case "wholeTable":
+      return true;
+    case "band1Vert":
+      return at.columnBand === 1;
+    case "band2Vert":
+      return at.columnBand === 2;
+    case "band1Horz":
+      return at.rowBand === 1;
+    case "band2Horz":
+      return at.rowBand === 2;
+    case "firstCol":
+      return at.firstColumn;
+    case "lastCol":
+      return at.lastColumn;
+    case "firstRow":
+      return at.firstRow;
+    case "lastRow":
+      return at.lastRow;
+    case "nwCell":
+      return at.firstRow && at.firstColumn;
+    case "neCell":
+      return at.firstRow && at.lastColumn;
+    case "swCell":
+      return at.lastRow && at.firstColumn;
+    case "seCell":
+      return at.lastRow && at.lastColumn;
+  }
+}
+
+const conditionalFormats = (
+  table: StyleTable,
+  inTable: InTable | null,
+): readonly ConditionalFormat[] => {
+  const at = inTable?.at;
+  if (at === null || at === undefined) return [];
+  const found: ConditionalFormat[] = [];
+  for (const style of styleChain(table, inTable?.styleId ?? undefined))
+    for (const type of CONDITIONAL_ORDER) {
+      const format = style.conditional.get(type);
+      if (format !== undefined && reaches(type, at)) found.push(format);
+    }
+  return found;
+};
+
+const framesOver = (table: StyleTable, inTable: InTable | null): PartialFrame => {
   let resolved = table.docDefaultsFrame;
-  for (const style of styleChain(table, tableStyleId ?? undefined)) {
+  for (const style of styleChain(table, inTable?.styleId ?? undefined)) {
     resolved = mergeFrames(resolved, style.frame);
+  }
+  for (const format of conditionalFormats(table, inTable)) {
+    resolved = mergeFrames(resolved, format.frame);
   }
   return resolved;
 };
 
-const marksOver = (table: StyleTable, tableStyleId: string | null): PartialMark => {
+const marksOver = (table: StyleTable, inTable: InTable | null): PartialMark => {
   let resolved = table.docDefaults;
-  for (const style of styleChain(table, tableStyleId ?? undefined)) {
+  for (const style of styleChain(table, inTable?.styleId ?? undefined)) {
     resolved = merge(resolved, style.mark);
+  }
+  for (const format of conditionalFormats(table, inTable)) {
+    resolved = merge(resolved, format.mark);
   }
   return resolved;
 };
+
+// **A band's depth is the table style's business and not the table's**, which is
+// where Word writes it and where the authored document's two styles differ: reading
+// it off the table alone put every column of the wide-banded case in the band next
+// to the one Word drew it in.
+function bandSizeOf(style: XmlElement, name: string): number | undefined {
+  const properties = firstNamed(style, W_NS, "tblPr");
+  const held = properties === null ? null : firstNamed(properties, W_NS, name);
+  const value = held === null ? Number.NaN : Number(attribute(held, W_NS, "val") ?? Number.NaN);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : undefined;
+}
+
+// The depths a table written in this style bands at, which the table itself may
+// state again over them.
+export function resolveBandSizes(
+  table: StyleTable,
+  styleId: string | null,
+): { readonly rowBandSize: number | undefined; readonly columnBandSize: number | undefined } {
+  let rowBandSize: number | undefined;
+  let columnBandSize: number | undefined;
+  for (const style of styleChain(table, styleId ?? undefined)) {
+    rowBandSize = style.rowBandSize ?? rowBandSize;
+    columnBandSize = style.columnBandSize ?? columnBandSize;
+  }
+  return { rowBandSize, columnBandSize };
+}
+
+// A `w:tblStylePr` holds the same `w:pPr` and `w:rPr` a style itself does, under a
+// `w:type` naming where it applies.
+function readConditionalFormats(
+  style: XmlElement,
+  themeFonts: ReadonlyMap<string, string>,
+): ReadonlyMap<string, ConditionalFormat> {
+  const formats = new Map<string, ConditionalFormat>();
+  for (const child of style.children) {
+    if (child.namespace !== W_NS || child.name !== "tblStylePr") continue;
+    const type = attribute(child, W_NS, "type");
+    if (type === undefined) continue;
+    formats.set(type, { mark: readMark(child, themeFonts), frame: readFrame(child) });
+  }
+  return formats;
+}
 
 function styleChain(table: StyleTable, styleId: string | undefined): readonly StyleDefinition[] {
   const chain: StyleDefinition[] = [];
@@ -564,9 +726,9 @@ function markOf(resolved: PartialMark): ParagraphMark {
 function paragraphMarkOf(
   paragraph: Paragraph,
   table: StyleTable,
-  tableStyleId: string | null,
+  inTable: InTable | null,
 ): PartialMark {
-  let resolved = marksOver(table, tableStyleId);
+  let resolved = marksOver(table, inTable);
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = merge(resolved, style.mark);
   }
@@ -576,8 +738,8 @@ function paragraphMarkOf(
 export const resolveParagraphMark = (
   paragraph: Paragraph,
   table: StyleTable,
-  tableStyleId: string | null = null,
-): ParagraphMark => markOf(paragraphMarkOf(paragraph, table, tableStyleId));
+  inTable: InTable | null = null,
+): ParagraphMark => markOf(paragraphMarkOf(paragraph, table, inTable));
 
 // The number is drawn in the paragraph's own mark except where its level says
 // otherwise, which is how a bullet ends up in a symbol face at the text's size.
@@ -610,9 +772,9 @@ export const resolveRunMarks = (
 export function resolveRuns(
   paragraph: Paragraph,
   table: StyleTable,
-  tableStyleId: string | null = null,
+  inTable: InTable | null = null,
 ): readonly MarkedRun[] {
-  let inherited = marksOver(table, tableStyleId);
+  let inherited = marksOver(table, inTable);
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     inherited = merge(inherited, style.mark);
   }
@@ -730,9 +892,9 @@ export function styleIdOf(paragraph: Paragraph, table: StyleTable): string | und
 export function resolveParagraphFrame(
   paragraph: Paragraph,
   table: StyleTable,
-  tableStyleId: string | null = null,
+  inTable: InTable | null = null,
 ): ParagraphFrame {
-  let resolved = framesOver(table, tableStyleId);
+  let resolved = framesOver(table, inTable);
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = mergeFrames(resolved, style.frame);
   }

@@ -57,6 +57,7 @@ describe("readReferenceManifest", () => {
       renderedPageIndexes: null,
       picturesWordDrewWithoutAnImage: 0,
       imagesWordDrewOutsideAPicture: 0,
+      picturesWordDrewInPieces: false,
       textLinesMatched: null,
       textLinesPlaced: null,
       textRunsMatched: null,

@@ -1,6 +1,6 @@
 import { blockParagraphs, blocksIn } from "./blocks.js";
 import { drawnAsStated } from "./borders.js";
-import { readDrawingContent } from "./drawing.js";
+import { readDrawingContent, type DrawingContent } from "./drawing.js";
 import { WP_NS } from "./inlines.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { drawablePicture } from "./pictures.js";
@@ -58,6 +58,7 @@ export type UnhonouredKind =
   | "highlighting"
   | "page-background"
   | "unknown-drawing"
+  | "custom-geometry"
   | "undrawable-picture"
   | "approximated-border"
   | "alternate-first-or-even-page"
@@ -66,15 +67,21 @@ export type UnhonouredKind =
   | "missing-glyph";
 
 const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
-  // The header and the footer are read from the last section alone, so a document
-  // that changes page size or margins part way through draws them at the wrong
-  // height on every page the last section did not make.
+  // A page draws its own section's header and footer and hangs them where its own
+  // section keeps them; how wide they are is still the document's answer, so a
+  // section keeping a different left or right margin wraps its header at the wrong
+  // width.
   "more-than-one-section": "moves-text",
   "text-columns": "moves-text",
-  // A cell spanning its neighbours is laid out at its own width, and the cells
-  // beside it resolve their borders against the wrong neighbour.
+  // Where a span and a merge put their text is built (see `planCells`), and what is
+  // left is the lines round them: borders are settled by a cell's place in its row
+  // rather than by the grid column it stands on, so a cell beside a span agrees with
+  // the wrong neighbour, and the room half a line takes moves the text with it.
   "merged-cells": "moves-text",
-  "table-style-conditional-formatting": "changes-paint",
+  // What such a format says about a paragraph or a run is read; what it says about a
+  // cell, a row or the table is not, so a first row shaded by its style comes out
+  // unshaded and one lined by its style moves the text under it.
+  "table-style-conditional-formatting": "moves-text",
   "keep-lines-together": "moves-text",
   "character-kerning": "moves-text",
   capitals: "moves-text",
@@ -92,6 +99,10 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A drawing that is neither a picture nor a shape, a chart being the one met so
   // far: its room is held and nothing is drawn in it.
   "unknown-drawing": "changes-paint",
+  // A shape whose outline the file draws point by point, which nothing here plays.
+  // Its room is held and nothing is drawn in it; the box it fits in is not a
+  // fallback, since a path that rules a page fits a box the size of the page.
+  "custom-geometry": "changes-paint",
   // A picture in a format nothing here decodes, WMF being what Word writes beside
   // the metafile this project plays: its room is held and it is marked rather than
   // drawn.
@@ -131,6 +142,14 @@ const numbered = (element: XmlElement): number => {
 // passed over, so nothing is said about one.
 type PartResolver = (relationshipId: string) => string | null;
 
+// Whether anything in a drawing, at any depth of a group, is drawn by a path
+// rather than by a preset this project knows.
+function drawsACustomPath(content: DrawingContent): boolean {
+  if (content.kind === "group")
+    return content.children.some((each) => drawsACustomPath(each.content));
+  return content.kind !== "unknown" && content.paint.geometry === "custom";
+}
+
 // What an element says about itself, where what it says is something this project
 // passes over. A name alone is not enough: `w:caps` is written both ways round,
 // and a document that turns a feature off is asking for what it already gets.
@@ -146,6 +165,7 @@ function unhonouredBy(
   if (element.namespace === WP_NS && (element.name === "anchor" || element.name === "inline")) {
     const content = readDrawingContent(element);
     if (content.kind === "unknown") return "unknown-drawing";
+    if (drawsACustomPath(content)) return "custom-geometry";
     if (content.kind !== "picture") return null;
     const held = resolvePart(content.relationshipId);
     return held === null || drawablePicture(held) ? null : "undrawable-picture";
@@ -157,7 +177,7 @@ function unhonouredBy(
     case "vMerge":
       return "merged-cells";
     case "tblStylePr":
-      return "table-style-conditional-formatting";
+      return conditionalFormattingUnread(element);
     case "keepLines":
       return toggled(element) ? "keep-lines-together" : null;
     case "kern":
@@ -234,6 +254,20 @@ function drawnBefore(element: XmlElement, paragraph: XmlElement | null): boolean
   return seen;
 }
 
+// **What a table style says about one place in the table is read for the paragraphs
+// and the runs standing there and for nothing else.** A `w:tblStylePr` holding a
+// `w:pPr` or a `w:rPr` alone is honoured (see `CONDITIONAL_ORDER`); one that also
+// states a `w:tcPr`, a `w:trPr` or a `w:tblPr` is asking for shading, a row height
+// or a border this project still settles from the table's own properties.
+const READ_IN_A_CONDITIONAL_FORMAT = new Set(["pPr", "rPr"]);
+
+function conditionalFormattingUnread(element: XmlElement): UnhonouredKind | null {
+  for (const child of element.children)
+    if (child.namespace === W_NS && !READ_IN_A_CONDITIONAL_FORMAT.has(child.name))
+      return "table-style-conditional-formatting";
+  return null;
+}
+
 // A border names its pattern in `w:val`, and only inside one of the elements that
 // hold borders: `w:top` means something else entirely in a cell's margins.
 function borderPattern(element: XmlElement, parent: XmlElement | null): UnhonouredKind | null {
@@ -273,11 +307,25 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
   }
 
   // A style's conditional formats and the settings' own switches belong to no part
-  // of the flow, so they are read where they are written.
-  for (const part of [STYLES_PART, SETTINGS_PART]) {
-    if (!pkg.parts.has(part)) continue;
-    walk(partXml(pkg, part), null, {
-      part,
+  // of the flow, so they are read where they are written. Only the styles the flow
+  // reaches are read: see `stylesTheFlowReaches`.
+  if (pkg.parts.has(STYLES_PART)) {
+    const styles = partXml(pkg, STYLES_PART);
+    const reached = stylesTheFlowReaches(pkg, styles, parts);
+    for (const child of styles.children) {
+      if (child.namespace === W_NS && child.name === "style" && !reached.has(child)) continue;
+      walk(child, null, {
+        part: STYLES_PART,
+        paragraphs: new Map(),
+        found,
+        resolvePart: () => null,
+      });
+    }
+  }
+
+  if (pkg.parts.has(SETTINGS_PART)) {
+    walk(partXml(pkg, SETTINGS_PART), null, {
+      part: SETTINGS_PART,
       paragraphs: new Map(),
       found,
       resolvePart: () => null,
@@ -285,6 +333,73 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
   }
 
   return gathered(found);
+}
+
+// The styles some paragraph, run or table in the flow actually resolves to, with
+// everything each of them is based on.
+//
+// **A style nothing is written in is not something the document asked for.** Reading
+// every `w:style` in the part said 509 of the 718 corpus documents wanted kerning
+// where 44 state `w:kern` in their own flow and 38 more on the defaults every
+// paragraph inherits; the other 481 carry it on a named style, and the ranking that
+// number led was pointing at nothing. `keep-with-next` was rank 1 on the same
+// mistake, at 707 documents against the 44 that have a paragraph resolving to it.
+//
+// `w:docDefaults` is not a style and is always read: what it states, every paragraph
+// in the document gets.
+function stylesTheFlowReaches(
+  pkg: DocxPackage,
+  styles: XmlElement,
+  parts: readonly string[],
+): ReadonlySet<XmlElement> {
+  const byId = new Map<string, XmlElement>();
+  const wanted = new Set<string>();
+
+  for (const style of styles.children) {
+    if (style.namespace !== W_NS || style.name !== "style") continue;
+    const id = attribute(style, W_NS, "styleId");
+    if (id === undefined) continue;
+    byId.set(id, style);
+    // A paragraph naming no style of its own is written in the default one, and so
+    // is a run and a table.
+    if (attribute(style, W_NS, "default") === "1") wanted.add(id);
+  }
+
+  const NAMES = new Set(["pStyle", "rStyle", "tblStyle"]);
+  const gather = (node: XmlElement): void => {
+    for (const child of node.children) {
+      if (child.namespace === W_NS && NAMES.has(child.name)) {
+        const id = attribute(child, W_NS, "val");
+        if (id !== undefined) wanted.add(id);
+      }
+      gather(child);
+    }
+  };
+  for (const part of parts) gather(partXml(pkg, part));
+
+  const reached = new Set<XmlElement>();
+  for (const id of wanted) {
+    let at: string | undefined = id;
+    // A cycle in `w:basedOn` is a broken package rather than a feature passed over,
+    // and walking one is what would hang here.
+    const walked = new Set<string>();
+    while (at !== undefined && !walked.has(at)) {
+      walked.add(at);
+      const style = byId.get(at);
+      if (style === undefined) break;
+      reached.add(style);
+      const basedOn = basedOnOf(style);
+      at = basedOn === null ? undefined : (attribute(basedOn, W_NS, "val") ?? undefined);
+    }
+  }
+
+  return reached;
+}
+
+function basedOnOf(style: XmlElement): XmlElement | null {
+  for (const child of style.children)
+    if (child.namespace === W_NS && child.name === "basedOn") return child;
+  return null;
 }
 
 const STYLES_PART = "word/styles.xml";
@@ -325,14 +440,20 @@ function walk(
 
 // Every page is now broken and drawn against the geometry of the section whose
 // text opened it, so a second page size or a second set of margins costs the body
-// nothing. What is still read from the last section alone is the header and the
-// footer: they are measured once, against that page, and drawn at its margins on
-// every page of the document.
+// nothing, and as of 2026-08-10 a page hangs its header and its footer from the
+// room its own section keeps for them as well.
+//
+// **What is still read from the last section alone is how wide they are.** A
+// header is measured across the document's own text frame, so a section keeping a
+// different left or right margin draws its header at the wrong left and wraps it
+// at the wrong width. Nothing has measured what that is worth.
 //
 // So what is named here is a second *page* with a header or a footer to put in the
 // wrong place. A break that changes only a column count leaves the geometry alone
 // and is named elsewhere, and a document that draws neither header nor footer has
-// nothing left standing in for it.
+// nothing left standing in for it. The count is deliberately the loose one: a
+// second page size is named whether or not its margins are the ones that still
+// matter, which leaves the row wider than the fault.
 function countSections(
   root: XmlElement,
   part: string,

@@ -85,13 +85,13 @@ const normalise = (text: string): string =>
 // The header and the footer are drawn again on every page, so every page holds
 // their boxes as well as its own.
 function boxesOnPage(layout: LaidOutDocument, page: LaidOutPage): readonly ParagraphBox[] {
-  const floats = [...layout.headerFloats, ...layout.footerFloats, ...page.floats];
+  const floats = [...page.headerFloats, ...page.footerFloats, ...page.floats];
   const inBoxes = floats.flatMap((float) =>
     float.content.kind === "text-box" && float.content.text !== null
       ? [...float.content.text.boxes]
       : [],
   );
-  return [...layout.header, ...layout.footer, ...page.body, ...inBoxes];
+  return [...page.header, ...page.footer, ...page.body, ...inBoxes];
 }
 
 // A stretch of text drawn in one face at one place, which is what Word writes an

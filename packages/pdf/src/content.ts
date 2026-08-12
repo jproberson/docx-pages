@@ -223,6 +223,12 @@ function drawObject(out: Content, page: PdfPage, images: PdfImages, at: ObjectDr
     case "shape":
       paintedObject(out, page, at, what.paint);
       return;
+    // A group is flattened into one item per shape inside it by `drawablesOf`,
+    // before any backend sees it, which is where the rule about what covers what
+    // belongs. Nothing reaches here as a group, and drawing one would draw its
+    // children twice.
+    case "group":
+      return;
     // A picture whose relationship names no part in the package, and a drawing of
     // a kind nothing here reads. Both draw nothing; the viewer outlines them when
     // it is asked to, and a file being written has nobody to show an outline to.

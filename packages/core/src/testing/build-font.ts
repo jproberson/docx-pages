@@ -25,6 +25,13 @@ export type FontFixture = {
   readonly panoseSerifStyle?: number;
   // What the face calls itself, which is how one is picked out of a collection.
   readonly faceName?: string;
+  // The family the face belongs to, where that is not the whole of its own name:
+  // `Calibri Light` is a face of the `Calibri` family, and a document naming
+  // either has to find it.
+  readonly familyName?: string;
+  // What the face says about its own weight and slope in `head`.
+  readonly bold?: boolean;
+  readonly italic?: boolean;
   // Where the face puts the line under its letters, how thick it is and how far
   // they lean, all of which it states in its `post` table. A fixture stating none
   // of them writes no table at all, as a face may.
@@ -55,12 +62,15 @@ function glyphsOf(fixture: FontFixture): readonly Glyph[] {
 const longMetricCount = (fixture: FontFixture, glyphs: readonly Glyph[]): number =>
   fixture.longMetrics ?? glyphs.length + 1;
 
+const MAC_STYLE_AT = 44;
+
 function headTable(fixture: FontFixture): Uint8Array {
   const table = new Uint8Array(HEAD_LENGTH);
   const view = new DataView(table.buffer);
   view.setUint32(0, 0x00010000);
   view.setUint32(12, 0x5f0f3cf5);
   view.setUint16(18, fixture.unitsPerEm);
+  view.setUint16(MAC_STYLE_AT, (fixture.bold === true ? 1 : 0) | (fixture.italic === true ? 2 : 0));
   return table;
 }
 
@@ -188,24 +198,31 @@ function os2Table(fixture: FontFixture): Uint8Array {
 const FAMILY_NAME = 1;
 const FULL_NAME = 4;
 
-function nameTable(faceName: string): Uint8Array {
-  const ids = [FAMILY_NAME, FULL_NAME];
-  const stringsAt = 6 + ids.length * 12;
-  const table = new Uint8Array(stringsAt + faceName.length * 2);
+function nameTable(faceName: string, familyName: string): Uint8Array {
+  const written = [
+    [FAMILY_NAME, familyName],
+    [FULL_NAME, faceName],
+  ] as const;
+  const stringsAt = 6 + written.length * 12;
+  const strings = written.map(([, value]) => value).join("");
+  const table = new Uint8Array(stringsAt + strings.length * 2);
   const view = new DataView(table.buffer);
 
-  view.setUint16(2, ids.length);
+  view.setUint16(2, written.length);
   view.setUint16(4, stringsAt);
-  ids.forEach((id, index) => {
+  let at = 0;
+  written.forEach(([id, value], index) => {
     const record = 6 + index * 12;
     view.setUint16(record, 3);
     view.setUint16(record + 2, 1);
     view.setUint16(record + 6, id);
-    view.setUint16(record + 8, faceName.length * 2);
+    view.setUint16(record + 8, value.length * 2);
+    view.setUint16(record + 10, at * 2);
+    for (const [step, character] of Array.from(value).entries()) {
+      view.setUint16(stringsAt + (at + step) * 2, character.charCodeAt(0));
+    }
+    at += value.length;
   });
-  for (const [at, character] of Array.from(faceName).entries()) {
-    view.setUint16(stringsAt + at * 2, character.charCodeAt(0));
-  }
 
   return table;
 }
@@ -236,7 +253,9 @@ function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array]
   if (fixture.panoseFamily !== undefined || fixture.panoseSerifStyle !== undefined) {
     tables.push(["OS/2", os2Table(fixture)]);
   }
-  if (fixture.faceName !== undefined) tables.push(["name", nameTable(fixture.faceName)]);
+  if (fixture.faceName !== undefined) {
+    tables.push(["name", nameTable(fixture.faceName, fixture.familyName ?? fixture.faceName)]);
+  }
   if (
     fixture.underlinePosition !== undefined ||
     fixture.underlineThickness !== undefined ||

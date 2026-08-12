@@ -24,6 +24,7 @@ import { W_NS, type SectionClose } from "../docx/section.js";
 import {
   measuresTheIndentToTheText,
   roundsAnchorsToTwips,
+  squeezesAJustifiedLine,
   DEFAULT_SETTINGS,
   type DocumentSettings,
 } from "../docx/settings.js";
@@ -33,8 +34,11 @@ import {
   resolveParagraphFrame,
   resolveParagraphMark,
   resolveRunMarks,
+  resolveBandSizes,
   resolveTableBorders,
   styleIdOf,
+  type CellPosition,
+  type InTable,
   type ParagraphFrame,
   type ParagraphMark,
   type StyleTable,
@@ -102,6 +106,20 @@ export type PlacedLine = {
   // How far down that room the line of text itself starts, which is nothing until
   // a rule opens room above it. Word answers for a paragraph from here.
   readonly seatPt: number;
+  /**
+   * How much of the line has to fit on the page for the line to stay on it.
+   *
+   * **The room a multiple opens below the text hangs past the foot rather than
+   * moving the line on.** Measured on 2026-08-11 by the authored `twip-grid`
+   * document, whose four cases stack lines under a multiple until the page runs
+   * out: one keeps 39 lines whose boxes come to 720.46 in a body of 720, its 39th
+   * ending 8.8pt above the foot with the multiple's own room hanging past it.
+   *
+   * A rule stating an exact height is the other way round and answers for the
+   * whole of what it asks for, since there the room is a slot the text is dropped
+   * into rather than room opened under a line that measured itself.
+   */
+  readonly fittingHeightPt: number;
   readonly baselinePt: number;
   // Whether a page break in the paragraph's own text put this line at the head of
   // a page. Only the break itself can act on it.
@@ -157,6 +175,17 @@ export type ParagraphBox = {
   // by the paragraph's whole height, since the room a paragraph keeps below itself
   // never holds it back at the foot of a page.
   readonly contentBottomPt: number;
+  // What a page opening at this paragraph's text keeps above that text, which is
+  // the furniture the rows it stands in put there again: the table's own top
+  // border, and the margin holding a cell's text off its wall. Nought outside a
+  // table, where a page opens at the first line and everything above it is left
+  // behind.
+  //
+  // Measured on 2026-08-10 by the authored `resuming` document. A row with neither
+  // resumed exactly where an ordinary paragraph did; one held 12pt off the top of
+  // its cell resumed 12pt below the top of the body, and one inside a 3pt border
+  // 3.12pt below it.
+  readonly resumesUnderPt: number;
   // What the paragraph asks of a page break running through it, and of one falling
   // between it and the paragraph after it. Only the break itself can act on either.
   readonly widowControl: boolean;
@@ -277,7 +306,7 @@ type Context = Omit<MeasureStackInput, "blocks" | "originPt" | "leftPt" | "width
   readonly inColumn: boolean;
   // The style of the table a cell's text stands in, which that text reads between
   // the document's defaults and its own style. Null anywhere but inside a cell.
-  readonly tableStyleId: string | null;
+  readonly inTable: InTable | null;
 };
 
 // Where a story's text runs across the page, which a section break can change
@@ -310,7 +339,7 @@ export function measureStack(input: MeasureStackInput): StackMeasurement {
     settings: input.settings ?? DEFAULT_SETTINGS,
     inCell: false,
     inColumn: false,
-    tableStyleId: null,
+    inTable: null,
   };
   return measureBlocks(input.blocks, context, input.originPt, {
     leftPt: input.leftPt,
@@ -373,6 +402,8 @@ function measureBlocks(
       const neighbours = {
         above: paragraphAt(blocks, at - 1),
         below: paragraphAt(blocks, at + 1),
+        closesACellUnderATable:
+          context.inCell && at === blocks.length - 1 && blocks[at - 1]?.kind === "table",
       };
       // An object wraps the text on the page its anchor landed on and no other, so
       // an explicit break is where the objects met before it are let go of.
@@ -686,7 +717,7 @@ const opensPage = (
 ): boolean =>
   !context.inCell &&
   (above?.endsPage === true ||
-    resolveParagraphFrame(paragraph, context.styles, context.tableStyleId).pageBreakBefore);
+    resolveParagraphFrame(paragraph, context.styles, context.inTable).pageBreakBefore);
 
 // Half the twip a legacy document's anchors are rounded to, which is as far over
 // the paragraph above an object can come to stand by that rounding alone. An
@@ -722,12 +753,124 @@ type PositionedTable = {
 // way `measureRow` reads them, since a table stating a grid and a table whose cells
 // state their own widths both have to come out where Word drew them.
 function tableWidthPt(block: Table, frame: Frame): number {
-  const cells = block.rows[0]?.cells ?? [];
-  return cells.reduce(
-    (width, cell, at) =>
-      width + (cellWidthPt(cell) ?? columnWidthPt(block.gridTwips, at) ?? frame.widthPt),
-    0,
-  );
+  // A width needs no bands: every cell of the first row is as wide as its columns
+  // however the style formats it.
+  const plans = planCells(block, { rowBandSize: 1, columnBandSize: 1 }, frame);
+  const first = plans[0] ?? [];
+  return first.reduce((width, plan) => width + plan.widthPt, 0);
+}
+
+// Where one cell stands on the table, before anything knows how tall a row is.
+type CellPlan = {
+  readonly cell: TableCell;
+  readonly at: number;
+  readonly leftPt: number;
+  readonly widthPt: number;
+  // Where the cell stands in the table, which is what the style's conditional
+  // formats are chosen by.
+  readonly position: CellPosition;
+  // The last row the cell reaches, which is its own unless a merge opens at it. A
+  // swallowed cell reaches nowhere: it draws nothing and is worth nothing.
+  readonly throughRow: number | null;
+};
+
+// **A cell spanning grid columns is worth the columns under it whether it says so or
+// not**, and the cell after it starts at the column the span ended on rather than at
+// the next one along. Measured on 2026-08-10 by the authored `merged-cells`
+// document, whose cases h and i put a third column's text at 180 either way.
+//
+// **A `w:vMerge` continuation draws nothing and is worth nothing.** The same
+// document's case g puts a 40pt line in every swallowed cell of a table of 20pt
+// rows: Word drew no ink for any of them and left every row at 20pt. A continuation
+// with no merge open above it is a cell of its own, which is what an orphan can only
+// be.
+// Which of the table's conditional formats a cell standing here answers to. A
+// switch the table's own `w:tblLook` turns off takes the row or the column out of the
+// question altogether, and a table that turns banding off has no bands at all.
+//
+// **Banding counts from the first row the header did not take**, so a table whose
+// first row is its header has its second row in band 1.
+function positionOf(
+  block: Table,
+  bands: BandSizes,
+  rowAt: number,
+  gridAt: number,
+  span: number,
+): CellPosition {
+  const look = block.look;
+  const columns = Math.max(block.gridTwips.length, ...block.rows.map((row) => row.cells.length));
+  const lastRowAt = block.rows.length - 1;
+
+  const firstRow = look.firstRow && rowAt === 0;
+  const lastRow = look.lastRow && rowAt === lastRowAt && lastRowAt > 0;
+  const firstColumn = look.firstColumn && gridAt === 0;
+  const lastColumn = look.lastColumn && gridAt + span >= columns && columns > 1;
+
+  const bandOf = (index: number, size: number): 1 | 2 | null =>
+    index < 0 ? null : Math.floor(index / size) % 2 === 0 ? 1 : 2;
+
+  return {
+    firstRow,
+    lastRow,
+    firstColumn,
+    lastColumn,
+    rowBand:
+      !look.horizontalBanding || firstRow || lastRow
+        ? null
+        : bandOf(rowAt - (look.firstRow ? 1 : 0), bands.rowBandSize),
+    columnBand:
+      !look.verticalBanding || firstColumn || lastColumn
+        ? null
+        : bandOf(gridAt - (look.firstColumn ? 1 : 0), bands.columnBandSize),
+  };
+}
+
+// A band is as deep as the table style says unless the table says otherwise, and
+// one row and one column deep where neither does.
+type BandSizes = { readonly rowBandSize: number; readonly columnBandSize: number };
+
+function planCells(block: Table, bands: BandSizes, frame: Frame): readonly (readonly CellPlan[])[] {
+  // A merge learns how far down it reached only once the rows under it have been
+  // read, so the cell that opened one is written to as they are.
+  type Planning = { -readonly [K in keyof CellPlan]: CellPlan[K] };
+
+  const plans: Planning[][] = [];
+  const open = new Map<number, Planning>();
+
+  for (const [rowAt, row] of block.rows.entries()) {
+    const planned: Planning[] = [];
+    // The columns a merge still reaches past this row: the ones it was continued in,
+    // and the ones it opened at.
+    const alive = new Set<number>();
+    let gridAt = 0;
+    let leftPt = frame.leftPt;
+
+    for (const cell of row.cells) {
+      const widthPt =
+        cellWidthPt(cell) ?? columnWidthPt(block.gridTwips, gridAt, cell.gridSpan) ?? frame.widthPt;
+      const opened = cell.merge === "continue" ? open.get(gridAt) : undefined;
+      const position = positionOf(block, bands, rowAt, gridAt, cell.gridSpan);
+      if (opened === undefined) {
+        const plan: Planning = { cell, at: gridAt, leftPt, widthPt, position, throughRow: rowAt };
+        planned.push(plan);
+        if (cell.merge === "restart") {
+          open.set(gridAt, plan);
+          alive.add(gridAt);
+        } else open.delete(gridAt);
+      } else {
+        opened.throughRow = rowAt;
+        alive.add(gridAt);
+        planned.push({ cell, at: gridAt, leftPt, widthPt, position, throughRow: null });
+      }
+      gridAt += cell.gridSpan;
+      leftPt += widthPt;
+    }
+
+    for (const column of [...open.keys()]) if (!alive.has(column)) open.delete(column);
+    plans.push(planned);
+  }
+
+  return plans;
 }
 
 // **What `w:tblpX` is measured from is what `w:horzAnchor` names**: the edge of the
@@ -799,15 +942,18 @@ function measureTable(
   // An old document's indent is measured to the text rather than to the table, so
   // the first column's own margin stands outside the indent instead of inside it
   // and the table's edge moves left by the whole of it.
+  //
+  // **A table inside a cell stands where a modern document's does either way.**
+  // Measured on 2026-08-10 by the authored `resuming` document and its legacy twin:
+  // the two put the outer table's text 5.28pt apart and the table inside a cell in
+  // the same place, 6.96pt inside the cell's own text in both. A nested table
+  // states no indent of its own there, which is what a document in the wild writes.
   const openingCell = block.rows[0]?.cells[0];
   const insetPt =
-    measuresTheIndentToTheText(context.settings) && openingCell !== undefined
+    measuresTheIndentToTheText(context.settings) && !context.inCell && openingCell !== undefined
       ? -leftMarginOf(openingCell, block.insets, first[0]?.drawn ?? NO_BORDERS)
       : outerLeftPt;
 
-  const boxes: ParagraphBox[] = [];
-  const cells: PlacedCell[] = [];
-  const untornRows: UntornRow[] = [];
   const rowFrame = {
     leftPt: frame.leftPt + twipsToPoints(block.insets.indentTwips) + insetPt,
     widthPt: frame.widthPt,
@@ -815,29 +961,38 @@ function measureTable(
 
   // Everything inside the table reads the table's own style, which the paragraphs
   // in its cells sit under.
-  const inTable: Context = { ...context, tableStyleId: block.styleId };
+  const inTable: Context = { ...context, inTable: { styleId: block.styleId, at: null } };
 
-  let top = topPt + outerTopPt;
+  const stated = resolveBandSizes(context.styles, block.styleId);
+  const plans = planCells(
+    block,
+    {
+      rowBandSize: block.look.rowBandSize ?? stated.rowBandSize ?? 1,
+      columnBandSize: block.look.columnBandSize ?? stated.columnBandSize ?? 1,
+    },
+    rowFrame,
+  );
+  const measured: MeasuredCell[][] = [];
+  const margins: RowMargins[] = [];
   for (const [at, row] of block.rows.entries()) {
-    const measured = measureRow(row, borders[at] ?? [], inTable, top, rowFrame, block.insets, {
-      gridTwips: block.gridTwips,
-    });
-    if (measured.kind === "blocked") return measured;
-    boxes.push(...measured.boxes);
-    cells.push(...measured.cells);
-    untornRows.push(...measured.untornRows);
-    top += measured.heightPt;
+    const of = measureRowCells(row, plans[at] ?? [], borders[at] ?? [], inTable, block.insets);
+    if (of.kind === "blocked") return of;
+    measured.push([...of.cells]);
+    margins.push(of.margins);
   }
+
+  const heightsPt = rowHeights(block, measured, margins);
+  const placed = placeRows(block, measured, margins, heightsPt, topPt + outerTopPt, outerTopPt);
 
   // A cell is measured with no bands at all, so nothing inside a table can anchor
   // an object a page break has to make room for.
   return {
     kind: "measured",
-    boxes,
-    cells,
-    untornRows,
+    boxes: placed.boxes,
+    cells: placed.cells,
+    untornRows: placed.untornRows,
     anchoredObjects: [],
-    heightPt: top + outerBottomPt - topPt,
+    heightPt: outerTopPt + heightsPt.reduce((total, each) => total + each, 0) + outerBottomPt,
   };
 }
 
@@ -868,8 +1023,21 @@ type MeasuredCell = {
   readonly heightPt: number;
   readonly leftPt: number;
   readonly widthPt: number;
+  // The last row this cell reaches, which is the row it stands in unless a merge
+  // opens at it.
+  readonly throughRow: number;
   readonly fillColor: string | null;
   readonly borders: Borders;
+};
+
+// How far a row holds every cell in it off its own walls, which is the row's
+// business rather than any one cell's.
+type RowMargins = {
+  readonly topPt: number;
+  // The cell's own margin at the foot, kept apart from the half of the line cleared
+  // after it, because a row told exactly how tall to be counts one and not the other.
+  readonly bottomCellPt: number;
+  readonly bottomPt: number;
 };
 
 // A row is as tall as its tallest cell, and every cell starts at the row's top;
@@ -891,32 +1059,41 @@ type MeasuredCell = {
 //
 // What was here before took the larger of the two, which is right only where one of
 // them is nought, and every table in a real document is out by a line a row for it.
-function measureRow(
+//
+// What each cell of a row holds, before anything knows how tall the row is: a cell
+// merged down a run of rows is measured here and seated once all of them are.
+function measureRowCells(
   row: TableRow,
+  plans: readonly CellPlan[],
   borders: readonly CellBorders[],
   context: Context,
-  topPt: number,
-  frame: Frame,
   insets: TableInsets,
-  table: { readonly gridTwips: readonly number[] },
-): StackMeasurement {
+):
+  | {
+      readonly kind: "measured";
+      readonly cells: readonly MeasuredCell[];
+      readonly margins: RowMargins;
+    }
+  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker } {
   const measured: MeasuredCell[] = [];
-  const topMarginPt =
-    rowMarginPt(row, insets, "topTwips") + halfOf(borders.map((of) => of.agreed.top));
-  // The cell's own margin at the foot, kept apart from the half of the line cleared
-  // after it, because a row told exactly how tall to be counts one and not the other.
-  const bottomCellMarginPt = rowMarginPt(row, insets, "bottomTwips");
-  const bottomMarginPt = bottomCellMarginPt + halfOf(borders.map((of) => of.agreed.bottom));
-  let contentHeightPt = 0;
-  let leftPt = frame.leftPt;
+  const bottomCellPt = rowMarginPt(row, insets, "bottomTwips");
+  const margins: RowMargins = {
+    topPt: rowMarginPt(row, insets, "topTwips") + halfOf(borders.map((of) => of.agreed.top)),
+    bottomCellPt,
+    bottomPt: bottomCellPt + halfOf(borders.map((of) => of.agreed.bottom)),
+  };
 
   // A cell is measured from its own origin and only then moved down to the row, so
   // the page coordinates a wrapping object stands in cannot reach inside one.
   const inCell: Context = { ...context, bandsFor: () => [], inCell: true };
-  const untornRows: UntornRow[] = [];
 
-  for (const [at, cell] of row.cells.entries()) {
-    const widthPt = cellWidthPt(cell) ?? columnWidthPt(table.gridTwips, at) ?? frame.widthPt;
+  for (const [at, plan] of plans.entries()) {
+    if (plan.throughRow === null) continue;
+    const cell = plan.cell;
+    const inCellHere: Context = {
+      ...inCell,
+      inTable: { styleId: context.inTable?.styleId ?? null, at: plan.position },
+    };
     const own = borders[at]?.drawn ?? NO_BORDERS;
     const leftMarginPt = leftMarginOf(cell, insets, own);
     const rightMarginPt = Math.max(
@@ -924,10 +1101,10 @@ function measureRow(
       halfOf([own.right]),
     );
     const cellFrame = {
-      leftPt: leftPt + leftMarginPt,
-      widthPt: Math.max(0, widthPt - leftMarginPt - rightMarginPt),
+      leftPt: plan.leftPt + leftMarginPt,
+      widthPt: Math.max(0, plan.widthPt - leftMarginPt - rightMarginPt),
     };
-    const of = measureBlocks(cell.blocks, inCell, 0, cellFrame);
+    const of = measureBlocks(cell.blocks, inCellHere, 0, cellFrame);
     if (of.kind === "blocked") return of;
     measured.push({
       align: cell.verticalAlign,
@@ -935,60 +1112,180 @@ function measureRow(
       inner: of.cells,
       innerUntorn: of.untornRows,
       heightPt: of.heightPt,
-      leftPt,
-      widthPt,
+      leftPt: plan.leftPt,
+      widthPt: plan.widthPt,
+      throughRow: plan.throughRow,
       fillColor: cell.fillColor,
       borders: own,
     });
-    contentHeightPt = Math.max(contentHeightPt, of.heightPt);
-    leftPt += widthPt;
   }
 
-  const heldPt = topMarginPt + contentHeightPt + bottomMarginPt;
-  const heightPt = rowHeightPt(row, contentHeightPt, {
-    marginsPt: topMarginPt + bottomMarginPt,
-    bottomCellMarginPt,
+  return { kind: "measured", cells: measured, margins };
+}
+
+// How tall each row of the table came out.
+//
+// **What a merge is short falls whole on the last row of the merge**, and on the last
+// row of the merge rather than the last row of the table. Measured on 2026-08-10 by
+// the authored `merged-cells` document: six 20pt lines merged down four 20pt rows
+// left the first three at 20 and made the fourth 60, ten lines made it 140, and the
+// same six lines merged down only the first two rows made the second 99.84 while the
+// two ordinary rows under it stayed at 20. Sharing the shortfall out would have put
+// every one of those rows at the same height, and it does not.
+//
+// Nothing has asked Word what a merge ending on a row told exactly how tall to be
+// does. It is left as that row already is: unable to grow for anything, overflowed
+// by a merge the way it would be by its own text.
+function rowHeights(
+  block: Table,
+  measured: readonly (readonly MeasuredCell[])[],
+  margins: readonly RowMargins[],
+): readonly number[] {
+  const heightsPt = block.rows.map((row, at) => {
+    const own = measured[at] ?? [];
+    const contentHeightPt = Math.max(
+      0,
+      ...own.filter((cell) => cell.throughRow === at).map((cell) => cell.heightPt),
+    );
+    return rowHeightPt(row, contentHeightPt, {
+      marginsPt: (margins[at]?.topPt ?? 0) + (margins[at]?.bottomPt ?? 0),
+      bottomCellMarginPt: margins[at]?.bottomCellPt ?? 0,
+    });
   });
-  // A row told exactly how tall to be leaves its cells whatever room is left over
-  // once it has held them off its walls, and Word draws what does not fit anyway.
-  const roomPt = Math.max(0, heightPt - topMarginPt - bottomMarginPt);
+
+  // A merge is read once the rows it reaches are all as tall as their own text, and
+  // the ones ending lowest are read last so that a merge above them has already had
+  // whatever it was short.
+  const merges = measured
+    .flatMap((row, at) => row.filter((cell) => cell.throughRow > at).map((cell) => ({ cell, at })))
+    .sort((left, right) => left.cell.throughRow - right.cell.throughRow);
+
+  for (const { cell, at } of merges) {
+    const through = cell.throughRow;
+    if (block.rows[through]?.height?.exact === true) continue;
+    const requiredPt =
+      (margins[at]?.topPt ?? 0) + cell.heightPt + (margins[through]?.bottomPt ?? 0);
+    let availablePt = 0;
+    for (let row = at; row <= through; row += 1) availablePt += heightsPt[row] ?? 0;
+    if (requiredPt > availablePt + EPSILON)
+      heightsPt[through] = (heightsPt[through] ?? 0) + requiredPt - availablePt;
+  }
+
+  return heightsPt;
+}
+
+// Where everything in the table ended up, once every row knows how tall it is.
+//
+// **A merged cell is seated in the whole run of rows it reaches** rather than in the
+// one it opens. The same document's case f centres one 20pt line in a merge of four
+// 20pt rows, and Word drew it 30pt down: half of the 60pt the run had over it.
+function placeRows(
+  block: Table,
+  measured: readonly (readonly MeasuredCell[])[],
+  margins: readonly RowMargins[],
+  heightsPt: readonly number[],
+  topPt: number,
+  outerTopPt: number,
+): {
+  readonly boxes: readonly ParagraphBox[];
+  readonly cells: readonly PlacedCell[];
+  readonly untornRows: readonly UntornRow[];
+} {
+  const topsPt: number[] = [];
+  let running = topPt;
+  for (const heightPt of heightsPt) {
+    topsPt.push(running);
+    running += heightPt;
+  }
+  const spannedPt = (from: number, through: number): number => {
+    let total = 0;
+    for (let row = from; row <= through; row += 1) total += heightsPt[row] ?? 0;
+    return total;
+  };
+
+  // What each row's own text asks of it, a merge reaching down into it counted
+  // against the row it lands in rather than the one it opened at.
+  const heldPt = block.rows.map(() => 0);
+  for (const [at, row] of measured.entries())
+    for (const cell of row) {
+      const through = cell.throughRow;
+      const askedPt =
+        (margins[at]?.topPt ?? 0) +
+        cell.heightPt +
+        (margins[through]?.bottomPt ?? 0) -
+        spannedPt(at, through - 1);
+      heldPt[through] = Math.max(heldPt[through] ?? 0, askedPt);
+    }
 
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
-  for (const cell of measured) {
-    const offset = topPt + topMarginPt + seatingOffset(cell.align, roomPt, cell.heightPt);
-    // Only a row given a height of its own can be shorter than what it holds, so
-    // only that row has anything to cut its cells off at.
-    const clipTo =
-      row.height?.exact === true
-        ? { leftPt: cell.leftPt, topPt, widthPt: cell.widthPt, heightPt }
-        : null;
-    for (const box of cell.boxes) boxes.push({ ...shiftBox(box, offset), clipTo });
-    for (const inner of cell.inner) cells.push({ ...inner, topPt: inner.topPt + offset });
-    for (const inner of cell.innerUntorn)
-      untornRows.push({ ...inner, topPt: inner.topPt + offset, bottomPt: inner.bottomPt + offset });
-    cells.push({
-      leftPt: cell.leftPt,
-      topPt,
-      widthPt: cell.widthPt,
-      heightPt,
-      fillColor: cell.fillColor,
-      borders: cell.borders,
-    });
+  const untornRows: UntornRow[] = [];
+
+  for (const [at, row] of block.rows.entries()) {
+    const rowTopPt = topsPt[at] ?? topPt;
+    const ownHeightPt = heightsPt[at] ?? 0;
+    const opened: ParagraphBox[] = [];
+
+    for (const cell of measured[at] ?? []) {
+      const through = cell.throughRow;
+      const heldToPt = spannedPt(at, through);
+      const topMarginPt = margins[at]?.topPt ?? 0;
+      const bottomMarginPt = margins[through]?.bottomPt ?? 0;
+      // A row told exactly how tall to be leaves its cells whatever room is left over
+      // once it has held them off its walls, and Word draws what does not fit anyway.
+      const roomPt = Math.max(0, heldToPt - topMarginPt - bottomMarginPt);
+      const offset = rowTopPt + topMarginPt + seatingOffset(cell.align, roomPt, cell.heightPt);
+      // Only a row given a height of its own can be shorter than what it holds, so
+      // only that row has anything to cut its cells off at.
+      const clipTo =
+        row.height?.exact === true
+          ? { leftPt: cell.leftPt, topPt: rowTopPt, widthPt: cell.widthPt, heightPt: heldToPt }
+          : null;
+      // What the row draws above its own text where a page opens at it, which is
+      // what it drew above it on the page the table opened on: the table's own top
+      // border and the margin holding the cell's text off its wall. A table inside
+      // a cell adds its own to the one round it, which is what case e of `resuming`
+      // asks: the outer row states neither, and the page below the tear opens on
+      // the nested table's 3pt border.
+      const resumesUnderPt = outerTopPt + topMarginPt;
+      for (const box of cell.boxes) {
+        const placed = {
+          ...shiftBox(box, offset),
+          clipTo,
+          resumesUnderPt: box.resumesUnderPt + resumesUnderPt,
+        };
+        boxes.push(placed);
+        opened.push(placed);
+      }
+      for (const inner of cell.inner) cells.push({ ...inner, topPt: inner.topPt + offset });
+      for (const inner of cell.innerUntorn)
+        untornRows.push({
+          ...inner,
+          topPt: inner.topPt + offset,
+          bottomPt: inner.bottomPt + offset,
+        });
+      cells.push({
+        leftPt: cell.leftPt,
+        topPt: rowTopPt,
+        widthPt: cell.widthPt,
+        heightPt: heldToPt,
+        fillColor: cell.fillColor,
+        borders: cell.borders,
+      });
+    }
+
+    // Word tears an ordinary row at a line, and refuses two: one saying so, and one
+    // standing taller than its own text, whose empty foot has no line to be torn at.
+    // Both were measured on 2026-08-07 by the authored `tearing` document: a row
+    // asking to be 150pt tall with 48pt of text in it moved whole where 102pt was
+    // left, and so did the same row with 144pt of text, while a row asking to be
+    // 48pt tall with 144pt of text in it was torn like any other.
+    const opensAt = opened[0]?.index;
+    if (opensAt !== undefined && (row.cantSplit || ownHeightPt > (heldPt[at] ?? 0) + EPSILON))
+      untornRows.push({ topPt: rowTopPt, bottomPt: rowTopPt + ownHeightPt, opensAt });
   }
 
-  // Word tears an ordinary row at a line, and refuses two: one saying so, and one
-  // standing taller than its own text, whose empty foot has no line to be torn at.
-  // Both were measured on 2026-08-07 by the authored `tearing` document: a row
-  // asking to be 150pt tall with 48pt of text in it moved whole where 102pt was
-  // left, and so did the same row with 144pt of text, while a row asking to be
-  // 48pt tall with 144pt of text in it was torn like any other.
-  const opensAt = boxes[0]?.index;
-  if (opensAt !== undefined && (row.cantSplit || heightPt > heldPt + EPSILON)) {
-    untornRows.push({ topPt, bottomPt: topPt + heightPt, opensAt });
-  }
-
-  return { kind: "measured", boxes, cells, untornRows, anchoredObjects: [], heightPt };
+  return { boxes, cells, untornRows };
 }
 
 // The largest margin any cell in the row asks for at that side, which is what
@@ -1037,9 +1334,10 @@ function rowHeightPt(
 // The grid is what a table is drawn on and a `w:tcW` is the cell's own preference
 // over it, so a table stating a grid and no cell widths at all, which a real
 // document does, had every column as wide as the whole text frame before this.
-function columnWidthPt(gridTwips: readonly number[], at: number): number | null {
-  const twips = gridTwips[at];
-  return twips === undefined ? null : twipsToPoints(twips);
+function columnWidthPt(gridTwips: readonly number[], at: number, span: number): number | null {
+  const spanned = gridTwips.slice(at, at + span);
+  if (spanned.length === 0) return null;
+  return twipsToPoints(spanned.reduce((total, twips) => total + twips, 0));
 }
 
 function cellWidthPt(cell: TableCell): number | null {
@@ -1089,6 +1387,9 @@ type ParagraphMeasurement =
 type Neighbours = {
   readonly above: Paragraph | null;
   readonly below: Paragraph | null;
+  // Whether this is the paragraph a cell holding a table has to end with, which is
+  // the one paragraph Word leaves no room for.
+  readonly closesACellUnderATable: boolean;
 };
 
 // What the objects around the paragraph have already settled: the ones standing in
@@ -1109,7 +1410,7 @@ function measureParagraph(
   neighbours: Neighbours,
   standing: Standing,
 ): ParagraphMeasurement {
-  const paragraphMark = resolveParagraphMark(paragraph, context.styles, context.tableStyleId);
+  const paragraphMark = resolveParagraphMark(paragraph, context.styles, context.inTable);
   const marks: readonly ParagraphMark[] = [
     paragraphMark,
     ...resolveRunMarks(paragraph, context.styles),
@@ -1133,7 +1434,7 @@ function measureParagraph(
     if (mark === paragraphMark) markHeight = height.value;
   }
 
-  const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.tableStyleId);
+  const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.inTable);
   const runs = flowing(readRuns(paragraph, context.styles), context.inCell, context.inColumn);
   const insets = insetsOf(paragraphFrame);
   const number = context.numbers.get(paragraph.index);
@@ -1146,6 +1447,9 @@ function measureParagraph(
   const breaking = beginLines({
     runs,
     metricsFor: context.metricsFor,
+    // A justified line may take a word it has not the room for, so where a line
+    // breaks depends on how it is aligned and on how old the document is.
+    justified: paragraphFrame.alignment === "justify" && squeezesAJustifiedLine(context.settings),
     tabs: {
       stopsPt: tabStopsPt(paragraphFrame),
       originPt: insets.leftPt,
@@ -1187,13 +1491,30 @@ function measureParagraph(
       startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
       endsPageAtASection: sectionClose?.opensAPage === true,
       closesASection: sectionClose !== undefined,
+      closesACellUnderATable: neighbours.closesACellUnderATable,
       number: measured === null ? null : measured.number,
       bands: standing.bands,
       ahead: standing.ahead,
       roomPt: widthPt,
-      // A hanging indent leaves its first line wider than the rest, except where a
-      // number is what hangs there: then the text starts at the indent like the rest.
-      firstLineRoomPt: number === undefined ? widthPt - insets.firstLinePt : widthPt,
+      // A hanging indent leaves its first line wider than the rest, and a numbered
+      // paragraph's first line is as wide as the run from where its text starts to
+      // the right indent, wherever the number's suffix left that text.
+      //
+      // **What stood here gave a numbered first line the room between the two
+      // indents**, on the reading that a number hanging in front of the text leaves
+      // that text starting at the left indent like every line under it. It does
+      // where nothing says otherwise, and one of the 966 says otherwise: its number
+      // tabs to a stop 26.7pt short of the indent, and Word fits 29 characters on
+      // that line where this fitted 11.
+      //
+      // Measured on 2026-08-10 by the authored `numbered-first-line` document and
+      // its legacy twin, whose pdfs are identical. Seven cases in a column 126pt
+      // wide from the left indent: a number tabbing to a stop 36pt in front of it
+      // took **seven** of the 21pt words where every line under it took six, a
+      // suffix of one space took eight from 12.45pt further out again, and a suffix
+      // of nothing took nine from the number's own place. Room measured from the
+      // left indent would have given all four of them six.
+      firstLineRoomPt: firstLineRoomOf(measured, widthPt, frame, insets),
     }),
   };
 }
@@ -1226,10 +1547,7 @@ function paintOf(
 
   const joins = (other: Paragraph | null): boolean =>
     other !== null &&
-    sameBorders(
-      borders,
-      resolveParagraphFrame(other, context.styles, context.tableStyleId).borders,
-    );
+    sameBorders(borders, resolveParagraphFrame(other, context.styles, context.inTable).borders);
 
   return {
     ...across,
@@ -1306,8 +1624,9 @@ function ownSpacingPt(
 // what it already put between the two.
 function roomBelowPt(above: Paragraph | null, below: Paragraph, context: Context): number {
   if (above === null) return 0;
-  const frame = resolveParagraphFrame(above, context.styles, context.tableStyleId);
-  return ownSpacingPt(above, frame, context, { above: null, below }).afterPt;
+  const frame = resolveParagraphFrame(above, context.styles, context.inTable);
+  return ownSpacingPt(above, frame, context, { above: null, below, closesACellUnderATable: false })
+    .afterPt;
 }
 
 // A number sits at the hanging position and the text after it starts at whatever
@@ -1366,6 +1685,19 @@ function measureNumber(
       }),
     },
   };
+}
+
+// A box that never wraps is measured at no width at all, and a first line has to
+// stay as unbounded as the rest of them.
+function firstLineRoomOf(
+  measured: NumberMeasurement | null,
+  widthPt: number,
+  frame: Frame,
+  insets: Insets,
+): number {
+  if (measured === null || measured.kind === "blocked") return widthPt - insets.firstLinePt;
+  if (!Number.isFinite(widthPt)) return widthPt;
+  return frame.leftPt + frame.widthPt - insets.rightPt - measured.number.textStartPt;
 }
 
 type SuffixContext = {
@@ -1430,6 +1762,7 @@ type LayOutParagraphInput = {
   // break in its own text would. What the text asked for is read off the text.
   readonly endsPageAtASection: boolean;
   readonly closesASection: boolean;
+  readonly closesACellUnderATable: boolean;
   readonly bands: readonly WrapBand[];
   readonly ahead: readonly WrapBand[];
   // What a line has room for where nothing stands beside it, which a shape that
@@ -1534,7 +1867,13 @@ function layOutWholeParagraph(
   // A real document closes a section with such a paragraph six points past the foot
   // of its page, and read as an ordinary one it came out a blank page longer than
   // Word drew it.
-  if (laid.length === 0 && input.closesASection) {
+  // **The paragraph a cell holding a table has to end with is not laid out
+  // either.** Measured on 2026-08-10 by the authored `resuming` document: the row
+  // under such a cell opened where the table above it left off, and the same
+  // paragraph with a word in it took the whole of its line. A paragraph closing a
+  // cell after ordinary text keeps its line too, so what empties this one is the
+  // table above it and not the cell it ends.
+  if (laid.length === 0 && (input.closesASection || input.closesACellUnderATable)) {
     return {
       index,
       topPt: input.topPt,
@@ -1544,6 +1883,7 @@ function layOutWholeParagraph(
       marker: null,
       markTopPt: input.topPt,
       contentBottomPt: input.topPt,
+      resumesUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
       keepNext: paragraphFrame.keepNext,
       startsPage: input.startsPage,
@@ -1571,7 +1911,7 @@ function layOutWholeParagraph(
     );
     const slot = slotFor({
       topPt: input.topPt + beforePt + abovePt,
-      heightPt: height.heightPt,
+      heightPt: height.fittingHeightPt,
       roomAbovePt: beforePt,
       leftPt: frame.leftPt + insets.leftPt,
       rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
@@ -1588,6 +1928,7 @@ function layOutWholeParagraph(
       marker: markerAt(number, slot.topPt + height.baseFromTopPt),
       markTopPt: slot.topPt + height.seatPt,
       contentBottomPt: slot.topPt + height.heightPt,
+      resumesUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
       keepNext: paragraphFrame.keepNext,
       startsPage: input.startsPage,
@@ -1614,6 +1955,7 @@ function layOutWholeParagraph(
       topPt: each.slot.topPt,
       heightPt: each.height.heightPt,
       seatPt: each.height.seatPt,
+      fittingHeightPt: each.height.fittingHeightPt,
       baselinePt: each.slot.topPt + each.height.baseFromTopPt,
       startsPage: each.startsPage,
     };
@@ -1631,6 +1973,7 @@ function layOutWholeParagraph(
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
     contentBottomPt: bottomPt,
+    resumesUnderPt: 0,
     widowControl: paragraphFrame.widowControl,
     keepNext: paragraphFrame.keepNext,
     startsPage: input.startsPage,
@@ -1699,7 +2042,12 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
     const fit = { roomAbovePt, widthPt: leastPt, leftPt: startPt, rightPt: endPt };
 
     let height = heightOfLine(taken.line, at, input);
-    let slot = slotFor({ ...fit, topPt: top, heightPt: height.heightPt, bands: input.bands });
+    let slot = slotFor({
+      ...fit,
+      topPt: top,
+      heightPt: height.fittingHeightPt,
+      bands: input.bands,
+    });
 
     for (let round = 1; round < SETTLING_ROUNDS; round += 1) {
       const narrowedPt = slot.rightPt - slot.leftPt;
@@ -1715,7 +2063,7 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
       if (settled.heightPt === height.heightPt) break;
 
       height = settled;
-      slot = slotFor({ ...fit, topPt: top, heightPt: height.heightPt, bands: input.bands });
+      slot = slotFor({ ...fit, topPt: top, heightPt: height.fittingHeightPt, bands: input.bands });
     }
 
     laid.push({ line: taken.line, slot, height, startsPage });
@@ -1738,7 +2086,13 @@ type Slot = {
 
 // A line is not asked to fit whole, since it is broken again to whatever width it
 // is given: what it asks of a run of space is room for the word it has to start
-// with.
+// with. **Nor does it stand clear of a band with the whole of the room its line
+// rule opened**: what has to clear the top of a band is the text seated in that
+// room, and room a multiple opened below the text hangs into the band as it hangs
+// past the foot of a page. Measured on 2026-08-11 by the authored
+// `line-into-a-band` document, whose lines under a multiple of two hold 14.65 of
+// text in a box of 29.30: a band opening 7.3pt below the fourth line's text keeps
+// four lines above it, and one opening 6.5pt above that text keeps three.
 //
 // **The room a paragraph asks for above itself goes through a wrap with its first
 // line.** What has to clear an object is the room and the line together, so a line
@@ -1764,11 +2118,16 @@ function slotFor(slot: Slot): LineSlot {
 const raisedBy = (line: TextLine, at: number, input: LayOutParagraphInput): number =>
   at === 0 ? liftOfNumber(input.number, line) : 0;
 
-// A line a tab alone holds open has nothing measured on it to give it a height, so
-// it takes the tallest mark the paragraph has, as an empty paragraph does.
+// A line a tab or a space alone holds open has nothing measured on it to give it a
+// height, so it is held open by the run whose break ends it, and by the paragraph's
+// own mark where no break does. **Measured on 2026-08-11 by the authored
+// `empty-line-size` document**: a paragraph holding one break comes out one line of
+// the break's run and one of the mark, whichever of the two is the larger, so a
+// mark twice the size raises the second line alone and a break's run twice the size
+// raises the first.
 function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): LineHeight {
   const raisedPt = raisedBy(line, at, input);
-  const held = line.segments.length === 0 ? input.markHeightPt : 0;
+  const held = line.segments.length === 0 ? (line.heldOpenPt ?? input.markHeightPt) : 0;
   return seatedHeight(
     {
       naturalPt: Math.max(line.heightPt, held) + raisedPt,
@@ -1787,6 +2146,7 @@ function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): 
 type LineHeight = {
   readonly heightPt: number;
   readonly seatPt: number;
+  readonly fittingHeightPt: number;
   readonly baseFromTopPt: number;
 };
 
@@ -1814,12 +2174,22 @@ type NaturalLine = {
 function seatedHeight(line: NaturalLine, frame: ParagraphFrame): LineHeight {
   const heightPt = spacedHeightPt(line, frame);
   if (frame.lineTwips !== null && frame.lineRule === "exact") {
-    return { heightPt, seatPt: 0, baseFromTopPt: heightPt * EXACT_BASELINE };
+    return {
+      heightPt,
+      seatPt: 0,
+      fittingHeightPt: heightPt,
+      baseFromTopPt: heightPt * EXACT_BASELINE,
+    };
   }
 
   const openedPt = frame.lineRule === "atLeast" ? Math.max(0, heightPt - line.naturalPt) : 0;
   const seatPt = openedPt + line.seatPt;
-  return { heightPt, seatPt, baseFromTopPt: seatPt + line.ascentPt };
+  return {
+    heightPt,
+    seatPt,
+    fittingHeightPt: seatPt + line.naturalPt,
+    baseFromTopPt: seatPt + line.ascentPt,
+  };
 }
 
 // Room is a difference of exact ratios, so only the last bits of one need absorbing.

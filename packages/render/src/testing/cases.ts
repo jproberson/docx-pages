@@ -81,6 +81,12 @@ export type ReferenceCase = {
   readonly picturesWordDrewWithoutAnImage: number;
   // How many images Word's pdf holds that are no picture of the document's at all.
   readonly imagesWordDrewOutsideAPicture: number;
+  // Whether Word's own pdf draws one of this document's pictures as more than one
+  // image, which no counting of the two populations can pair up: the pieces stand
+  // beside each other and each is nearer a neighbouring picture than the picture
+  // they belong to. A document saying so is left out of the pairing altogether,
+  // and what it asks is pinned somewhere that can answer it.
+  readonly picturesWordDrewInPieces: boolean;
   // How many laid-out text lines are expected to land where Word drew the same
   // line, within textTolerancePt. Neither the text nor its position is recorded
   // here; both are read from the document and Word's own output at run time.
@@ -327,6 +333,7 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
       optionalNumber(source, "picturesWordDrewWithoutAnImage", where) ?? 0,
     imagesWordDrewOutsideAPicture:
       optionalNumber(source, "imagesWordDrewOutsideAPicture", where) ?? 0,
+    picturesWordDrewInPieces: false,
     textLinesMatched: optionalNumber(source, "textLinesMatched", where),
     textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
     textRunsMatched: optionalNumber(source, "textRunsMatched", where),

@@ -8,7 +8,7 @@ import {
   buildWoff2,
   type FontFixture,
 } from "../testing/build-font.js";
-import { readFontFile, readFontMetrics, readGlyphIndex } from "./font-file.js";
+import { readFontFaces, readFontFile, readFontMetrics, readGlyphIndex } from "./font-file.js";
 import { lineHeightPt, type GlyphAdvances } from "./font-metrics.js";
 import type { CodeToGlyph } from "./glyphs.js";
 
@@ -415,5 +415,62 @@ describe("where a face puts the line under its letters", () => {
 
     expect(face.underline).toBeNull();
     expect(face.italicAngle).toBe(0);
+  });
+});
+
+// A file on disk is named for whoever shipped it, so the only way to know what a
+// machine can offer a document is to open each font and ask it.
+describe("readFontFaces", () => {
+  it("reads the family a face belongs to apart from the whole of its own name", () => {
+    const light: FontFixture = { ...FACE, faceName: "Meridian Light", familyName: "Meridian" };
+
+    expect(readFontFaces(buildSfnt(light))).toStrictEqual([
+      { family: "Meridian", fullName: "Meridian Light", bold: false, italic: false },
+    ]);
+  });
+
+  it("reads the weight and the slope the face states in head", () => {
+    const cuts = [
+      { bold: false, italic: false },
+      { bold: true, italic: false },
+      { bold: false, italic: true },
+      { bold: true, italic: true },
+    ];
+
+    for (const cut of cuts) {
+      const faces = readFontFaces(buildSfnt({ ...FACE, faceName: "Meridian", ...cut }));
+      expect(faces[0]).toStrictEqual({ family: "Meridian", fullName: "Meridian", ...cut });
+    }
+  });
+
+  it("answers for every face of a collection, which holds several", () => {
+    const collection = buildCollection([
+      { ...FACE, faceName: "Meridian" },
+      { ...FACE, faceName: "Meridian Bold", familyName: "Meridian", bold: true },
+      { ...FACE, faceName: "Meridian Maths" },
+    ]);
+
+    expect(readFontFaces(collection).map((each) => each.fullName)).toStrictEqual([
+      "Meridian",
+      "Meridian Bold",
+      "Meridian Maths",
+    ]);
+    expect(readFontFaces(collection)[1]?.bold).toBe(true);
+  });
+
+  it("calls a face that names no family by its own name, since one is a family of one", () => {
+    expect(readFontFaces(buildSfnt({ ...FACE, faceName: "Meridian" }))).toStrictEqual([
+      { family: "Meridian", fullName: "Meridian", bold: false, italic: false },
+    ]);
+  });
+
+  it("reads a face that carries no name table at all rather than refusing it", () => {
+    expect(readFontFaces(buildSfnt(FACE))).toStrictEqual([
+      { family: "", fullName: "", bold: false, italic: false },
+    ]);
+  });
+
+  it("refuses what is not a font at all", () => {
+    expect(caught(() => readFontFaces(new Uint8Array(4))).code).toBe("font-unreadable");
   });
 });

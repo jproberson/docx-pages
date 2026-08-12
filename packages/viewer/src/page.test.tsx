@@ -55,6 +55,7 @@ const paragraphOf = (
   index: 0,
   topPt: 0,
   anchorTopPt: 0,
+  resumesUnderPt: 0,
   heightPt: 14,
   lines: [
     {
@@ -73,11 +74,13 @@ const paragraphOf = (
         ascentPt: 11,
         seatPt: 0,
         fontHeightPt: 14,
+        heldOpenPt: null,
       },
       leftPt: options.leftPt ?? 120,
       topPt: 30,
       heightPt: 14,
       seatPt: 0,
+      fittingHeightPt: 14,
       baselinePt: options.baselinePt ?? 41,
       startsPage: false,
     },
@@ -116,6 +119,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
     name: "Object",
     widthEmu: 0,
     heightEmu: 0,
+    turnDegrees: 0,
     content: { kind: "shape", paint: NO_PAINT } as const,
     horizontal: { kind: "offset", from: "column", offsetEmu: 0 } as const,
     vertical: { kind: "offset", from: "paragraph", offsetEmu: 0 } as const,
@@ -131,6 +135,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
   topPt: 200,
   widthPt: 180,
   heightPt: 90,
+  turnDegrees: 0,
 });
 
 const layoutWith = (
@@ -143,19 +148,29 @@ const layoutWith = (
   page: LETTER,
   unhonoured: [],
   headerTopPt: 21.6,
-  headerHeightPt: 0,
   bodyTopPt: 36,
   bodyBottomPt: 792,
-  footerTopPt: 784.8,
-  header: [],
-  footer: [],
-  headerCells: [],
-  footerCells: [],
-  headerFloats: [],
-  footerFloats,
-  headerInlines: [],
-  footerInlines: [],
-  pages: [{ index: 0, geometry: LETTER, body, cells, floats, inlines: [] }],
+  pages: [
+    {
+      index: 0,
+      geometry: LETTER,
+      body,
+      cells,
+      floats,
+      inlines: [],
+      headerTopPt: 21.6,
+      headerHeightPt: 0,
+      footerTopPt: 784.8,
+      header: [],
+      footer: [],
+      headerCells: [],
+      footerCells: [],
+      headerFloats: [],
+      footerFloats,
+      headerInlines: [],
+      footerInlines: [],
+    },
+  ],
 });
 
 // A block of colour cut to a rectangle, a rule and a run of text, which is what a

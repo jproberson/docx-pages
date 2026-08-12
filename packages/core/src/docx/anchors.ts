@@ -2,6 +2,7 @@ import type { Paragraph } from "./blocks.js";
 import {
   readDrawingContent,
   readDrawingFlip,
+  readDrawingTurn,
   type DrawingContent,
   type DrawingFlip,
 } from "./drawing.js";
@@ -54,6 +55,10 @@ export type FloatingAnchor = {
   readonly name: string;
   readonly widthEmu: number;
   readonly heightEmu: number;
+  // How far round the object was turned after it was drawn, which is paint alone
+  // here: what an object turned out of its own box does to the text wrapping
+  // around it has not been asked of Word.
+  readonly turnDegrees: number;
   readonly horizontal: AnchorPosition;
   readonly vertical: AnchorPosition;
   readonly content: DrawingContent;
@@ -173,6 +178,7 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
       name: docPr === null ? "" : (attribute(docPr, "", "name") ?? ""),
       widthEmu: extent === null ? 0 : numberAttribute(extent, "cx", 0),
       heightEmu: extent === null ? 0 : numberAttribute(extent, "cy", 0),
+      turnDegrees: readDrawingTurn(anchor),
       content: readDrawingContent(anchor),
       horizontal: readPosition(anchor, "positionH", "column"),
       vertical: readPosition(anchor, "positionV", "paragraph"),
