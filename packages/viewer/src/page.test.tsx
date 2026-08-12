@@ -120,6 +120,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
     widthEmu: 0,
     heightEmu: 0,
     turnDegrees: 0,
+    flip: { horizontal: false, vertical: false } as const,
     content: { kind: "shape", paint: NO_PAINT } as const,
     horizontal: { kind: "offset", from: "column", offsetEmu: 0 } as const,
     vertical: { kind: "offset", from: "paragraph", offsetEmu: 0 } as const,
@@ -136,6 +137,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
   widthPt: 180,
   heightPt: 90,
   turnDegrees: 0,
+  flip: { horizontal: false, vertical: false } as const,
 });
 
 const layoutWith = (

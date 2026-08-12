@@ -59,6 +59,10 @@ export type FloatingAnchor = {
   // here: what an object turned out of its own box does to the text wrapping
   // around it has not been asked of Word.
   readonly turnDegrees: number;
+  // Which way round the object was flipped after it was drawn. Read already for
+  // the wrap polygon, which is written for the object the right way round; this
+  // carries it on to whatever draws the object itself.
+  readonly flip: DrawingFlip;
   readonly horizontal: AnchorPosition;
   readonly vertical: AnchorPosition;
   readonly content: DrawingContent;
@@ -172,13 +176,15 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
   return paragraphOwnDrawings(paragraph, WP_NS, "anchor").map((anchor) => {
     const extent = firstNamed(anchor, WP_NS, "extent");
     const docPr = firstNamed(anchor, WP_NS, "docPr");
-    const wrapping = readWrapping(anchor, readDrawingFlip(anchor));
+    const flip = readDrawingFlip(anchor);
+    const wrapping = readWrapping(anchor, flip);
     return {
       paragraphIndex: paragraph.index,
       name: docPr === null ? "" : (attribute(docPr, "", "name") ?? ""),
       widthEmu: extent === null ? 0 : numberAttribute(extent, "cx", 0),
       heightEmu: extent === null ? 0 : numberAttribute(extent, "cy", 0),
       turnDegrees: readDrawingTurn(anchor),
+      flip,
       content: readDrawingContent(anchor),
       horizontal: readPosition(anchor, "positionH", "column"),
       vertical: readPosition(anchor, "positionV", "paragraph"),

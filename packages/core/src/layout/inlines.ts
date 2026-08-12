@@ -1,3 +1,4 @@
+import type { DrawingFlip } from "../docx/drawing.js";
 import type { InlineDrawing } from "../docx/inlines.js";
 import { resolveContent, type PartResolver, type PlacedContent } from "./floats.js";
 import type { ParagraphBox } from "./stack.js";
@@ -16,6 +17,7 @@ export type PlacedInline = {
   readonly widthPt: number;
   readonly heightPt: number;
   readonly turnDegrees: number;
+  readonly flip: DrawingFlip;
 };
 
 export type PlaceInlinesInput = {
@@ -61,6 +63,7 @@ export function placeInlines(input: PlaceInlinesInput): readonly PlacedInline[] 
           },
         ),
         turnDegrees: drawing.turnDegrees,
+        flip: drawing.flip,
       });
     }
   }

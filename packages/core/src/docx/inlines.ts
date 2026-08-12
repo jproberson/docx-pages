@@ -1,5 +1,11 @@
 import type { Paragraph } from "./blocks.js";
-import { readDrawingContent, readDrawingTurn, type DrawingContent } from "./drawing.js";
+import {
+  readDrawingContent,
+  readDrawingFlip,
+  readDrawingTurn,
+  type DrawingContent,
+  type DrawingFlip,
+} from "./drawing.js";
 import { paragraphOwnDrawings } from "./paragraphs.js";
 import { attribute, firstNamed } from "./xml.js";
 
@@ -13,6 +19,10 @@ export type InlineDrawing = {
   // How far round the drawing was turned after it was drawn, clockwise. The extent
   // above is the drawing the right way up whatever this says.
   readonly turnDegrees: number;
+  // Which way round the drawing was flipped after it was drawn. Paint alone: a
+  // flipped box covers the room the unflipped one did, and only what is drawn
+  // inside it is turned over.
+  readonly flip: DrawingFlip;
   readonly content: DrawingContent;
 };
 
@@ -32,6 +42,7 @@ export function readInlines(paragraph: Paragraph): readonly InlineDrawing[] {
       widthEmu: extent === null ? 0 : numberAttribute(extent, "cx"),
       heightEmu: extent === null ? 0 : numberAttribute(extent, "cy"),
       turnDegrees: readDrawingTurn(inline),
+      flip: readDrawingFlip(inline),
       content: readDrawingContent(inline),
     };
   });

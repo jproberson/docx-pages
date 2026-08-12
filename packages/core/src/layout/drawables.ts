@@ -76,8 +76,6 @@ type Standing = {
   readonly turnDegrees: number;
 };
 
-const UNFLIPPED: DrawingFlip = { horizontal: false, vertical: false };
-
 /**
  * What a painter walks for one object, which for a group is one item per shape
  * inside it and for a group inside a group is that again.
@@ -135,7 +133,7 @@ const fromFloat = (float: PlacedFloat, key: string): readonly Drawable[] =>
       topPt: float.topPt,
       widthPt: float.widthPt,
       heightPt: float.heightPt,
-      flip: UNFLIPPED,
+      flip: float.flip,
       turnDegrees: float.turnDegrees,
     },
     key,
@@ -150,7 +148,7 @@ const fromInline = (inline: PlacedInline, key: string): readonly Drawable[] =>
       topPt: inline.topPt,
       widthPt: inline.widthPt,
       heightPt: inline.heightPt,
-      flip: UNFLIPPED,
+      flip: inline.flip,
       turnDegrees: inline.turnDegrees,
     },
     key,

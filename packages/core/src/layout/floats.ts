@@ -61,6 +61,7 @@ export type PlacedFloat = {
   readonly widthPt: number;
   readonly heightPt: number;
   readonly turnDegrees: number;
+  readonly flip: DrawingFlip;
 };
 
 export type PartResolver = (relationshipId: string) => string | null;
@@ -204,6 +205,7 @@ export function placeFloat(input: PlaceFloatInput): PlacedFloat {
 
   return {
     anchor,
+    flip: anchor.flip,
     content: resolveContent(anchor.content, input.resolvePart, input.theme),
     leftPt: resolve(anchor.horizontal, horizontalBand(input.page, anchor.horizontal.from), widthPt),
     topPt: onTheTwip(

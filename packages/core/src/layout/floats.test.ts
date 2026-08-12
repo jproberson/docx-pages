@@ -331,3 +331,22 @@ describe("placeFloat content", () => {
     expect(placed.content).toStrictEqual({ kind: "unknown" });
   });
 });
+
+// **A flip has to reach whatever draws the object.** It was read for the wrap
+// polygon and dropped before anything painted, so `drawablesOf` handed every
+// top-level object an unflipped one and both backends drew a connector between the
+// wrong corners and a triangle the wrong way up. Nothing could see it but the page.
+describe("a flipped object", () => {
+  const flipOf = (flip: string) =>
+    place(anchorXml({ h: offsetH(0), v: offsetV(0), flip }), 100).flip;
+
+  it("carries what the drawing states through to where it is placed", () => {
+    expect(flipOf('flipH="1"')).toStrictEqual({ horizontal: true, vertical: false });
+    expect(flipOf('flipV="1"')).toStrictEqual({ horizontal: false, vertical: true });
+    expect(flipOf('flipH="1" flipV="1"')).toStrictEqual({ horizontal: true, vertical: true });
+  });
+
+  it("says a drawing stating nothing was flipped neither way", () => {
+    expect(flipOf("")).toStrictEqual({ horizontal: false, vertical: false });
+  });
+});
