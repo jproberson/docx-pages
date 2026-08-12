@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   looksOf,
+  type DrawOurs,
   shareOf,
   shareOfLooks,
   workspaceIn,
@@ -12,6 +13,7 @@ import {
   type Workspace,
 } from "../raster/compare.js";
 import { canDraw } from "../raster/draw.js";
+import { ourWrittenPages } from "../raster/written.js";
 import { renderedPath } from "./render.js";
 import { CORPUS_DIRECTORY, documentsIn, identityOf } from "./sweep.js";
 
@@ -153,6 +155,7 @@ async function sweep(
   wanted: readonly Wanted[],
   workspace: Workspace,
   onProgress: (done: number) => void,
+  drawOurs: DrawOurs | null,
 ): Promise<readonly Looks[]> {
   const rows: Looks[] = [];
   let next = 0;
@@ -165,7 +168,7 @@ async function sweep(
       const each = wanted[at];
       if (each === undefined) continue;
       const bytes = new Uint8Array(readFileSync(each.path));
-      rows.push(await looksOf(bytes, each.id, renderedPath(each.id), mine));
+      rows.push(await looksOf(bytes, each.id, renderedPath(each.id), mine, undefined, drawOurs));
       onProgress(rows.length);
     }
   };
@@ -188,16 +191,28 @@ async function main(): Promise<void> {
     return;
   }
 
+  // `--written` draws our side by writing a pdf of it and handing that to the very
+  // rasteriser Word's goes through, which leaves the floor with nothing in it but
+  // the two drawings differing. Measured on 2026-08-11 over the eight documents
+  // already known to be right: the floor fell from 0.6% to 0.4%, and eighteen of
+  // their twenty pages went to no differing cells at all.
+  const drawnByWriter = process.argv.includes("--written");
+
   const wanted = documentsWanted(CORPUS_DIRECTORY);
   process.stdout.write(`${String(wanted.length)} documents to draw beside Word's drawing\n`);
 
   const started = Date.now();
-  const rows = await sweep(wanted, workspaceIn(DIRECTORY, false), (done) => {
-    if (done % 25 !== 0) return;
-    const each = (Date.now() - started) / done;
-    const left = Math.round((each * (wanted.length - done)) / 1000);
-    process.stdout.write(`  ${String(done)}/${String(wanted.length)}, ${String(left)}s left\n`);
-  });
+  const rows = await sweep(
+    wanted,
+    workspaceIn(DIRECTORY, false),
+    (done) => {
+      if (done % 25 !== 0) return;
+      const each = (Date.now() - started) / done;
+      const left = Math.round((each * (wanted.length - done)) / 1000);
+      process.stdout.write(`  ${String(done)}/${String(wanted.length)}, ${String(left)}s left\n`);
+    },
+    drawnByWriter ? ourWrittenPages : null,
+  );
 
   const ordered = [...rows].sort((one, other) => one.id.localeCompare(other.id));
   mkdirSync(dirname(resolve(REPORT_PATH)), { recursive: true });
