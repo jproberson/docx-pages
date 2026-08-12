@@ -8,10 +8,19 @@ import { readPng, type RasterImage } from "./png.js";
 
 // Getting a drawing of a page out of each side.
 //
-// Ours comes out of a browser, since a browser is the only thing that draws what
-// the viewer describes. Word's comes out of its own pdf through poppler. Both are
-// asked for ninety-six pixels to the inch, which is a css pixel to the point and
-// a third, so a page of the same size comes back the same size from both.
+// Word's comes out of its own pdf through poppler. Ours comes out of either a
+// browser or, since the writer landed, a pdf of our own through that same poppler,
+// which is what `--written` asks for and what `written.ts` does. Both are asked for
+// ninety-six pixels to the inch, which is a css pixel to the point and a third, so
+// a page of the same size comes back the same size from both.
+//
+// **Prefer the written path.** A browser was once the only thing that drew what the
+// viewer describes, and that is why this file starts one; it stopped being true
+// when `writePdf` began walking the same `drawablesOf`. Two rasterisers hint and
+// antialias differently and no tuning takes a pixel count to nought, so the browser
+// path carries a floor that the written path does not. Measured on 2026-08-11 over
+// the eight documents already known to be right: 0.6% against 0.4%, and twelve of
+// their twenty pages coming out exactly equal against eighteen.
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
