@@ -51,7 +51,8 @@ const EPSILON = 1e-9;
 // of a point: the least run of free space it takes is exactly 18pt, a quarter
 // inch, and 17.99pt is refused. The same beside a `wrapTight` object as beside a
 // `wrapSquare` one, against the column's own edge as between two objects, and at
-// any size of text.
+// any size of text, and of a paragraph mark that has to be moved as much as of a
+// line: an empty paragraph offered 10pt beside an object falls past it instead.
 export const LEAST_SPAN_PT = 18;
 
 type Span = { readonly leftPt: number; readonly rightPt: number };
@@ -184,4 +185,37 @@ export function fitLine(input: FitLineInput): LineSlot {
   }
 
   return { topPt, leftPt, rightPt };
+}
+
+// Where a paragraph's own mark comes to rest, which is not quite where a line
+// does. **A mark standing clear of every object is not moved at all, however
+// narrow the run of free space it is standing in**, and only a mark that has to be
+// moved is held to `LEAST_SPAN_PT` like a line.
+//
+// Measured against Word on 2026-08-12, over an empty paragraph beside a box put
+// down to the quarter point. Indented 144pt with the box 2.25pt to the right of
+// that, the paragraph stays where it is; with the box over the indent instead and
+// 10pt of room left beyond it, the same paragraph falls to the box's foot rather
+// than take the 10pt, and with 180pt left beyond it, it takes that. A numbered
+// paragraph asks for the reach from its number to where the number's suffix moves
+// the text on to, so hanging the number 18pt in front of the indent it stays with
+// 20.25pt of room before the box and falls with 14.25pt, and hanging it 36pt it
+// falls with 22pt.
+export function fitMark(input: FitLineInput): LineSlot {
+  const bottomPt = input.topPt + input.heightPt;
+  const standing = freeSpans(
+    input.leftPt,
+    input.rightPt,
+    input.bands
+      .filter((band) => crosses(band, input.topPt, bottomPt))
+      .map((band) => besideLine(band, input.topPt, bottomPt)),
+  ).find(
+    (span) =>
+      span.leftPt <= input.leftPt + EPSILON &&
+      span.rightPt >= input.leftPt + input.widthPt - EPSILON,
+  );
+
+  return standing === undefined
+    ? fitLine(input)
+    : { topPt: input.topPt, leftPt: standing.leftPt, rightPt: standing.rightPt };
 }

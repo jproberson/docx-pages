@@ -58,7 +58,7 @@ import {
 import { nextTabStop, tabStopsPt } from "./tab-stops.js";
 import { twipsToPoints } from "./units.js";
 import type { Column } from "./columns.js";
-import { fitLine, type LineSlot, type WrapBand } from "./wrapping.js";
+import { fitLine, fitMark, type FitLineInput, type LineSlot, type WrapBand } from "./wrapping.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
@@ -1789,6 +1789,26 @@ const acrossOf = (input: LayOutParagraphInput): Span => {
 
 type Span = { readonly leftPt: number; readonly rightPt: number };
 
+// Where a paragraph with no text begins, and what it asks of the room there.
+//
+// Its whole line is its mark: a number standing at the hanging position and
+// reaching to wherever its suffix moves the text on to, or, where there is no
+// number, a paragraph mark drawing nothing at the left indent. **Measured against
+// Word on 2026-08-12**, over a numbered paragraph indented 144pt with the number
+// hanging 18pt in front of it and a box put down to the quarter point beside it:
+// the paragraph stays where it is with 20.25pt of room before the box and falls to
+// the box's foot with 14.25pt, and hanging the number 36pt instead it falls with
+// 22pt, which no least run of free space explains and the reach to the text start
+// does. The same paragraph without a number keeps 2.25pt of room and stays.
+const markSpanOf = (
+  frame: Frame,
+  insets: Insets,
+  number: MeasuredNumber | null,
+): { readonly leftPt: number; readonly widthPt: number } =>
+  number === null
+    ? { leftPt: frame.leftPt + insets.leftPt, widthPt: 0 }
+    : { leftPt: number.leftPt, widthPt: number.textStartPt - number.leftPt };
+
 // What the paragraph draws last: its last line, or the room its mark stands in
 // where it has none, taken down to the paragraph's own foot. That is the box an
 // object standing over the foot is asked to make room for, and Word answers it as
@@ -1804,11 +1824,14 @@ function droppedPast(box: ParagraphBox, input: LayOutParagraphInput, across: Spa
 
   const last = box.lines[box.lines.length - 1];
   const topPt = last === undefined ? box.markTopPt : last.topPt;
-  const slot = fitLine({
+  const mark = markSpanOf(input.frame, insetsOf(input.paragraphFrame), input.number ?? null);
+  const fit = last === undefined ? fitMark : fitLine;
+  const slot = fit({
     topPt,
     heightPt: box.topPt + box.heightPt - topPt,
-    ...across,
-    widthPt: last?.line.widthPt ?? 0,
+    leftPt: last === undefined ? mark.leftPt : across.leftPt,
+    rightPt: across.rightPt,
+    widthPt: last?.line.widthPt ?? mark.widthPt,
     bands: ahead,
   });
 
@@ -1909,15 +1932,19 @@ function layOutWholeParagraph(
       },
       paragraphFrame,
     );
-    const slot = slotFor({
-      topPt: input.topPt + beforePt + abovePt,
-      heightPt: height.fittingHeightPt,
-      roomAbovePt: beforePt,
-      leftPt: frame.leftPt + insets.leftPt,
-      rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
-      widthPt: 0,
-      bands: input.bands,
-    });
+    const mark = markSpanOf(frame, insets, number ?? null);
+    const slot = slotFor(
+      {
+        topPt: input.topPt + beforePt + abovePt,
+        heightPt: height.fittingHeightPt,
+        roomAbovePt: beforePt,
+        leftPt: mark.leftPt,
+        rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
+        widthPt: mark.widthPt,
+        bands: input.bands,
+      },
+      fitMark,
+    );
 
     return {
       index,
@@ -2102,9 +2129,9 @@ type Slot = {
 // asking 36pt above itself under a box whose foot is at 190 has its line at 226,
 // and one whose line stands 44pt clear of the foot of a box beside it is drawn to
 // the right of that box all the same.
-function slotFor(slot: Slot): LineSlot {
+function slotFor(slot: Slot, fit: (input: FitLineInput) => LineSlot = fitLine): LineSlot {
   const { roomAbovePt } = slot;
-  const found = fitLine({
+  const found = fit({
     topPt: slot.topPt - roomAbovePt,
     heightPt: slot.heightPt + roomAbovePt,
     leftPt: slot.leftPt,

@@ -866,6 +866,33 @@ const bandOn =
   (paragraph) =>
     paragraph.index === index ? [band] : [];
 
+// The same beside a numbered paragraph, whose mark is its number rather than the
+// nothing an unnumbered one draws.
+const wrappedList = (body: string, bandsFor: BandResolver) => {
+  const pkg = openDocx(
+    buildDocx({
+      "word/document.xml": wordDocument(body),
+      "word/styles.xml": NORMAL,
+      "word/numbering.xml": LISTS,
+    }),
+  );
+  const result = measureStack({
+    blocks: readBlocks(pkg),
+    styles: readStyleTable(pkg),
+    metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+    part: "word/document.xml",
+    originPt: 36,
+    leftPt: 72,
+    widthPt: 468,
+    bandsFor,
+  });
+  if (result.kind !== "measured") throw new Error(result.blocker.kind);
+  return result.boxes;
+};
+
+const emptyItem = (indent: string): string =>
+  `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${indent}</w:pPr></w:p>`;
+
 describe("measureStack around wrapping objects", () => {
   it("moves a line's start past an object standing over the frame's left edge", () => {
     const boxes = wrapped(
@@ -918,7 +945,9 @@ describe("measureStack around wrapping objects", () => {
   });
 
   // Word moves an empty paragraph out of an object's way like any other line, and
-  // the paragraphs under it follow, which is what decides where a page breaks.
+  // the paragraphs under it follow, which is what decides where a page breaks. The
+  // 10pt left beyond the object here is not a run it will take: measured on
+  // 2026-08-12, an empty paragraph offered exactly that much falls past instead.
   it("moves an empty paragraph out of an object's way, though it draws nothing", () => {
     const boxes = wrapped(
       `<w:p/>` + paragraph(``, "aaaa"),
@@ -928,6 +957,49 @@ describe("measureStack around wrapping objects", () => {
     expect(boxes[0]?.lines).toStrictEqual([]);
     expect(boxes[0]?.heightPt).toBeCloseTo(100 + ARIAL_12 - 36, 9);
     expect(boxes[1]?.topPt).toBeCloseTo(100 + ARIAL_12, 9);
+  });
+
+  it("moves an empty paragraph across into a run of free space worth having", () => {
+    const boxes = wrapped(
+      `<w:p/>` + paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 0, rightPt: 400, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.heightPt).toBeCloseTo(ARIAL_12, 9);
+  });
+
+  // **A mark standing clear of the object is not moved at all**, so the least run
+  // of free space never comes into it: the paragraph here has 2.25pt to stand in
+  // and stays, where the one above had 10pt to move into and did not.
+  it("leaves an empty paragraph's mark in a sliver of space beside an object", () => {
+    const boxes = wrapped(
+      `<w:p><w:pPr><w:ind w:left="1440"/></w:pPr></w:p>` + paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 146.25, rightPt: 530, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.heightPt).toBeCloseTo(ARIAL_12, 9);
+    expect(boxes[1]?.topPt).toBeCloseTo(36 + ARIAL_12, 9);
+  });
+
+  // A number stands at the hanging position and asks for the reach from there to
+  // where its suffix moves the text on to, which is 18pt of the 20.25pt here.
+  it("leaves a numbered empty paragraph whose number and suffix both stand clear", () => {
+    const boxes = wrappedList(
+      emptyItem(`<w:ind w:left="1440" w:hanging="360"/>`) + paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 146.25, rightPt: 530, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.marker?.leftPt).toBeCloseTo(126, 9);
+    expect(boxes[0]?.heightPt).toBeCloseTo(ARIAL_12, 9);
+  });
+
+  it("drops a numbered empty paragraph the object leaves short of its own text", () => {
+    const boxes = wrappedList(
+      emptyItem(`<w:ind w:left="1440" w:hanging="360"/>`) + paragraph(``, "aaaa"),
+      bandOn(0, { leftPt: 140.25, rightPt: 530, topPt: 0, bottomPt: 100 }),
+    );
+
+    expect(boxes[0]?.heightPt).toBeCloseTo(100 + ARIAL_12 - 36, 9);
   });
 
   it("keeps an object out of the paragraphs ahead of the one it is anchored to", () => {
