@@ -154,15 +154,24 @@ function facesToEmbed(
     }
   }
 
+  // **The last resort is what the layout itself falls back on**, and without it a
+  // face nothing on this machine offers ends the document rather than standing it
+  // in. A metafile is where that bites: the text inside one is drawn without ever
+  // being laid out, so the face it names reaches nothing that could substitute for
+  // it, and one corpus document's embedded spreadsheet asks for Aptos Black on a
+  // machine that has Aptos and no weight of it.
   const alsoCarry = (name: string, bold: boolean, italic: boolean): boolean => {
     const before = fonts.length;
-    for (const [wantBold, wantItalic] of [
-      [bold, italic],
-      [bold, false],
-      [false, italic],
-      [false, false],
-    ] as const) {
-      const from = keyOf(name, wantBold, wantItalic);
+    const wanted = [
+      [name, bold, italic],
+      [name, bold, false],
+      [name, false, italic],
+      [name, false, false],
+      ...WORD_FALLBACK_FACES.map((each) => [each, false, false] as const),
+    ] as const;
+
+    for (const [wantName, wantBold, wantItalic] of wanted) {
+      const from = keyOf(wantName, wantBold, wantItalic);
       if (!offered.has(from)) continue;
       carry(name, bold, italic, from);
       break;
