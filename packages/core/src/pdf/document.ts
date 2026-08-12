@@ -25,6 +25,17 @@ export type PdfFont = {
   readonly bold?: boolean;
   readonly italic?: boolean;
   readonly bytes: Uint8Array;
+  // Which face inside the file, where the file holds more than one and the name it
+  // answers to is not the name it is stored under.
+  //
+  // **The two come apart exactly where a face stands in for another.** A stand-in
+  // is carried under the name the document asked for, since that is the name the
+  // layout measured it as, and a collection asked for that name holds no such face:
+  // measured over a corpus, every stand-in reached for was Cambria, whose file
+  // holds `Cambria` and `Cambria Math` and nothing called `Aptos Display`. Left
+  // out, the name it answers to is used, which is right for a file holding one
+  // face and for a face supplied under its own name.
+  readonly faceName?: string;
 };
 
 // What a reader shows about the file rather than anything drawn in it. Every part

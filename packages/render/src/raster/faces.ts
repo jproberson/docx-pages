@@ -19,6 +19,10 @@ import { referenceFonts } from "../testing/cases.js";
 
 export type Offered = {
   readonly name: string;
+  // What the face calls itself inside its file, which is how one is picked out of a
+  // collection. A face is offered under the family a document names as well as
+  // under the whole of its own name, so the two are often not the same.
+  readonly fullName: string;
   readonly bold: boolean;
   readonly italic: boolean;
   readonly filePath: string | null;
@@ -31,12 +35,19 @@ const keyOf = (name: string, bold: boolean, italic: boolean): string =>
 // looking, and the first to claim a name keeps it.
 export function offeredFaces(): readonly Offered[] {
   const found = new Map<string, Offered>();
-  const offer = (name: string, bold: boolean, italic: boolean, path: string | null): void => {
+  const offer = (
+    name: string,
+    bold: boolean,
+    italic: boolean,
+    path: string | null,
+    fullName = name,
+  ): void => {
     if (name.trim() === "") return;
     const key = keyOf(name, bold, italic);
     if (found.has(key)) return;
     found.set(key, {
       name,
+      fullName,
       bold,
       italic,
       filePath: path !== null && existsSync(path) ? path : null,
@@ -51,7 +62,18 @@ export function offeredFaces(): readonly Offered[] {
   }
 
   for (const face of installedFaceFiles()) {
-    offer(face.family, face.bold, face.italic, fallbackFacePath(face.family) ?? face.filePath);
+    // **The internal name only describes the installed file.** Where the pack's
+    // file stands in for it the name goes back to the family, which a file holding
+    // one face ignores anyway; naming the installed file's face against the pack's
+    // file would look the wrong face up in the wrong place.
+    const fromPack = fallbackFacePath(face.family);
+    offer(
+      face.family,
+      face.bold,
+      face.italic,
+      fromPack ?? face.filePath,
+      fromPack === null ? face.fullName : face.family,
+    );
     if (face.fullName !== face.family) offer(face.fullName, false, false, face.filePath);
   }
 

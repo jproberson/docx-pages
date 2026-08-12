@@ -110,7 +110,8 @@ type Used = {
 };
 
 function openFace(font: PdfFont, resource: string): Used {
-  const read = readFontFile(font.bytes, font.name);
+  const inFile = font.faceName ?? font.name;
+  const read = readFontFile(font.bytes, inFile);
   if (read.advances.kind !== "advances") {
     throw new DocxPagesError({
       code: "font-unmeasurable",
@@ -125,7 +126,7 @@ function openFace(font: PdfFont, resource: string): Used {
     font,
     metrics: read.metrics,
     advanceFor: read.advances.advanceFor,
-    glyphFor: readGlyphIndex(font.bytes, font.name),
+    glyphFor: readGlyphIndex(font.bytes, inFile),
     underline: read.underline,
     italicAngle: read.italicAngle,
     drawn: new Map(),
