@@ -5,7 +5,7 @@ import type { LaidOutDocument, LaidOutPage } from "../layout/document.js";
 import { drawablesOf } from "../layout/drawables.js";
 
 import { formatPdfNumber } from "./objects.js";
-import { pdfPageOf, type PdfPage } from "./coordinates.js";
+import { pdfPageOf, turnedAboutInPdf, upFromTop, type PdfPage } from "./coordinates.js";
 import type { PdfFonts } from "./fonts.js";
 import type { PdfImages } from "./images.js";
 import { paintedObject, type ObjectDrawable } from "./objects-paint.js";
@@ -208,6 +208,34 @@ export type ContentOptions = {
 // the two halves of its paint go either side of the bitmap. A picture that could
 // not be drawn still gets both, which is what the frame of an unresolved one is.
 function drawObject(out: Content, page: PdfPage, images: PdfImages, at: ObjectDrawable): void {
+  // A drawing turned in the flow is turned about the middle of the box the flow
+  // gave it, which is the box the layout answers and the box it stood in before it
+  // was turned. Everything the object draws goes under the one matrix: its paint,
+  // its picture and the outline over the top all turn together, as a reader of the
+  // page would expect them to and as the viewer's own `rotate` does.
+  if (at.turnDegrees !== 0) {
+    out.save();
+    out.transform(
+      turnedAboutInPdf(
+        at.turnDegrees,
+        at.leftPt + at.widthPt / 2,
+        upFromTop(page, at.topPt + at.heightPt / 2),
+      ),
+    );
+    drawUnturnedObject(out, page, images, at);
+    out.restore();
+    return;
+  }
+
+  drawUnturnedObject(out, page, images, at);
+}
+
+function drawUnturnedObject(
+  out: Content,
+  page: PdfPage,
+  images: PdfImages,
+  at: ObjectDrawable,
+): void {
   const { content: what } = at;
 
   switch (what.kind) {
@@ -267,6 +295,20 @@ export function contentOf(
         // cuts it off there. Written and clipped rather than left out, which is
         // what Word's own pdf holds: the text is in the file and painted nowhere.
         out.save();
+        // A shape's text turns with the shape, about the middle of the very
+        // rectangle it is cut to. The turn goes on before the rectangle does, so
+        // the cut turns with the text: the shape's box is what Word cuts at, and
+        // that box is no longer square with the page once the shape has been
+        // turned.
+        if (drawable.turnDegrees !== 0) {
+          out.transform(
+            turnedAboutInPdf(
+              drawable.turnDegrees,
+              clipTo.leftPt + clipTo.widthPt / 2,
+              upFromTop(pdfPage, clipTo.topPt + clipTo.heightPt / 2),
+            ),
+          );
+        }
         out.rectangle(
           clipTo.leftPt,
           pdfPage.heightPt - clipTo.topPt - clipTo.heightPt,

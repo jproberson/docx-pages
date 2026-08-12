@@ -36,3 +36,38 @@ export const upFromTop = (page: PdfPage, downPt: number): number => page.heightP
 // the low one.
 export const bottomOf = (page: PdfPage, topPt: number, heightPt: number): number =>
   page.heightPt - topPt - heightPt;
+
+/**
+ * The matrix that turns whatever is drawn under it about the middle of the box it
+ * stands in, as far clockwise as layout says the drawing was turned.
+ *
+ * **The angle goes in negated, and that is this file's flip once more rather than
+ * a second rule.** Layout counts a turn clockwise as a reader sees it; a pdf's own
+ * angles run the other way round, because its y counts up the page where layout's
+ * counts down. A turn stated once therefore comes out on the page the way it was
+ * stated, and a turn taken straight from layout would come out mirrored.
+ *
+ * The centre is given in a pdf's coordinates, not layout's, since everything a
+ * matrix touches is already in them.
+ */
+export const turnedAboutInPdf = (
+  turnDegrees: number,
+  centreXPt: number,
+  centreYPt: number,
+): readonly number[] => {
+  const radians = (-turnDegrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  // Turning about a point is a move to the origin, the turn, and the move back,
+  // multiplied out: a pdf takes the six numbers of the product rather than three
+  // operators.
+  return [
+    cos,
+    sin,
+    -sin,
+    cos,
+    centreXPt - cos * centreXPt + sin * centreYPt,
+    centreYPt - sin * centreXPt - cos * centreYPt,
+  ];
+};

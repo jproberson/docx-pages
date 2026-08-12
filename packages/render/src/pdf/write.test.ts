@@ -271,13 +271,16 @@ describe("what a page paints behind its text", () => {
   });
 });
 
-const drawing = (widthEmu: number, heightEmu: number): string =>
+// A turn is stated on the transform in sixty-thousandths of a degree, clockwise,
+// which is how every drawing in a real document states one.
+const drawing = (widthEmu: number, heightEmu: number, turnDegrees = 0): string =>
   `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">` +
   `<wp:extent cx="${String(widthEmu)}" cy="${String(heightEmu)}"/>` +
   `<wp:docPr id="1" name="Picture 1"/><a:graphic xmlns:a="${A_NS}">` +
   `<a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">` +
   `<pic:blipFill><a:blip xmlns:r="${R_NS}" r:embed="rId9"/></pic:blipFill>` +
-  `<pic:spPr><a:xfrm><a:ext cx="${String(widthEmu)}" cy="${String(heightEmu)}"/></a:xfrm>` +
+  `<pic:spPr><a:xfrm rot="${String(turnDegrees * 60000)}">` +
+  `<a:ext cx="${String(widthEmu)}" cy="${String(heightEmu)}"/></a:xfrm>` +
   `</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
 
 const withPicture = (
@@ -285,9 +288,10 @@ const withPicture = (
   heightEmu: number,
   picture: Uint8Array = TINY_JPEG,
   name = "jpeg",
+  turnDegrees = 0,
 ) => {
   const bytes = buildDocx({
-    "word/document.xml": wordDocument(drawing(widthEmu, heightEmu) + section()),
+    "word/document.xml": wordDocument(drawing(widthEmu, heightEmu, turnDegrees) + section()),
     "word/styles.xml": STYLES,
     [`word/media/image1.${name}`]: picture,
     "word/_rels/document.xml.rels":
@@ -329,6 +333,31 @@ describe("a picture", () => {
       widthPt: round(placed?.widthPt ?? 0),
       heightPt: round(placed?.heightPt ?? 0),
     });
+  });
+
+  // Layout answers a turned drawing with the box it stood in before it was turned
+  // and how far round it went, and turning it is the writer's to do. A quarter turn
+  // is the case worth pinning, since it is the one whose answer can be read off the
+  // bounds alone: a box turned a quarter about its own middle covers the width and
+  // the height the other way round, over the very same middle.
+  it("is drawn turned as far round as layout says it was turned", async () => {
+    const inches = 914400;
+    const { pkg, layout } = withPicture(inches * 2, inches, TINY_JPEG, "jpeg", 90);
+    const bytes = writePdf(layout, {
+      fonts,
+      imageBytes: (part) => pkg.parts.get(part),
+      metricsFor,
+    });
+
+    const drawn = (await readImagePlacements(bytes))[0]?.rect;
+    const placed = layout.pages[0]?.inlines[0];
+    if (drawn === undefined || placed === undefined) throw new Error("nothing was drawn");
+
+    expect(placed.turnDegrees).toBe(90);
+    expect(round(drawn.widthPt)).toBe(round(placed.heightPt));
+    expect(round(drawn.heightPt)).toBe(round(placed.widthPt));
+    expect(round(drawn.leftPt + drawn.widthPt / 2)).toBe(round(placed.leftPt + placed.widthPt / 2));
+    expect(round(drawn.topPt + drawn.heightPt / 2)).toBe(round(placed.topPt + placed.heightPt / 2));
   });
 
   // Bytes that are not there leave the frame empty rather than refusing the page,
