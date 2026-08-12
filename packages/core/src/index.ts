@@ -240,3 +240,17 @@ export type { FaceShape } from "./docx/font-table.js";
 
 export { readMetafilePicture } from "./metafile/picture.js";
 export type { MetafilePicture, MetafileRect, MetafileShape } from "./metafile/picture.js";
+
+// A laid-out document written out as a pdf, and the one convenience that opens and
+// lays a `.docx` out before doing it.
+//
+// Two names, and it should stay about two. Writing decides nothing about where
+// anything sits: it walks `drawablesOf`, the same traversal the viewer walks, so a
+// page comes out of the file where it came out on the screen. A caller states the
+// faces the document draws in and where its pictures come from, and there is no
+// knob here that moves anything on a page.
+export { writePdf } from "./pdf/document.js";
+export type { PdfFont, PdfMetadata, WritePdfOptions } from "./pdf/document.js";
+
+export { pdfOfDocx } from "./pdf/docx-pdf.js";
+export type { PdfOfDocxOptions } from "./pdf/docx-pdf.js";

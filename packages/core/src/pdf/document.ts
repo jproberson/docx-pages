@@ -1,4 +1,5 @@
-import type { LaidOutDocument, MetricsResolver } from "@docx-pages/core";
+import type { LaidOutDocument } from "../layout/document.js";
+import type { MetricsResolver } from "../layout/stack.js";
 
 import { contentOf } from "./content.js";
 import { pdfFonts } from "./fonts.js";

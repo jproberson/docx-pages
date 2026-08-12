@@ -1,13 +1,12 @@
+import type { CropInsets } from "../docx/drawing.js";
+import { METAFILE_EXTENSION, pictureExtension } from "../docx/pictures.js";
+import type { MetricsResolver } from "../layout/stack.js";
 import {
-  pictureExtension,
-  readMetafilePicture,
-  METAFILE_EXTENSION,
-  type CropInsets,
   type MetafilePicture,
   type MetafileRect,
   type MetafileShape,
-  type MetricsResolver,
-} from "@docx-pages/core";
+  readMetafilePicture,
+} from "../metafile/picture.js";
 
 import { bottomOf, type PdfPage } from "./coordinates.js";
 import type { Content } from "./content.js";

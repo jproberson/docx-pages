@@ -1,11 +1,8 @@
 import { strToU8 } from "fflate";
 
-import {
-  DocxPagesError,
-  drawablesOf,
-  type LaidOutDocument,
-  type LaidOutPage,
-} from "@docx-pages/core";
+import { DocxPagesError } from "../errors.js";
+import type { LaidOutDocument, LaidOutPage } from "../layout/document.js";
+import { drawablesOf } from "../layout/drawables.js";
 
 import { formatPdfNumber } from "./objects.js";
 import { pdfPageOf, type PdfPage } from "./coordinates.js";

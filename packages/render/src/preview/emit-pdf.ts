@@ -1,12 +1,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { layOutDocument, lookupFontMetrics, type MetricsResolver } from "@docx-pages/core";
-import { writePdf, type PdfFont } from "@docx-pages/pdf";
+import {
+  layOutDocument,
+  lookupFontMetrics,
+  writePdf,
+  type MetricsResolver,
+  type PdfFont,
+} from "@docx-pages/core";
 
 import { referenceCases, referenceFonts, suppliedFaces } from "../testing/cases.js";
 import { readReferenceDocument } from "../testing/documents.js";
 
-// A reference document written out by `@docx-pages/pdf`, to be looked at beside
+// A reference document written out by `@docx-pages/core`, to be looked at beside
 // Word's own pdf of it. **The numbers are not enough on their own**: this project
 // has already had a suite agree to the thousandth on every drawing in a document
 // whose rendering was visibly wrong, and only the raster said so.

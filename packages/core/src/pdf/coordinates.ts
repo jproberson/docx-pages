@@ -1,4 +1,5 @@
-import { twipsToPoints, type SectionGeometry } from "@docx-pages/core";
+import type { SectionGeometry } from "../docx/section.js";
+import { twipsToPoints } from "../layout/units.js";
 
 // A pdf's user space is a point across and a point down by default, which is what
 // layout measures in, so nothing here is ever scaled. The whole of the difference

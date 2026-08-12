@@ -1,13 +1,13 @@
+import type { BorderStyle } from "../docx/borders.js";
+import type { PaintedParagraph } from "../layout/drawables.js";
 import {
-  paintOfCell,
-  paintOfParagraph,
-  type BorderStyle,
   type Painted,
   type PaintedFill,
   type PaintedLine,
-  type PaintedParagraph,
-  type PlacedCell,
-} from "@docx-pages/core";
+  paintOfCell,
+  paintOfParagraph,
+} from "../layout/painting.js";
+import type { PlacedCell } from "../layout/stack.js";
 
 import { bottomOf, upFromTop, type PdfPage } from "./coordinates.js";
 import type { Content } from "./content.js";

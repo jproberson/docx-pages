@@ -1,7 +1,7 @@
 import { strFromU8, unzlibSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
-import { isDocxPagesError, type DocxPagesError } from "@docx-pages/core";
+import { type DocxPagesError, isDocxPagesError } from "../errors.js";
 
 import {
   formatPdfNumber,

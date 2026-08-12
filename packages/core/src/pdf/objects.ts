@@ -1,6 +1,6 @@
 import { strToU8, zlibSync } from "fflate";
 
-import { DocxPagesError } from "@docx-pages/core";
+import { DocxPagesError } from "../errors.js";
 
 // The half of a pdf that is not the drawing: objects, the table that says where
 // each one starts, and the trailer that says which object the document begins at.

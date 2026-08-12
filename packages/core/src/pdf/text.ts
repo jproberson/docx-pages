@@ -1,10 +1,6 @@
-import {
-  aliasedSymbolText,
-  type ParagraphBox,
-  type ParagraphMark,
-  type ParagraphMarker,
-  type PlacedLine,
-} from "@docx-pages/core";
+import type { ParagraphMark } from "../docx/styles.js";
+import type { ParagraphBox, ParagraphMarker, PlacedLine } from "../layout/stack.js";
+import { aliasedSymbolText } from "../layout/symbol-aliases.js";
 
 import { bottomOf, upFromTop, type PdfPage } from "./coordinates.js";
 import { faceOf, type PdfFonts, type PdfUnderline } from "./fonts.js";

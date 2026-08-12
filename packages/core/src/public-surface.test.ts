@@ -49,6 +49,7 @@ const CORE_SURFACE: readonly string[] = [
   "openDocx",
   "paintOfCell",
   "paintOfParagraph",
+  "pdfOfDocx",
   "pictureExtension",
   "readColorReference",
   "readFaceShapes",
@@ -68,6 +69,7 @@ const CORE_SURFACE: readonly string[] = [
   "withFallbackCharacters",
   "withMissingGlyphs",
   "withSubstitutedFaces",
+  "writePdf",
 ];
 
 describe("the public surface of @docx-pages/core", () => {

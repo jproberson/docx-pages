@@ -1,4 +1,5 @@
-import type { Drawable, PlacedPaint } from "@docx-pages/core";
+import type { Drawable } from "../layout/drawables.js";
+import type { PlacedPaint } from "../layout/floats.js";
 
 import { bottomOf, upFromTop, type PdfPage } from "./coordinates.js";
 import type { Content } from "./content.js";

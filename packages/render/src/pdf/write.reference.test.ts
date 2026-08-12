@@ -6,10 +6,11 @@ import {
   drawablesOf,
   layOutDocument,
   lookupFontMetrics,
+  writePdf,
   type LaidOutDocument,
   type MetricsResolver,
+  type PdfFont,
 } from "@docx-pages/core";
-import { writePdf, type PdfFont } from "@docx-pages/pdf";
 
 import { readTextPlacements, type TextPlacement } from "./text.js";
 import { referenceCases, referenceFonts, suppliedFaces } from "../testing/cases.js";

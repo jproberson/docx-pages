@@ -9,13 +9,15 @@ import {
   lookupFontMetrics,
   openDocx,
   paintOfParagraph,
+  pdfOfDocx,
   readFontFile,
+  writePdf,
   type LaidOutDocument,
   type MetricsResolver,
+  type PdfFont,
   type SuppliedFace,
 } from "@docx-pages/core";
 import { buildDocx, wordDocument, WORDPROCESSING_NS } from "@docx-pages/core/testing";
-import { pdfOfDocx, writePdf, type PdfFont } from "@docx-pages/pdf";
 
 import { readFillPlacements } from "./fills.js";
 import { readImagePlacements } from "./placements.js";

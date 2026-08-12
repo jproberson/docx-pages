@@ -3,7 +3,6 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/fonts" },
-    { "path": "./packages/pdf" },
     { "path": "./packages/render" },
     { "path": "./packages/viewer" }
   ]

@@ -17,16 +17,18 @@ measurement is what the tests hold on to.
 
 | Package                                 | Runs on   | What it is                                                                                                                                                     |
 | --------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`@docx-pages/core`](packages/core)     | anywhere  | Reads the package, lays it out, plays metafiles. Touches no disk and no network.                                                                               |
+| [`@docx-pages/core`](packages/core)     | anywhere  | Reads the package, lays it out, plays metafiles, writes a pdf. Touches no disk and no network.                                                                 |
 | [`@docx-pages/viewer`](packages/viewer) | React 18+ | Draws a laid-out page, or a whole `.docx` from its bytes.                                                                                                      |
-| [`@docx-pages/pdf`](packages/pdf)       | anywhere  | Writes a laid-out page out as a pdf. Touches no disk and no network either.                                                                                    |
 | [`@docx-pages/fonts`](packages/fonts)   | anywhere  | Freely redistributable twins of the faces documents usually name, for laying out without the real fonts. Optional: only `@docx-pages/viewer/pack` asks for it. |
 
 The viewer and the pdf writer are two backends over the one layout, not two
 renderings. Both walk the same `drawablesOf`, so what is drawn over what is
-answered once; neither of them decides where anything sits.
+answered once; neither of them decides where anything sits. The writer lives in
+core rather than beside it because a pdf is what the library produces, not a
+format someone bolts on: it needs no React, and nothing installs a second package
+to get one.
 
-A fifth package, `render`, is not published. It is the Word oracle: it drives Word
+A fourth package, `render`, is not published. It is the Word oracle: it drives Word
 over AppleScript, reads Word's own pdf back, and holds the test suites. It lives in
 this repository and consumes the library's source rather than installing it.
 

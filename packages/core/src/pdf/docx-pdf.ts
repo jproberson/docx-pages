@@ -1,12 +1,9 @@
-import {
-  layOutDocument,
-  lookupFontMetrics,
-  openDocx,
-  readFontFile,
-  DocxPagesError,
-  type MetricsResolver,
-  type SuppliedFace,
-} from "@docx-pages/core";
+import { openDocx } from "../docx/package.js";
+import { DocxPagesError } from "../errors.js";
+import { layOutDocument } from "../layout/document.js";
+import { readFontFile } from "../layout/font-file.js";
+import { lookupFontMetrics, type SuppliedFace } from "../layout/font-metrics.js";
+import type { MetricsResolver } from "../layout/stack.js";
 
 import { writePdf, type PdfFont, type PdfMetadata } from "./document.js";
 

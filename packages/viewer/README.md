@@ -154,8 +154,8 @@ rather than reaching for them itself. `imageResolver` builds one over a package.
 Under it, `imageDataUrl` builds the url for a single part, and `drawablesOf` says
 what a page holds to draw and in what order, for a caller writing its own painter.
 That traversal is `@docx-pages/core`'s, offered again here so a caller who has the
-viewer need not reach past it: this component and `@docx-pages/pdf` walk the one
-list, and so stack a page the same way.
+viewer need not reach past it: this component and core's own `writePdf` walk the
+one list, and so stack a page the same way.
 
 ## Frames
 

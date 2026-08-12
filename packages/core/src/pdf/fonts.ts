@@ -1,14 +1,10 @@
 import { strToU8 } from "fflate";
 
-import {
-  readFontFile,
-  readGlyphIndex,
-  DocxPagesError,
-  type CodeToGlyph,
-  type FontMetrics,
-  type ParagraphMark,
-  type UnderlineMetrics,
-} from "@docx-pages/core";
+import type { ParagraphMark } from "../docx/styles.js";
+import { DocxPagesError } from "../errors.js";
+import { readFontFile, readGlyphIndex, type UnderlineMetrics } from "../layout/font-file.js";
+import type { FontMetrics } from "../layout/font-metrics.js";
+import type { CodeToGlyph } from "../layout/glyphs.js";
 
 import {
   pdfArray,

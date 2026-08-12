@@ -4,8 +4,9 @@ Reads a `.docx` and works out where Word would put everything, page by page.
 Isomorphic: it touches no disk and no network, so the caller hands in the bytes and
 the fonts.
 
-Draw the result with `@docx-pages/viewer`, or with your own renderer against the
-same types.
+Draw the result with `@docx-pages/viewer`, write it out as a pdf with `writePdf`
+below, or use your own renderer against the same types. All three walk the one
+traversal, `drawablesOf`, so none of them decides where anything sits.
 
 ```
 npm install @docx-pages/core
@@ -86,6 +87,108 @@ for (const entry of layout.unhonoured) {
 `moves-text` puts every page below it in doubt; `changes-paint` is wrong only where
 it stands. The report is not a list of known-wrong drawings: it is what the
 document asks for that nothing here answers, whether or not it showed.
+
+## Writing a pdf
+
+```ts
+import { pdfOfDocx } from "@docx-pages/core";
+
+const pdf = pdfOfDocx(bytes, { fonts: [{ name: "Calibri", bytes: calibri }] });
+```
+
+Underneath, for a caller who has already laid a document out, or who lays one out
+once and writes it more than once:
+
+```ts
+const pkg = openDocx(bytes);
+const layout = layOutDocument(pkg, metricsFor);
+if (layout.kind !== "laid-out") throw new Error(JSON.stringify(layout.blocker));
+
+const pdf = writePdf(layout, { fonts, imageBytes: (part) => pkg.parts.get(part), metricsFor });
+```
+
+`metricsFor` is asked for as well as `fonts` because a metafile picture records
+text as a face and a string rather than as a drawing of one: playing it back
+measures it, and it is measured with whatever the layout measured with. A caller
+who laid the document out over stand-ins passes `aliasSymbolFaces` too, the same
+set the viewer takes, so a run written in a symbol face that was stood in for is
+drawn as what its positions mean rather than as the stand-in's own letters.
+
+### Fonts are yours to supply, and there is no falling back
+
+A pdf carries the faces it draws in, so writing needs the bytes of every one the
+document names, handed in under the name the document names it.
+
+**A face the document draws in that `fonts` does not supply refuses the document**,
+with a `DocxPagesError` whose code is `font-not-supplied`. There is deliberately no
+stand-in. On a screen a substituted face is a page right in its geometry and wrong
+in its letters, and the viewer says so through its report; in a file nobody is
+watching being made, the same page would go out looking finished.
+
+For a page that must be written whatever it costs, stand the faces in before laying
+out, with `bestEffortMetrics` or `substitutingMetrics`, and hand the bytes of
+whatever stood in. Then the substitution is one the caller made and can report.
+
+The whole face is embedded, under Identity-H, with a `ToUnicode` map so the text
+can still be selected and searched.
+
+### What is drawn
+
+- Text, at the baselines layout measured, in the faces supplied.
+- Underlines, as the filled rectangle Word draws one as, where the face's own
+  `post` table says to put it. Measured on 2026-08-07 against Word's own pdf: it
+  puts the line where the drawn face states and not at a place of its own.
+- Paragraph and cell fills, and their borders: single, double, dashed and dotted.
+- Shapes and text boxes: their fill, their outline, and their own text.
+- Pictures: jpeg and png, and metafiles played back as the vector drawing they
+  record rather than rasterised.
+
+A picture costs as little as it can. **A jpeg goes across as it stands**, since it
+is already the compression a pdf would have applied. **So does a png that carries
+no alpha**: a pdf deflates and predicts its pixels exactly as a png does, so the
+`IDAT` stream is already a pdf image stream and is written untouched, with
+`/Predictor 15` naming the arrangement. Neither is decoded and neither is
+compressed a second time. A png that carries alpha is the one picture whose pixels
+have to be opened, because a png keeps what shows through in with the colour and a
+pdf keeps it in a separate image; it is inflated, unfiltered, split, and written as
+the picture and its soft mask. That is the path that matters, since nearly every
+png a real document holds carries alpha.
+
+### What a document asks for and the writer does not draw
+
+Named here rather than passed over quietly, which is the same bargain
+`layout.unhonoured` makes about the layout. Everything the layout itself passed
+over is in that report rather than in this list.
+
+- **A drawing turned or flipped is drawn square.** Layout answers `turnDegrees` and
+  `flip` on every object and on a shape's own text, and the writer reads neither.
+- **No font subsetting.** The whole of every face goes in, every glyph of it,
+  including the thousands the document never draws. The output is correct and
+  larger than it needs to be: a reference one-pager comes out at 2.8MB, of which
+  2.5MB is five embedded faces and 0.24MB is every picture on it. Word's own pdf of
+  the same document is 1.0MB.
+- **No gif, bmp, tiff or webp.** Only jpeg and png are written, because only those
+  two are already compressions a pdf understands. None of the rest is drawn.
+- **No interlaced png**, which holds its rows in seven passes that would have to be
+  woven back together. Left undrawn rather than drawn as a smear. Vanishingly rare.
+- **No png that is not eight bits to a sample.** No other depth has been met at all,
+  so this is a gap in principle rather than in practice.
+- **A partly transparent palette is drawn opaque.** Where an indexed png says an
+  entry is wholly invisible it is masked out and the picture still crosses
+  untouched; where it says an entry is _half_ transparent, honouring it would mean
+  opening the pixels, and the picture is drawn solid instead.
+- **No CMYK jpeg.** Word writes them inverted often enough that drawing one the
+  wrong way round is worse than not drawing it, and which of the two it is cannot be
+  told from the frame header alone. Greyscale and colour jpegs go through.
+- **A picture nothing can draw leaves its frame empty.** Not an error and not a
+  placeholder: the paint round it is still drawn, and the picture is not.
+- **No underline under a face stating no `post` table.** The run is drawn without one
+  rather than under a line in a place nothing measured.
+- **No encryption**, and so no permissions and no password.
+- **No transparency beyond a picture's own.** A shape or a run Word draws part way
+  through what is behind it is drawn solid, and a blend mode is not read at all.
+- **No tagged structure.** Text can be selected and copied; a screen reader is given
+  no reading order, no headings and no alternative text for a picture.
 
 ## Limits worth knowing
 
