@@ -7,10 +7,12 @@ import {
   openDocx,
   readFaceShapes,
   readFontFile,
+  writePdf,
   type FaceDefaults,
   type FallbackCharacter,
   type LaidOutDocument,
   type MissingGlyph,
+  type PdfFont,
   type Substitution,
   type SuppliedFace,
   type Unhonoured,
@@ -55,6 +57,14 @@ export type DocxDocumentProps = {
   // here falls to `defaults`, and the report says which.
   readonly fonts?: readonly DocxFont[];
   readonly onReport?: (report: DocxRenderReport) => void;
+  // Handed out once the document is drawn, with a function that writes the very
+  // page on the screen out as a pdf.
+  //
+  // **It writes the layout that was drawn, not a second one.** The same measured
+  // page, the same faces it was painted with, and the same `drawablesOf` the
+  // component walks, so a file cannot come out saying something the screen did
+  // not: there is nothing between them to disagree.
+  readonly onReady?: (writePdfOfPages: () => Uint8Array) => void;
   // What to draw for a document even best effort cannot lay out, which with a
   // full set of defaults in reach is a malformed file rather than a missing font.
   readonly blocked?: (reason: unknown) => ReactElement | null;
@@ -107,6 +117,51 @@ const sameFace = (
   (font.bold ?? false) === want.bold &&
   (font.italic ?? false) === want.italic;
 
+/**
+ * Every face the page is painted with, which is every face a file of it must
+ * carry.
+ *
+ * **A face stood in for goes under the name the document asked for**, and not
+ * under its own. That is the name the layout measured it as and the name the
+ * browser is offered it under, so a file carrying it under the stand-in's own name
+ * would be a page written in a face nothing here ever measured.
+ *
+ * The order is the order a face is looked for in: what the caller supplied for
+ * exactness first, so a document naming a face that is both supplied and defaulted
+ * is drawn in the supplied one, on the screen and in the file alike.
+ */
+export function facesPaintedWith(
+  fonts: readonly DocxFont[],
+  substitutions: readonly Substitution[],
+  defaultBytes: readonly DocxFont[],
+): readonly PdfFont[] {
+  const named = (font: DocxFont): PdfFont => ({
+    name: font.name,
+    bold: font.bold ?? false,
+    italic: font.italic ?? false,
+    bytes: font.bytes,
+  });
+
+  const painted: PdfFont[] = fonts.map(named);
+
+  for (const substitution of substitutions) {
+    const stood = defaultBytes.find((each) => sameFace(each, substitution.used));
+    // A stand-in nothing handed the bytes of cannot be carried into a file: on a
+    // screen it is painted by whatever the browser finds, and a pdf has no such
+    // thing to fall back on. The document is refused rather than written wrongly,
+    // which is the writer's own bargain and not one to work around here.
+    if (stood === undefined || substitution.requested.name === "") continue;
+    painted.push({
+      name: substitution.requested.name,
+      bold: substitution.requested.bold,
+      italic: substitution.requested.italic,
+      bytes: stood.bytes,
+    });
+  }
+
+  return [...painted, ...defaultBytes.map(named)];
+}
+
 type Shown =
   | { readonly state: "opening" }
   | { readonly state: "blocked"; readonly reason: unknown }
@@ -134,7 +189,7 @@ type Shown =
  */
 export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
   const [shown, setShown] = useState<Shown>({ state: "opening" });
-  const { source, fonts, defaults, defaultBytes, onReport, blocked } = props;
+  const { source, fonts, defaults, defaultBytes, onReport, onReady, blocked } = props;
 
   // Laying out is synchronous once the faces are in hand, which is the whole
   // reason the pack lives behind `@docx-pages/viewer/pack`: fetching it was the
@@ -153,23 +208,11 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
         return;
       }
 
-      for (const [at, font] of (fonts ?? []).entries()) {
-        const face = supplied[at];
-        if (face !== undefined) offerToBrowser(face.name, face.bold, face.italic, font.bytes);
-      }
-      for (const substitution of faces.substitutions()) {
-        const stood = (defaultBytes ?? []).find((each) => sameFace(each, substitution.used));
-        if (stood !== undefined && substitution.requested.name !== "") {
-          offerToBrowser(
-            substitution.requested.name,
-            substitution.requested.bold,
-            substitution.requested.italic,
-            stood.bytes,
-          );
-        }
-      }
-      for (const each of defaultBytes ?? []) {
-        offerToBrowser(each.name, each.bold ?? false, each.italic ?? false, each.bytes);
+      // Gathered once and used twice, for the screen and for the file, so that the
+      // two cannot be handed different faces.
+      const drawnWith = facesPaintedWith(fonts ?? [], faces.substitutions(), defaultBytes ?? []);
+      for (const face of drawnWith) {
+        offerToBrowser(face.name, face.bold ?? false, face.italic ?? false, face.bytes);
       }
 
       onReport?.({
@@ -187,17 +230,29 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
           .filter((each) => isAliasedSymbolFace(each.requested.name))
           .map((each) => each.requested.name.trim().toLowerCase()),
       );
+      const aliasSymbolFaces = aliasedFaces.size > 0 ? aliasedFaces : null;
+
+      onReady?.(() =>
+        writePdf(layout, {
+          fonts: drawnWith,
+          imageBytes: (part) => pkg.parts.get(part),
+          metricsFor: faces.metricsFor,
+          ...(aliasSymbolFaces === null ? {} : { aliasSymbolFaces }),
+        }),
+      );
+
       setShown({
         state: "shown",
         layout,
         imageUrl: imageResolver(pkg, faces.metricsFor),
-        aliasSymbolFaces: aliasedFaces.size > 0 ? aliasedFaces : null,
+        aliasSymbolFaces,
       });
     } catch (error) {
       setShown({ state: "blocked", reason: error });
     }
-    // The report callback is deliberately not a dependency: a new closure for
-    // the same bytes is not a new document.
+    // Neither callback is a dependency: a new closure for the same bytes is not a
+    // new document, and laying one out again to hand back the same page would cost
+    // the whole of the work twice.
   }, [source, fonts, defaults, defaultBytes]);
 
   if (shown.state === "opening") return null;

@@ -6,11 +6,13 @@ import * as pack from "./pack.js";
 // What `@docx-pages/viewer` promises anyone who installs it. The same argument as
 // core's list, and a much shorter one: a component that draws a `.docx` from its
 // bytes alone, a component that draws a laid-out page, a component that draws one
-// page of it, and the three helpers a caller needs to hand it pictures.
+// page of it, the three helpers a caller needs to hand it pictures, and the one
+// that hands a written page to the browser as a file.
 const VIEWER_SURFACE: readonly string[] = [
   "Document",
   "DocxDocument",
   "Page",
+  "downloadPdf",
   "drawablesOf",
   "imageDataUrl",
   "imageResolver",

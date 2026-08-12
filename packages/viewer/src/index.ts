@@ -7,6 +7,9 @@ export type { DocxDocumentProps, DocxFont, DocxRenderReport } from "./docx-docum
 export { imageDataUrl, imageResolver } from "./images.js";
 export type { DrawableImage, ImageResolver } from "./images.js";
 
+export { downloadPdf } from "./download.js";
+export type { DownloadOptions } from "./download.js";
+
 // The traversal is core's, since the pdf backend walks the very same one. Offered
 // again here because a caller drawing a page by hand already has the viewer and
 // should not have to reach past it for the order to draw things in.

@@ -147,6 +147,41 @@ hand:
 }
 ```
 
+## Downloading the page as a pdf
+
+`onReady` hands out a function that writes the page being shown out as a pdf, and
+`downloadPdf` offers those bytes to the browser as a file.
+
+```tsx
+const [pdf, setPdf] = useState<(() => Uint8Array) | null>(null);
+
+return (
+  <>
+    <button
+      disabled={pdf === null}
+      onClick={() => pdf && downloadPdf(pdf(), { fileName: "page.pdf" })}
+    >
+      Download pdf
+    </button>
+    <DocxDocument source={bytes} defaults={defaults} onReady={(write) => setPdf(() => write)} />
+  </>
+);
+```
+
+**What is written is what is drawn, and not a second reading of it.** The same
+measured layout, the same faces it was painted with, and the same `drawablesOf`
+this component walks, so the file cannot say something the screen did not: there
+is nothing in between for the two to disagree about. Nothing is laid out twice
+either, so the button costs only the writing.
+
+The faces go into the file the way they went onto the screen, which includes the
+stand-ins: a face this component stood in for is carried under the name the
+document asked for, since that is the name the layout measured it as. A face
+nothing supplied the bytes of cannot be carried at all, and writing throws
+`font-not-supplied` rather than putting out a page in a face nothing measured. On
+screen that same face is drawn by whatever the browser finds, and the report says
+so; a file has nobody to say it to.
+
 ## Pictures
 
 A drawing's bytes live in the `.docx`, so the component is handed a resolver

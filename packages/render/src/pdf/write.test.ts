@@ -5,11 +5,13 @@ import { strFromU8, zlibSync } from "fflate";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  bestEffortMetrics,
   layOutDocument,
   lookupFontMetrics,
   openDocx,
   paintOfParagraph,
   pdfOfDocx,
+  readFaceShapes,
   readFontFile,
   writePdf,
   type LaidOutDocument,
@@ -630,3 +632,80 @@ function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
   }
   return -1;
 }
+
+// The seam the viewer's export hangs on, which is the one thing about it that can
+// be wrong everywhere at once.
+//
+// A best-effort layout measures a face it was never given in the widths of one it
+// was, and the viewer paints it by offering the browser the stand-in's bytes under
+// the name the document asked for. A file has to carry the same face under the same
+// name, and whether that is the asked-for name or the stand-in's own cannot be
+// reasoned about from either side: the writer refuses a face nothing supplies, so
+// getting it the wrong way round refuses every document that ever stood a face in.
+describe("a face the layout stood in for", () => {
+  const CAMBRIA = "Cambria";
+
+  const namedRun = (face: string, text: string): string =>
+    `<w:r><w:rPr><w:rFonts w:ascii="${face}" w:hAnsi="${face}"/><w:sz w:val="24"/></w:rPr>` +
+    `<w:t xml:space="preserve">${text}</w:t></w:r>`;
+
+  // Nothing is supplied for exactness, so every face falls to the defaults, which
+  // is the state the viewer is in when it has only its font pack behind it.
+  const stoodIn = (): { readonly layout: LaidOutDocument; readonly asked: readonly string[] } => {
+    const bytes = buildDocx({
+      "word/document.xml": wordDocument(paragraph(namedRun(CAMBRIA, "stood in for")) + section()),
+      "word/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="${WORDPROCESSING_NS}"><w:docDefaults><w:rPrDefault><w:rPr>
+  <w:rFonts w:ascii="${CAMBRIA}" w:hAnsi="${CAMBRIA}"/><w:sz w:val="24"/>
+</w:rPr></w:rPrDefault></w:docDefaults></w:styles>`,
+    });
+    const pkg = openDocx(bytes);
+    const faces = bestEffortMetrics([], defaults(), readFaceShapes(pkg));
+    const layout = layOutDocument(pkg, faces);
+    if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
+
+    return { layout, asked: faces.substitutions().map((each) => each.requested.name) };
+  };
+
+  const defaults = () => ({
+    faces: supplied,
+    twins: {},
+    sansSerif: FACE_NAME,
+    serif: FACE_NAME,
+    monospace: FACE_NAME,
+    lastResort: FACE_NAME,
+  });
+
+  it("stands a face in at all, so the rest of this is worth asking", () => {
+    expect(stoodIn().asked).toContain(CAMBRIA);
+  });
+
+  // Carried under the name the document asked for, drawn out of the bytes that
+  // stood in, which is exactly what `facesPaintedWith` builds for the viewer.
+  it("is written where the stand-in's bytes are carried under the asked-for name", async () => {
+    const { layout } = stoodIn();
+    const bytes = writePdf(layout, {
+      fonts: fonts.map((font) => ({ ...font, name: CAMBRIA })),
+      imageBytes: () => undefined,
+      metricsFor: (request) => lookupFontMetrics(request, supplied),
+    });
+
+    const drawn = await readTextPlacements(bytes);
+    expect(drawn.map((each) => each.text).join("")).toContain("stood in for");
+  });
+
+  // The other way round, which is the mistake worth having a test for: handed the
+  // stand-in's own name, the writer finds nothing answering for what the layout
+  // measured and refuses the document rather than writing it in the wrong face.
+  it("refuses the document where the bytes are carried under the stand-in's own name", () => {
+    const { layout } = stoodIn();
+
+    expect(() =>
+      writePdf(layout, {
+        fonts,
+        imageBytes: () => undefined,
+        metricsFor: (request) => lookupFontMetrics(request, supplied),
+      }),
+    ).toThrow(/nothing supplies it/);
+  });
+});
