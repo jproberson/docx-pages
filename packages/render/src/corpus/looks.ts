@@ -51,6 +51,17 @@ const DIRECTORY = process.env["DOCX_PAGES_RASTER"] ?? "samples/corpus/raster";
 // by how many can be started rather than by anything this code does.
 const AT_ONCE = 4;
 
+// What a document has to be under to be saying nothing at all.
+//
+// **Re-measured on 2026-08-12, against a `--written` sweep.** It was two percent,
+// chosen when our side was photographed in a browser and Word's came out of
+// poppler, and most of what it allowed for was the second rasteriser rather than
+// anything on the page. Through one rasteriser 407 of the 581 clean documents draw
+// their worst page **exactly** as Word drew it, cell for cell, and the tail thins
+// out immediately after: 14 more under a tenth of a percent, 7 more under a fifth.
+// Two percent was letting 72 documents through that are saying something real.
+const FLOOR = 0.002;
+
 const share = (count: number, of: number): string =>
   of === 0 ? "n/a" : `${((count / of) * 100).toFixed(1)}%`;
 
@@ -85,11 +96,17 @@ export function reportOf(rows: readonly Looks[], lines: ReadonlyMap<string, Line
   const totals = (list: readonly Looks[]): string => {
     const interesting = list.reduce((sum, each) => sum + each.interesting, 0);
     const differing = list.reduce((sum, each) => sum + each.differing, 0);
-    const right = list.filter((each) => shareOfLooks(each) <= 0.02).length;
+    const right = list.filter((each) => shareOfLooks(each) <= FLOOR).length;
+    // **Exactly, and not nearly.** Through one rasteriser a page holding the same
+    // things in the same places comes out cell for cell the same, so this counts
+    // what is provably right rather than what is close enough to argue about. It
+    // was worth nothing while a browser drew our side and every page differed.
+    const exact = list.filter((each) => each.differing === 0).length;
     const pages = list.filter((each) => each.pagesOurs !== each.pagesWord).length;
     return (
       `    ${String(list.length)} documents, ${String(interesting)} cells drawn in\n` +
       `    not matching Word's drawing: ${String(differing)} (${share(differing, interesting)})\n` +
+      `    documents drawn exactly as Word drew them: ${String(exact)} (${share(exact, list.length)})\n` +
       `    documents inside the floor: ${String(right)} (${share(right, list.length)})\n` +
       `    documents making the wrong number of pages: ${String(pages)}\n`
     );
