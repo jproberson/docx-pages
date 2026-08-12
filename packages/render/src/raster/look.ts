@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { renderedPath } from "../corpus/render.js";
 import { CORPUS_DIRECTORY, documentsIn, identityOf } from "../corpus/sweep.js";
 import { ourPages, wordPages, workspaceIn } from "./compare.js";
+import { ourWrittenPages } from "./written.js";
 import { differenceBetween, gridOf, shareOf } from "./difference.js";
 import { canDraw } from "./draw.js";
 import { overlayOf } from "./overlay.js";
@@ -27,6 +28,12 @@ async function main(): Promise<void> {
   // overlay says where the two differ; a side on its own says what we actually
   // drew there, which is the question as soon as the answer is not text.
   const sides = process.argv.includes("--sides");
+  // **`--written` is what the ranking is read off**, so it is what this should draw
+  // unless asked otherwise: inspecting a browser's drawing of a page the sweep
+  // scored through the writer is looking at a different picture from the one that
+  // put the document at the top of the list.
+  const browser = process.argv.includes("--browser");
+  const drawOurs = browser ? ourPages : ourWrittenPages;
   const wanted = new Set(process.argv.slice(2).filter((each) => !each.startsWith("--")));
   if (wanted.size === 0 || CORPUS_DIRECTORY === null || !canDraw()) {
     process.stdout.write("usage: look.ts <id>... [--sides], with DOCX_PAGES_CORPUS set\n");
@@ -42,7 +49,7 @@ async function main(): Promise<void> {
     if (!wanted.has(id)) continue;
     wanted.delete(id);
 
-    const ours = (await ourPages(bytes, id, workspace)).pages;
+    const ours = (await drawOurs(bytes, id, workspace)).pages;
     const theirs = await wordPages(renderedPath(id), id, workspace);
 
     for (let at = 0; at < Math.max(ours.length, theirs.length); at += 1) {
