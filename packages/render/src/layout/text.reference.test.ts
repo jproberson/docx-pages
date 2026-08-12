@@ -36,6 +36,12 @@ const CASES: readonly Compared[] = [
   ...(FACE === null ? [] : authoredCases().map((each) => ({ each, metricsFor: authoredMetrics }))),
 ].filter(({ each }) => each.renderedPath !== null && each.textLinesMatched !== null);
 
+// The eight real documents alone. The authored ones ask one question each and four of
+// them are written around a rule that is measured and not built, so their pages are
+// known to disagree; these are the pages nothing is known to be wrong with.
+const REAL_IDS = new Set(referenceCases().map((each) => each.id));
+const REAL: readonly Compared[] = CASES.filter(({ each }) => REAL_IDS.has(each.id));
+
 async function compare(compared: Compared): Promise<Agreement> {
   const layout = layOutDocument(readReferenceDocument(compared.each), compared.metricsFor());
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
@@ -107,6 +113,58 @@ describe.skipIf(CASES.length === 0)(
           const { numbersMatched, numbersPlaced } = await comparisonOf(compared);
           expect(numbersMatched).toBe(each.numbersMatched ?? 0);
           expect(numbersPlaced).toBe(each.numbersPlaced ?? 0);
+        });
+      });
+    }
+  },
+);
+
+// **The floor under the reading that classifies a whole page**, and the reason it is
+// here rather than in a unit test: a unit test can say that a page whose lines all
+// move together is called shifted, and it cannot say that a page nothing is wrong
+// with is called nothing at all. These twenty pages are the pages nothing is wrong
+// with, and the raster agrees: eighteen of them come out of two rasterisers cell for
+// cell equal to Word's own drawing.
+//
+// It caught its first wolf-cry on the day it was written. Every bullet and every
+// list number was being left over as an item Word drew and we did not, because the
+// number is drawn by the list rather than by the paragraph and no line ever spells
+// it: 213 items over these eight documents, up to 38% of a page, and seven of the
+// eight documents were called `missing` for it. `compareNumbers` claims the item it
+// matched now, and the seven come out `agrees` on every page.
+describe.skipIf(REAL.length === 0)(
+  "each page read as a whole",
+  { timeout: COMPARISON_TIMEOUT_MS },
+  () => {
+    for (const compared of REAL) {
+      const each = compared.each;
+      describe(each.id, () => {
+        it("is the page Word drew, moved nowhere and deformed nowhere", async () => {
+          const { pages } = await comparisonOf(compared);
+          const moved = pages.filter((page) => page.shape !== "agrees" && page.shape !== "missing");
+
+          expect(moved.map((page) => `page ${String(page.index + 1)} ${page.shape}`)).toStrictEqual(
+            [],
+          );
+        });
+
+        // The one page of the eight that is called missing is the one holding a
+        // drawing this project draws nothing for: `h`'s bar chart, whose labels Word
+        // writes as text and we write nowhere. So the exception is not a tolerance,
+        // it is the same fact the manifest already states as `unknownDrawings`, and a
+        // ninth document appearing here would be a defect either in the layout or in
+        // this reading.
+        it("draws everything Word drew, but for a drawing nothing here knows", async () => {
+          const { pages } = await comparisonOf(compared);
+          const missing = pages.filter((page) => page.shape === "missing");
+
+          expect(missing.length > 0).toBe(each.unknownDrawings > 0);
+        });
+
+        it("makes the pages Word's own drawing holds", async () => {
+          const { pages, pagesDrawn } = await comparisonOf(compared);
+
+          expect(pages).toHaveLength(pagesDrawn);
         });
       });
     }

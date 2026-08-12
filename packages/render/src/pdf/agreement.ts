@@ -16,6 +16,60 @@ import type { TextPlacement } from "./text.js";
 // being a pile that can only say a document changed and becomes one that can say a
 // document is wrong.
 
+// What one page's lines say when they are read together rather than counted.
+//
+// **A count of misplaced lines cannot tell a page that is moved from a page that is
+// broken**, and for a preview those are opposite verdicts: a page whose every line
+// is 13pt low is the page Word drew, put down a little wrong, and a page whose lines
+// each disagree by a different amount is text over text and unusable. The same two
+// pages score the same on `placed`, which asks only whether each line landed inside
+// a point of Word's own, and the same on the raster, which asks only how many cells
+// differ. The displacements were being computed and thrown away; keeping them
+// answers it.
+//
+// - `agrees`: every displacement inside the tolerance.
+// - `shifted`: one offset explains nearly all of them. Constant down with nothing
+//   across is a page break in the wrong place.
+// - `drifting`: the displacement grows with the line's own baseline, which is a
+//   height accumulating down the page.
+// - `deformed`: the displacements neither cluster nor drift, so no single fault
+//   moved this page and what is drawn is a different drawing.
+// - `missing`: not enough of the page matched to say anything about where it sits,
+//   because one side drew content the other did not.
+export type PageShape = "agrees" | "shifted" | "drifting" | "deformed" | "missing";
+
+// How far our drawing of a page stands from Word's, where one offset explains it.
+// Positive is Word's drawing further right and further down than ours.
+export type Offset = { readonly leftPt: number; readonly downPt: number };
+
+export type PageAgreement = {
+  readonly index: number;
+  readonly shape: PageShape;
+  // Lines we drew on this page with something on them, and how many of those Word
+  // drew the same text for on this same page.
+  readonly lines: number;
+  readonly matched: number;
+  // Lines of ours whose text Word drew on some other page, which is what a page
+  // break in the wrong place leaves behind, and lines of ours Word drew nowhere at
+  // all.
+  readonly onAnotherPage: number;
+  readonly oursAlone: number;
+  // Items Word drew on this page that spell something, and how many of those no
+  // line of ours claimed: content Word drew and we did not. **Nothing else here
+  // counts that**, and it is what a preview fails most visibly on, since `lines`
+  // and the cells both start from what we drew.
+  readonly theirs: number;
+  readonly theirsAlone: number;
+  // The offset explaining a shifted page, and how fast the displacement grows with
+  // the line's own baseline on a drifting one. Null where the page is neither.
+  readonly offsetPt: Offset | null;
+  readonly driftPerPt: number | null;
+  // What share of the matched lines the shape accounts for, and the worst
+  // displacement on the page whatever its shape.
+  readonly explained: number;
+  readonly worstPt: number;
+};
+
 export type Agreement = {
   // Lines we laid out with something on them, which is what the rest are counted
   // against. Every line the comparison looked for, header and footer and text box
@@ -38,6 +92,11 @@ export type Agreement = {
   // compare against; anything else is a drawing of the whole page shrunk, which
   // nothing here can be held to. Null where nothing matched.
   readonly drawnScale: number | null;
+  // Each of our pages read as a whole, and how many pages Word's own drawing holds.
+  // A page Word drew that we never made appears in neither list, so the two counts
+  // are what says so.
+  readonly pages: readonly PageAgreement[];
+  readonly pagesDrawn: number;
 };
 
 const textOf = (placed: PlacedLine): string =>
@@ -183,10 +242,16 @@ const firstBaselineOf = (placed: PlacedLine): number =>
 // can be taken for the same one.
 const SAME_LINE_PT = 3;
 
+// The number is claimed as a line is, and until 2026-08-12 it was not: it is drawn
+// by the list rather than by the paragraph, so no line of ours ever spells it and
+// every bullet in the document was left over as an item Word drew and we did not.
+// Over the eight reference documents, whose pages the raster says are Word's cell for
+// cell, that alone was 213 items and up to 38% of a page.
 function compareNumbers(
   tolerancePt: number,
   boxes: readonly ParagraphBox[],
   drawn: readonly TextPlacement[],
+  taken: Set<TextPlacement>,
 ): { readonly numbersMatched: number; readonly numbersPlaced: number } {
   let numbersMatched = 0;
   let numbersPlaced = 0;
@@ -201,18 +266,182 @@ function compareNumbers(
 
     const near = drawn.filter(
       (item) =>
+        !taken.has(item) &&
         normalise(item.text) === text &&
         Math.abs(item.baselinePt - line.baselinePt) <= SAME_LINE_PT,
     );
-    if (near.length === 0) continue;
+    const nearest = [...near].sort(
+      (one, other) => Math.abs(one.leftPt - marker.leftPt) - Math.abs(other.leftPt - marker.leftPt),
+    )[0];
+    if (nearest === undefined) continue;
     numbersMatched += 1;
+    taken.add(nearest);
 
-    const off = Math.min(...near.map((item) => Math.abs(item.leftPt - marker.leftPt)));
-    if (off <= tolerancePt) numbersPlaced += 1;
+    if (Math.abs(nearest.leftPt - marker.leftPt) <= tolerancePt) numbersPlaced += 1;
   }
 
   return { numbersMatched, numbersPlaced };
 }
+
+// How far one of our lines stands from the item Word drew it as, and where down the
+// page the line itself sits, which is what a drift is measured against.
+type Displacement = {
+  readonly atPt: number;
+  readonly leftOffPt: number;
+  readonly downOffPt: number;
+};
+
+// What share of a page's lines one offset, or one drift, has to account for before
+// the page is called moved rather than deformed. A page whose lines nearly all agree
+// about how far out they are is one fault; a page where a twentieth of them dissent
+// is still that fault plus a line of its own.
+const EXPLAINS_THE_PAGE = 0.95;
+
+// Under this many matched lines nothing can be told from clustering: two lines agree
+// about an offset whatever put them there, and three are needed before a slope is
+// anything but the line through two points.
+const ENOUGH_TO_CLUSTER = 3;
+
+// What share of a page one side may have drawn alone before the page is called
+// missing rather than read for where it sits.
+//
+// **This is the threshold the check cries wolf through if it is set low**, since the
+// matcher spells a line out of Word's items and gives up on a line it cannot spell:
+// a field, a ligature or a face whose bytes shadow another's leaves an item of Word's
+// unclaimed with nothing wrong on the page. Chosen against the documents already
+// known to be right rather than guessed at; what they say is written down in
+// `docs/gaps.md`.
+const DREW_ALONE = 0.2;
+
+const meanOf = (values: readonly number[]): number =>
+  values.length === 0 ? 0 : values.reduce((sum, each) => sum + each, 0) / values.length;
+
+const insideOf = (
+  spots: readonly Displacement[],
+  offset: Offset,
+  tolerancePt: number,
+): readonly Displacement[] =>
+  spots.filter(
+    (spot) =>
+      Math.abs(spot.leftOffPt - offset.leftPt) <= tolerancePt &&
+      Math.abs(spot.downOffPt - offset.downPt) <= tolerancePt,
+  );
+
+// The one offset that accounts for most of a page. The middle of the displacements
+// is where it starts, since a middle is unmoved by however far the dissenting few
+// are out; the mean of what that gathers is then tried against it, which catches a
+// page whose middle line happens to sit at the edge of the cluster rather than in it.
+function offsetExplaining(
+  spots: readonly Displacement[],
+  tolerancePt: number,
+): { readonly offset: Offset; readonly explained: number } {
+  const middle: Offset = {
+    leftPt: middleOf(spots.map((spot) => spot.leftOffPt)) ?? 0,
+    downPt: middleOf(spots.map((spot) => spot.downOffPt)) ?? 0,
+  };
+  const gathered = insideOf(spots, middle, tolerancePt);
+  const meaned: Offset = {
+    leftPt: meanOf(gathered.map((spot) => spot.leftOffPt)),
+    downPt: meanOf(gathered.map((spot) => spot.downOffPt)),
+  };
+
+  const better = insideOf(spots, meaned, tolerancePt).length > gathered.length ? meaned : middle;
+  return {
+    offset: better,
+    explained: spots.length === 0 ? 0 : insideOf(spots, better, tolerancePt).length / spots.length,
+  };
+}
+
+// How fast the vertical displacement grows with the line's own baseline, and what
+// share of the page that growth accounts for. A height that is wrong by a fraction
+// is paid once per line, so it reaches the foot of the page as a slope: it is the
+// difference between a rule about a line and a rule about the page.
+function driftExplaining(
+  spots: readonly Displacement[],
+  across: Offset,
+  tolerancePt: number,
+): { readonly perPt: number; readonly explained: number } {
+  const meanAt = meanOf(spots.map((spot) => spot.atPt));
+  const meanDown = meanOf(spots.map((spot) => spot.downOffPt));
+  const spread = spots.reduce((sum, spot) => sum + (spot.atPt - meanAt) ** 2, 0);
+  if (spread === 0) return { perPt: 0, explained: 0 };
+
+  const perPt =
+    spots.reduce((sum, spot) => sum + (spot.atPt - meanAt) * (spot.downOffPt - meanDown), 0) /
+    spread;
+  const at = (spot: Displacement): number => meanDown + perPt * (spot.atPt - meanAt);
+
+  const fitting = spots.filter(
+    (spot) =>
+      Math.abs(spot.downOffPt - at(spot)) <= tolerancePt &&
+      Math.abs(spot.leftOffPt - across.leftPt) <= tolerancePt,
+  );
+
+  // A slope too shallow to move a line by the tolerance over the whole height of the
+  // page is not a drift, it is the offset it sits on top of.
+  const reach =
+    Math.max(...spots.map((spot) => spot.atPt)) - Math.min(...spots.map((spot) => spot.atPt));
+  if (Math.abs(perPt) * reach <= tolerancePt) return { perPt, explained: 0 };
+
+  return { perPt, explained: fitting.length / spots.length };
+}
+
+function shapeOf(
+  spots: readonly Displacement[],
+  tolerancePt: number,
+): {
+  readonly shape: Exclude<PageShape, "missing">;
+  readonly offsetPt: Offset | null;
+  readonly driftPerPt: number | null;
+  readonly explained: number;
+  readonly worstPt: number;
+} {
+  const worstPt = Math.max(
+    0,
+    ...spots.map((spot) => Math.max(Math.abs(spot.leftOffPt), Math.abs(spot.downOffPt))),
+  );
+  if (worstPt <= tolerancePt)
+    return { shape: "agrees", offsetPt: null, driftPerPt: null, explained: 1, worstPt };
+
+  const across = offsetExplaining(spots, tolerancePt);
+  if (spots.length < ENOUGH_TO_CLUSTER || across.explained >= EXPLAINS_THE_PAGE)
+    return {
+      shape: "shifted",
+      offsetPt: across.offset,
+      driftPerPt: null,
+      explained: across.explained,
+      worstPt,
+    };
+
+  const drift = driftExplaining(spots, across.offset, tolerancePt);
+  if (drift.explained >= EXPLAINS_THE_PAGE)
+    return {
+      shape: "drifting",
+      offsetPt: null,
+      driftPerPt: drift.perPt,
+      explained: drift.explained,
+      worstPt,
+    };
+
+  return {
+    shape: "deformed",
+    offsetPt: null,
+    driftPerPt: null,
+    explained: Math.max(across.explained, drift.explained),
+    worstPt,
+  };
+}
+
+// Word draws an item for a glyph whose face names no character for it, and the pdf
+// hands that back as a nul: it spells nothing, so no line of ours can ever claim it
+// and counting it as content we missed is crying wolf.
+const spellsSomething = (item: TextPlacement): boolean => inkOf(normalise(item.text)) !== "";
+
+// A page we never made cannot be one of ours, so how many pages Word drew is carried
+// beside them: an item on page 5 of a drawing our layout ends at 3 is content that is
+// missing by the page rather than by the line.
+const pagesIn = (drawn: readonly TextPlacement[]): number =>
+  drawn.reduce((most, item) => Math.max(most, item.pageIndex + 1), 0);
 
 export function agreementWith(
   layout: LaidOutDocument,
@@ -220,8 +449,15 @@ export function agreementWith(
   tolerancePt: number,
 ): Agreement {
   const taken = new Set<TextPlacement>();
-  const elsewhere: string[] = [];
+  const elsewhere: { readonly pageIndex: number; readonly text: string }[] = [];
   const scales: number[] = [];
+  const readings: {
+    readonly index: number;
+    readonly onPage: readonly TextPlacement[];
+    readonly lines: number;
+    readonly matched: number;
+    readonly spots: readonly Displacement[];
+  }[] = [];
   let lines = 0;
   let matched = 0;
   let placed = 0;
@@ -233,20 +469,25 @@ export function agreementWith(
   for (const page of layout.pages) {
     const onPage = drawn.filter((item) => item.pageIndex === page.index);
     const boxes = boxesOnPage(layout, page);
+    const spots: Displacement[] = [];
+    let linesHere = 0;
+    let matchedHere = 0;
 
     for (const line of boxes.flatMap((box) => box.lines)) {
       const text = normalise(textOf(line));
       if (text === "") continue;
       lines += 1;
+      linesHere += 1;
 
       const items = itemsFor(text, onPage, taken);
       const found = items?.[0];
       if (items === null || found === undefined) {
-        elsewhere.push(text);
+        elsewhere.push({ pageIndex: page.index, text });
         continue;
       }
       for (const item of items) taken.add(item);
       matched += 1;
+      matchedHere += 1;
 
       const size = sizeOf(line);
       if (size !== null && size > 0)
@@ -261,10 +502,15 @@ export function agreementWith(
       // Where the line lies is asked of its first inked character rather than of
       // its own start, since a tab opening the line leaves a gap ahead of the first
       // item Word drew and the two starts are then not the same place.
-      const off = Math.max(
-        Math.abs((theirs.get(0) ?? found.leftPt) - (ours.get(0) ?? line.leftPt)),
-        Math.abs(found.baselinePt - firstBaselineOf(line)),
-      );
+      const baselinePt = firstBaselineOf(line);
+      const spot = {
+        atPt: baselinePt,
+        leftOffPt: (theirs.get(0) ?? found.leftPt) - (ours.get(0) ?? line.leftPt),
+        downOffPt: found.baselinePt - baselinePt,
+      };
+      spots.push(spot);
+
+      const off = Math.max(Math.abs(spot.leftOffPt), Math.abs(spot.downOffPt));
       if (off <= tolerancePt) placed += 1;
 
       for (const [at, leftPt] of theirs) {
@@ -275,18 +521,70 @@ export function agreementWith(
       }
     }
 
-    const numbers = compareNumbers(tolerancePt, boxes, onPage);
+    const numbers = compareNumbers(tolerancePt, boxes, onPage, taken);
     numbersMatched += numbers.numbersMatched;
     numbersPlaced += numbers.numbersPlaced;
+
+    readings.push({ index: page.index, onPage, lines: linesHere, matched: matchedHere, spots });
   }
 
-  // A line Word drew on another page was still broken the way Word broke it.
-  for (const text of elsewhere) {
+  // A line Word drew on another page was still broken the way Word broke it. Which
+  // page of ours it came off is kept, since a page whose lines Word drew on the page
+  // before is a page break in the wrong place and not text nobody drew.
+  const foundElsewhere = new Map<number, number>();
+  for (const { pageIndex, text } of elsewhere) {
     const items = itemsFor(text, drawn, taken);
     if (items === null) continue;
     for (const item of items) taken.add(item);
     matched += 1;
+    foundElsewhere.set(pageIndex, (foundElsewhere.get(pageIndex) ?? 0) + 1);
   }
+
+  // Read after the whole document, not during it: what Word drew and we did not is
+  // whatever no line of ours claimed by the end, and a line of ours reaches for an
+  // item on another page in the pass above.
+  const pages = readings.map((reading): PageAgreement => {
+    const onAnotherPage = foundElsewhere.get(reading.index) ?? 0;
+    const oursAlone = reading.lines - reading.matched - onAnotherPage;
+    const theirs = reading.onPage.filter(spellsSomething);
+    const theirsAlone = theirs.filter((item) => !taken.has(item)).length;
+
+    const read = shapeOf(reading.spots, tolerancePt);
+
+    // A page whose lines Word drew on the page before is not a page missing
+    // anything: the text is all there and the break is in the wrong place, which is
+    // what a constant offset says. So only what neither side found a home for on any
+    // page counts here.
+    const drewAlone = Math.max(
+      reading.lines === 0 ? 0 : oursAlone / reading.lines,
+      theirs.length === 0 ? 0 : theirsAlone / theirs.length,
+    );
+    const tooLittleRead = reading.matched < ENOUGH_TO_CLUSTER && oursAlone + theirsAlone > 0;
+
+    // Deformed before missing, and both before anything else. A page that is both is
+    // the worse of the two, and neither is a page a preview can show.
+    const shape: PageShape =
+      read.shape === "deformed"
+        ? "deformed"
+        : tooLittleRead || drewAlone > DREW_ALONE
+          ? "missing"
+          : read.shape;
+
+    return {
+      index: reading.index,
+      shape,
+      lines: reading.lines,
+      matched: reading.matched,
+      onAnotherPage,
+      oursAlone,
+      theirs: theirs.length,
+      theirsAlone,
+      offsetPt: read.offsetPt,
+      driftPerPt: read.driftPerPt,
+      explained: read.explained,
+      worstPt: read.worstPt,
+    };
+  });
 
   return {
     lines,
@@ -297,5 +595,7 @@ export function agreementWith(
     numbersMatched,
     numbersPlaced,
     drawnScale: middleOf(scales),
+    pages,
+    pagesDrawn: pagesIn(drawn),
   };
 }
