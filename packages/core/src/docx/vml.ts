@@ -1,9 +1,17 @@
 import { isDetachedContent } from "./blocks.js";
 import { R_NS } from "./relationships.js";
+import { W_NS } from "./section.js";
 import { attribute, type XmlElement } from "./xml.js";
 
 // The drawing form Word wrote before DrawingML and still writes for some of what
-// it draws: a `w:pict` holding a `v:shape` whose `v:imagedata` names the picture.
+// it draws: a `v:shape` whose `v:imagedata` names the picture.
+//
+// **Two containers hold one, and they are the same picture.** A `w:pict` is a
+// drawing; a `w:object` is something embedded, a spreadsheet or an equation, and
+// what Word draws for it is a picture of it written exactly this way, with
+// `o:ole` on the shape and an `o:OLEObject` beside it naming what it came from.
+// The embedding is nothing this can open and the picture is all Word draws, so
+// both are read the same and neither is treated as a gap.
 //
 // **Only the picture standing in the run's own line is read here.** A VML shape
 // carrying `position:absolute` is out of flow like a `wp:anchor`, and one holding
@@ -68,10 +76,16 @@ function imageOf(node: XmlElement): string | null {
   return null;
 }
 
+// The elements a legacy picture is written inside, which the readers ask about by
+// name rather than looking for a VML shape anywhere: a shape under anything else
+// belongs to that thing.
+export const holdsALegacyPicture = (namespace: string | null, name: string): boolean =>
+  namespace === W_NS && (name === "pict" || name === "object");
+
 /**
- * The picture a `w:pict` puts on the line, or null where it puts none there:
- * an empty `w:pict`, a shape that is not a picture, or one positioned out of the
- * flow.
+ * The picture a `w:pict` or a `w:object` puts on the line, or null where it puts
+ * none there: an empty one, a shape that is not a picture, or one positioned out
+ * of the flow.
  */
 export function inlinePictureOf(pict: XmlElement): VmlPicture | null {
   for (const child of pict.children) {

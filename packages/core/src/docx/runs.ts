@@ -3,7 +3,7 @@ import { readDrawingTurn } from "./drawing.js";
 import { WP_NS } from "./inlines.js";
 import { W_NS } from "./section.js";
 import { resolveRuns, type ParagraphMark, type StyleTable } from "./styles.js";
-import { inlinePictureOf } from "./vml.js";
+import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
 
 export type RunPiece =
@@ -81,7 +81,7 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
     }
     // A floating anchor is out of flow, so nothing under it belongs to this line.
     if (child.namespace === WP_NS && child.name === "anchor") continue;
-    if (child.namespace === W_NS && child.name === "pict") {
+    if (holdsALegacyPicture(child.namespace, child.name)) {
       const picture = inlinePictureOf(child);
       if (picture !== null) {
         into.push({

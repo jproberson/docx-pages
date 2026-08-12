@@ -43,6 +43,7 @@ export function readInlines(paragraph: Paragraph): readonly InlineDrawing[] {
   return paragraphOwnDrawings(paragraph, [
     { namespace: WP_NS, name: "inline" },
     { namespace: W_NS, name: "pict" },
+    { namespace: W_NS, name: "object" },
   ]).flatMap((element) =>
     element.namespace === WP_NS
       ? [drawnInline(paragraph, element)]

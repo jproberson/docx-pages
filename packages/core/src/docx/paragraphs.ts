@@ -1,6 +1,6 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
 import { W_NS } from "./section.js";
-import { inlinePictureOf } from "./vml.js";
+import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
 import { descendantsNamed, type XmlElement } from "./xml.js";
 
 export function paragraphText(paragraph: Paragraph): string {
@@ -53,7 +53,7 @@ function placesContentInLine(run: XmlElement): boolean {
       const isText = child.namespace === W_NS && LINE_CONTENT.has(child.name);
       const isInline = child.namespace === WP_DRAWING_NS && child.name === "inline";
       const isLegacy =
-        child.namespace === W_NS && child.name === "pict" && inlinePictureOf(child) !== null;
+        holdsALegacyPicture(child.namespace, child.name) && inlinePictureOf(child) !== null;
       if (isText || isInline || isLegacy) {
         found = true;
         return;

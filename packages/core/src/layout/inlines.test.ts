@@ -27,9 +27,9 @@ const image = (cx = 2286000, cy = 1143000) =>
 const V_NS = "urn:schemas-microsoft-com:vml";
 const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-const legacy = (id: string, width: string, height: string, position = "") =>
-  `<w:r><w:pict><v:shape xmlns:v="${V_NS}" type="#_x0000_t75" style="${position}width:${width};height:${height}">
-     <v:imagedata xmlns:r="${R_NS}" r:id="${id}"/></v:shape></w:pict></w:r>`;
+const legacy = (id: string, width: string, height: string, position = "", holder = "pict") =>
+  `<w:r><w:${holder}><v:shape xmlns:v="${V_NS}" type="#_x0000_t75" style="${position}width:${width};height:${height}">
+     <v:imagedata xmlns:r="${R_NS}" r:id="${id}"/></v:shape></w:${holder}></w:r>`;
 
 const contentOf = (
   placed: { readonly drawing: { readonly content: DrawingContent } } | undefined,
@@ -179,6 +179,14 @@ describe("placeInlines over a picture written the legacy way", () => {
     expect(placed.map((each) => each.widthPt)).toStrictEqual([180]);
     expect(placed.map(contentOf)).toStrictEqual([null]);
     expect(box.lines[0]?.line.widthPt).toBeCloseTo(180, 6);
+  });
+
+  // What Word draws for an embedded spreadsheet or equation is a picture of it
+  // written exactly this way, so the container it stands in is the only difference.
+  it("draws the picture a w:object stands on the line for what it embeds", () => {
+    const { placed } = place(paragraph("", legacy("rId7", "180pt", "90pt", "", "object")));
+    expect(placed[0]?.widthPt).toBeCloseTo(180, 6);
+    expect(contentOf(placed[0])).toBe("rId7");
   });
 
   it("passes over a shape that names no picture", () => {
