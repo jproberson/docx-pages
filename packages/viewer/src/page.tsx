@@ -5,6 +5,7 @@ import {
   drawablesOf,
   paintOfCell,
   paintOfParagraph,
+  ROUNDED_CORNER_FRACTION,
   twipsToPoints,
   type BorderStyle,
   type CropInsets,
@@ -263,11 +264,6 @@ function painted(
   );
 }
 
-// Word rounds a round rectangle by a share of its shorter side, and states the
-// share in the shape's own adjust list. The default that list stands in for is a
-// sixth, which is what every one of them in the corpus keeps.
-const CORNER = 1 / 6;
-
 type Stroke = {
   readonly stroke: string | undefined;
   readonly strokeWidth: number | undefined;
@@ -308,7 +304,7 @@ function geometry(
         />
       );
     case "rounded-rectangle": {
-      const radius = Math.min(widthPt, heightPt) * CORNER;
+      const radius = Math.min(widthPt, heightPt) * ROUNDED_CORNER_FRACTION;
       return (
         <rect
           x={0}

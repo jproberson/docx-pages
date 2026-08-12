@@ -69,6 +69,15 @@ export type ShapeGeometry =
   // everything else on it. Drawn as nothing until the path itself is read.
   | "custom";
 
+// Word rounds a round rectangle by a share of its shorter side, and states the
+// share in the shape's own adjust list. The default that list stands in for is a
+// sixth, which is what every one of them in the corpus keeps.
+//
+// Stated here rather than in either backend, because both draw this shape in their
+// own notation and a number each of them keeps its own copy of is how two drawings
+// of one page come to disagree.
+export const ROUNDED_CORNER_FRACTION = 1 / 6;
+
 // A connector is a line from one corner of its box to the other, which is what a
 // `line` already was.
 const GEOMETRIES = new Map<string, ShapeGeometry>([

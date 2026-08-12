@@ -160,14 +160,6 @@ Named here rather than passed over quietly, which is the same bargain
 `layout.unhonoured` makes about the layout. Everything the layout itself passed
 over is in that report rather than in this list.
 
-- **A shape is drawn as the box it stands in, whatever preset it names.** An
-  ellipse, a rounded rectangle and a triangle all come out as their own rectangle;
-  a line is the one preset drawn as itself. The viewer draws each of them, so this
-  is the one place the two backends disagree about a page neither is wrong about
-  on its own.
-- **A flip is not read.** Layout answers `flip` on every object, which decides the
-  corners a connector's line runs between and which way up a triangle sits. Both
-  are drawn as though nothing were flipped.
 - **No font subsetting.** The whole of every face goes in, every glyph of it,
   including the thousands the document never draws. The output is correct and
   larger than it needs to be: a reference one-pager comes out at 2.8MB, of which

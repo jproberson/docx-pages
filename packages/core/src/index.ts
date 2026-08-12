@@ -189,7 +189,7 @@ export type { PlacedInline, PlaceInlinesInput } from "./layout/inlines.js";
 
 export type { ParagraphAlignment, ParagraphFrame, ParagraphNumbering } from "./docx/styles.js";
 
-export { DEFAULT_TEXT_INSETS, NO_CROP, NO_PAINT } from "./docx/drawing.js";
+export { DEFAULT_TEXT_INSETS, NO_CROP, NO_PAINT, ROUNDED_CORNER_FRACTION } from "./docx/drawing.js";
 export type {
   CropInsets,
   DrawingContent,

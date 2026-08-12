@@ -51,6 +51,20 @@ export type Content = {
   readonly dash: (pattern: readonly number[] | null) => void;
   readonly rectangle: (leftPt: number, bottomPt: number, widthPt: number, heightPt: number) => void;
   readonly line: (fromXPt: number, fromYPt: number, toXPt: number, toYPt: number) => void;
+  // The path a shape that is not a rectangle is laid down point by point as. A
+  // curve takes its two control points and then where it ends, which is what a
+  // quarter of an ellipse and the corner of a rounded rectangle are both made of.
+  readonly moveTo: (xPt: number, yPt: number) => void;
+  readonly lineTo: (xPt: number, yPt: number) => void;
+  readonly curveTo: (
+    firstXPt: number,
+    firstYPt: number,
+    secondXPt: number,
+    secondYPt: number,
+    toXPt: number,
+    toYPt: number,
+  ) => void;
+  readonly closePath: () => void;
   readonly fill: () => void;
   readonly stroke: () => void;
   // Both at once, which a rectangle asking for a colour behind it and a line round
@@ -136,6 +150,18 @@ export function content(): Content {
     },
     line: (fromXPt, fromYPt, toXPt, toYPt) => {
       write(`${numbers([fromXPt, fromYPt])} m ${numbers([toXPt, toYPt])} l`);
+    },
+    moveTo: (xPt, yPt) => {
+      write(`${numbers([xPt, yPt])} m`);
+    },
+    lineTo: (xPt, yPt) => {
+      write(`${numbers([xPt, yPt])} l`);
+    },
+    curveTo: (firstXPt, firstYPt, secondXPt, secondYPt, toXPt, toYPt) => {
+      write(`${numbers([firstXPt, firstYPt, secondXPt, secondYPt, toXPt, toYPt])} c`);
+    },
+    closePath: () => {
+      write("h");
     },
     fill: () => {
       write("f");
