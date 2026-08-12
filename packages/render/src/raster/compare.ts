@@ -118,6 +118,11 @@ export type OurPages = {
   readonly asks: readonly string[];
 };
 
+// How our side of the comparison is drawn. Passed in rather than chosen here, so
+// that this module never reaches for the writer and the writer can go on naming
+// the types in this one.
+export type DrawOurs = (bytes: Uint8Array, id: string, workspace: Workspace) => Promise<OurPages>;
+
 // A page at a time, so that a long document is never all in memory at once: the
 // sweep turns each into a grid a thousandth of its size and lets it go.
 async function eachOfOurPages(
@@ -202,13 +207,20 @@ export async function looksOf(
   drawnPath: string,
   workspace: Workspace,
   tolerances: Tolerances = TOLERANCES,
+  drawOurs: DrawOurs | null = null,
 ): Promise<Looks> {
   if (!existsSync(drawnPath)) return empty(id, "not drawn", "no pdf of Word's");
 
   const ours: PageGrid[] = [];
   let rest: Omit<OurPages, "pages">;
   try {
-    rest = await eachOfOurPages(bytes, id, workspace, (page) => ours.push(gridOf(page)));
+    if (drawOurs === null) {
+      rest = await eachOfOurPages(bytes, id, workspace, (page) => ours.push(gridOf(page)));
+    } else {
+      const drawn = await drawOurs(bytes, id, workspace);
+      for (const page of drawn.pages) ours.push(gridOf(page));
+      rest = { facesStoodIn: drawn.facesStoodIn, asks: drawn.asks };
+    }
   } catch (thrown) {
     const detail = thrown instanceof Error ? thrown.message : String(thrown);
     return empty(id, detail.startsWith("blocked: ") ? "blocked" : "threw", detail);

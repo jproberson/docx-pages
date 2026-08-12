@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { referenceCases } from "../testing/cases.js";
 import { looksOf, shareOfLooks, workspaceIn } from "./compare.js";
 import { canDraw } from "./draw.js";
+import { ourWrittenPages } from "./written.js";
 
 // What two rasterisers cost when nothing is wrong.
 //
@@ -32,14 +33,31 @@ async function main(): Promise<void> {
   }
 
   const workspace = workspaceIn(DIRECTORY, process.argv.includes("--keep"));
-  process.stdout.write(`${String(cases.length)} documents whose pages are already right\n\n`);
+
+  // `--written` draws our side by writing a pdf of it and handing that to the very
+  // rasteriser Word's goes through, which is what leaves the floor with nothing in
+  // it but the two drawings differing.
+  const written = process.argv.includes("--written");
+  const drawOurs = written ? ourWrittenPages : null;
+
+  process.stdout.write(
+    `${String(cases.length)} documents whose pages are already right, ` +
+      `ours drawn by ${written ? "the pdf writer, through poppler" : "the browser"}\n\n`,
+  );
 
   let interesting = 0;
   let differing = 0;
 
   for (const each of cases) {
     const bytes = new Uint8Array(readFileSync(each.documentPath));
-    const looks = await looksOf(bytes, each.id, each.renderedPath ?? "", workspace);
+    const looks = await looksOf(
+      bytes,
+      each.id,
+      each.renderedPath ?? "",
+      workspace,
+      undefined,
+      drawOurs,
+    );
     interesting += looks.interesting;
     differing += looks.differing;
     process.stdout.write(

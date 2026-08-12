@@ -17,7 +17,7 @@ import { referenceFonts } from "../testing/cases.js";
 // family a document names in `w:rFonts`, with the weight and slope beside it, and
 // the whole of its own name as a regular.
 
-type Offered = {
+export type Offered = {
   readonly name: string;
   readonly bold: boolean;
   readonly italic: boolean;
@@ -29,7 +29,7 @@ const keyOf = (name: string, bold: boolean, italic: boolean): string =>
 
 // The order is `corpusFaces`': a face somebody measured beats one found by
 // looking, and the first to claim a name keeps it.
-function offeredFaces(): readonly Offered[] {
+export function offeredFaces(): readonly Offered[] {
   const found = new Map<string, Offered>();
   const offer = (name: string, bold: boolean, italic: boolean, path: string | null): void => {
     if (name.trim() === "") return;
