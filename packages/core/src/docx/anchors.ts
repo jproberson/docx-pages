@@ -173,7 +173,7 @@ const numberAttribute = (element: XmlElement, name: string, fallback: number): n
 };
 
 export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
-  return paragraphOwnDrawings(paragraph, WP_NS, "anchor").map((anchor) => {
+  return paragraphOwnDrawings(paragraph, [{ namespace: WP_NS, name: "anchor" }]).map((anchor) => {
     const extent = firstNamed(anchor, WP_NS, "extent");
     const docPr = firstNamed(anchor, WP_NS, "docPr");
     const flip = readDrawingFlip(anchor);

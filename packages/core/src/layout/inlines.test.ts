@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readBlocks } from "../docx/blocks.js";
+import type { DrawingContent } from "../docx/drawing.js";
 import { readInlines } from "../docx/inlines.js";
 import { openDocx } from "../docx/package.js";
 import { NO_THEME } from "../docx/theme.js";
@@ -22,6 +23,17 @@ const image = (cx = 2286000, cy = 1143000) =>
   `<w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">
      <wp:extent cx="${String(cx)}" cy="${String(cy)}"/>
      <wp:docPr id="1" name="Logo"/></wp:inline></w:drawing></w:r>`;
+
+const V_NS = "urn:schemas-microsoft-com:vml";
+const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+const legacy = (id: string, width: string, height: string, position = "") =>
+  `<w:r><w:pict><v:shape xmlns:v="${V_NS}" type="#_x0000_t75" style="${position}width:${width};height:${height}">
+     <v:imagedata xmlns:r="${R_NS}" r:id="${id}"/></v:shape></w:pict></w:r>`;
+
+const contentOf = (
+  placed: { readonly drawing: { readonly content: DrawingContent } } | undefined,
+) => (placed?.drawing.content.kind === "picture" ? placed.drawing.content.relationshipId : null);
 
 const paragraph = (properties: string, runs: string) =>
   `<w:p>${properties === "" ? "" : `<w:pPr>${properties}</w:pPr>`}${runs}</w:p>`;
@@ -123,5 +135,59 @@ describe("placeInlines", () => {
     const { placed, box } = place(paragraph(`<w:jc w:val="right"/>`, image()), 100, [band]);
     expect(leftsOf(box)).toStrictEqual([220]);
     expect(placed[0]?.leftPt).toBeCloseTo(220, 6);
+  });
+});
+
+// The form Word wrote before DrawingML and still writes for some of what it
+// draws. It stands on the line exactly as a `wp:inline` does, and states its size
+// in the css of the shape's `style` rather than in an extent.
+describe("placeInlines over a picture written the legacy way", () => {
+  it("places one at the size its style states", () => {
+    const { placed } = place(paragraph("", legacy("rId7", "180pt", "90pt")));
+    expect(placed[0]?.leftPt).toBeCloseTo(36, 6);
+    expect(placed[0]?.widthPt).toBeCloseTo(180, 6);
+    expect(placed[0]?.heightPt).toBeCloseTo(90, 6);
+    expect(contentOf(placed[0])).toBe("rId7");
+  });
+
+  it("aligns and seats one as it does a drawing", () => {
+    const { placed } = place(
+      paragraph(`<w:jc w:val="right"/>`, legacy("rId7", "180pt", "90pt")),
+      253.87,
+    );
+    expect(placed[0]?.leftPt).toBeCloseTo(612 - 36 - 180, 6);
+    expect(placed[0]?.topPt).toBeCloseTo(253.87, 6);
+  });
+
+  // **The order is the whole of why this is worth a test.** A drawing is matched to
+  // its place on the line by counting, so reading every `wp:inline` and then every
+  // `w:pict` would hand a paragraph holding both each other's pictures.
+  it("keeps the two forms in the order the paragraph writes them", () => {
+    const { placed } = place(
+      paragraph("", `${legacy("rId7", "72pt", "72pt")}${image()}${legacy("rId9", "36pt", "36pt")}`),
+    );
+    expect(placed.map((each) => each.widthPt)).toStrictEqual([72, 180, 36]);
+    expect(placed.map(contentOf)).toStrictEqual(["rId7", null, "rId9"]);
+  });
+
+  // A VML shape carrying `position:absolute` is out of flow like a `wp:anchor`,
+  // and a run holding nothing else places nothing on the line at all.
+  it("leaves a positioned one off the line", () => {
+    const { placed, box } = place(
+      paragraph("", `${legacy("rId7", "180pt", "90pt", "position:absolute;")}${image()}`),
+    );
+    expect(placed.map((each) => each.widthPt)).toStrictEqual([180]);
+    expect(placed.map(contentOf)).toStrictEqual([null]);
+    expect(box.lines[0]?.line.widthPt).toBeCloseTo(180, 6);
+  });
+
+  it("passes over a shape that names no picture", () => {
+    const { placed } = place(
+      paragraph(
+        "",
+        `<w:r><w:pict><v:rect xmlns:v="${V_NS}" style="width:180pt;height:90pt"/></w:pict></w:r>`,
+      ),
+    );
+    expect(placed).toStrictEqual([]);
   });
 });

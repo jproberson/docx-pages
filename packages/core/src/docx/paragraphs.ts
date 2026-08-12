@@ -1,5 +1,6 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
 import { W_NS } from "./section.js";
+import { inlinePictureOf } from "./vml.js";
 import { descendantsNamed, type XmlElement } from "./xml.js";
 
 export function paragraphText(paragraph: Paragraph): string {
@@ -51,7 +52,9 @@ function placesContentInLine(run: XmlElement): boolean {
       if (isDetachedContent(child)) continue;
       const isText = child.namespace === W_NS && LINE_CONTENT.has(child.name);
       const isInline = child.namespace === WP_DRAWING_NS && child.name === "inline";
-      if (isText || isInline) {
+      const isLegacy =
+        child.namespace === W_NS && child.name === "pict" && inlinePictureOf(child) !== null;
+      if (isText || isInline || isLegacy) {
         found = true;
         return;
       }
@@ -68,16 +71,19 @@ export function paragraphRuns(paragraph: Paragraph): readonly XmlElement[] {
   return found.filter(placesContentInLine);
 }
 
+export type ElementName = { readonly namespace: string; readonly name: string };
+
 export function paragraphOwnDrawings(
   paragraph: Paragraph,
-  namespace: string,
-  name: string,
+  wanted: readonly ElementName[],
 ): readonly XmlElement[] {
   const found: XmlElement[] = [];
   const visit = (node: XmlElement): void => {
     for (const child of node.children) {
       if (isDetachedContent(child)) continue;
-      if (child.namespace === namespace && child.name === name) found.push(child);
+      if (wanted.some((each) => child.namespace === each.namespace && child.name === each.name)) {
+        found.push(child);
+      }
       visit(child);
     }
   };
