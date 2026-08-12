@@ -1,4 +1,5 @@
 import { isDetachedContent } from "./blocks.js";
+import { type CropInsets } from "./drawing.js";
 import { R_NS } from "./relationships.js";
 import { W_NS } from "./section.js";
 import { attribute, type XmlElement } from "./xml.js";
@@ -20,14 +21,21 @@ import { attribute, type XmlElement } from "./xml.js";
 // blocks drop it before anything looks inside.
 //
 // Measured over the 718: every inline VML picture in the corpus states its width
-// and height in points and none of them crops, so a size stated any other way is
-// left at nothing rather than guessed at.
+// and height in points, so a size stated any other way is left at nothing rather
+// than guessed at. **The crop is another matter**: no inline picture in the corpus
+// crops, and every picture bullet declared in one does, which is the whole of what
+// makes a 334 by 103 logo a small green ball.
 
 export const V_NS = "urn:schemas-microsoft-com:vml";
 
 export type VmlPicture = {
   readonly widthEmu: number;
   readonly heightEmu: number;
+  // What the crop lets through, as fractions of the source hidden on each edge. The
+  // size above is the window the crop leaves, not the whole picture: measured on
+  // 2026-08-12, a shape saying 36 by 24pt and hiding four fifths across and half
+  // down was drawn by Word 180 by 48pt with 36 by 24 of it showing.
+  readonly crop: CropInsets;
   readonly relationshipId: string;
 };
 
@@ -58,17 +66,36 @@ const pointsOf = (shape: XmlElement, name: string): number => {
 const isPositioned = (shape: XmlElement): boolean =>
   declaration(shape, "position")?.toLowerCase() === "absolute";
 
+// A VML crop is written as a fraction in sixteenths of a thousandth, `48837f`, or
+// as a percentage, or as a plain fraction. Word writes the first.
+const FRACTION_UNITS = 65536;
+
+function cropEdge(imagedata: XmlElement, name: string): number {
+  const raw = attribute(imagedata, "", name);
+  if (raw === undefined) return 0;
+  const scale = raw.endsWith("f") ? FRACTION_UNITS : raw.endsWith("%") ? 100 : 1;
+  const value = Number(scale === 1 ? raw : raw.slice(0, -1));
+  return Number.isFinite(value) ? value / scale : 0;
+}
+
+const cropOf = (imagedata: XmlElement): CropInsets => ({
+  left: cropEdge(imagedata, "cropleft"),
+  top: cropEdge(imagedata, "croptop"),
+  right: cropEdge(imagedata, "cropright"),
+  bottom: cropEdge(imagedata, "cropbottom"),
+});
+
 // The shapes VML draws a picture with. A `v:group` is a drawing of its own and is
 // not one of them: reading its first picture would draw that one at the group's
 // size and the rest nowhere at all.
 const PICTURE_SHAPES = new Set(["shape", "rect", "roundrect", "oval"]);
 
-function imageOf(node: XmlElement): string | null {
+function imageOf(node: XmlElement): XmlElement | null {
   for (const child of node.children) {
     if (isDetachedContent(child)) continue;
     if (child.namespace === V_NS && child.name === "imagedata") {
       const id = attribute(child, R_NS, "id");
-      return id === undefined || id === "" ? null : id;
+      return id === undefined || id === "" ? null : child;
     }
     const found = imageOf(child);
     if (found !== null) return found;
@@ -93,13 +120,14 @@ export function inlinePictureOf(pict: XmlElement): VmlPicture | null {
     if (child.namespace !== V_NS || !PICTURE_SHAPES.has(child.name)) continue;
     if (isPositioned(child)) continue;
 
-    const relationshipId = imageOf(child);
-    if (relationshipId === null) continue;
+    const imagedata = imageOf(child);
+    if (imagedata === null) continue;
 
     return {
       widthEmu: pointsOf(child, "width") * EMU_PER_POINT,
       heightEmu: pointsOf(child, "height") * EMU_PER_POINT,
-      relationshipId,
+      crop: cropOf(imagedata),
+      relationshipId: attribute(imagedata, R_NS, "id") ?? "",
     };
   }
   return null;

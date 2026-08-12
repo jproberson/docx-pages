@@ -83,7 +83,7 @@ function legacyPicture(paragraph: Paragraph, pict: XmlElement): readonly InlineD
       content: {
         kind: "picture",
         relationshipId: picture.relationshipId,
-        crop: { left: 0, top: 0, right: 0, bottom: 0 },
+        crop: picture.crop,
         paint: NO_PAINT,
       },
     },

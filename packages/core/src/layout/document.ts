@@ -1,5 +1,6 @@
 import { readAnchors, type FloatingAnchor } from "../docx/anchors.js";
 import { readInlines } from "../docx/inlines.js";
+import { pictureBulletOf, wearingPictureBullet } from "../docx/picture-bullets.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
 import { readRelationships } from "../docx/relationships.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "../docx/package.js";
@@ -616,7 +617,9 @@ export function layOutDocument(
   const widthPt = twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
   const frame: StoryFrame = { styles, metricsFor, settings, leftPt, widthPt };
 
-  const bodyBlocks = readBlocks(pkg);
+  const pictureBullet = pictureBulletOf(pkg);
+  const bodyBlocks =
+    pictureBullet === null ? readBlocks(pkg) : wearingPictureBullet(readBlocks(pkg), pictureBullet);
   const bodySectionOf = sectionOfEachBlock(pkg, bodyBlocks);
   const sections = sectionAtEachParagraph(bodyBlocks, bodySectionOf);
   const sectionAt = sections.at;
@@ -797,6 +800,9 @@ export function layOutDocument(
     const part = floats.part;
     const relationships = readRelationships(pkg, part);
     const resolvePart = (relationshipId: string): string | null => {
+      if (pictureBullet !== null && relationshipId === pictureBullet.relationshipId) {
+        return pictureBullet.part;
+      }
       const target = relationships.get(relationshipId)?.part;
       return target !== undefined && pkg.parts.has(target) ? target : null;
     };
