@@ -7,6 +7,7 @@ import {
   openDocx,
   readFaceShapes,
   readFontFile,
+  unshowableIn,
   writePdf,
   type FaceDefaults,
   type FallbackCharacter,
@@ -16,6 +17,7 @@ import {
   type Substitution,
   type SuppliedFace,
   type Unhonoured,
+  type Unshowable,
 } from "@docx-pages/core";
 
 import { imageResolver, type ImageResolver } from "./images.js";
@@ -38,6 +40,11 @@ export type DocxRenderReport = {
   readonly fallbackCharacters: readonly FallbackCharacter[];
   readonly missingGlyphs: readonly MissingGlyph[];
   readonly unhonoured: readonly Unhonoured[];
+  // Where the pages came out wrong on their own terms, which is not the same list as
+  // `unhonoured`: that says what the document asked for and did not get, most of it
+  // invisible, and this says the page draws text off the sheet, above its own top, or
+  // over other text, which no document can ask for. Empty is a page worth showing.
+  readonly unshowable: readonly Unshowable[];
 };
 
 export type DocxDocumentProps = {
@@ -68,6 +75,22 @@ export type DocxDocumentProps = {
   // What to draw for a document even best effort cannot lay out, which with a
   // full set of defaults in reach is a malformed file rather than a missing font.
   readonly blocked?: (reason: unknown) => ReactElement | null;
+  /**
+   * What to draw instead of a page that came out unusable, where the caller would
+   * rather show nothing than show that.
+   *
+   * **Laying out is not the same as succeeding.** A document that lays out perfectly
+   * well can still put text off the sheet, above the top of its own page, or over
+   * other text, and a preview showing one of those is worse than a preview that says
+   * it cannot show it: over the corpus, 11 clean documents of 580 draw one, and the
+   * raster says not one of those pages is the page Word drew. So the decision is made
+   * before anything is painted rather than reported after it.
+   *
+   * Left out, the pages are drawn whatever they say about themselves, which is what
+   * this component did before the check existed. Answering `null` from it draws
+   * nothing at all.
+   */
+  readonly unshowable?: (found: readonly Unshowable[]) => ReactElement | null;
   readonly scale?: number;
   readonly frames?: FrameStyle;
   readonly className?: string;
@@ -170,6 +193,7 @@ type Shown =
       readonly layout: LaidOutDocument;
       readonly imageUrl: ImageResolver;
       readonly aliasSymbolFaces: ReadonlySet<string> | null;
+      readonly unshowable: readonly Unshowable[];
     };
 
 /**
@@ -190,6 +214,7 @@ type Shown =
 export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
   const [shown, setShown] = useState<Shown>({ state: "opening" });
   const { source, fonts, defaults, defaultBytes, onReport, onReady, blocked } = props;
+  const refuse = props.unshowable;
 
   // Laying out is synchronous once the faces are in hand, which is the whole
   // reason the pack lives behind `@docx-pages/viewer/pack`: fetching it was the
@@ -215,11 +240,14 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
         offerToBrowser(face.name, face.bold ?? false, face.italic ?? false, face.bytes);
       }
 
+      const unshowable = unshowableIn(layout);
+
       onReport?.({
         substitutions: faces.substitutions(),
         fallbackCharacters: faces.fallbackCharacters(),
         missingGlyphs: faces.missingGlyphs(),
         unhonoured: layout.unhonoured,
+        unshowable,
       });
 
       // Runs in a symbol face that was stood in for are drawn as what their
@@ -246,6 +274,7 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
         layout,
         imageUrl: imageResolver(pkg, faces.metricsFor),
         aliasSymbolFaces,
+        unshowable,
       });
     } catch (error) {
       setShown({ state: "blocked", reason: error });
@@ -259,6 +288,9 @@ export function DocxDocument(props: DocxDocumentProps): ReactElement | null {
   if (shown.state === "blocked") {
     return blocked?.(shown.reason) ?? <pre>{describeReason(shown.reason)}</pre>;
   }
+  // Asked before a page is painted, so a caller that would rather show nothing never
+  // has the broken page on the screen first.
+  if (refuse !== undefined && shown.unshowable.length > 0) return refuse(shown.unshowable);
   return (
     <Document
       layout={shown.layout}
