@@ -39,6 +39,27 @@ const runMark = (rPr: string) =>
   markOf(`<w:p><w:pPr><w:rPr>${rPr}</w:rPr></w:pPr></w:p>`, styles(NORMAL));
 
 describe("resolveParagraphMark", () => {
+  // Word's own answer, measured on 2026-08-13 off the room a footer takes out of the
+  // body: a footer of one paragraph stating a size of nought costs exactly what one
+  // of a single half-point paragraph costs, and half what a whole point costs. So
+  // nought is held to the smallest size the attribute can spell rather than ignored
+  // and inherited.
+  it("holds a run stating no size at all to half a point rather than inheriting one", () => {
+    expect(runMark(`<w:sz w:val="0"/>`).fontSizePt).toBe(0.5);
+  });
+
+  it("leaves a run of half a point alone, which is the smallest one may be", () => {
+    expect(runMark(`<w:sz w:val="1"/>`).fontSizePt).toBe(0.5);
+  });
+
+  it("leaves a run of a point alone", () => {
+    expect(runMark(`<w:sz w:val="2"/>`).fontSizePt).toBe(1);
+  });
+
+  it("leaves every ordinary size alone", () => {
+    expect(runMark(`<w:sz w:val="24"/>`).fontSizePt).toBe(12);
+  });
+
   it("falls back to the default paragraph style when the paragraph names none", () => {
     expect(markOf(`<w:p/>`, styles(NORMAL))).toStrictEqual({
       font: { kind: "named", name: "Arial" },

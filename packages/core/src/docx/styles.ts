@@ -28,6 +28,37 @@ const THEME_PART = "word/theme/theme1.xml";
 
 export const WORD_DEFAULT_FONT_SIZE_PT = 10;
 
+/**
+ * The smallest a run may be, whatever size it states: half a point, which is the
+ * smallest `w:sz` can spell, being written in half-points.
+ *
+ * **A stated size of nought is not nought, and it is not inherited either.** Measured
+ * on 2026-08-13 against the room a footer takes out of the body, which is the one
+ * place a height too small to see still decides something. Thirty-one documents whose
+ * body is thirty-five lines of exactly 20pt in a body of 720, closed by one more line
+ * told to be exactly so many points: that last line stays on page one until the room
+ * runs out, so the largest that stays is 20 less what the footer took.
+ *
+ * | the footer's one paragraph | the last line that stayed | so it took |
+ * | -------------------------- | ------------------------- | ---------- |
+ * | none at all                | 20.00pt                   | nothing    |
+ * | `w:sz w:val="0"`           | 19.30pt                   | 0.60-0.70  |
+ * | `w:sz w:val="1"`, half a point | 19.30pt                | 0.60-0.70  |
+ * | `w:sz w:val="2"`, one point   | 18.70pt                | 1.20-1.30  |
+ *
+ * **Nought and a half-point are the same answer, and a whole point is twice it**, so
+ * the nought is held to the smallest size the attribute can state rather than to a
+ * point or to the size it would otherwise inherit. A point was tried first and is
+ * what a coarser reading of the same question gave: it is twice too much, and it cost
+ * two corpus documents a picture apiece at the foot of a page.
+ *
+ * The corpus turns on it through a footer holding nothing but a sensitivity label in
+ * an anchored box, whose one flow paragraph states a size of nought: measured as
+ * nothing it holds the body off nothing, and the body then keeps a line Word sends to
+ * the next page.
+ */
+export const SMALLEST_FONT_SIZE_PT = 0.5;
+
 export type FontChoice =
   { readonly kind: "named"; readonly name: string } | { readonly kind: "unresolved" };
 
@@ -702,7 +733,7 @@ function markOf(resolved: PartialMark): ParagraphMark {
   const declaredPt =
     resolved.fontSizeHalfPoints === undefined
       ? WORD_DEFAULT_FONT_SIZE_PT
-      : resolved.fontSizeHalfPoints / 2;
+      : Math.max(SMALLEST_FONT_SIZE_PT, resolved.fontSizeHalfPoints / 2);
   const scripted =
     resolved.verticalAlign === "superscript" || resolved.verticalAlign === "subscript";
 
