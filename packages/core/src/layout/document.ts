@@ -881,6 +881,10 @@ export function layOutDocument(
       const body = bodyOfPage(sectionAt(page.openedBy ?? -1), opensASection(page.openedBy));
       for (const opensAt of runsOpeningAt) {
         const box = page.boxes.find((each) => each.index === opensAt);
+        // From the paragraph's own top, which is measured rather than assumed: reading it
+        // from where the run's first line starts instead, on the argument that the room a
+        // paragraph asks for above itself is not room its columns may fill, cost
+        // `a020d36eb543` its 47 lines of 47 and `c8ca0c3c8292` 18 of 49, and fixed nothing.
         if (box !== undefined) room.set(opensAt, body.bottomPt - box.topPt);
       }
     }
@@ -896,13 +900,34 @@ export function layOutDocument(
   let broken = breakBody(bodyStack);
 
   // One pass a run at the most, and a document with no column run in it takes none.
+  let settled = runsOpeningAt.length === 0;
   for (let pass = 0; pass < runsOpeningAt.length; pass += 1) {
     const found = roomLeftFor(broken);
-    if (asked(found) === asked(roomForRun)) break;
+    if (asked(found) === asked(roomForRun)) {
+      settled = true;
+      break;
+    }
     roomForRun = found;
     const again = measureBody(roomForRun);
     if (again.kind === "blocked") return { kind: "blocked", blocker: again.blocker };
     bodyStack = again;
+    broken = breakBody(bodyStack);
+  }
+
+  // **A document whose runs will not settle is measured as though every run stood at the
+  // top of a page**, which is what this did before it asked the pages anything.
+  //
+  // The passes are not guaranteed to converge and nothing here pretends otherwise: a run
+  // given less room pushes what is under it down, which can move the page the run below it
+  // opens on, which changes that one's room in turn, and two of them can trade places for
+  // ever. Stopping mid-chase is the one outcome worse than not asking, since the layout is
+  // then measured against rooms it no longer has: 28ef8aa08b34 came out of it with four
+  // pages become five and everything under its first run 36pt low. So a chase that has not
+  // ended by the last pass is abandoned rather than banked.
+  if (!settled) {
+    const plain = measureBody(new Map());
+    if (plain.kind === "blocked") return { kind: "blocked", blocker: plain.blocker };
+    bodyStack = plain;
     broken = breakBody(bodyStack);
   }
 
