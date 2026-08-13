@@ -10,7 +10,7 @@ import {
 } from "@docx-pages/core";
 
 import { agreementWith } from "../pdf/agreement.js";
-import { readTextPlacements } from "../pdf/text.js";
+import { readDrawnText } from "../pdf/text.js";
 import { corpusFaces } from "./faces.js";
 import { renderedPath } from "./render.js";
 import { CORPUS_DIRECTORY, documentsIn, identityOf } from "./sweep.js";
@@ -99,7 +99,7 @@ export async function agreementOf(bytes: Uint8Array, id: string): Promise<Agreed
     const laid = layOutDocument(pkg, measuring);
     if (laid.kind !== "laid-out") return empty(id, "blocked", laid.blocker.kind);
 
-    const drawn = await readTextPlacements(new Uint8Array(readFileSync(drawnPath)));
+    const drawn = await readDrawnText(new Uint8Array(readFileSync(drawnPath)));
     const agreed = agreementWith(laid, drawn, TOLERANCE_PT);
 
     const scale = agreed.drawnScale;

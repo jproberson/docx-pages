@@ -5,7 +5,7 @@ import {
   type PlacedLine,
 } from "@docx-pages/core";
 
-import type { TextPlacement } from "./text.js";
+import type { DrawnText, TextPlacement } from "./text.js";
 
 // How far a laid-out document agrees with Word's own drawing of it.
 //
@@ -498,17 +498,14 @@ function shapeOf(
 // and counting it as content we missed is crying wolf.
 const spellsSomething = (item: TextPlacement): boolean => inkOf(normalise(item.text)) !== "";
 
-// A page we never made cannot be one of ours, so how many pages Word drew is carried
-// beside them: an item on page 5 of a drawing our layout ends at 3 is content that is
-// missing by the page rather than by the line.
-const pagesIn = (drawn: readonly TextPlacement[]): number =>
-  drawn.reduce((most, item) => Math.max(most, item.pageIndex + 1), 0);
-
 export function agreementWith(
   layout: LaidOutDocument,
-  drawn: readonly TextPlacement[],
+  drawing: DrawnText,
   tolerancePt: number,
 ): Agreement {
+  // How many pages the file holds, which is the drawing's own answer and not the highest
+  // page an item stands on: a page drawing nothing but a picture holds no text item.
+  const drawn = drawing.placements;
   const taken = new Set<TextPlacement>();
   const elsewhere: { readonly pageIndex: number; readonly text: string }[] = [];
   const scales: number[] = [];
@@ -671,6 +668,6 @@ export function agreementWith(
     numbersPlaced,
     drawnScale: middleOf(scales),
     pages,
-    pagesDrawn: pagesIn(drawn),
+    pagesDrawn: drawing.pages,
   };
 }

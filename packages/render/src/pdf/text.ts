@@ -39,7 +39,24 @@ function parseTextItem(value: unknown): TextItemShape | null {
   return { str, width, fontName, transform };
 }
 
-export async function readTextPlacements(bytes: Uint8Array): Promise<readonly TextPlacement[]> {
+// Everything a pdf says about the text it draws: where each item was drawn, and how many
+// pages the file holds.
+//
+// **The page count cannot be read off the items and has to come from the file.** A page
+// drawing nothing but a picture holds no text item at all, so counting pages by the
+// highest item was short by one on 19 of the 715 corpus documents, every one of them a
+// last page with no text on it. Read that way `deformed.ts` accused 21 clean documents of
+// making the wrong number of pages where the rasteriser, which counts the pdf's own
+// pages, says 5.
+export type DrawnText = {
+  readonly placements: readonly TextPlacement[];
+  readonly pages: number;
+};
+
+export const readTextPlacements = async (bytes: Uint8Array): Promise<readonly TextPlacement[]> =>
+  (await readDrawnText(bytes)).placements;
+
+export async function readDrawnText(bytes: Uint8Array): Promise<DrawnText> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   let document;
@@ -79,5 +96,5 @@ export async function readTextPlacements(bytes: Uint8Array): Promise<readonly Te
     }
   }
 
-  return placements;
+  return { placements, pages: document.numPages };
 }

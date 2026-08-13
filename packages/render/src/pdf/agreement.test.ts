@@ -109,8 +109,15 @@ const asDrawn = (laid: LaidOutDocument, moved: Moved): readonly TextPlacement[] 
 
 const where = (line: PlacedLine) => ({ leftPt: line.leftPt, baselinePt: line.baselinePt });
 
+// The drawing as a whole, whose page count a case states where it is about one and is
+// otherwise however many pages the items stand on.
+const drawing = (placements: readonly TextPlacement[], pages?: number) => ({
+  placements,
+  pages: pages ?? placements.reduce((most, item) => Math.max(most, item.pageIndex + 1), 0),
+});
+
 const shapesOf = (laid: LaidOutDocument, drawn: readonly TextPlacement[]): readonly PageShape[] =>
-  agreementWith(laid, drawn, TOLERANCE_PT).pages.map((page) => page.shape);
+  agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages.map((page) => page.shape);
 
 describe("what a page's lines say read together", () => {
   const laid = laidOut(WORDS);
@@ -153,7 +160,7 @@ describe("what a page's lines say read together", () => {
       leftPt: line.leftPt,
       baselinePt: line.baselinePt + 13.8,
     }));
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.shape).toBe("shifted");
     expect(page?.offsetPt?.downPt).toBeCloseTo(13.8, 6);
@@ -168,7 +175,7 @@ describe("what a page's lines say read together", () => {
       leftPt: line.leftPt,
       baselinePt: line.baselinePt + (textOf(line) === "golf" ? 40 : 13.8),
     }));
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.shape).toBe("shifted");
     expect(page?.offsetPt?.downPt).toBeCloseTo(13.8, 6);
@@ -196,7 +203,7 @@ describe("what a page's lines say read together", () => {
       leftPt: line.leftPt,
       baselinePt: line.baselinePt + (line.baselinePt - first) * 0.1,
     }));
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.shape).toBe("drifting");
     expect(page?.driftPerPt).toBeCloseTo(0.1, 6);
@@ -216,7 +223,7 @@ describe("what a page's lines say read together", () => {
         baselinePt: line.baselinePt - Math.max(0, at - 5) * 0.95,
       };
     });
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.shape).toBe("drifting");
     expect(page?.worstPt).toBeGreaterThan(12);
@@ -265,7 +272,7 @@ describe("what a page's lines say read together", () => {
   // carry the same ink, which is a page nobody drew wrong.
   it("says nothing is missing where nothing matched and both sides drew the same ink", () => {
     const drawn = asDrawn(laid, where).map((item) => ({ ...item, text: `${item.text}!` }));
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.matched).toBe(0);
     expect(page?.oursAlone).toBe(20);
@@ -280,7 +287,7 @@ describe("what a page's lines say read together", () => {
   // that noise costs, so nothing is claimed and the counts say where to look.
   it("leaves a page agreed where we drew more than Word, and says so in the counts", () => {
     const drawn = asDrawn(laid, where).filter((item) => !WORDS.slice(4).includes(item.text));
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.shape).toBe("agrees");
     expect(page?.oursAlone).toBe(16);
@@ -301,7 +308,7 @@ describe("what a page's lines say read together", () => {
         fontSizePt: 11,
       })),
     ];
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.theirs).toBe(40);
     expect(page?.theirsAlone).toBe(20);
@@ -322,7 +329,7 @@ describe("what a page's lines say read together", () => {
         fontSizePt: 11,
       },
     ];
-    const agreed = agreementWith(laid, drawn, TOLERANCE_PT);
+    const agreed = agreementWith(laid, drawing(drawn), TOLERANCE_PT);
 
     expect(agreed.pages).toHaveLength(1);
     expect(agreed.pagesDrawn).toBe(4);
@@ -337,7 +344,7 @@ describe("a line the drawing put on another page", () => {
     const drawn = asDrawn(laid, where).map((item) =>
       item.text === "lima" ? { ...item, pageIndex: 1 } : item,
     );
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.onAnotherPage).toBe(1);
     expect(page?.oursAlone).toBe(0);
@@ -355,7 +362,7 @@ describe("a page with almost nothing on it", () => {
       leftPt: line.leftPt,
       baselinePt: line.baselinePt + 40,
     }));
-    const page = agreementWith(laid, drawn, TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing(drawn), TOLERANCE_PT).pages[0];
 
     expect(page?.matched).toBe(1);
     expect(page?.shape).toBe("shifted");
@@ -367,7 +374,7 @@ describe("a page with almost nothing on it", () => {
   // Word put nowhere.
   it("is called missing where Word drew no text on it at all", () => {
     const laid = laidOut(["alpha", "bravo"]);
-    const page = agreementWith(laid, [], TOLERANCE_PT).pages[0];
+    const page = agreementWith(laid, drawing([]), TOLERANCE_PT).pages[0];
 
     expect(page?.shape).toBe("missing");
     expect(page?.oursAlone).toBe(2);

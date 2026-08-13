@@ -11,7 +11,7 @@ import {
 import { authoredCases } from "../authored/cases.js";
 import { authoredFace, authoredMetrics } from "../authored/faces.js";
 import { agreementWith, type Agreement } from "../pdf/agreement.js";
-import { readTextPlacements } from "../pdf/text.js";
+import { readDrawnText } from "../pdf/text.js";
 import { readReferenceDocument } from "../testing/documents.js";
 import { referenceCases, suppliedFaces, type ReferenceCase } from "../testing/cases.js";
 
@@ -46,9 +46,7 @@ async function compare(compared: Compared): Promise<Agreement> {
   const layout = layOutDocument(readReferenceDocument(compared.each), compared.metricsFor());
   if (layout.kind !== "laid-out") throw new Error(`blocked: ${layout.blocker.kind}`);
 
-  const drawn = await readTextPlacements(
-    new Uint8Array(readFileSync(compared.each.renderedPath ?? "")),
-  );
+  const drawn = await readDrawnText(new Uint8Array(readFileSync(compared.each.renderedPath ?? "")));
 
   return agreementWith(layout, drawn, compared.each.textTolerancePt);
 }
