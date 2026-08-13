@@ -331,11 +331,32 @@ function drawnBy(face: Face, codePoint: number): BorrowedGlyph | null {
 // the full stop.
 const DECIMAL_POINT = ".";
 
-// A no-break space is what its name says: text runs on through it, so it belongs
-// to the word around it rather than opening a place the line can break. Every
-// other run of whitespace is a gap between words.
-const GAP = /([^\S\u00a0]+)/;
-const IS_GAP = /^[^\S\u00a0]+$/;
+/**
+ * A no-break space is what its name says: text runs on through it, so it belongs
+ * to the word around it rather than opening a place the line can break. Every
+ * other run of whitespace is a gap between words.
+ *
+ * **Which spaces those are was measured on 2026-08-13**, by an authored document
+ * putting each of twenty of them between the second and third of three words in a
+ * column holding only two: a break there leaves `x1111 x2222` above `x3333`, and
+ * no break leaves `x1111` above `x2222 x3333`. Word breaks at U+0020, U+2002,
+ * U+2003, U+2005, U+3000, U+200B and a tab, and does not break at U+00A0, U+2007,
+ * U+202F or U+FEFF, which are the three Unicode calls glue and the one it calls a
+ * word joiner.
+ *
+ * **The nine left out are left out on purpose.** Word also declined to break at
+ * U+2000, U+2001, U+2004, U+2006, U+2008, U+2009, U+200A, U+1680 and U+205F, which
+ * Unicode all class as break-after, and U+2000 is canonically the same character as
+ * U+2002 which Word does break at. The pdf draws two items on the line in several of
+ * those cases, which is a face standing in for one the document's own has no glyph
+ * for, so the answer is about the substitution rather than about the character. Of
+ * the nine, only U+2008 turns up in the corpus at all: 15 documents and 111
+ * characters, against U+202F's 20 documents and 1169. **Ask again with a face that
+ * carries all of them before believing any of the nine.**
+ */
+const NO_BREAK = "\\u00a0\\u2007\\u202f\\ufeff";
+const GAP = new RegExp(`([^\\S${NO_BREAK}]+)`);
+const IS_GAP = new RegExp(`^[^\\S${NO_BREAK}]+$`);
 
 // Word lets a line end on a hyphen inside a word, so each one closes the word it
 // belongs to and the rest of it becomes a word of its own.

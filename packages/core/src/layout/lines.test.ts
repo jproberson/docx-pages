@@ -17,7 +17,10 @@ import type { TabStopPt } from "./tab-stops.js";
 // and the expected break points can be counted rather than computed.
 const HALF_EM = 500;
 const NO_BREAK_SPACE = "\u00a0";
-const CHARACTERS = `abcdefghijklmnopqrstuvwxyz0123456789. -${NO_BREAK_SPACE}`;
+// The other three Word will not break at, so that each measures half an em here
+// like everything else and a width can be counted rather than computed.
+const NO_BREAK_SPACES = `${NO_BREAK_SPACE}\u2007\u202f\ufeff`;
+const CHARACTERS = `abcdefghijklmnopqrstuvwxyz0123456789. -${NO_BREAK_SPACES}`;
 
 const FIXTURE = {
   unitsPerEm: 1000,
@@ -179,6 +182,31 @@ describe("breakLines", () => {
     const lines = linesOf([runOf(`ab${NO_BREAK_SPACE}cd`)], 100);
 
     expect(lines[0]?.widthPt).toBeCloseTo(25, 9);
+  });
+
+  // Word's own answers, measured on 2026-08-13 by a document putting each of these
+  // between the second and third of three words in a column holding two of them.
+  // The narrow no-break space is the one the corpus turns on: 20 documents and 1169
+  // characters, against none at all for the other two.
+  for (const [name, character] of [
+    ["narrow no-break space", "\u202f"],
+    ["figure space", "\u2007"],
+    ["zero width no-break space", "\ufeff"],
+  ] as const) {
+    it(`carries a word joined by a ${name} to the next line whole`, () => {
+      const lines = linesOf([runOf(`abc ab${character}cd`)], 30);
+
+      expect(lines.map(textOf)).toStrictEqual(["abc", `ab${character}cd`]);
+    });
+  }
+
+  // The other half of the same rule, and the half a real document turned on: an
+  // ordinary space at the end of a line hangs past the margin and costs nothing,
+  // where a no-break space belongs to the word in front of it and has to fit.
+  it("holds a trailing narrow no-break space to the width the word must fit", () => {
+    const lines = linesOf([runOf(`abc abc\u202f\u202f`)], 30);
+
+    expect(lines.map(textOf)).toStrictEqual(["abc", "abc\u202f\u202f"]);
   });
 
   it("breaks a word that cannot fit a line of its own at the character that overflows", () => {
