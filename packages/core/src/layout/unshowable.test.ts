@@ -95,7 +95,7 @@ const EMPTY_BODY: TextBoxBody = {
 const boxHolding = (boxes: readonly ParagraphBox[]): PlacedContent => ({
   kind: "text-box",
   body: EMPTY_BODY,
-  text: { boxes, cells: [], contentHeightPt: 0, contentWidthPt: 0 },
+  text: { boxes, cells: [], inlines: [], contentHeightPt: 0, contentWidthPt: 0 },
   paint: UNPAINTED,
 });
 

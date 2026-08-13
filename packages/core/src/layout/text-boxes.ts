@@ -1,4 +1,9 @@
+import { blockParagraphs } from "../docx/blocks.js";
 import type { TextBoxAnchor, TextBoxBody } from "../docx/drawing.js";
+import { readInlines } from "../docx/inlines.js";
+import type { Theme } from "../docx/theme.js";
+import type { PartResolver } from "./floats.js";
+import { placeInlines, type PlacedInline } from "./inlines.js";
 import type { StyleTable } from "../docx/styles.js";
 import type { DocumentSettings } from "../docx/settings.js";
 import {
@@ -21,6 +26,11 @@ export type TextBoxRect = {
 
 export type PlacedTextBox = {
   readonly boxes: readonly ParagraphBox[];
+  // The drawings standing in the box's own text, which are drawn where its text
+  // put them. **Nothing placed one until 2026-08-14**: fifteen corpus documents
+  // hold 76 of them and every one was drawn nowhere at all, with the box's text
+  // around it drawn as usual, so nothing about the page said a picture was missing.
+  readonly inlines: readonly PlacedInline[];
   // The cells of any table the box holds, which are drawn behind its text like
   // any other table's.
   readonly cells: readonly PlacedCell[];
@@ -32,6 +42,10 @@ export type PlacedTextBox = {
 
 export type LayOutTextBoxInput = {
   readonly body: TextBoxBody;
+  // What the drawings in the box's text are resolved against. A caller that only
+  // wants the box's size passes neither, and the drawings are left unplaced.
+  readonly resolvePart?: PartResolver;
+  readonly theme?: Theme;
   readonly rect: TextBoxRect;
   readonly styles: StyleTable;
   readonly metricsFor: MetricsResolver;
@@ -67,15 +81,39 @@ export function layOutTextBox(input: LayOutTextBoxInput): TextBoxLayout {
   if (measured.kind === "blocked") return { kind: "blocked", blocker: measured.blocker };
 
   const offsetPt = seatingOffset(body.anchor, availablePt, measured.heightPt);
+  const boxes = shiftBoxes(measured.boxes, offsetPt);
   return {
     kind: "laid-out",
     text: {
-      boxes: shiftBoxes(measured.boxes, offsetPt),
+      boxes,
       cells: shiftCells(measured.cells, offsetPt),
+      inlines: drawingsIn(body, boxes, input),
       contentHeightPt: measured.heightPt,
       contentWidthPt: widestParagraphPt(measured.boxes),
     },
   };
+}
+
+// The drawings the box's own text holds, placed where its lines put them. A box is
+// laid out twice, once to find how big it is and once to fill it, and only the
+// second is given what a drawing is resolved against: the first wants a height and
+// a drawing takes the room it states either way.
+function drawingsIn(
+  body: TextBoxBody,
+  boxes: readonly ParagraphBox[],
+  input: LayOutTextBoxInput,
+): readonly PlacedInline[] {
+  const { resolvePart, theme } = input;
+  if (resolvePart === undefined || theme === undefined) return [];
+
+  const boxOf = new Map(boxes.map((box) => [box.index, box]));
+  return blockParagraphs(body.blocks).flatMap((paragraph) => {
+    const box = boxOf.get(paragraph.index);
+    const drawings = readInlines(paragraph);
+    return box === undefined || drawings.length === 0
+      ? []
+      : placeInlines({ drawings, box, resolvePart, theme });
+  });
 }
 
 const widestParagraphPt = (boxes: readonly ParagraphBox[]): number =>

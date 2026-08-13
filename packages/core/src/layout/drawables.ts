@@ -174,7 +174,7 @@ function textOf(standing: Standing, key: string): readonly Drawable[] {
     widthPt: standing.widthPt,
     heightPt: standing.heightPt,
   };
-  const { boxes, cells } = content.text;
+  const { boxes, cells, inlines } = content.text;
   const painted = paintLayer(cells, boxes, `${key}-paint`);
   const turnDegrees = standing.turnDegrees;
   return [
@@ -182,6 +182,11 @@ function textOf(standing: Standing, key: string): readonly Drawable[] {
     ...(hasText(boxes)
       ? [{ kind: "text" as const, key: `${key}-text`, boxes, clipTo, turnDegrees }]
       : []),
+    // **A drawing standing in the box's own text is drawn where that text put it.**
+    // Fifteen corpus documents hold 76 of them and not one was drawn until
+    // 2026-08-14: the text around each came out as usual, so no page said anything
+    // was missing.
+    ...inlines.flatMap((inline, at) => fromInline(inline, `${key}-inline-${String(at)}`)),
   ];
 }
 

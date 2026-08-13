@@ -191,6 +191,8 @@ function fillContent(
   metricsFor: MetricsResolver,
   settings: DocumentSettings,
   part: string,
+  resolvePart: PartResolver,
+  theme: Theme,
 ): FilledContent {
   if (content.kind === "group") {
     const children: PlacedGroupChild[] = [];
@@ -207,6 +209,8 @@ function fillContent(
         metricsFor,
         settings,
         part,
+        resolvePart,
+        theme,
       );
       if (filled.kind === "blocked") return filled;
       children.push({ ...child, content: filled.content });
@@ -216,7 +220,16 @@ function fillContent(
 
   if (content.kind !== "text-box") return { kind: "filled", content };
 
-  const laid = layOutTextBox({ body: content.body, rect, styles, metricsFor, settings, part });
+  const laid = layOutTextBox({
+    body: content.body,
+    rect,
+    styles,
+    metricsFor,
+    settings,
+    part,
+    resolvePart,
+    theme,
+  });
   if (laid.kind === "blocked") return { kind: "blocked", blocker: laid.blocker };
   return { kind: "filled", content: { ...content, text: laid.text } };
 }
@@ -230,14 +243,26 @@ function fillTextBoxes(
   styles: StyleTable,
   metricsFor: MetricsResolver,
   settings: DocumentSettings,
+  resolverFor: (part: string) => PartResolver,
+  theme: Theme,
 ): FilledDrawings {
   const filledFloats: (readonly PlacedFloat[])[] = [];
   const filledInlines: (readonly PlacedInline[])[] = [];
 
   for (const { floats, inlines, part } of parts) {
+    const resolvePart = resolverFor(part);
     const placedFloats: PlacedFloat[] = [];
     for (const float of floats) {
-      const content = fillContent(float.content, float, styles, metricsFor, settings, part);
+      const content = fillContent(
+        float.content,
+        float,
+        styles,
+        metricsFor,
+        settings,
+        part,
+        resolvePart,
+        theme,
+      );
       if (content.kind === "blocked") return { kind: "blocked", blocker: content.blocker };
       placedFloats.push({ ...float, content: content.content });
     }
@@ -245,7 +270,16 @@ function fillTextBoxes(
 
     const placedInlines: PlacedInline[] = [];
     for (const inline of inlines) {
-      const content = fillContent(inline.content, inline, styles, metricsFor, settings, part);
+      const content = fillContent(
+        inline.content,
+        inline,
+        styles,
+        metricsFor,
+        settings,
+        part,
+        resolvePart,
+        theme,
+      );
       if (content.kind === "blocked") return { kind: "blocked", blocker: content.blocker };
       placedInlines.push({ ...inline, content: content.content });
     }
@@ -665,6 +699,19 @@ export function layOutDocument(
   const frame: StoryFrame = { styles, metricsFor, settings, leftPt, widthPt };
 
   const pictureBullet = pictureBulletOf(pkg);
+  // What a drawing's `r:embed` names, in the part the drawing stands in. A part of
+  // its own for each story, since a relationship id means whatever that part's own
+  // relationships say it means.
+  const resolverFor = (part: string): PartResolver => {
+    const relationships = readRelationships(pkg, part);
+    return (relationshipId: string): string | null => {
+      if (pictureBullet !== null && relationshipId === pictureBullet.relationshipId) {
+        return pictureBullet.part;
+      }
+      const target = relationships.get(relationshipId)?.part;
+      return target !== undefined && pkg.parts.has(target) ? target : null;
+    };
+  };
   const bodyBlocks =
     pictureBullet === null ? readBlocks(pkg) : wearingPictureBullet(readBlocks(pkg), pictureBullet);
   const bodySectionOf = sectionOfEachBlock(pkg, bodyBlocks);
@@ -939,14 +986,7 @@ export function layOutDocument(
     floats: FloatFrame,
   ): { readonly floats: readonly PlacedFloat[]; readonly inlines: readonly PlacedInline[] } => {
     const part = floats.part;
-    const relationships = readRelationships(pkg, part);
-    const resolvePart = (relationshipId: string): string | null => {
-      if (pictureBullet !== null && relationshipId === pictureBullet.relationshipId) {
-        return pictureBullet.part;
-      }
-      const target = relationships.get(relationshipId)?.part;
-      return target !== undefined && pkg.parts.has(target) ? target : null;
-    };
+    const resolvePart = resolverFor(part);
 
     const anchored = blockParagraphs(blocks).flatMap((paragraph) => {
       const box = boxOf.get(paragraph.index);
@@ -1070,6 +1110,8 @@ export function layOutDocument(
     styles,
     metricsFor,
     settings,
+    resolverFor,
+    theme,
   );
   if (filled.kind === "blocked") return filled;
   const floatsOfStory = new Map(
