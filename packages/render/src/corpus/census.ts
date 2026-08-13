@@ -32,6 +32,7 @@ export type DocumentCensus = {
 const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
 const WPG_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
+const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 type Tally = Map<string, number>;
@@ -69,6 +70,9 @@ function census(element: XmlElement, tally: Tally, inCell: boolean, gathered: Ga
   if (element.namespace === WPS_NS && element.name === "wsp") count(tally, "shape");
   if (element.namespace === WPS_NS && element.name === "txbx") count(tally, "text-box");
   if (element.namespace === WPG_NS && element.name === "wgp") count(tally, "grouped-shapes");
+  // An equation, which is a language of its own: nothing here reads it, so what a
+  // document holds of it is worth counting before anybody builds any of it.
+  if (element.namespace === MATH_NS && element.name === "oMath") count(tally, "equations");
   if (element.namespace !== W_NS) return;
 
   switch (element.name) {

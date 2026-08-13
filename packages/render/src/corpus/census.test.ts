@@ -32,6 +32,18 @@ describe("censusOf", () => {
     expect(counts["nested-tables"]).toBe(1);
   });
 
+  // An equation is written in its own namespace, so the walk has to reach it before any
+  // of it can be built. Read off the deformed ranking on 2026-08-12: the two documents
+  // it named lose 16pt a page to one, and nothing in the corpus report could see them.
+  it("counts an equation, which nothing here reads", () => {
+    const fraction =
+      `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">` +
+      `<m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>` +
+      `</m:oMath>`;
+
+    expect(countsOf(`<w:p>${fraction}</w:p>`)["equations"]).toBe(1);
+  });
+
   it("counts how many faces a document asks for and never which", () => {
     const fonts = (face: string) =>
       `<w:p><w:r><w:rPr><w:rFonts w:ascii="${face}"/></w:rPr><w:t>a</w:t></w:r></w:p>`;

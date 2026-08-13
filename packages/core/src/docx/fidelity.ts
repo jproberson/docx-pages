@@ -9,6 +9,9 @@ import { pageGeometrySignature, W_NS } from "./section.js";
 import { SETTINGS_PART } from "./settings.js";
 import { attribute, type XmlElement } from "./xml.js";
 
+// Where Word writes an equation, which is a language of its own and not a run.
+const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+
 // What this project met in a document and did not honour.
 //
 // A renderer that quietly passes over what it does not understand is the failure
@@ -57,6 +60,7 @@ export type UnhonouredKind =
   | "bar-tab-stop"
   | "highlighting"
   | "page-background"
+  | "equation"
   | "unknown-drawing"
   | "custom-geometry"
   | "undrawable-picture"
@@ -93,6 +97,13 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A note takes room at the foot of its page, which nothing here keeps for it.
   footnote: "moves-text",
   "column-break": "moves-text",
+  // An equation draws nothing at all here and is measured as though the paragraph
+  // holding it were empty, so the text of it is missing and everything below it on the
+  // page has moved up. Found on 2026-08-12 by reading the top of the deformed ranking:
+  // two documents of one template lose 16pt a page per equation and 6 of their 14 pages
+  // between them cannot be shown, and **neither document stated a single gap** until
+  // this was named.
+  equation: "moves-text",
   "bar-tab-stop": "changes-paint",
   highlighting: "changes-paint",
   "page-background": "changes-paint",
@@ -170,6 +181,11 @@ function unhonouredBy(
     const held = resolvePart(content.relationshipId);
     return held === null || drawablePicture(held) ? null : "undrawable-picture";
   }
+  // An equation is written in its own namespace and read by nothing here: `m:oMath`
+  // wherever it stands, and `m:oMathPara` around it where it stands alone in its
+  // paragraph, so the inner one answers for both and a paragraph of two equations says
+  // so twice.
+  if (element.namespace === MATH_NS) return element.name === "oMath" ? "equation" : null;
   if (element.namespace !== W_NS) return null;
 
   switch (element.name) {

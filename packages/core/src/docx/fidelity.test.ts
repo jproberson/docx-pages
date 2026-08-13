@@ -51,6 +51,31 @@ describe("readUnhonoured", () => {
     expect(reportOf(`<w:p><w:r><w:t>plain</w:t></w:r></w:p>`)).toStrictEqual([]);
   });
 
+  // **Read off the top of the deformed ranking on 2026-08-12.** Two documents of one
+  // template lose six of their fourteen pages between them, the worst 61% wrong by the
+  // raster, and both stated no gap at all: their fractions are drawn nowhere and
+  // measured as an empty paragraph, so every equation costs 16pt and the text of it is
+  // missing.
+  it("names an equation, which is a language of its own and read by nothing here", () => {
+    const fraction =
+      `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">` +
+      `<m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>` +
+      `</m:oMath>`;
+
+    expect(kinds(reportOf(`<w:p>${fraction}</w:p>`))).toStrictEqual(["equation"]);
+  });
+
+  // The wrapper Word writes round an equation standing alone in its paragraph. Naming
+  // both would count one equation twice.
+  it("names an equation once where a paragraph holds nothing else", () => {
+    const oMath = `<m:oMath><m:r><m:t>x</m:t></m:r></m:oMath>`;
+    const alone =
+      `<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">` +
+      `${oMath}</m:oMathPara>`;
+
+    expect(kinds(reportOf(`<w:p>${alone}</w:p>`))).toStrictEqual(["equation"]);
+  });
+
   it("names a run's kerning and its capitals", () => {
     const marks = `<w:kern w:val="16"/><w:caps/>`;
     expect(kinds(reportOf(`<w:p><w:r><w:rPr>${marks}</w:rPr><w:t>a</w:t></w:r></w:p>`))).toContain(
