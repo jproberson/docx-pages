@@ -13,7 +13,7 @@ import { agreementWith } from "../pdf/agreement.js";
 import { readDrawnText } from "../pdf/text.js";
 import { corpusFaces } from "./faces.js";
 import { renderedPath } from "./render.js";
-import { CORPUS_DIRECTORY, documentsIn, identityOf } from "./sweep.js";
+import { CORPUS_DIRECTORY, documentsIn, identityOf, idsAsked } from "./sweep.js";
 
 // How far every document in a corpus agrees with Word's own drawing of it.
 //
@@ -190,6 +190,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  const asked = idsAsked();
   const already = new Set<string>();
   const rows: Agreed[] = [];
   const paths = documentsIn(CORPUS_DIRECTORY);
@@ -199,6 +200,7 @@ async function main(): Promise<void> {
     const id = identityOf(bytes);
     if (already.has(id)) continue;
     already.add(id);
+    if (asked !== null && !asked.has(id)) continue;
 
     rows.push(await agreementOf(bytes, id));
     if (rows.length % 25 === 0) {

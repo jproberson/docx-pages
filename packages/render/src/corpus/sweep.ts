@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
@@ -56,6 +56,19 @@ export type SweptDocument = {
 
 export const identityOf = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex").slice(0, 12);
+
+// A rule that can only reach the documents stating one thing is judged by scoring
+// those documents rather than the corpus: the rest come back with the row they
+// already had, so an hour of drawing answers a question a few minutes answers.
+// `DOCX_PAGES_CORPUS_ONLY` names the ids to read, as a file of them or a list, and
+// with nothing named every document is read.
+const namedOnly = (process.env["DOCX_PAGES_CORPUS_ONLY"] ?? "").trim();
+
+export const idsAsked = (): ReadonlySet<string> | null => {
+  if (namedOnly === "") return null;
+  const text = existsSync(namedOnly) ? readFileSync(namedOnly, "utf8") : namedOnly;
+  return new Set(text.split(/[\s,]+/).filter((each) => each !== ""));
+};
 
 // Word writes a lock file beside an open document, and both macOS and Windows
 // leave their own litter about. Neither is a document.

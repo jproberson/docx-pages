@@ -15,7 +15,7 @@ import {
 import { canDraw } from "../raster/draw.js";
 import { ourWrittenPages } from "../raster/written.js";
 import { renderedPath } from "./render.js";
-import { CORPUS_DIRECTORY, documentsIn, identityOf } from "./sweep.js";
+import { CORPUS_DIRECTORY, documentsIn, identityOf, idsAsked } from "./sweep.js";
 
 // How different every document in a corpus looks from Word's own drawing of it.
 //
@@ -192,12 +192,14 @@ type Wanted = { readonly id: string; readonly path: string };
 // forgets to dedupe reports one of them seven times over and ranks it that many
 // times too high.
 function documentsWanted(directory: string): readonly Wanted[] {
+  const asked = idsAsked();
   const already = new Set<string>();
   const wanted: Wanted[] = [];
   for (const path of documentsIn(directory)) {
     const id = identityOf(new Uint8Array(readFileSync(path)));
     if (already.has(id)) continue;
     already.add(id);
+    if (asked !== null && !asked.has(id)) continue;
     wanted.push({ id, path });
   }
   return wanted;
