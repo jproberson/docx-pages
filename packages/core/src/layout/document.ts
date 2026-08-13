@@ -77,6 +77,13 @@ export type LaidOutPage = {
   readonly headerTopPt: number;
   readonly headerHeightPt: number;
   readonly footerTopPt: number;
+  // What this page keeps for the body, which is not what the document keeps: the pair
+  // on `LaidOutDocument` is the opening page's, and a page of another section, or one
+  // drawing a header where the first drew none, starts its body somewhere else
+  // entirely. Anything asking whether a line came out above the top of its own page
+  // has to ask the page.
+  readonly bodyTopPt: number;
+  readonly bodyBottomPt: number;
   readonly header: readonly ParagraphBox[];
   readonly footer: readonly ParagraphBox[];
   readonly headerCells: readonly PlacedCell[];
@@ -102,6 +109,45 @@ export type LaidOutDocument = {
 
 export type DocumentLayout =
   LaidOutDocument | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
+
+// The paragraphs a box holds, at whatever depth it is buried. A group holds shapes and
+// a shape holds text, and a group inside a group is the same again: the labels on a
+// diagram are shapes of exactly that kind.
+const boxesHeldBy = (content: PlacedContent): readonly ParagraphBox[] => {
+  if (content.kind === "group")
+    return content.children.flatMap((child) => boxesHeldBy(child.content));
+  return content.kind === "text-box" && content.text !== null ? content.text.boxes : [];
+};
+
+/**
+ * Every paragraph whose text this page draws: the flow's, the header's and the footer's,
+ * and every one standing in a box, a shape, or a shape inside a group.
+ *
+ * **Anything comparing a page against something else has to walk this and not
+ * `page.body`.** `drawablesOf` flattens a group so no renderer ever learns that groups
+ * exist, and every reading that went looking for text by hand has had the same hole in
+ * it instead: `pdf/agreement.ts` walked top-level text boxes and no group, so on
+ * 2026-08-12 a page whose title block is a group of two shapes was reported as content
+ * Word drew and we did not, while the raster said the page was Word's cell for cell.
+ * Before that, `corpus/inspect.ts` read a page built out of text boxes as an empty page
+ * and six documents were said never to have been read at all.
+ */
+export function paragraphBoxesOn(page: LaidOutPage): readonly ParagraphBox[] {
+  const objects = [
+    ...page.headerFloats,
+    ...page.footerFloats,
+    ...page.floats,
+    ...page.headerInlines,
+    ...page.inlines,
+    ...page.footerInlines,
+  ];
+  return [
+    ...page.header,
+    ...page.footer,
+    ...page.body,
+    ...objects.flatMap((object) => boxesHeldBy(object.content)),
+  ];
+}
 
 type DrawingsInPart = {
   readonly floats: readonly PlacedFloat[];
@@ -909,11 +955,15 @@ export function layOutDocument(
   // gathered: a story is filled once however many pages draw it.
   const drawnOn = broken.map((each) => {
     const section = sectionAt(each.openedBy ?? -1);
-    const stories = storiesOf(section, opensASection(each.openedBy));
+    const opensItsSection = opensASection(each.openedBy);
+    const stories = storiesOf(section, opensItsSection);
     const geometry = section?.geometry ?? page;
     return {
       header: headerOn(stories.header, geometry),
       footer: footerOn(stories.footer, geometry),
+      // The same answer the break was given for this page, kept rather than thrown
+      // away: it is what says where the page's own body begins and ends.
+      body: bodyOfPage(section, opensItsSection),
     };
   });
 
@@ -959,7 +1009,11 @@ export function layOutDocument(
     bodyTopPt,
     bodyBottomPt,
     pages: broken.map((each) => {
-      const drawn = drawnOn[each.index] ?? { header: NOTHING_DRAWN, footer: NOTHING_DRAWN };
+      const drawn = drawnOn[each.index] ?? {
+        header: NOTHING_DRAWN,
+        footer: NOTHING_DRAWN,
+        body: { topPt: bodyTopPt, bottomPt: bodyBottomPt },
+      };
       return {
         index: each.index,
         geometry: geometryAt(each.openedBy),
@@ -970,6 +1024,8 @@ export function layOutDocument(
         headerTopPt: headerTopOf(geometryAt(each.openedBy)),
         headerHeightPt: drawn.header.heightPt,
         footerTopPt: drawn.footer.topPt,
+        bodyTopPt: drawn.body.topPt,
+        bodyBottomPt: drawn.body.bottomPt,
         header: drawn.header.boxes,
         footer: drawn.footer.boxes,
         headerCells: drawn.header.cells,

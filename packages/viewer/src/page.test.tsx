@@ -163,6 +163,8 @@ const layoutWith = (
       headerTopPt: 21.6,
       headerHeightPt: 0,
       footerTopPt: 784.8,
+      bodyTopPt: 36,
+      bodyBottomPt: 792,
       header: [],
       footer: [],
       headerCells: [],

@@ -3,11 +3,11 @@ import { readFileSync } from "node:fs";
 import {
   layOutDocument,
   openDocx,
+  paragraphBoxesOn,
   substitutingMetrics,
   WORD_FALLBACK_FACES,
   type LaidOutDocument,
   type LaidOutPage,
-  type ParagraphBox,
 } from "@docx-pages/core";
 import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
 import { corpusFaces } from "./faces.js";
@@ -57,21 +57,6 @@ type Reading = {
   readonly off: number | null;
 };
 
-// The lines a page draws. Text inside a text box is drawn by the box rather than
-// by the flow, so a page built out of boxes holds no body line at all: four of the
-// six documents this tool was pointed at came back with nothing on their first
-// page, and the page was full. The comparison the score is read off has always
-// counted these; only this had not.
-function boxesOn(layout: LaidOutDocument, page: LaidOutPage): readonly ParagraphBox[] {
-  const floats = [...page.headerFloats, ...page.footerFloats, ...page.floats];
-  const inBoxes = floats.flatMap((float) =>
-    float.content.kind === "text-box" && float.content.text !== null
-      ? [...float.content.text.boxes]
-      : [],
-  );
-  return [...page.body, ...inBoxes];
-}
-
 function linesOn(
   layout: LaidOutDocument,
   page: LaidOutPage,
@@ -79,7 +64,7 @@ function linesOn(
 ): readonly Reading[] {
   const readings: Reading[] = [];
   const bodyBoxes = new Set(page.body);
-  for (const box of boxesOn(layout, page)) {
+  for (const box of paragraphBoxesOn(page)) {
     for (const line of box.lines) {
       const text = line.line.segments
         .map((segment) => (segment.kind === "text" ? segment.text : ""))

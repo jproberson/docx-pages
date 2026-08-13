@@ -229,6 +229,15 @@ export type {
 export { bestEffortMetrics } from "./layout/best-effort.js";
 export type { BestEffortMetrics, FaceDefaults } from "./layout/best-effort.js";
 
+// Every paragraph a page draws, groups walked into, which anything comparing a page
+// against something else has to read rather than `page.body`.
+export { paragraphBoxesOn } from "./layout/document.js";
+
+// What a laid-out page says is wrong with itself, which is a different question from
+// what the document asked for and did not get.
+export { unshowableIn } from "./layout/unshowable.js";
+export type { Unshowable, UnshowableKind } from "./layout/unshowable.js";
+
 export {
   aliasedSymbolCharacter,
   aliasedSymbolText,

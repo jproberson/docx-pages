@@ -1,4 +1,9 @@
-import type { LaidOutDocument, LaidOutPage, ParagraphBox, PlacedLine } from "@docx-pages/core";
+import {
+  paragraphBoxesOn,
+  type LaidOutDocument,
+  type ParagraphBox,
+  type PlacedLine,
+} from "@docx-pages/core";
 
 import type { TextPlacement } from "./text.js";
 
@@ -156,18 +161,6 @@ const UNNAMED_IN_THE_PDF = String.fromCodePoint(0);
 
 const normalise = (text: string): string =>
   outOfSymbolPage(text.replaceAll(UNNAMED_IN_THE_PDF, "").replace(/\s+/g, " ").trim());
-
-// The header and the footer are drawn again on every page, so every page holds
-// their boxes as well as its own.
-function boxesOnPage(layout: LaidOutDocument, page: LaidOutPage): readonly ParagraphBox[] {
-  const floats = [...page.headerFloats, ...page.footerFloats, ...page.floats];
-  const inBoxes = floats.flatMap((float) =>
-    float.content.kind === "text-box" && float.content.text !== null
-      ? [...float.content.text.boxes]
-      : [],
-  );
-  return [...page.header, ...page.footer, ...page.body, ...inBoxes];
-}
 
 // A stretch of text drawn in one face at one place, which is what Word writes an
 // item for and what a line is made of on our side.
@@ -537,7 +530,7 @@ export function agreementWith(
 
   for (const page of layout.pages) {
     const onPage = drawn.filter((item) => item.pageIndex === page.index);
-    const boxes = boxesOnPage(layout, page);
+    const boxes = paragraphBoxesOn(page);
     const spots: Displacement[] = [];
     let linesHere = 0;
     let matchedHere = 0;
