@@ -264,11 +264,32 @@ export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonl
   const text = [...flowedText(flowed), ...cutText(flowed)];
   const cells = [...page.headerCells, ...page.cells, ...page.footerCells];
 
+  // **Where the text stands in the body's own stack is what `behindDoc` says**, and
+  // the stack itself is still ordered by the height each float was given. Measured on
+  // 2026-08-14 by a corpus document whose body anchors a grey band marked `behindDoc`
+  // across the foot of its page: Word draws the footer's own text over that band, and
+  // drawing every body float over the text buried it.
+  //
+  // **The cut is the highest float marked `behindDoc`, not the mark alone**: a
+  // document already measured sends a panel to the back of the stack and draws a box
+  // marked `behindDoc` over it, so a float standing under one that is behind the text
+  // is behind the text as well, whatever it says of itself.
+  const ordered = [...page.floats].sort(
+    (one, other) => one.anchor.relativeHeight - other.anchor.relativeHeight,
+  );
+  const lastBehind = ordered.reduce(
+    (found, float, at) => (float.anchor.behindDoc ? at : found),
+    -1,
+  );
+  const behind = ordered.slice(0, lastBehind + 1);
+  const inFront = ordered.slice(lastBehind + 1);
+
   return [
     ...stacked([...page.headerFloats, ...page.footerFloats], "story"),
+    ...stacked(behind, "behind"),
     ...paintLayer(cells, flowed, "paint"),
     ...text,
     ...inlines,
-    ...stacked(page.floats, "float"),
+    ...stacked(inFront, "float"),
   ];
 }

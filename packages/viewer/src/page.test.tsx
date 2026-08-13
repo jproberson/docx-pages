@@ -335,6 +335,7 @@ describe("Page", () => {
   it("draws a line shape as a line, which a rectangle of no height could not be", () => {
     const paint: PlacedPaint = {
       geometry: "line",
+      path: null,
       fillColor: null,
       outline: { color: "#BFBFBF", widthPt: 0.75 },
     };
@@ -344,6 +345,34 @@ describe("Page", () => {
     expect(html).toContain('stroke="#BFBFBF"');
     expect(html).toContain('x2="400"');
     expect(html).toContain("height:1.5pt");
+  });
+
+  // A path the file drew point by point, in shares of its own box, which the viewer
+  // puts into the box the object was given. The shares are core's, so this and the
+  // pdf writer draw one shape rather than two.
+  it("draws a path the file drew point by point", () => {
+    const paint: PlacedPaint = {
+      geometry: "custom",
+      fillColor: "#F2F2F2",
+      outline: null,
+      path: [
+        { kind: "move", to: { x: 0.5, y: 0 } },
+        { kind: "line", to: { x: 1, y: 1 } },
+        { kind: "curve", first: { x: 0.5, y: 1 }, second: { x: 0, y: 0.5 }, to: { x: 0, y: 0 } },
+        { kind: "close" },
+      ],
+    };
+    const html = markup(layoutWith([float({ kind: "shape", paint })]));
+
+    expect(html).toContain('d="M 90 0 L 180 90 C 90 90 0 45 0 0 Z"');
+    expect(html).toContain('fill="#F2F2F2"');
+  });
+
+  it("draws a path it cannot play as nothing at all, not as the box it fits in", () => {
+    const paint: PlacedPaint = { ...UNPAINTED, geometry: "custom", fillColor: "#F2F2F2" };
+    const html = markup(layoutWith([float({ kind: "shape", paint })]));
+
+    expect(html).not.toContain("#F2F2F2");
   });
 
   // Measured against Word, which cuts a line off mid-glyph where it runs past the
