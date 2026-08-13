@@ -84,13 +84,47 @@ export function linesPlacedIn(text: string): ReadonlyMap<string, LineScore> {
   return placed;
 }
 
-const linesPlaced = (): ReadonlyMap<string, LineScore> =>
-  existsSync(resolve(AGREEMENT_PATH))
-    ? linesPlacedIn(readFileSync(resolve(AGREEMENT_PATH), "utf8"))
-    : new Map();
+/**
+ * The documents Word drew shrunk, which the sweep beside this one names and this one
+ * cannot see at all.
+ *
+ * **The raster has no way of its own to know.** Word prints a page it cannot fit
+ * scaled down and keeps the paper, so both sides come out the same size and every
+ * cell inside differs: `d823aa8de433` is our layout under `0.75x + 1`, and it led the
+ * ranking of 2026-08-13 at 65.4% while placing 0 of its 88 lines. The paper was
+ * checked first and says nothing, page for page.
+ *
+ * **A stale sweep is still authoritative about this**, which is what makes joining
+ * the two files safe here where it would not be for a placement: the scale is read
+ * off the size Word set the text at against the size the document asks for, and
+ * neither of those is anything this project computes.
+ */
+export function drawnToAScaleIn(text: string): ReadonlySet<string> {
+  const scaled = new Set<string>();
 
-export function reportOf(rows: readonly Looks[], lines: ReadonlyMap<string, LineScore>): string {
-  const compared = rows.filter((each) => each.outcome === "compared");
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    const row: unknown = JSON.parse(line);
+    if (typeof row !== "object" || row === null) continue;
+    const { id, outcome }: Record<string, unknown> = { ...row };
+    if (typeof id !== "string" || outcome !== "drawn to a scale") continue;
+    scaled.add(id);
+  }
+
+  return scaled;
+}
+
+const agreementText = (): string =>
+  existsSync(resolve(AGREEMENT_PATH)) ? readFileSync(resolve(AGREEMENT_PATH), "utf8") : "";
+
+const linesPlaced = (): ReadonlyMap<string, LineScore> => linesPlacedIn(agreementText());
+
+export function reportOf(
+  rows: readonly Looks[],
+  lines: ReadonlyMap<string, LineScore>,
+  scaled: ReadonlySet<string> = new Set(),
+): string {
+  const compared = rows.filter((each) => each.outcome === "compared" && !scaled.has(each.id));
   const clean = compared.filter((each) => each.facesStoodIn === 0);
 
   const totals = (list: readonly Looks[]): string => {
@@ -118,6 +152,7 @@ export function reportOf(rows: readonly Looks[], lines: ReadonlyMap<string, Line
     `  blocked   ${String(rows.filter((each) => each.outcome === "blocked").length)}`,
     `  threw     ${String(rows.filter((each) => each.outcome === "threw").length)}`,
     `  not drawn ${String(rows.filter((each) => each.outcome === "not drawn").length)}`,
+    `  drawn to a scale ${String(rows.filter((each) => scaled.has(each.id)).length)}`,
     "",
     "every document compared:",
     totals(compared),
@@ -238,7 +273,10 @@ async function main(): Promise<void> {
     ordered.map((each) => JSON.stringify(each)).join("\n") + "\n",
   );
 
-  process.stdout.write(`\n${reportOf(ordered, linesPlaced())}\n\nWritten to ${REPORT_PATH}\n`);
+  process.stdout.write(
+    `\n${reportOf(ordered, linesPlaced(), drawnToAScaleIn(agreementText()))}\n\n` +
+      `Written to ${REPORT_PATH}\n`,
+  );
 }
 
 // Compared against this module's own path: a guard naming the built `.js` never
