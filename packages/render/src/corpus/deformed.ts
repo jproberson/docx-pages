@@ -59,6 +59,8 @@ type PageRow = {
   readonly matched: number;
   readonly oursAlone: number;
   readonly theirsAlone: number;
+  readonly inkOursPt: number;
+  readonly inkTheirsPt: number;
   readonly worstPt: number;
   readonly downPt: number | null;
   readonly acrossPt: number | null;
@@ -96,6 +98,8 @@ const rowOf = (page: PageAgreement): PageRow => ({
   matched: page.matched,
   oursAlone: page.oursAlone,
   theirsAlone: page.theirsAlone,
+  inkOursPt: Math.round(page.inkOursPt),
+  inkTheirsPt: Math.round(page.inkTheirsPt),
   worstPt: Number(page.worstPt.toFixed(2)),
   downPt: page.offsetPt === null ? null : Number(page.offsetPt.downPt.toFixed(2)),
   acrossPt: page.offsetPt === null ? null : Number(page.offsetPt.leftPt.toFixed(2)),

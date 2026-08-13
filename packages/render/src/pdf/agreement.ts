@@ -27,15 +27,20 @@ import type { TextPlacement } from "./text.js";
 // differ. The displacements were being computed and thrown away; keeping them
 // answers it.
 //
-// - `agrees`: every displacement inside the tolerance.
+// - `agrees`: nothing on the page is visibly out of place.
 // - `shifted`: one offset explains nearly all of them. Constant down with nothing
 //   across is a page break in the wrong place.
-// - `drifting`: the displacement grows with the line's own baseline, which is a
-//   height accumulating down the page.
-// - `deformed`: the displacements neither cluster nor drift, so no single fault
-//   moved this page and what is drawn is a different drawing.
-// - `missing`: not enough of the page matched to say anything about where it sits,
-//   because one side drew content the other did not.
+// - `drifting`: no one offset explains it, but every line still stands under the line
+//   above it, so the page was squeezed or stretched and can still be read.
+// - `deformed`: a line crossed another. Nothing that moves a page as a whole can do
+//   that, and it is what text drawn over text looks like from here.
+// - `missing`: Word drew visibly more of the page than we did.
+//
+// **Every threshold here was chosen against the raster and not guessed at**, since a
+// reading that calls a page wrong where Word drew it cell for cell is worse than no
+// reading, and the first cut of this did it three ways. The two readings of the corpus
+// were joined page by page on 2026-08-12; what they said is under **Reading a page as
+// moved, drifting or deformed** in `docs/gaps.md`.
 export type PageShape = "agrees" | "shifted" | "drifting" | "deformed" | "missing";
 
 // How far our drawing of a page stands from Word's, where one offset explains it.
@@ -55,11 +60,22 @@ export type PageAgreement = {
   readonly onAnotherPage: number;
   readonly oursAlone: number;
   // Items Word drew on this page that spell something, and how many of those no
-  // line of ours claimed: content Word drew and we did not. **Nothing else here
-  // counts that**, and it is what a preview fails most visibly on, since `lines`
-  // and the cells both start from what we drew.
+  // line of ours claimed.
+  //
+  // **These two count matching failures as readily as missing content**, and the
+  // raster proved it: pages where a fifth to three quarters of one side went
+  // unclaimed came out cell for cell equal to Word's own drawing, because a line
+  // Word broke into pieces this cannot join is a line nobody drew wrong. They are
+  // kept because they say where to look, and `missing` is decided by the ink below.
   readonly theirs: number;
   readonly theirsAlone: number;
+  // How much advance width each side put on the page, over the text that spells
+  // something. **This is what says content is missing**, and it says it whether or
+  // not a line could be matched: a page whose text we drew somewhere Word did not
+  // still carries the same ink, and a page whose chart or table we never drew at all
+  // does not.
+  readonly inkOursPt: number;
+  readonly inkTheirsPt: number;
   // The offset explaining a shifted page, and how fast the displacement grows with
   // the line's own baseline on a drifting one. Null where the page is neither.
   readonly offsetPt: Offset | null;
@@ -302,16 +318,47 @@ const EXPLAINS_THE_PAGE = 0.95;
 // anything but the line through two points.
 const ENOUGH_TO_CLUSTER = 3;
 
-// What share of a page one side may have drawn alone before the page is called
-// missing rather than read for where it sits.
+// How far out of place the worst line on a page has to be before the page is called
+// anything but agreed.
 //
-// **This is the threshold the check cries wolf through if it is set low**, since the
-// matcher spells a line out of Word's items and gives up on a line it cannot spell:
-// a field, a ligature or a face whose bytes shadow another's leaves an item of Word's
-// unclaimed with nothing wrong on the page. Chosen against the documents already
-// known to be right rather than guessed at; what they say is written down in
-// `docs/gaps.md`.
-const DREW_ALONE = 0.2;
+// **A quarter of a line, because under that the reading cried wolf and the raster
+// caught it.** Of the 97 pages the first cut of this called deformed over the clean
+// corpus, 17 had nothing on them further out than 3pt: ten of those seventeen are
+// drawn by us cell for cell as Word drew them, and the median of the group is a tenth
+// of a percent of the page. Past 3pt the picture inverts, immediately and completely:
+// of the 82 pages left, two are cell for cell equal and the median differs by a fifth
+// of the page. So a page whose lines are all within a quarter of a line of Word's is
+// the page Word drew, and whether the residue clusters is a question about the lines
+// and not about the page. `placed` is where a line 1.4pt low is still counted wrong.
+const VISIBLY_OUT_PT = 3;
+
+// How much more of the page Word has to have drawn than we did before the page is
+// called missing.
+//
+// **Measured in ink rather than in lines that failed to match**, and that was the
+// second wolf-cry the raster caught. The first cut called a page missing when a fifth
+// of one side went unclaimed, and over the clean corpus 9 of the 44 pages it named
+// were drawn cell for cell as Word drew them, with no share of unclaimed lines telling
+// the two apart: three quarters of a page can go unmatched with nothing wrong on it,
+// because a line Word broke into pieces this cannot spell is a line both sides drew.
+// The advance width each side put down does not care whether a line could be matched.
+//
+// **A twentieth, because the ink itself is measured to a half of a percent and the
+// noise in it is one-sided.** Over the twenty pages of the eight documents known to be
+// right, fifteen come out inside 0.5% and none of the rest has Word drawing more than
+// 2.3%. Two of those three are pages holding a drawing whose labels Word writes as text
+// items while we draw them inside the picture, so this cannot be tightened past them
+// without calling a page missing what it plainly draws; `h` page 1's bar chart is the
+// same shape of thing and is reported as `unknown-drawing` and seen by the raster.
+// **This is the instrument for a preview missing content a reader would notice**, and
+// two percent of the ink is not that.
+//
+// Only Word drawing more is asked. The other direction is the noisy one, since our own
+// line carries the trailing spaces Word draws as items of their own and this reading
+// throws away: `h` page 2 comes out 2.7% heavier on our side with nothing wrong. Text
+// we drew that Word drew nowhere is a real fault and nobody has measured it here, so it
+// is not claimed.
+const DREW_MORE = 0.05;
 
 const meanOf = (values: readonly number[]): number =>
   values.length === 0 ? 0 : values.reduce((sum, each) => sum + each, 0) / values.length;
@@ -352,38 +399,48 @@ function offsetExplaining(
   };
 }
 
-// How fast the vertical displacement grows with the line's own baseline, and what
-// share of the page that growth accounts for. A height that is wrong by a fraction
-// is paid once per line, so it reaches the foot of the page as a slope: it is the
-// difference between a rule about a line and a rule about the page.
-function driftExplaining(
-  spots: readonly Displacement[],
-  across: Offset,
-  tolerancePt: number,
-): { readonly perPt: number; readonly explained: number } {
+// How fast the vertical displacement grows with the line's own baseline, taken as a
+// straight line through the page. Reported rather than tested: what it is worth is
+// saying how fast a page is being squeezed, since a height wrong by a fraction is paid
+// once a line and reaches the foot of the page as a slope.
+function driftPerPointOf(spots: readonly Displacement[]): number {
   const meanAt = meanOf(spots.map((spot) => spot.atPt));
   const meanDown = meanOf(spots.map((spot) => spot.downOffPt));
   const spread = spots.reduce((sum, spot) => sum + (spot.atPt - meanAt) ** 2, 0);
-  if (spread === 0) return { perPt: 0, explained: 0 };
-
-  const perPt =
+  if (spread === 0) return 0;
+  return (
     spots.reduce((sum, spot) => sum + (spot.atPt - meanAt) * (spot.downOffPt - meanDown), 0) /
-    spread;
-  const at = (spot: Displacement): number => meanDown + perPt * (spot.atPt - meanAt);
-
-  const fitting = spots.filter(
-    (spot) =>
-      Math.abs(spot.downOffPt - at(spot)) <= tolerancePt &&
-      Math.abs(spot.leftOffPt - across.leftPt) <= tolerancePt,
+    spread
   );
+}
 
-  // A slope too shallow to move a line by the tolerance over the whole height of the
-  // page is not a drift, it is the offset it sits on top of.
-  const reach =
-    Math.max(...spots.map((spot) => spot.atPt)) - Math.min(...spots.map((spot) => spot.atPt));
-  if (Math.abs(perPt) * reach <= tolerancePt) return { perPt, explained: 0 };
-
-  return { perPt, explained: fitting.length / spots.length };
+// Whether every line still stands under the line above it, which is the whole question
+// a preview has to answer.
+//
+// **Not a straight line through the page, and the corpus is what said so.** The first
+// cut fitted a slope to the displacements and called anything that did not fit
+// deformed. Page 7 of `cf4e0f837c83` is a table of 216 cells whose rows are each 0.95pt
+// shorter than Word's, accumulating to 24pt by the foot of the page: a squeeze, drawn in
+// the right order, perfectly readable. It was called deformed, because the squeeze
+// starts at the table rather than at the top of the sheet and no straight line fits both
+// the lines above it and the rows below.
+//
+// What tells a squeeze from a wreck is not the shape of the drift but whether the
+// vertical order survived it. Take our lines in the order we drew them down the page: if
+// Word's own baselines are in that same order, then whatever moved them moved them
+// monotonically, no line crossed another, and every reader can still read the page in
+// the order it was written. A line that jumped past another is the case a preview cannot
+// be shown for, and it is what text drawn over text looks like from here.
+function crossingsIn(spots: readonly Displacement[]): number {
+  const down = [...spots].sort((one, other) => one.atPt - other.atPt);
+  let reached = -Infinity;
+  let crossings = 0;
+  for (const spot of down) {
+    const theirs = spot.atPt + spot.downOffPt;
+    if (theirs < reached - VISIBLY_OUT_PT) crossings += 1;
+    reached = Math.max(reached, theirs);
+  }
+  return crossings;
 }
 
 function shapeOf(
@@ -400,7 +457,7 @@ function shapeOf(
     0,
     ...spots.map((spot) => Math.max(Math.abs(spot.leftOffPt), Math.abs(spot.downOffPt))),
   );
-  if (worstPt <= tolerancePt)
+  if (worstPt <= VISIBLY_OUT_PT)
     return { shape: "agrees", offsetPt: null, driftPerPt: null, explained: 1, worstPt };
 
   const across = offsetExplaining(spots, tolerancePt);
@@ -413,13 +470,24 @@ function shapeOf(
       worstPt,
     };
 
-  const drift = driftExplaining(spots, across.offset, tolerancePt);
-  if (drift.explained >= EXPLAINS_THE_PAGE)
+  // A line out of order is what a preview cannot be shown for, and how far the rest
+  // drifted is what a preview can. So the order is asked first and the drift is only
+  // ever a description of a page that kept it.
+  //
+  // **Across the page there is nothing to drift into.** A squeeze is a rule about
+  // heights and moves nothing sideways, so a page whose lines are scattered across it
+  // is not a squeezed page however well its order survived: those are columns landing
+  // in the wrong place, which reads as nonsense without a line ever touching another.
+  const acrossKept =
+    spots.filter((spot) => Math.abs(spot.leftOffPt - across.offset.leftPt) <= tolerancePt).length /
+    spots.length;
+  const kept = Math.min(1 - crossingsIn(spots) / spots.length, acrossKept);
+  if (kept >= EXPLAINS_THE_PAGE)
     return {
       shape: "drifting",
       offsetPt: null,
-      driftPerPt: drift.perPt,
-      explained: drift.explained,
+      driftPerPt: driftPerPointOf(spots),
+      explained: kept,
       worstPt,
     };
 
@@ -427,7 +495,7 @@ function shapeOf(
     shape: "deformed",
     offsetPt: null,
     driftPerPt: null,
-    explained: Math.max(across.explained, drift.explained),
+    explained: kept,
     worstPt,
   };
 }
@@ -456,6 +524,7 @@ export function agreementWith(
     readonly onPage: readonly TextPlacement[];
     readonly lines: number;
     readonly matched: number;
+    readonly ink: number;
     readonly spots: readonly Displacement[];
   }[] = [];
   let lines = 0;
@@ -472,12 +541,19 @@ export function agreementWith(
     const spots: Displacement[] = [];
     let linesHere = 0;
     let matchedHere = 0;
+    let inkHere = 0;
+
+    // What this page puts on the sheet, against what Word's own items put there. The
+    // number a list draws is ink as much as the line is, and Word writes an item for
+    // it, so a page of bullets is not a page missing every bullet.
+    for (const box of boxes) inkHere += box.marker?.widthPt ?? 0;
 
     for (const line of boxes.flatMap((box) => box.lines)) {
       const text = normalise(textOf(line));
       if (text === "") continue;
       lines += 1;
       linesHere += 1;
+      inkHere += line.line.widthPt;
 
       const items = itemsFor(text, onPage, taken);
       const found = items?.[0];
@@ -525,7 +601,14 @@ export function agreementWith(
     numbersMatched += numbers.numbersMatched;
     numbersPlaced += numbers.numbersPlaced;
 
-    readings.push({ index: page.index, onPage, lines: linesHere, matched: matchedHere, spots });
+    readings.push({
+      index: page.index,
+      onPage,
+      lines: linesHere,
+      matched: matchedHere,
+      ink: inkHere,
+      spots,
+    });
   }
 
   // A line Word drew on another page was still broken the way Word broke it. Which
@@ -551,24 +634,21 @@ export function agreementWith(
 
     const read = shapeOf(reading.spots, tolerancePt);
 
-    // A page whose lines Word drew on the page before is not a page missing
-    // anything: the text is all there and the break is in the wrong place, which is
-    // what a constant offset says. So only what neither side found a home for on any
-    // page counts here.
-    const drewAlone = Math.max(
-      reading.lines === 0 ? 0 : oursAlone / reading.lines,
-      theirs.length === 0 ? 0 : theirsAlone / theirs.length,
-    );
-    const tooLittleRead = reading.matched < ENOUGH_TO_CLUSTER && oursAlone + theirsAlone > 0;
+    // How much of the page each side drew. A line whose text Word drew on the page
+    // before is still ink this page carries, so nothing here is about matching: it is
+    // the advance width put down on the sheet either way.
+    const inkOursPt = reading.ink;
+    const inkTheirsPt = theirs.reduce((sum, item) => sum + item.widthPt, 0);
+    // A page Word put no text on at all is the one place the other direction is not a
+    // question of noise: there is nothing there to be noisy about, and whatever we drew
+    // on it Word drew nowhere.
+    const drewMore =
+      inkTheirsPt === 0 ? (inkOursPt > 0 ? 1 : 0) : (inkTheirsPt - inkOursPt) / inkTheirsPt;
 
     // Deformed before missing, and both before anything else. A page that is both is
     // the worse of the two, and neither is a page a preview can show.
     const shape: PageShape =
-      read.shape === "deformed"
-        ? "deformed"
-        : tooLittleRead || drewAlone > DREW_ALONE
-          ? "missing"
-          : read.shape;
+      read.shape === "deformed" ? "deformed" : drewMore > DREW_MORE ? "missing" : read.shape;
 
     return {
       index: reading.index,
@@ -579,6 +659,8 @@ export function agreementWith(
       oursAlone,
       theirs: theirs.length,
       theirsAlone,
+      inkOursPt,
+      inkTheirsPt,
       offsetPt: read.offsetPt,
       driftPerPt: read.driftPerPt,
       explained: read.explained,
