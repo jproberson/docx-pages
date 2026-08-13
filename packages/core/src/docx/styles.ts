@@ -126,7 +126,9 @@ type PartialFrame = {
   readonly indentRightTwips: number | undefined;
   readonly indentFirstLineTwips: number | undefined;
   readonly spaceBeforeTwips: number | undefined;
+  readonly automaticSpaceBefore: boolean | undefined;
   readonly spaceAfterTwips: number | undefined;
+  readonly automaticSpaceAfter: boolean | undefined;
   readonly lineTwips: number | undefined;
   readonly lineRule: LineRule | undefined;
   readonly widowControl: boolean | undefined;
@@ -195,7 +197,9 @@ const EMPTY_FRAME: PartialFrame = {
   indentRightTwips: undefined,
   indentFirstLineTwips: undefined,
   spaceBeforeTwips: undefined,
+  automaticSpaceBefore: undefined,
   spaceAfterTwips: undefined,
+  automaticSpaceAfter: undefined,
   lineTwips: undefined,
   lineRule: undefined,
   widowControl: undefined,
@@ -220,7 +224,9 @@ const mergeFrames = (base: PartialFrame, over: PartialFrame): PartialFrame => ({
   indentRightTwips: over.indentRightTwips ?? base.indentRightTwips,
   indentFirstLineTwips: over.indentFirstLineTwips ?? base.indentFirstLineTwips,
   spaceBeforeTwips: over.spaceBeforeTwips ?? base.spaceBeforeTwips,
+  automaticSpaceBefore: over.automaticSpaceBefore ?? base.automaticSpaceBefore,
   spaceAfterTwips: over.spaceAfterTwips ?? base.spaceAfterTwips,
+  automaticSpaceAfter: over.automaticSpaceAfter ?? base.automaticSpaceAfter,
   lineTwips: over.lineTwips ?? base.lineTwips,
   lineRule: over.lineRule ?? base.lineRule,
   widowControl: over.widowControl ?? base.widowControl,
@@ -283,7 +289,9 @@ function readFrame(container: XmlElement | null): PartialFrame {
     // two spellings are one number.
     indentFirstLineTwips: hanging === undefined ? twipsAttribute(indent, "firstLine") : -hanging,
     spaceBeforeTwips: twipsAttribute(spacing, "before"),
+    automaticSpaceBefore: onOffAttribute(spacing, "beforeAutospacing"),
     spaceAfterTwips: twipsAttribute(spacing, "after"),
+    automaticSpaceAfter: onOffAttribute(spacing, "afterAutospacing"),
     lineTwips: twipsAttribute(spacing, "line"),
     lineRule: toLineRule(spacing === null ? undefined : attribute(spacing, W_NS, "lineRule")),
     widowControl: onOff(pPr, "widowControl"),
@@ -349,6 +357,15 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   color: over.color ?? base.color,
   characterSpacingTwentieths: over.characterSpacingTwentieths ?? base.characterSpacingTwentieths,
 });
+
+// The same three answers an on/off element gives, spelled as an attribute: an
+// automatic space is asked for on `w:spacing` rather than under it.
+function onOffAttribute(element: XmlElement | null, name: string): boolean | undefined {
+  if (element === null) return undefined;
+  const value = attribute(element, W_NS, name);
+  if (value === undefined) return undefined;
+  return value !== "0" && value !== "false" && value !== "off";
+}
 
 // An on/off property is on when it is there without a value, so only an explicit
 // off turns it back off further down the cascade.
@@ -822,6 +839,13 @@ function resolveRunMark(run: XmlElement, inherited: PartialMark, table: StyleTab
   return markOf(merge(resolved, readMark(run, table.themeFonts)));
 }
 
+// What a paragraph pasted out of a web page gets where it asks for its space
+// rather than stating it. Measured on 2026-08-13, twelve cases three times each:
+// baselines 13.8 apart go to 28.1 with an automatic space above, and the same
+// fourteen points sit on top of a 24pt line, so it neither follows the face nor
+// scales with it. It wins over a `w:before` stated beside it.
+const AUTOMATIC_SPACE_TWIPS = 280;
+
 export type ParagraphAlignment = "left" | "right" | "center" | "justify";
 
 // Word's three ways of spelling a line's height: a multiple of the natural one,
@@ -835,6 +859,12 @@ export type ParagraphFrame = {
   readonly indentFirstLineTwips: number;
   readonly spaceBeforeTwips: number;
   readonly spaceAfterTwips: number;
+  // Whether that room is the fourteen points a paragraph asks for automatically
+  // rather than a value it states, which is dropped in places a stated one is
+  // kept: against the top of what holds the paragraph, and between two paragraphs
+  // of one list.
+  readonly automaticSpaceBefore: boolean;
+  readonly automaticSpaceAfter: boolean;
   readonly lineTwips: number | null;
   readonly lineRule: LineRule;
   // Whether Word holds the paragraph's first line off the foot of a page and its
@@ -941,8 +971,16 @@ export function resolveParagraphFrame(
     indentLeftTwips: resolved.indentLeftTwips ?? 0,
     indentRightTwips: resolved.indentRightTwips ?? 0,
     indentFirstLineTwips: resolved.indentFirstLineTwips ?? 0,
-    spaceBeforeTwips: resolved.spaceBeforeTwips ?? 0,
-    spaceAfterTwips: resolved.spaceAfterTwips ?? 0,
+    spaceBeforeTwips:
+      resolved.automaticSpaceBefore === true
+        ? AUTOMATIC_SPACE_TWIPS
+        : (resolved.spaceBeforeTwips ?? 0),
+    spaceAfterTwips:
+      resolved.automaticSpaceAfter === true
+        ? AUTOMATIC_SPACE_TWIPS
+        : (resolved.spaceAfterTwips ?? 0),
+    automaticSpaceBefore: resolved.automaticSpaceBefore === true,
+    automaticSpaceAfter: resolved.automaticSpaceAfter === true,
     lineTwips: resolved.lineTwips ?? null,
     lineRule: resolved.lineRule ?? "auto",
     widowControl: resolved.widowControl ?? true,

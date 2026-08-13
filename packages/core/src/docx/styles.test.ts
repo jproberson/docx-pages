@@ -373,6 +373,57 @@ describe("resolveParagraphFrame", () => {
   });
 });
 
+// Word's own answer, measured on 2026-08-13 in Times New Roman, twelve cases three
+// times each: baselines 13.8 apart go to 28.1 with an automatic space above and to
+// 27.6 with one below, and a paragraph at twice the size gets the same fourteen
+// points on top of its taller line. So it is fourteen points, it does not follow
+// the face, and it wins over a value stated beside it.
+describe("the space a paragraph asks for automatically", () => {
+  const spacing = (attributes: string, stylesXml?: string) =>
+    resolved(`<w:p><w:pPr><w:spacing ${attributes}/></w:pPr></w:p>`, stylesXml).frame;
+
+  it("gives fourteen points above and below", () => {
+    const frame = spacing(`w:beforeAutospacing="1" w:afterAutospacing="1"`);
+    expect(frame.spaceBeforeTwips).toBe(280);
+    expect(frame.spaceAfterTwips).toBe(280);
+  });
+
+  it("takes each side on its own", () => {
+    expect(spacing(`w:beforeAutospacing="1"`).spaceAfterTwips).toBe(0);
+    expect(spacing(`w:afterAutospacing="1"`).spaceBeforeTwips).toBe(0);
+  });
+
+  it("wins over a value stated beside it", () => {
+    expect(spacing(`w:before="240" w:beforeAutospacing="1"`).spaceBeforeTwips).toBe(280);
+  });
+
+  // Six hundred paragraphs of the corpus turn the automatic space off while the
+  // style they name turns it on, so the answer has to be the value under it rather
+  // than fourteen points.
+  it("leaves a paragraph turning it off with the value the cascade states", () => {
+    const web = styles(
+      `${NORMAL}<w:style w:type="paragraph" w:styleId="Web">
+         <w:pPr><w:spacing w:before="120" w:beforeAutospacing="1"/></w:pPr></w:style>`,
+    );
+    const styled = (attributes: string) =>
+      resolved(`<w:p><w:pPr><w:pStyle w:val="Web"/><w:spacing ${attributes}/></w:pPr></w:p>`, web)
+        .frame;
+    expect(styled(`w:beforeAutospacing="1"`).spaceBeforeTwips).toBe(280);
+    expect(styled(`w:beforeAutospacing="0"`).spaceBeforeTwips).toBe(120);
+    expect(styled(`w:before="60" w:beforeAutospacing="0"`).spaceBeforeTwips).toBe(60);
+  });
+
+  it("reads the style's own automatic space where the paragraph states none", () => {
+    const web = styles(
+      `${NORMAL}<w:style w:type="paragraph" w:styleId="Web">
+         <w:pPr><w:spacing w:afterAutospacing="1"/></w:pPr></w:style>`,
+    );
+    expect(
+      resolved(`<w:p><w:pPr><w:pStyle w:val="Web"/></w:pPr></w:p>`, web).frame.spaceAfterTwips,
+    ).toBe(280);
+  });
+});
+
 // A link takes its underline from the character style it is given, and the one
 // run that turns its own off is what the cascade has to let through.
 describe("the underline a run carries", () => {

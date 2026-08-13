@@ -1092,6 +1092,131 @@ describe("measureStack around wrapping objects", () => {
   });
 });
 
+// Word's own answers about the space a paragraph asks for automatically, measured
+// on 2026-08-13 over three documents, every case written out three times. The room
+// itself is fourteen points and collapses with its neighbour's like any other; what
+// is its own is where it is worth nothing at all.
+describe("measureStack where paragraphs ask for their space automatically", () => {
+  const AUTOMATIC = `<w:spacing w:beforeAutospacing="1" w:afterAutospacing="1"/>`;
+
+  const numbering = `<?xml version="1.0"?>
+    <w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">
+        <w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>
+      </w:lvl><w:lvl w:ilvl="1">
+        <w:numFmt w:val="decimal"/><w:lvlText w:val="%2."/>
+      </w:lvl></w:abstractNum>
+      <w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0">
+        <w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>
+      </w:lvl></w:abstractNum>
+      <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+      <w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>
+    </w:numbering>`;
+
+  const listed = (numId: number, level = 0) =>
+    `<w:numPr><w:ilvl w:val="${String(level)}"/><w:numId w:val="${String(numId)}"/></w:numPr>`;
+
+  const numberedBoxes = (body: string): readonly ParagraphBox[] => {
+    const pkg = openDocx(
+      buildDocx({
+        "word/document.xml": wordDocument(body),
+        "word/styles.xml": NORMAL,
+        "word/numbering.xml": numbering,
+      }),
+    );
+    const result = measureStack({
+      blocks: readBlocks(pkg),
+      styles: readStyleTable(pkg),
+      metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+      part: "word/document.xml",
+      originPt: 36,
+      leftPt: 72,
+      widthPt: 468,
+      settings: DEFAULT_SETTINGS,
+    });
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    return result.boxes;
+  };
+
+  // The gap between one paragraph's first line and the next one's, which is the
+  // line's own height wherever the room between them came to nothing.
+  const gapsIn = (boxes: readonly ParagraphBox[]): readonly number[] =>
+    boxes.slice(1).map((box, at) => (box.lines[0]?.topPt ?? 0) - (boxes[at]?.lines[0]?.topPt ?? 0));
+
+  it("holds two of them fourteen points apart rather than twenty-eight", () => {
+    const boxes = boxesOf(
+      paragraph("", "aaaa") + paragraph(AUTOMATIC, "bbbb") + paragraph(AUTOMATIC, "cccc"),
+    );
+
+    expect(gapsIn(boxes)).toEqual([
+      expect.closeTo(ARIAL_12 + 14, 9),
+      expect.closeTo(ARIAL_12 + 14, 9),
+    ]);
+  });
+
+  // Word draws the body's first line where a plain paragraph's goes, while the same
+  // paragraph stating 14pt draws it 13.92 lower: the room is dropped against the top
+  // of what holds the paragraph, and a stated one is not.
+  it("drops the room above the first paragraph of the body, where a stated one stands", () => {
+    expect(boxesOf(paragraph(AUTOMATIC, "aaaa")).at(0)?.lines[0]?.topPt).toBe(36);
+    expect(
+      boxesOf(paragraph(`<w:spacing w:before="280"/>`, "aaaa")).at(0)?.lines[0]?.topPt,
+    ).toBeCloseTo(36 + 14, 9);
+  });
+
+  it("drops it between two paragraphs of one list, at either level of it", () => {
+    const boxes = numberedBoxes(
+      paragraph("", "aaaa") +
+        paragraph(`${listed(1)}${AUTOMATIC}`, "bbbb") +
+        paragraph(`${listed(1)}${AUTOMATIC}`, "cccc") +
+        paragraph(`${listed(1, 1)}${AUTOMATIC}`, "dddd") +
+        paragraph("", "eeee"),
+    );
+
+    expect(gapsIn(boxes)).toEqual([
+      expect.closeTo(ARIAL_12 + 14, 9),
+      expect.closeTo(ARIAL_12, 9),
+      expect.closeTo(ARIAL_12, 9),
+      expect.closeTo(ARIAL_12 + 14, 9),
+    ]);
+  });
+
+  // A paragraph of one list beside a paragraph of another keeps it, which is what
+  // says the rule is one list rather than being numbered at all.
+  it("keeps it where two lists meet", () => {
+    const boxes = numberedBoxes(
+      paragraph(`${listed(1)}${AUTOMATIC}`, "aaaa") + paragraph(`${listed(2)}${AUTOMATIC}`, "bbbb"),
+    );
+
+    expect(gapsIn(boxes)).toEqual([expect.closeTo(ARIAL_12 + 14, 9)]);
+  });
+
+  // A table on that side is a block like any other and not an edge: Word draws the
+  // paragraph under one fourteen points below it, which is what tells this rule
+  // apart from one about having no paragraph above.
+  it("keeps it under a table", () => {
+    const boxes = boxesOf(table(cell(paragraph("", "aaaa"))) + paragraph(AUTOMATIC, "bbbb"));
+
+    expect(gapsIn(boxes)).toEqual([expect.closeTo(ARIAL_12 + 14, 9)]);
+  });
+
+  // The first and last paragraph of a cell answer as the body's first does, and
+  // neither lifts its row nor grows it.
+  it("drops it against the walls of a cell and keeps it inside one", () => {
+    const boxes = boxesOf(
+      paragraph("", "aaaa") +
+        table(cell(paragraph(AUTOMATIC, "bbbb") + paragraph(AUTOMATIC, "cccc"))) +
+        paragraph("", "dddd"),
+    );
+
+    expect(gapsIn(boxes)).toEqual([
+      expect.closeTo(ARIAL_12, 9),
+      expect.closeTo(ARIAL_12 + 14, 9),
+      expect.closeTo(ARIAL_12, 9),
+    ]);
+  });
+});
+
 const SPACED = `<w:spacing w:before="240" w:after="240"/><w:contextualSpacing/>`;
 
 const OTHER_STYLE = NORMAL.replace(

@@ -33,6 +33,7 @@ import {
   resolveNumberMark,
   resolveParagraphFrame,
   resolveParagraphMark,
+  resolveParagraphNumbering,
   resolveRunMarks,
   resolveBandSizes,
   resolveTableBorders,
@@ -424,6 +425,8 @@ function measureBlocks(
         below: paragraphAt(blocks, at + 1),
         closesACellUnderATable:
           context.inCell && at === blocks.length - 1 && blocks[at - 1]?.kind === "table",
+        opensWhatHoldsIt: at === 0,
+        closesWhatHoldsIt: at === blocks.length - 1,
       };
       // An object wraps the text on the page its anchor landed on and no other, so
       // an explicit break is where the objects met before it are let go of.
@@ -1479,6 +1482,11 @@ type Neighbours = {
   // Whether this is the paragraph a cell holding a table has to end with, which is
   // the one paragraph Word leaves no room for.
   readonly closesACellUnderATable: boolean;
+  // Whether nothing at all stands above or below it where it is written, which is
+  // the edge an automatic space collapses against. A table on that side is a block
+  // like any other and is not an edge.
+  readonly opensWhatHoldsIt: boolean;
+  readonly closesWhatHoldsIt: boolean;
 };
 
 // What the objects around the paragraph have already settled: the ones standing in
@@ -1695,8 +1703,9 @@ function ownSpacingPt(
   context: Context,
   neighbours: Neighbours,
 ): Spacing {
-  const beforePt = twipsToPoints(paragraphFrame.spaceBeforeTwips);
-  const afterPt = twipsToPoints(paragraphFrame.spaceAfterTwips);
+  const automatic = automaticSpacingPt(paragraph, paragraphFrame, context, neighbours);
+  const beforePt = automatic.beforeIsDropped ? 0 : twipsToPoints(paragraphFrame.spaceBeforeTwips);
+  const afterPt = automatic.afterIsDropped ? 0 : twipsToPoints(paragraphFrame.spaceAfterTwips);
   if (!paragraphFrame.contextualSpacing) return { beforePt, afterPt };
 
   const own = styleIdOf(paragraph, context.styles);
@@ -1709,13 +1718,60 @@ function ownSpacingPt(
   };
 }
 
+// Where an automatic space is worth nothing at all, which is not where a stated
+// one is. Measured on 2026-08-13 against Word's own drawing, every case three
+// times over:
+//
+// - **Against the top of what holds the paragraph.** The first paragraph of the
+//   body draws its line where a plain one does, while the same paragraph stating
+//   14pt draws it 13.92 lower and one stating 24pt draws it 24 lower. The first and
+//   last paragraph of a table cell answer the same way, and neither lifts nor grows
+//   its row.
+// - **Between two paragraphs of one list**, at any level of it and whether or not
+//   the other one asks for a space of its own. Two lists meeting keep it, and so
+//   does a numbered paragraph standing beside an unnumbered one.
+//
+// **A table beside the paragraph is not an edge**: a paragraph under a table keeps
+// its fourteen points, and so does one over it, which is what tells this apart from
+// a rule about having no paragraph on that side.
+function automaticSpacingPt(
+  paragraph: Paragraph,
+  paragraphFrame: ParagraphFrame,
+  context: Context,
+  neighbours: Neighbours,
+): { readonly beforeIsDropped: boolean; readonly afterIsDropped: boolean } {
+  if (!paragraphFrame.automaticSpaceBefore && !paragraphFrame.automaticSpaceAfter) {
+    return { beforeIsDropped: false, afterIsDropped: false };
+  }
+
+  const listOf = (other: Paragraph | null): string | null =>
+    other === null ? null : (resolveParagraphNumbering(other, context.styles)?.numId ?? null);
+  const own = listOf(paragraph);
+  const sameList = (other: Paragraph | null): boolean => own !== null && listOf(other) === own;
+
+  return {
+    beforeIsDropped:
+      paragraphFrame.automaticSpaceBefore &&
+      (neighbours.opensWhatHoldsIt || sameList(neighbours.above)),
+    afterIsDropped:
+      paragraphFrame.automaticSpaceAfter &&
+      (neighbours.closesWhatHoldsIt || sameList(neighbours.below)),
+  };
+}
+
 // How much room the paragraph above keeps under itself, which is the whole of
 // what it already put between the two.
 function roomBelowPt(above: Paragraph | null, below: Paragraph, context: Context): number {
   if (above === null) return 0;
   const frame = resolveParagraphFrame(above, context.styles, context.inTable);
-  return ownSpacingPt(above, frame, context, { above: null, below, closesACellUnderATable: false })
-    .afterPt;
+  return ownSpacingPt(above, frame, context, {
+    above: null,
+    below,
+    closesACellUnderATable: false,
+    // Whatever else it opens, something stands under it: the paragraph asking.
+    opensWhatHoldsIt: false,
+    closesWhatHoldsIt: false,
+  }).afterPt;
 }
 
 // A number sits at the hanging position and the text after it starts at whatever
