@@ -432,7 +432,12 @@ function lineText(
             textDecoration={segment.mark.underline ? "underline" : undefined}
             fill={segment.mark.color ?? undefined}
             textLength={segment.widthPt > 0 ? segment.widthPt : undefined}
-            lengthAdjust="spacing"
+            // **A run the file scaled is stretched rather than spaced out.** Holding
+            // a run to its measured width by the gaps between its glyphs is what
+            // keeps Word's break points under a substituted face, but a run stating
+            // `w:w` is drawn wider or narrower glyph by glyph, which is what the pdf
+            // writer's `Tz` does and what this asks for by name.
+            lengthAdjust={segment.mark.characterScale === 1 ? "spacing" : "spacingAndGlyphs"}
           >
             {shownText(segment.mark, segment.text, aliasFaces)}
           </tspan>,

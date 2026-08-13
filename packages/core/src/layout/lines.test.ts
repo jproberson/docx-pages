@@ -65,6 +65,7 @@ const mark = (fontSizePt = 10, name = "Even Sans"): ParagraphMark => ({
   lineRaisePt: 0,
   color: null,
   characterSpacingPt: 0,
+  characterScale: 1,
 });
 
 const runOf = (text: string, at: ParagraphMark = mark()): TextRun => ({
@@ -624,6 +625,7 @@ describe("breakLines", () => {
       lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
+      characterScale: 1,
     };
     const result = breakLines({
       runs: [runOf("abc", unnamed)],
@@ -639,6 +641,39 @@ describe("breakLines", () => {
 // the one the run states. Measured on 2026-08-06 off Word's pdf of the authored
 // `unmapped-characters` document: the line holding the borrowed bullet came out
 // 13.80pt tall at 12pt against the 13.32pt of the symbol face beside it.
+// **How wide a run the file scaled is measured**, which decides where its line
+// breaks and therefore where every page under it falls. Measured against Word on
+// 2026-08-14: the scale multiplies the glyph's own advance, and the letter spacing
+// this project already reads is added after it rather than scaled with it. A run
+// scaled to 150 with a point of spacing came out 253.63pt against 225.66 scaled
+// alone and 150.54 plain, where spacing first and scaling after would have given
+// 267.8.
+describe("a run the file scaled", () => {
+  const scaled = (scale: number, spacingPt = 0): number => {
+    const at: ParagraphMark = { ...mark(), characterScale: scale, characterSpacingPt: spacingPt };
+    const broken = breakLines({
+      runs: [runOf("aaaa", at)],
+      widthPt: 1000,
+      metricsFor: metricsFor(),
+    });
+    if (broken.kind !== "lines") throw new Error(broken.kind);
+    return broken.lines[0]?.widthPt ?? 0;
+  };
+
+  it("multiplies every advance by the scale the run states", () => {
+    const plain = scaled(1);
+    expect(scaled(1.5)).toBeCloseTo(plain * 1.5, 9);
+    expect(scaled(0.5)).toBeCloseTo(plain * 0.5, 9);
+    expect(scaled(1.03)).toBeCloseTo(plain * 1.03, 9);
+  });
+
+  it("adds the letter spacing after the scale rather than scaling it too", () => {
+    const plain = scaled(1);
+    // Four characters, each carrying a point of spacing after it.
+    expect(scaled(1.5, 1)).toBeCloseTo(plain * 1.5 + 4, 9);
+  });
+});
+
 describe("a character drawn out of another face", () => {
   const BULLET = "\u2022";
 

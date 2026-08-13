@@ -31,6 +31,7 @@ type Graphics = {
   dash: string | null;
   font: string | null;
   characterSpacing: number | null;
+  characterScale: number | null;
 };
 
 const nothingSet = (): Graphics => ({
@@ -40,6 +41,7 @@ const nothingSet = (): Graphics => ({
   dash: null,
   font: null,
   characterSpacing: null,
+  characterScale: null,
 });
 
 export type Content = {
@@ -77,6 +79,7 @@ export type Content = {
   readonly endText: () => void;
   readonly font: (resource: string, sizePt: number) => void;
   readonly characterSpacing: (spacingPt: number) => void;
+  readonly characterScale: (scale: number) => void;
   readonly textPosition: (xPt: number, yPt: number) => void;
   // Where a run stands and which way up it is. A metafile plays under a flipped
   // transform, since its own units count down the page, and text drawn under one
@@ -201,6 +204,14 @@ export function content(): Content {
       if (set.characterSpacing === spacingPt) return;
       set.characterSpacing = spacingPt;
       write(`${formatPdfNumber(spacingPt)} Tc`);
+    },
+    // **A pdf scales the glyph and not the spacing beside it**, which is the order
+    // Word draws in as well: `Tz` is applied to the glyph's own advance and `Tc` is
+    // added after it. Stated as a percentage, as the file states it.
+    characterScale: (scale) => {
+      if (set.characterScale === scale) return;
+      set.characterScale = scale;
+      write(`${formatPdfNumber(scale * 100)} Tz`);
     },
     // The whole matrix rather than a move, since every run is written at the place
     // layout put it rather than relative to the run before.

@@ -57,6 +57,7 @@ const recorder = (): { readonly out: Content; readonly calls: Call[] } => {
     endText: put("endText"),
     font: () => calls.push({ op: "font", numbers: [] }),
     characterSpacing: put("characterSpacing"),
+    characterScale: put("characterScale"),
     textPosition: put("textPosition"),
     textMatrix: () => calls.push({ op: "textMatrix", numbers: [] }),
     showGlyphs: () => calls.push({ op: "showGlyphs", numbers: [] }),

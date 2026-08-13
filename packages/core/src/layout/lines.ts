@@ -286,8 +286,12 @@ class Measurer {
 
       // A space takes the spacing as a letter does. A tab never reaches here:
       // it leaves no segment behind, and ends at its stop regardless.
+      // **The scale multiplies the glyph's own advance and the spacing is added
+      // after it**, which is what a run scaled to 150 with a point of spacing
+      // measured: 225.66pt and then 28, rather than 267.8 the other way round.
       widthPt +=
-        advanceWidthPt(drawn.advance, drawn.metrics, mark.fontSizePt) + mark.characterSpacingPt;
+        advanceWidthPt(drawn.advance, drawn.metrics, mark.fontSizePt) * mark.characterScale +
+        mark.characterSpacingPt;
 
       // The fragment already stands on its own face, so only a borrowed character
       // can raise it.

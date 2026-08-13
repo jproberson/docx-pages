@@ -63,6 +63,9 @@ function shownRun(
   // Laid after every character of the run, the last one included, which is how
   // layout measured it and how a pdf's own character spacing behaves.
   out.characterSpacing(mark.characterSpacingPt);
+  // Every glyph drawn as wide a share of itself as the run states, which is what
+  // the measurer multiplied its advance by.
+  out.characterScale(mark.characterScale);
   out.textPosition(leftPt, upFromTop(options.page, baselinePt));
   out.showGlyphs(glyphs);
   out.endText();

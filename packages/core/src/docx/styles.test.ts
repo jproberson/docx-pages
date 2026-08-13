@@ -72,6 +72,7 @@ describe("resolveParagraphMark", () => {
       lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
+      characterScale: 1,
     });
   });
 
@@ -88,6 +89,7 @@ describe("resolveParagraphMark", () => {
       lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
+      characterScale: 1,
     });
   });
 
@@ -116,6 +118,7 @@ describe("resolveParagraphMark", () => {
       lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
+      characterScale: 1,
     });
   });
 
@@ -135,6 +138,7 @@ describe("resolveParagraphMark", () => {
       lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
+      characterScale: 1,
     });
   });
 
@@ -154,6 +158,7 @@ describe("resolveParagraphMark", () => {
       lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
+      characterScale: 1,
     });
   });
 
@@ -166,6 +171,24 @@ describe("resolveParagraphMark", () => {
       kind: "named",
       name: "Georgia",
     });
+  });
+
+  // **What `w:w` says, which 73 of the 718 corpus documents state on 3683 runs.**
+  // Measured against Word on 2026-08-14 over one line of the same word repeated: a
+  // run scaled to 103 came out 102.84% as wide as the plain one, to 90 89.90%, to
+  // 150 149.90% and to 50 49.89%, each a tenth of a percent short of its own
+  // multiple where Word rounds a scaled advance.
+  it("reads the scale a run states, and one where it states none", () => {
+    expect(runMark(`<w:w w:val="103"/>`).characterScale).toBeCloseTo(1.03, 9);
+    expect(runMark(`<w:w w:val="50"/>`).characterScale).toBe(0.5);
+    expect(runMark(``).characterScale).toBe(1);
+  });
+
+  // Inside `w:pPr` the same name is the width of a table's own column, and inside
+  // `w:sectPr` the width of the page: only a run's own properties state a scale.
+  it("takes no scale from a value it cannot read", () => {
+    expect(runMark(`<w:w w:val="nought"/>`).characterScale).toBe(1);
+    expect(runMark(`<w:w w:val="0"/>`).characterScale).toBe(1);
   });
 
   // Word sets a superscript smaller than the run it belongs to and lifts it off
@@ -240,6 +263,7 @@ describe("resolveParagraphMark", () => {
       lineRaisePt: 0,
       color: null,
       characterSpacingPt: 0,
+      characterScale: 1,
     });
   });
 

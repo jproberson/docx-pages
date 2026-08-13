@@ -30,6 +30,7 @@ const MARK: ParagraphMark = {
   lineRaisePt: 0,
   color: null,
   characterSpacingPt: 0,
+  characterScale: 1,
 };
 
 const EMPTY_BODY: TextBoxBody = {
@@ -376,6 +377,18 @@ describe("Page", () => {
     const html = markup(layoutWith([float({ kind: "shape", paint })]));
 
     expect(html).not.toContain("#F2F2F2");
+  });
+
+  // **A run the file scaled is stretched rather than spaced out.** Every other run
+  // is held to its measured width by the gaps between its glyphs, which is what
+  // keeps Word's break points under a substituted face; a run stating `w:w` is drawn
+  // wider or narrower glyph by glyph, as the pdf writer's `Tz` draws it.
+  it("stretches a scaled run's glyphs and spaces every other run's", () => {
+    const scaled: ParagraphMark = { ...MARK, characterScale: 1.5 };
+    const html = markup(layoutWith([], [paragraphOf("wide", scaled), paragraphOf("plain")]));
+
+    expect(html).toContain('lengthAdjust="spacingAndGlyphs"');
+    expect(html).toContain('lengthAdjust="spacing"');
   });
 
   // Measured against Word, which cuts a line off mid-glyph where it runs past the

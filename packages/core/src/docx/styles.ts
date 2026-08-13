@@ -88,6 +88,9 @@ export type ParagraphMark = {
   // `abcdef` at five points ran 33pt to 63pt, which is six characters' worth
   // rather than five gaps'. Negative tightens.
   readonly characterSpacingPt: number;
+  // What every glyph's own advance is multiplied by, and what it is drawn stretched
+  // to. One where the run states no scale of its own.
+  readonly characterScale: number;
 };
 
 type PartialMark = {
@@ -100,6 +103,7 @@ type PartialMark = {
   readonly positionHalfPoints: number | undefined;
   readonly color: string | undefined;
   readonly characterSpacingTwentieths: number | undefined;
+  readonly characterScalePercent: number | undefined;
 };
 
 // What a stop does with the text that follows a tab reaching it: a left stop
@@ -189,6 +193,7 @@ const EMPTY: PartialMark = {
   positionHalfPoints: undefined,
   color: undefined,
   characterSpacingTwentieths: undefined,
+  characterScalePercent: undefined,
 };
 
 const EMPTY_FRAME: PartialFrame = {
@@ -356,6 +361,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   positionHalfPoints: over.positionHalfPoints ?? base.positionHalfPoints,
   color: over.color ?? base.color,
   characterSpacingTwentieths: over.characterSpacingTwentieths ?? base.characterSpacingTwentieths,
+  characterScalePercent: over.characterScalePercent ?? base.characterScalePercent,
 });
 
 // The same three answers an on/off element gives, spelled as an attribute: an
@@ -432,7 +438,25 @@ function readMark(
     positionHalfPoints: positionOf(rPr),
     color: colorOf(rPr),
     characterSpacingTwentieths: characterSpacingOf(rPr),
+    characterScalePercent: characterScaleOf(rPr),
   };
+}
+
+// **How wide every glyph of the run is drawn, as a percentage of its own width.**
+// Measured against Word on 2026-08-14 over one line of the same word repeated: a run
+// scaled to 103 came out 102.84% as wide, to 90 89.90%, to 150 149.90% and to 50
+// 49.89%, each a tenth of a percent short of its own multiple where Word rounds a
+// scaled advance.
+//
+// **It scales the glyph's advance and not the letter spacing beside it.** The same
+// run scaled to 150 with a point of spacing came out 253.63pt against 225.66 scaled
+// alone and 150.54 plain: 225.66 and then 28 for the spacing, where spacing first
+// and scaling after would have given 267.8.
+function characterScaleOf(rPr: XmlElement): number | undefined {
+  const scale = firstNamed(rPr, W_NS, "w");
+  if (scale === null) return undefined;
+  const value = Number(attribute(scale, W_NS, "val"));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 // Inside `pPr` the same name is the room above and below a paragraph, which is
@@ -768,6 +792,7 @@ function markOf(resolved: PartialMark): ParagraphMark {
     lineRaisePt: positionRaiseOf(resolved),
     color: resolved.color ?? null,
     characterSpacingPt: (resolved.characterSpacingTwentieths ?? 0) / TWIPS_PER_POINT,
+    characterScale: (resolved.characterScalePercent ?? 100) / 100,
   };
 }
 

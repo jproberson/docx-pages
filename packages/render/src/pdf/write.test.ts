@@ -157,6 +157,25 @@ describe("a page written out", () => {
     );
   });
 
+  // **A run the file scaled is written stretched, not spaced out.** A pdf has `Tz`
+  // for exactly this, and the reader reads the drawn width back: the scaled run has
+  // to come back as wide as the scale says, glyph for glyph.
+  it("writes a scaled run as wide as the scale says", async () => {
+    const scaled = (percent: number): string =>
+      `<w:r><w:rPr><w:rFonts w:ascii="${FACE_NAME}" w:hAnsi="${FACE_NAME}"/>` +
+      `<w:sz w:val="24"/><w:w w:val="${String(percent)}"/></w:rPr>` +
+      `<w:t xml:space="preserve">aaaaaaaa</w:t></w:r>`;
+
+    const widthOf = async (body: string): Promise<number> => {
+      const placements = await readTextPlacements(written(laidOut(body)));
+      return placements.reduce((sum, each) => sum + each.widthPt, 0);
+    };
+
+    const plain = await widthOf(paragraph(run("aaaaaaaa")));
+    expect(await widthOf(paragraph(scaled(150)))).toBeCloseTo(plain * 1.5, 1);
+    expect(await widthOf(paragraph(scaled(50)))).toBeCloseTo(plain * 0.5, 1);
+  });
+
   // A tab opens a gap along the line that the runs after it never account for, so
   // a line laid end to end closes it and everything after the tab slides left.
   // Each run is written at its own offset instead.
