@@ -45,4 +45,35 @@ describe("columnsAcross", () => {
       { leftPt: 252, widthPt: 324 },
     ]);
   });
+
+  it("leaves the slack of a narrow set at the frame's right edge", () => {
+    expect(
+      columnsAcross(asked({ count: 2, widthsTwips: [2160, 2880], gapsTwips: [720, 0] }), FRAME),
+    ).toStrictEqual([
+      { leftPt: 36, widthPt: 108 },
+      { leftPt: 180, widthPt: 144 },
+    ]);
+  });
+
+  it("packs three narrow columns against the frame's left", () => {
+    expect(
+      columnsAcross(
+        asked({ count: 3, widthsTwips: [1440, 2880, 1440], gapsTwips: [360, 360, 0] }),
+        FRAME,
+      ),
+    ).toStrictEqual([
+      { leftPt: 36, widthPt: 72 },
+      { leftPt: 126, widthPt: 144 },
+      { leftPt: 288, widthPt: 72 },
+    ]);
+  });
+
+  it("draws a set wider than its frame past the frame's edge rather than clamping it", () => {
+    expect(
+      columnsAcross(asked({ count: 2, widthsTwips: [5760, 5760], gapsTwips: [720, 0] }), FRAME),
+    ).toStrictEqual([
+      { leftPt: 36, widthPt: 288 },
+      { leftPt: 360, widthPt: 288 },
+    ]);
+  });
 });

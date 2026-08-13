@@ -1212,6 +1212,75 @@ describe("measureStack over a section of more than one column", () => {
     const result = inColumns([line("a"), opensAColumn("b")].join(""), stated, LINE_PT * 6);
     expect(placed(result)).toStrictEqual(["72,36", "288,36"]);
   });
+
+  // Word's own answers, swept on 2026-08-13 over runs of two to nine blocks in two
+  // and three columns, and over blocks of unequal height. **Every column but the
+  // last takes blocks while its own height is still under the run's total divided
+  // by the number of columns**, which for blocks of one height is the run rounded
+  // up. The run is evened out because the section under it is continuous.
+  describe("evened out by the continuous section under it", () => {
+    const THREE: SectionColumns = { count: 3, widthsTwips: [], gapsTwips: [], spaceTwips: 360 };
+
+    const tall = (name: string, heightPt: number) =>
+      `<w:p><w:pPr><w:spacing w:line="${String(heightPt * 20)}" w:lineRule="exact"/></w:pPr>` +
+      `<w:r><w:t>${name}</w:t></w:r></w:p>`;
+
+    const evenedOut = (heights: readonly number[], columns: SectionColumns) => {
+      const body = heights.map((each, at) => tall(`p${String(at)}`, each)).join("");
+      const pkg = openDocx(
+        buildDocx({ "word/document.xml": wordDocument(body), "word/styles.xml": NORMAL }),
+      );
+      const blocks = readBlocks(pkg);
+      const across = columnsAcross(columns, { leftPt: 72, widthPt: 468 });
+      const result = measureStack({
+        blocks,
+        styles: readStyleTable(pkg),
+        metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+        part: "word/document.xml",
+        originPt: 36,
+        leftPt: 72,
+        widthPt: 468,
+        bodyHeightPt: LINE_PT * 40,
+        columnsOf: () => across,
+        sectionsClosed: new Map([[heights.length - 1, { opensAPage: false }]]),
+      });
+      if (result.kind !== "measured") throw new Error(result.blocker.kind);
+      // Which column each block landed in, which is what the sweep read off the page.
+      return result.boxes.map((box) =>
+        across.findIndex((column) => column.leftPt === box.lines[0]?.leftPt),
+      );
+    };
+
+    const uniform = (count: number, heightPt = 12) => Array.from({ length: count }, () => heightPt);
+
+    it("divides four blocks of one height between two columns", () => {
+      expect(evenedOut(uniform(4), TWO)).toStrictEqual([0, 0, 1, 1]);
+    });
+
+    it("gives the first column the odd one of five", () => {
+      expect(evenedOut(uniform(5), TWO)).toStrictEqual([0, 0, 0, 1, 1]);
+    });
+
+    it("fills the first two of three columns before the last", () => {
+      expect(evenedOut(uniform(7), THREE)).toStrictEqual([0, 0, 0, 1, 1, 1, 2]);
+    });
+
+    it("leaves the last of three columns empty where the first two hold it all", () => {
+      expect(evenedOut(uniform(4), THREE)).toStrictEqual([0, 0, 1, 1]);
+    });
+
+    it("divides the height and not the count, with the tall block first", () => {
+      expect(evenedOut([20, 10, 10, 10], TWO)).toStrictEqual([0, 0, 1, 1]);
+    });
+
+    it("divides the height and not the count, with the tall block last", () => {
+      expect(evenedOut([10, 10, 10, 20], TWO)).toStrictEqual([0, 0, 0, 1]);
+    });
+
+    it("gives a column the one block that is over half the run on its own", () => {
+      expect(evenedOut([30, 10, 10], TWO)).toStrictEqual([0, 1, 1]);
+    });
+  });
 });
 
 // Word's own answers, measured by the authored `positioned-table` document. The
