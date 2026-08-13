@@ -11,6 +11,7 @@ import {
   type CropInsets,
   type Drawable,
   type DrawingFlip,
+  type PathCommand,
   type Painted,
   type PaintedFill,
   type PaintedLine,
@@ -233,9 +234,9 @@ function painted(
   const { widthPt, heightPt } = drawable;
   const { outline } = paint;
   if (paint.fillColor === null && outline === null) return null;
-  // A path nothing here plays is drawn as nothing at all rather than as the box it
+  // A path this cannot play is drawn as nothing at all rather than as the box it
   // fits in, which would be a filled rectangle the size of whatever it rules.
-  if (paint.geometry === "custom") return null;
+  if (paint.geometry === "custom" && paint.path === null) return null;
 
   const room = outline === null ? 0 : outline.widthPt;
   const layerWidth = widthPt + room * 2;
@@ -330,9 +331,41 @@ function geometry(
       );
     }
     case "custom":
+      return (
+        <path d={pathData(paint.path ?? [], widthPt, heightPt, flip)} fill={fill} {...stroke} />
+      );
     case "rectangle":
       return <rect x={0} y={0} width={widthPt} height={heightPt} fill={fill} {...stroke} />;
   }
+}
+
+// The outline a file drew point by point, in shares of its own box, written out as
+// svg. **The shares are core's**, so that this and the pdf writer cannot disagree
+// about where a point lands; all either does with them is put them in its own
+// coordinates, and svg counts y down the page as the layout does.
+function pathData(
+  path: readonly PathCommand[],
+  widthPt: number,
+  heightPt: number,
+  flip: DrawingFlip,
+): string {
+  const xOf = (share: number): string =>
+    String(Math.round((flip.horizontal ? 1 - share : share) * widthPt * 1000) / 1000);
+  const yOf = (share: number): string =>
+    String(Math.round((flip.vertical ? 1 - share : share) * heightPt * 1000) / 1000);
+
+  return path
+    .map((command) => {
+      if (command.kind === "move") return `M ${xOf(command.to.x)} ${yOf(command.to.y)}`;
+      if (command.kind === "line") return `L ${xOf(command.to.x)} ${yOf(command.to.y)}`;
+      if (command.kind === "close") return "Z";
+      return (
+        `C ${xOf(command.first.x)} ${yOf(command.first.y)}` +
+        ` ${xOf(command.second.x)} ${yOf(command.second.y)}` +
+        ` ${xOf(command.to.x)} ${yOf(command.to.y)}`
+      );
+    })
+    .join(" ");
 }
 
 function frame(drawable: ObjectDrawable, kind: string, frames: FrameStyle): ReactElement | null {

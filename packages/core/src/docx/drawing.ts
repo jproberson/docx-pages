@@ -3,7 +3,7 @@ import { R_NS } from "./relationships.js";
 import { W_NS } from "./section.js";
 import { A_NS } from "./styles.js";
 import { readColorReference, type ColorReference } from "./theme.js";
-import { attribute, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, childrenNamed, firstNamed, type XmlElement } from "./xml.js";
 
 export const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 export const WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
@@ -63,11 +63,40 @@ export type ShapeGeometry =
   | "ellipse"
   | "rounded-rectangle"
   | "triangle"
-  // A path the file draws point by point, which nothing here plays. **Its
+  // A path the file draws point by point, which `ShapePaint.path` carries. **Its
   // bounding box is not a fallback**: one corpus document rules a whole page with
   // a custom path, and drawing the box it fits in painted the page black under
-  // everything else on it. Drawn as nothing until the path itself is read.
+  // everything else on it, so a path that cannot be read is drawn as nothing.
   | "custom";
+
+/**
+ * A point on a shape's own outline, **as a share of the box the shape stands in**.
+ *
+ * A file states its path in a space of its own, either the one `a:path` names with
+ * `w` and `h` or the shape's own extent where it names none. Resolving the two into
+ * a fraction here is what leaves both renderers free of that arithmetic, and it is
+ * what makes a path inside a group survive: `drawablesOf` flattens a group away and
+ * scales only the box its children were given, so a path in points would be drawn at
+ * the wrong size and one in fractions is carried along with everything else.
+ */
+export type PathPoint = {
+  readonly x: number;
+  readonly y: number;
+};
+
+// What a file draws its outline with. Of the six commands the format has, these are
+// the four the corpus states: neither an arc nor a quadratic appears in any of the
+// 718 documents, and a path stating one is refused rather than approximated.
+export type PathCommand =
+  | { readonly kind: "move"; readonly to: PathPoint }
+  | { readonly kind: "line"; readonly to: PathPoint }
+  | {
+      readonly kind: "curve";
+      readonly first: PathPoint;
+      readonly second: PathPoint;
+      readonly to: PathPoint;
+    }
+  | { readonly kind: "close" };
 
 // Word rounds a round rectangle by a share of its shorter side, and states the
 // share in the shape's own adjust list. The default that list stands in for is a
@@ -106,9 +135,18 @@ export type ShapePaint = {
   readonly fill: ColorReference | null;
   readonly outline: ShapeOutline | null;
   readonly geometry: ShapeGeometry;
+  // The outline a `custom` geometry is drawn with, and nothing for every other one.
+  // A custom shape whose path could not be read carries none either, and is drawn
+  // as nothing rather than as its box.
+  readonly path: readonly PathCommand[] | null;
 };
 
-export const NO_PAINT: ShapePaint = { fill: null, outline: null, geometry: "rectangle" };
+export const NO_PAINT: ShapePaint = {
+  fill: null,
+  outline: null,
+  geometry: "rectangle",
+  path: null,
+};
 
 /**
  * One shape inside a group, and where it stands in the box the group was given.
@@ -196,15 +234,98 @@ function readPaint(shapeProperties: XmlElement | null): ShapePaint {
   const fill = firstNamed(shapeProperties, A_NS, "solidFill");
   const geometry = firstNamed(shapeProperties, A_NS, "prstGeom");
   const preset = geometry === null ? undefined : attribute(geometry, "", "prst");
-  const custom = geometry === null && firstNamed(shapeProperties, A_NS, "custGeom") !== null;
+  const custom = geometry === null ? firstNamed(shapeProperties, A_NS, "custGeom") : null;
   return {
     fill: fill === null ? null : readColorReference(fill),
     outline: readOutline(shapeProperties),
-    geometry: custom
-      ? "custom"
-      : ((preset === undefined ? undefined : GEOMETRIES.get(preset)) ?? "rectangle"),
+    geometry:
+      custom !== null
+        ? "custom"
+        : ((preset === undefined ? undefined : GEOMETRIES.get(preset)) ?? "rectangle"),
+    path: custom === null ? null : readPath(custom, shapeProperties),
   };
 }
+
+/**
+ * The outline a file draws point by point, as shares of the shape's own box.
+ *
+ * **The space the points are in is the path's own**, stated as `w` and `h` on
+ * `a:path`; 283 of the corpus's 332 state the shape's own extent there, 50 state
+ * something else and 34 state nothing at all and mean the extent. So the extent is
+ * read from the same properties and stands in wherever the path names no space.
+ *
+ * **A command this cannot play refuses the whole path** rather than dropping a
+ * piece of it: a shape missing one of its sides is a wrong drawing, where a shape
+ * missing altogether is the gap the report already names. Neither `a:arcTo` nor
+ * `a:quadBezTo` appears anywhere in the 718 documents.
+ */
+function readPath(custom: XmlElement, shapeProperties: XmlElement): readonly PathCommand[] | null {
+  const transform = firstNamed(shapeProperties, A_NS, "xfrm");
+  const extent = transform === null ? null : firstNamed(transform, A_NS, "ext");
+  const paths = firstNamed(custom, A_NS, "pathLst");
+  if (paths === null) return null;
+
+  const commands: PathCommand[] = [];
+  for (const path of childrenNamed(paths, A_NS, "path")) {
+    const widthUnits = emuAttribute(path, "w") ?? emuAttribute(extent, "cx");
+    const heightUnits = emuAttribute(path, "h") ?? emuAttribute(extent, "cy");
+    if (widthUnits === null || heightUnits === null || widthUnits <= 0 || heightUnits <= 0) {
+      return null;
+    }
+
+    const pointAt = (element: XmlElement | null): PathPoint | null => {
+      const x = emuAttribute(element, "x");
+      const y = emuAttribute(element, "y");
+      return x === null || y === null ? null : { x: x / widthUnits, y: y / heightUnits };
+    };
+
+    for (const command of path.children) {
+      if (command.namespace !== A_NS) continue;
+      if (command.name === "close") {
+        commands.push({ kind: "close" });
+        continue;
+      }
+
+      const points = childrenNamed(command, A_NS, "pt").map((each) => pointAt(each));
+      if (points.some((each) => each === null)) return null;
+
+      if (command.name === "moveTo" || command.name === "lnTo") {
+        const to = points[0];
+        if (to === undefined || to === null) return null;
+        commands.push({ kind: command.name === "moveTo" ? "move" : "line", to });
+        continue;
+      }
+
+      if (command.name === "cubicBezTo") {
+        const [first, second, to] = points;
+        if (
+          first === undefined ||
+          first === null ||
+          second === undefined ||
+          second === null ||
+          to === undefined ||
+          to === null
+        ) {
+          return null;
+        }
+        commands.push({ kind: "curve", first, second, to });
+        continue;
+      }
+
+      // `a:arcTo` and `a:quadBezTo`, which no document here states.
+      return null;
+    }
+  }
+
+  return commands.length === 0 ? null : commands;
+}
+
+const emuAttribute = (element: XmlElement | null, name: string): number | null => {
+  if (element === null) return null;
+  const raw = attribute(element, "", name);
+  const value = raw === undefined ? Number.NaN : Number(raw);
+  return Number.isFinite(value) ? value : null;
+};
 
 const WPG_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
 

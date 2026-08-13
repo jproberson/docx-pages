@@ -3,6 +3,7 @@ import type {
   CropInsets,
   DrawingContent,
   DrawingFlip,
+  PathCommand,
   ShapeGeometry,
   ShapePaint,
   TextBoxBody,
@@ -18,9 +19,16 @@ export type PlacedPaint = {
   readonly fillColor: string | null;
   readonly outline: { readonly color: string; readonly widthPt: number } | null;
   readonly geometry: ShapeGeometry;
+  // The outline a `custom` geometry is drawn with, in shares of its own box.
+  readonly path: readonly PathCommand[] | null;
 };
 
-export const UNPAINTED: PlacedPaint = { fillColor: null, outline: null, geometry: "rectangle" };
+export const UNPAINTED: PlacedPaint = {
+  fillColor: null,
+  outline: null,
+  geometry: "rectangle",
+  path: null,
+};
 
 export type PlacedContent =
   | {
@@ -153,6 +161,7 @@ const resolvePaint = (paint: ShapePaint, theme: Theme): PlacedPaint => {
         ? null
         : { color: outlineColor, widthPt: paint.outline.widthPt },
     geometry: paint.geometry,
+    path: paint.path,
   };
 };
 

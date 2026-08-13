@@ -182,6 +182,85 @@ describe("the paint a shape carries", () => {
         widthStated: false,
       },
       geometry: "rectangle",
+      path: null,
+    });
+  });
+
+  // A path a file draws point by point, kept as shares of the shape's own box so
+  // that a group scaling its children scales the outline with them. The space the
+  // points are in is the path's own where it names one and the shape's extent where
+  // it does not, which 34 of the corpus's 332 custom geometries rely on.
+  describe("a path the file draws point by point", () => {
+    const custom = (pathList: string, extent = `<a:xfrm><a:ext cx="1000" cy="500"/></a:xfrm>`) =>
+      shapePaint(`${extent}<a:custGeom><a:avLst/><a:pathLst>${pathList}</a:pathLst></a:custGeom>`);
+
+    it("reads a triangle out of the space the path states", () => {
+      const paint = custom(
+        `<a:path w="200" h="100">
+           <a:moveTo><a:pt x="100" y="0"/></a:moveTo>
+           <a:lnTo><a:pt x="200" y="100"/></a:lnTo>
+           <a:lnTo><a:pt x="0" y="100"/></a:lnTo>
+           <a:close/>
+         </a:path>`,
+      );
+      expect(paint.geometry).toBe("custom");
+      expect(paint.path).toStrictEqual([
+        { kind: "move", to: { x: 0.5, y: 0 } },
+        { kind: "line", to: { x: 1, y: 1 } },
+        { kind: "line", to: { x: 0, y: 1 } },
+        { kind: "close" },
+      ]);
+    });
+
+    it("takes the shape's own extent where the path states no space", () => {
+      expect(
+        custom(`<a:path><a:moveTo><a:pt x="500" y="250"/></a:moveTo></a:path>`).path,
+      ).toStrictEqual([{ kind: "move", to: { x: 0.5, y: 0.5 } }]);
+    });
+
+    it("reads the curve, which four corpus documents draw with", () => {
+      expect(
+        custom(
+          `<a:path w="100" h="100"><a:cubicBezTo>
+             <a:pt x="0" y="50"/><a:pt x="50" y="100"/><a:pt x="100" y="100"/>
+           </a:cubicBezTo></a:path>`,
+        ).path,
+      ).toStrictEqual([
+        {
+          kind: "curve",
+          first: { x: 0, y: 0.5 },
+          second: { x: 0.5, y: 1 },
+          to: { x: 1, y: 1 },
+        },
+      ]);
+    });
+
+    it("holds every subpath of a path list, one after another", () => {
+      const paint = custom(
+        `<a:path w="100" h="100"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:close/></a:path>
+         <a:path w="100" h="100"><a:moveTo><a:pt x="100" y="100"/></a:moveTo><a:close/></a:path>`,
+      );
+      expect(paint.path?.length).toBe(4);
+    });
+
+    // **A command this cannot play refuses the whole path.** A shape missing one of
+    // its sides is a wrong drawing; a shape missing altogether is the gap the report
+    // already names, and neither an arc nor a quadratic appears in the corpus.
+    it("refuses a path holding an arc rather than dropping the arc", () => {
+      const paint = custom(
+        `<a:path w="100" h="100">
+           <a:moveTo><a:pt x="0" y="0"/></a:moveTo>
+           <a:arcTo wR="50" hR="50" stAng="0" swAng="5400000"/>
+         </a:path>`,
+      );
+      expect(paint.geometry).toBe("custom");
+      expect(paint.path).toBeNull();
+    });
+
+    it("refuses a path whose space is nothing at all", () => {
+      expect(
+        custom(`<a:path w="0" h="0"><a:moveTo><a:pt x="0" y="0"/></a:moveTo></a:path>`, "").path,
+      ).toBeNull();
     });
   });
 

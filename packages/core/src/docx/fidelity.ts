@@ -110,9 +110,10 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A drawing that is neither a picture nor a shape, a chart being the one met so
   // far: its room is held and nothing is drawn in it.
   "unknown-drawing": "changes-paint",
-  // A shape whose outline the file draws point by point, which nothing here plays.
-  // Its room is held and nothing is drawn in it; the box it fits in is not a
-  // fallback, since a path that rules a page fits a box the size of the page.
+  // A shape whose outline the file draws point by point in a way this cannot play,
+  // which is an arc or a quadratic: the path is refused whole rather than drawn in
+  // part, so its room is held and nothing is drawn in it. The box it fits in is not
+  // a fallback, since a path that rules a page fits a box the size of the page.
   "custom-geometry": "changes-paint",
   // A picture in a format nothing here decodes, WMF being what Word writes beside
   // the metafile this project plays: its room is held and it is marked rather than
@@ -153,12 +154,16 @@ const numbered = (element: XmlElement): number => {
 // passed over, so nothing is said about one.
 type PartResolver = (relationshipId: string) => string | null;
 
-// Whether anything in a drawing, at any depth of a group, is drawn by a path
-// rather than by a preset this project knows.
+// Whether anything in a drawing, at any depth of a group, states an outline this
+// project cannot play. **A path it can play is no longer a gap**: what is left under
+// this name is a path holding an arc or a quadratic, which the reader refuses whole
+// rather than drawing part of, and neither appears in any of the 718 documents.
 function drawsACustomPath(content: DrawingContent): boolean {
   if (content.kind === "group")
     return content.children.some((each) => drawsACustomPath(each.content));
-  return content.kind !== "unknown" && content.paint.geometry === "custom";
+  return (
+    content.kind !== "unknown" && content.paint.geometry === "custom" && content.paint.path === null
+  );
 }
 
 // What an element says about itself, where what it says is something this project

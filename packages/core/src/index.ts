@@ -194,6 +194,8 @@ export type {
   CropInsets,
   DrawingContent,
   DrawingFlip,
+  PathCommand,
+  PathPoint,
   ShapeGeometry,
   ShapeOutline,
   ShapePaint,

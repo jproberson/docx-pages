@@ -78,7 +78,12 @@ const object = (flip = UNFLIPPED): ObjectDrawable => ({
   turnDegrees: 0,
 });
 
-const FILLED: PlacedPaint = { fillColor: "ff0000", outline: null, geometry: "rectangle" };
+const FILLED: PlacedPaint = {
+  fillColor: "ff0000",
+  outline: null,
+  geometry: "rectangle",
+  path: null,
+};
 
 const drawn = (paint: PlacedPaint, flip = UNFLIPPED): readonly Call[] => {
   const { out, calls } = recorder();
@@ -104,13 +109,45 @@ describe("what a shape is drawn as", () => {
   // corpus document rules a whole page with a path, and the box that path fits in
   // is a filled rectangle over everything else the page holds.
   it("draws a path it cannot play as nothing at all, not as the box it fits in", () => {
-    const calls = drawn({ ...FILLED, geometry: "custom" });
+    const calls = drawn({ ...FILLED, geometry: "custom", path: null });
 
     expect(calls).toStrictEqual([]);
   });
 
+  // A path in shares of its own box, drawn where those shares land in the box the
+  // object was given. A pdf counts y up the page, so a share of nought is the top.
+  it("draws a path the file drew point by point", () => {
+    const calls = drawn({
+      ...FILLED,
+      geometry: "custom",
+      path: [
+        { kind: "move", to: { x: 0.5, y: 0 } },
+        { kind: "line", to: { x: 1, y: 1 } },
+        { kind: "curve", first: { x: 0.5, y: 1 }, second: { x: 0, y: 0.5 }, to: { x: 0, y: 0 } },
+        { kind: "close" },
+      ],
+    });
+
+    expect(points(calls, "moveTo")).toStrictEqual([[50, TOP]]);
+    expect(points(calls, "lineTo")).toStrictEqual([[RIGHT, BOTTOM]]);
+    expect(points(calls, "curveTo")).toStrictEqual([[50, BOTTOM, LEFT, 130, LEFT, TOP]]);
+    expect(of(calls, "closePath")).toHaveLength(1);
+    expect(of(calls, "fill")).toHaveLength(1);
+    expect(of(calls, "rectangle")).toHaveLength(0);
+  });
+
+  it("mirrors a path the shape was flipped", () => {
+    const path = [{ kind: "move", to: { x: 0.25, y: 0 } }] as const;
+    const flipped = drawn(
+      { ...FILLED, geometry: "custom", path: [...path] },
+      { horizontal: true, vertical: true },
+    );
+
+    expect(points(flipped, "moveTo")).toStrictEqual([[LEFT + 45, BOTTOM]]);
+  });
+
   it("draws an ellipse as four curves through the middle of each edge", () => {
-    const calls = drawn({ ...FILLED, geometry: "ellipse" });
+    const calls = drawn({ ...FILLED, geometry: "ellipse", path: null });
     const curves = points(calls, "curveTo");
 
     expect(of(calls, "rectangle")).toHaveLength(0);
@@ -127,7 +164,7 @@ describe("what a shape is drawn as", () => {
   });
 
   it("rounds a rectangle's corner by a sixth of its shorter side", () => {
-    const calls = drawn({ ...FILLED, geometry: "rounded-rectangle" });
+    const calls = drawn({ ...FILLED, geometry: "rounded-rectangle", path: null });
     const radius = 40 * ROUNDED_CORNER_FRACTION;
 
     expect(radius).toBeCloseTo(6.667, 3);
@@ -144,7 +181,7 @@ describe("what a shape is drawn as", () => {
   });
 
   it("stands a triangle on its base, apex at the head of the box", () => {
-    const calls = drawn({ ...FILLED, geometry: "triangle" });
+    const calls = drawn({ ...FILLED, geometry: "triangle", path: null });
 
     expect(points(calls, "moveTo")).toStrictEqual([[50, TOP]]);
     expect(points(calls, "lineTo")).toStrictEqual([
@@ -154,7 +191,10 @@ describe("what a shape is drawn as", () => {
   });
 
   it("turns a triangle over where the shape was flipped", () => {
-    const calls = drawn({ ...FILLED, geometry: "triangle" }, { horizontal: false, vertical: true });
+    const calls = drawn(
+      { ...FILLED, geometry: "triangle", path: null },
+      { horizontal: false, vertical: true },
+    );
 
     expect(points(calls, "moveTo")).toStrictEqual([[50, BOTTOM]]);
     expect(points(calls, "lineTo")).toStrictEqual([
@@ -171,6 +211,7 @@ describe("a line shape", () => {
     fillColor: null,
     outline: { color: "000000", widthPt: 1 },
     geometry: "line",
+    path: null,
   };
 
   it("runs from the head of its box down to the foot", () => {

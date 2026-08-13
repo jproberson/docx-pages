@@ -1,4 +1,4 @@
-import { ROUNDED_CORNER_FRACTION, type DrawingFlip } from "../docx/drawing.js";
+import { ROUNDED_CORNER_FRACTION, type DrawingFlip, type PathCommand } from "../docx/drawing.js";
 import type { Drawable } from "../layout/drawables.js";
 import type { PlacedPaint } from "../layout/floats.js";
 
@@ -152,6 +152,41 @@ function triangle(out: Content, box: Box, flip: DrawingFlip): void {
   out.closePath();
 }
 
+// A path the file drew point by point, in shares of its own box: the shares are
+// core's, so that this and the viewer cannot disagree about where a point lands,
+// and the only thing either does with them is put them in its own coordinates.
+// A pdf counts y up the page, which is what turns a share into a place here.
+function customPath(out: Content, box: Box, path: readonly PathCommand[], flip: DrawingFlip): void {
+  const xOf = (share: number): number =>
+    box.leftPt + (flip.horizontal ? 1 - share : share) * box.widthPt;
+  const yOf = (share: number): number =>
+    box.bottomPt + (flip.vertical ? share : 1 - share) * box.heightPt;
+
+  for (const command of path) {
+    switch (command.kind) {
+      case "move":
+        out.moveTo(xOf(command.to.x), yOf(command.to.y));
+        break;
+      case "line":
+        out.lineTo(xOf(command.to.x), yOf(command.to.y));
+        break;
+      case "curve":
+        out.curveTo(
+          xOf(command.first.x),
+          yOf(command.first.y),
+          xOf(command.second.x),
+          yOf(command.second.y),
+          xOf(command.to.x),
+          yOf(command.to.y),
+        );
+        break;
+      case "close":
+        out.closePath();
+        break;
+    }
+  }
+}
+
 export function paintedObject(
   out: Content,
   page: PdfPage,
@@ -160,10 +195,10 @@ export function paintedObject(
 ): void {
   const { outline } = paint;
   if (paint.fillColor === null && outline === null) return;
-  // A path nothing here plays is drawn as nothing at all rather than as the box it
+  // A path this cannot play is drawn as nothing at all rather than as the box it
   // fits in. One corpus document rules a whole page with a custom path, and the box
   // it fits in is a filled rectangle over everything the page holds.
-  if (paint.geometry === "custom") return;
+  if (paint.geometry === "custom" && paint.path === null) return;
 
   out.save();
   if (outline !== null) {
@@ -188,6 +223,9 @@ export function paintedObject(
   }
 
   switch (paint.geometry) {
+    case "custom":
+      customPath(out, box, paint.path ?? [], at.flip);
+      break;
     case "ellipse":
       ellipse(out, box);
       break;
