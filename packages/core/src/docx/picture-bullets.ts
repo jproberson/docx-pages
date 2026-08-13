@@ -92,7 +92,8 @@ export function pictureBulletOf(pkg: DocxPackage): PictureBullet | null {
   if (pict === null || picture === null) return null;
 
   const part = readRelationships(pkg, NUMBERING_PART).get(picture.relationshipId)?.part;
-  if (part === undefined || !pkg.parts.has(part) || !drawablePicture(part)) return null;
+  if (part === undefined || !pkg.parts.has(part) || !drawablePicture(part, pkg.parts.get(part)))
+    return null;
 
   const relationshipId = `${NUMBERING_PART}#${picture.relationshipId}`;
   return {

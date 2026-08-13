@@ -1,5 +1,6 @@
 import type { CropInsets } from "../docx/drawing.js";
-import { METAFILE_EXTENSION, pictureExtension } from "../docx/pictures.js";
+import { METAFILE_EXTENSION, OLD_METAFILE_EXTENSION, pictureExtension } from "../docx/pictures.js";
+import { pngFromMetafile } from "../metafile/wmf.js";
 import type { MetricsResolver } from "../layout/stack.js";
 import {
   type MetafilePicture,
@@ -171,6 +172,14 @@ const COLOR_SPACES: Readonly<Record<number, string>> = {
 function writeBitmap(options: ImageOptions, part: string): PdfReference | null {
   const bytes = options.imageBytes(part);
   if (bytes === undefined) return null;
+
+  // The older metafile records a bitmap rather than a drawing, so what is written
+  // is the png that bitmap makes, through the same reader every other png goes
+  // through.
+  if (pictureExtension(part) === OLD_METAFILE_EXTENSION) {
+    const png = pngFromMetafile(bytes);
+    return png === null ? null : writePng(options, png);
+  }
 
   return writeJpeg(options, bytes) ?? writePng(options, bytes);
 }

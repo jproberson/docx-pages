@@ -2,7 +2,9 @@ import {
   pictureExtension,
   readMetafilePicture,
   METAFILE_EXTENSION,
+  OLD_METAFILE_EXTENSION,
   PICTURE_MEDIA_TYPES,
+  pngFromMetafile,
   type DocxPackage,
   type MetafilePicture,
   type MetricsResolver,
@@ -22,9 +24,17 @@ function toBase64(bytes: Uint8Array): string {
 
 export function imageDataUrl(pkg: DocxPackage, part: string): string | undefined {
   const bytes = pkg.parts.get(part);
+  if (bytes === undefined) return undefined;
+
+  // The older metafile records a bitmap rather than a drawing, so it arrives here
+  // as the png that bitmap makes and is drawn like any other picture.
+  if (pictureExtension(part) === OLD_METAFILE_EXTENSION) {
+    const png = pngFromMetafile(bytes);
+    return png === null ? undefined : `data:image/png;base64,${toBase64(png)}`;
+  }
+
   const mediaType = PICTURE_MEDIA_TYPES.get(pictureExtension(part));
-  if (bytes === undefined || mediaType === undefined) return undefined;
-  return `data:${mediaType};base64,${toBase64(bytes)}`;
+  return mediaType === undefined ? undefined : `data:${mediaType};base64,${toBase64(bytes)}`;
 }
 
 export type DrawableImage =

@@ -1,3 +1,5 @@
+import { readMetafileBitmap } from "../metafile/wmf.js";
+
 // The picture formats this project can put on a page, which is what a browser has
 // a decoder for plus the one this project decodes itself.
 //
@@ -18,15 +20,21 @@ export const PICTURE_MEDIA_TYPES: ReadonlyMap<string, string> = new Map([
 
 export const METAFILE_EXTENSION = "emf";
 
+// The older metafile, which is read as the bitmap it blits rather than played.
+export const OLD_METAFILE_EXTENSION = "wmf";
+
 export function pictureExtension(part: string): string {
   const dot = part.lastIndexOf(".");
   return dot === -1 ? "" : part.slice(dot + 1).toLowerCase();
 }
 
-// Whether a part holding a picture is one anything here can draw. Word writes a
-// WMF where it writes an EMF, and nothing reads that one, so a document holding
-// one draws a mark in its place.
-export function drawablePicture(part: string): boolean {
+// Whether a part holding a picture is one anything here can draw. A WMF is drawn
+// only where the bitmap it blits can be read out of it, which is what its own bytes
+// say and not what its name does, so one is asked for where they are to hand.
+export function drawablePicture(part: string, bytes?: Uint8Array): boolean {
   const extension = pictureExtension(part);
+  if (extension === OLD_METAFILE_EXTENSION) {
+    return bytes !== undefined && readMetafileBitmap(bytes) !== null;
+  }
   return PICTURE_MEDIA_TYPES.has(extension) || extension === METAFILE_EXTENSION;
 }

@@ -149,10 +149,14 @@ const numbered = (element: XmlElement): number => {
   return Number.isFinite(value) ? value : 0;
 };
 
-// Which part a drawing's picture is held in, or null where the document names
-// none. Reading a part it does not carry is a broken package rather than a feature
-// passed over, so nothing is said about one.
-type PartResolver = (relationshipId: string) => string | null;
+// Which part a drawing's picture is held in, and what that part holds. Reading a
+// part the package does not carry is a broken package rather than a feature passed
+// over, so nothing is said about one. **The bytes are wanted as well as the name**,
+// since whether a WMF can be drawn is what the bitmap inside it says.
+type PartResolver = (relationshipId: string) => {
+  readonly part: string;
+  readonly bytes: Uint8Array | undefined;
+} | null;
 
 // Whether anything in a drawing, at any depth of a group, states an outline this
 // project cannot play. **A path it can play is no longer a gap**: what is left under
@@ -184,7 +188,7 @@ function unhonouredBy(
     if (drawsACustomPath(content)) return "custom-geometry";
     if (content.kind !== "picture") return null;
     const held = resolvePart(content.relationshipId);
-    return held === null || drawablePicture(held) ? null : "undrawable-picture";
+    return held === null || drawablePicture(held.part, held.bytes) ? null : "undrawable-picture";
   }
   // An equation is written in its own namespace and read by nothing here: `m:oMath`
   // wherever it stands, and `m:oMathPara` around it where it stands alone in its
@@ -322,7 +326,10 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
       part,
       paragraphs,
       found,
-      resolvePart: (relationshipId) => relationships.get(relationshipId)?.part ?? null,
+      resolvePart: (relationshipId) => {
+        const held = relationships.get(relationshipId)?.part;
+        return held === undefined ? null : { part: held, bytes: pkg.parts.get(held) };
+      },
     });
     countSections(root, part, found, parts.length > 1);
   }

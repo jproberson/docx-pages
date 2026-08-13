@@ -37,6 +37,7 @@ export {
   drawablePicture,
   pictureExtension,
   METAFILE_EXTENSION,
+  OLD_METAFILE_EXTENSION,
   PICTURE_MEDIA_TYPES,
 } from "./docx/pictures.js";
 
@@ -250,6 +251,8 @@ export { readFaceShapes, FONT_TABLE_PART } from "./docx/font-table.js";
 export type { FaceShape } from "./docx/font-table.js";
 
 export { readMetafilePicture } from "./metafile/picture.js";
+export { pngFromMetafile, readMetafileBitmap } from "./metafile/wmf.js";
+export type { DecodedBitmap } from "./metafile/wmf.js";
 export type { MetafilePicture, MetafileRect, MetafileShape } from "./metafile/picture.js";
 
 // A laid-out document written out as a pdf, and the one convenience that opens and
