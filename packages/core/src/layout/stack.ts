@@ -285,6 +285,21 @@ export type MeasureStackInput = {
   // column, which is what all but sixteen of the corpus documents keep, answers
   // with the frame itself and takes the same path it always did.
   readonly columnsOf?: (block: Block) => readonly Column[];
+  /**
+   * How much of its own page is left below where the column run opening at this
+   * paragraph begins, for the runs the caller has found that out about.
+   *
+   * **A column run is the one thing in a stack that has to know where the pages fell**,
+   * and measuring is one column with no pages in it, so it cannot know: the run's own
+   * section opens a page, but in the stack it sits whereever the text above it ended.
+   * The caller breaks the stack, sees which page each run really opened on, and hands
+   * that back here to be measured again. See `layOutDocument`, which does the passes.
+   *
+   * Unanswered, a run is measured as though it stood at the top of a page, which is what
+   * the first pass has to assume and what a run under a page-opening break turns out to
+   * be.
+   */
+  readonly roomForRun?: (opensAt: number) => number | undefined;
   // How tall the body's text is, which is how tall a column that fills rather than
   // evens out may be. Measuring is one column with no pages in it, so the foot of a
   // page cannot be read off the stack's own top: a section that fills its columns is
@@ -377,12 +392,17 @@ function measureBlocks(
     const columns = context.inCell ? [] : (context.columnsOf?.(block) ?? []);
     if (columns.length > 1) {
       const run = columnRunFrom(blocks, at, context);
+      const pageHeightPt = context.bodyHeightPt ?? Number.POSITIVE_INFINITY;
+      const opensAt = blockParagraphs(run.blocks)[0]?.index;
+      const roomLeftPt =
+        (opensAt === undefined ? undefined : context.roomForRun?.(opensAt)) ?? pageHeightPt;
       const measured = measureColumnRun(
         run.blocks,
         context,
         top,
         columns,
-        context.bodyHeightPt ?? Number.POSITIVE_INFINITY,
+        roomLeftPt,
+        pageHeightPt,
         run.balanced,
       );
       if (measured.kind === "blocked") return measured;
@@ -546,7 +566,8 @@ function measureColumnRun(
   context: Context,
   topPt: number,
   columns: readonly Column[],
-  heightPt: number,
+  roomLeftPt: number,
+  pageHeightPt: number,
   balanced: boolean,
 ): StackMeasurement {
   // A column's own frame stands instead of the section's, and the breaks that
@@ -565,30 +586,94 @@ function measureColumnRun(
     if (at > 0 && opensAColumn(block, inColumn)) forced.add(at);
   }
 
-  if (!balanced) {
-    const filled = fillColumns(blocks, inColumn, topPt, columns, forced, heightPt);
-    return filled.kind === "blocked" ? filled : filled.measured;
+  const boxes: ParagraphBox[] = [];
+  const cells: PlacedCell[] = [];
+  const untornRows: UntornRow[] = [];
+
+  let from = 0;
+  let stretchTopPt = topPt;
+  let roomPt = roomLeftPt;
+
+  // The walk always moves on, since a column keeps whatever block it opens with however
+  // tall that is, so a stretch that swallows nothing cannot happen.
+  for (;;) {
+    const rest = blocks.slice(from);
+    const forcedHere = new Set([...forced].flatMap((at) => (at > from ? [at - from] : [])));
+    const stretch = fillStretch(
+      rest,
+      inColumn,
+      stretchTopPt,
+      columns,
+      forcedHere,
+      roomPt,
+      balanced,
+    );
+    if (stretch.kind === "blocked") return stretch;
+
+    boxes.push(...stretch.measured.boxes);
+    cells.push(...stretch.measured.cells);
+    untornRows.push(...stretch.measured.untornRows);
+
+    if (stretch.whole) {
+      return {
+        kind: "measured",
+        boxes,
+        cells,
+        untornRows,
+        anchoredObjects: [],
+        // What stands under the run stands under the last stretch of it, and under the
+        // tallest column of that stretch: Word started the section below a balanced run
+        // under the taller of its two columns.
+        heightPt: stretchTopPt - topPt + stretch.measured.heightPt,
+      };
+    }
+
+    // What the room would not hold carries on in the columns of the next page, which
+    // begins in the stack where this page's own room ran out. Asked of Word directly on
+    // 2026-08-12: seventy lines in two columns filled both columns of their page outright
+    // and the last ten went on to the first column of the next.
+    from += stretch.consumed;
+    stretchTopPt += roomPt;
+    roomPt = pageHeightPt;
   }
+}
+
+// One page's worth of a column run: the blocks the room held, dealt into the columns, and
+// how many of them that was.
+//
+// **Only the stretch that holds the rest of the run is evened out.** Word fills every page
+// a balanced run crosses and evens the remainder on the page it ran on to, which is the
+// same measurement: three lines in each column at the foot of the page it filled, one in
+// each at the top of the next.
+function fillStretch(
+  blocks: readonly Block[],
+  context: Context,
+  topPt: number,
+  columns: readonly Column[],
+  forced: ReadonlySet<number>,
+  roomPt: number,
+  balanced: boolean,
+): ColumnFill {
+  const filled = fillColumns(blocks, context, topPt, columns, forced, roomPt);
+  if (filled.kind === "blocked" || !filled.whole || !balanced) return filled;
 
   // Evening the columns out is the same fill asked of the shortest column that still
-  // holds the whole run, and the heights worth asking for are the ones the run's own
-  // blocks make.
-  const whole = fillColumns(blocks, inColumn, topPt, columns, forced, Number.POSITIVE_INFINITY);
-  if (whole.kind === "blocked") return whole;
-
-  // The shortest that works is wanted, so the candidates are tried from the shortest
-  // up and the first one that holds the run is the answer.
-  const candidates = [...new Set(whole.bottomsPt)].sort((one, other) => one - other);
+  // holds what is left of the run, and the heights worth asking for are the ones its own
+  // blocks make. Nothing taller than the room is worth asking for, since the fill above
+  // already came in under it.
+  const candidates = [...new Set(filled.bottomsPt)]
+    .filter((each) => each <= roomPt + EPSILON)
+    .sort((one, other) => one - other);
   for (const candidate of candidates) {
-    const filled = fillColumns(blocks, inColumn, topPt, columns, forced, candidate);
-    if (filled.kind === "blocked") return filled;
-    // The last column holds whatever is over, so a height every block found a column
-    // at is not yet a height the columns were evened to: the tallest of them has to
-    // come in under it as well.
-    if (!filled.whole || filled.measured.heightPt > candidate + EPSILON) continue;
-    return filled.measured;
+    const evened = fillColumns(blocks, context, topPt, columns, forced, candidate);
+    if (evened.kind === "blocked") return evened;
+    // The last column holds whatever is over, so a height every block found a column at
+    // is not yet a height the columns were evened to: the tallest of them has to come in
+    // under it as well.
+    if (!evened.whole || evened.measured.heightPt > candidate + EPSILON) continue;
+    return evened;
   }
-  return whole.measured;
+  return filled;
 }
 
 type ColumnFill =
@@ -596,9 +681,11 @@ type ColumnFill =
   | {
       readonly kind: "filled";
       readonly measured: Extract<StackMeasurement, { readonly kind: "measured" }>;
-      // Whether every block of the run found a column, which is what says a height
-      // is tall enough to be worth evening out at.
+      // Whether every block handed in found a column, which is what says a height is
+      // tall enough to be worth evening out at.
       readonly whole: boolean;
+      // How many of them did, which is where the next page's columns carry on from.
+      readonly consumed: number;
       // How far below the run's top each block reached, which are the heights a
       // column could be cut to.
       readonly bottomsPt: readonly number[];
@@ -628,15 +715,16 @@ function fillColumns(
   let tallestPt = 0;
   let from = 0;
 
-  for (const [at, column] of columns.entries()) {
+  for (const column of columns) {
     if (from >= blocks.length) break;
     const measured = measureBlocks(blocks.slice(from), context, topPt, column);
     if (measured.kind === "blocked") return measured;
 
-    const last = at === columns.length - 1;
-    const cut = last
-      ? blocks.length
-      : cutColumnAt(measured.boxes, blockOf, forced, topPt, heightPt);
+    // **Every column is cut at the room, the last one included.** It used to keep
+    // whatever was over, which is what put the tail of a run below the foot of its page
+    // and left `breakStack` to cut inside the run; what is over goes to the next page's
+    // columns instead.
+    const cut = cutColumnAt(measured.boxes, blockOf, forced, topPt, heightPt);
 
     if (cut >= blocks.length) {
       boxes.push(...measured.boxes);
@@ -669,6 +757,7 @@ function fillColumns(
       heightPt: tallestPt,
     },
     whole: from >= blocks.length,
+    consumed: from,
     bottomsPt,
   };
 }

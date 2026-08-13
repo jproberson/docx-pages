@@ -168,11 +168,13 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Six cases of a marker, the lines of every column and a right-aligned line closing
   // each, which is what says how wide a column is.
   //
-  // Three of the 63 are the two rules measured and not built. Case d puts a column
-  // break between two runs of one paragraph, which is a place inside a block and not
-  // between two; case f fills both columns of a page and runs on to the next, and a
-  // column run measured here has no page to run on to.
-  columns: { lines: 63, runs: 64, numbers: 0, placed: 60, runsPlaced: 60 },
+  // **One of the 63 is left, and it is the last rule here measured and not built**: case
+  // d puts a column break between two runs of one paragraph, which is a place inside a
+  // block and not between two. Case f, which fills both columns of its page and runs on
+  // to the next, went from wrong to right on 2026-08-12 when a run learned to ask which
+  // page it opened on: 60 placed became **62**, and this document is what said so both
+  // times, having called the first attempt at it back down to 53.
+  columns: { lines: 63, runs: 64, numbers: 0, placed: 62, runsPlaced: 62 },
   // Seven cases of a marker, four cells and the lines the table left standing, which
   // the last case writes long enough to reach past the table and take two lines each.
   //

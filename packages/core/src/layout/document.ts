@@ -40,6 +40,7 @@ import {
   type MetricsResolver,
   type ParagraphBox,
   type PlacedCell,
+  type StackMeasurement,
 } from "./stack.js";
 import { columnsAcross } from "./columns.js";
 import { anchorLineFootPt, breakStack, type PageBody, type PageStack } from "./pages.js";
@@ -815,26 +816,95 @@ export function layOutDocument(
 
   const bodyBottomPt = bodyOfPage(openingSection, true).bottomPt;
 
-  const bodyStack = measureStack({
-    ...frame,
-    blocks: bodyBlocks,
-    part: MAIN_DOCUMENT_PART,
-    originPt: bodyTopPt,
-    bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
-    sectionsClosed: sectionsClosedIn(pkg, bodyBlocks),
-    bodyHeightPt: bodyBottomPt - bodyTopPt,
-    frameOf: (block) => {
-      const section = bodySectionOf.get(block);
-      return section === undefined ? undefined : frameOfSection(section);
-    },
-    columnsOf: (block) => {
-      const section = bodySectionOf.get(block);
-      if (section === undefined) return [];
-      return columnsAcross(section.columns, frameOfSection(section));
-    },
+  const measureBody = (roomForRun: ReadonlyMap<number, number>): StackMeasurement =>
+    measureStack({
+      ...frame,
+      blocks: bodyBlocks,
+      part: MAIN_DOCUMENT_PART,
+      originPt: bodyTopPt,
+      bandsFor: bandsIn(floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt)),
+      sectionsClosed: sectionsClosedIn(pkg, bodyBlocks),
+      bodyHeightPt: bodyBottomPt - bodyTopPt,
+      roomForRun: (opensAt) => roomForRun.get(opensAt),
+      frameOf: (block) => {
+        const section = bodySectionOf.get(block);
+        return section === undefined ? undefined : frameOfSection(section);
+      },
+      columnsOf: (block) => {
+        const section = bodySectionOf.get(block);
+        if (section === undefined) return [];
+        return columnsAcross(section.columns, frameOfSection(section));
+      },
+    });
+
+  const breakBody = (measured: Extract<StackMeasurement, { kind: "measured" }>) =>
+    breakStack({
+      boxes: measured.boxes,
+      cells: measured.cells,
+      untornRows: measured.untornRows,
+      anchoredObjects: measured.anchoredObjects,
+      topPt: bodyTopPt,
+      bottomPt: bodyBottomPt,
+      bodyOf: (box) => bodyOfPage(sectionAt(box.index), opensASection(box.index)),
+    });
+
+  // Where each column run opens, which is the first paragraph of a section that runs its
+  // text in more than one column. Read from the sections rather than reported by the
+  // stack, since the sections and their columns are this function's own answer and
+  // `measureStack` finds its runs from the same two.
+  const runsOpeningAt = blockParagraphs(bodyBlocks).flatMap((paragraph) => {
+    const section = sectionAt(paragraph.index);
+    if (section === undefined || sections.opensAt(paragraph.index) !== paragraph.index) return [];
+    return columnsAcross(section.columns, frameOfSection(section)).length > 1
+      ? [paragraph.index]
+      : [];
   });
 
+  /**
+   * How much of its page each column run was left, read off the pages the break made.
+   *
+   * **This is the answer measuring cannot reach and breaking cannot do without.** A column
+   * run fills the room its own page leaves it and carries the rest into the columns of the
+   * next page, which Word was asked directly on 2026-08-12. The room is a fact about pages;
+   * measuring is one column with no pages in it. So the stack is measured, broken, and
+   * measured again with what the break found out, and the run that assumed a whole page
+   * and was given half of one is laid out again over two.
+   *
+   * **A run's room depends only on what is above it**, so the passes settle rather than
+   * chase each other: the first run is right after one pass, the run below it after the
+   * next, and a document of eight column sections after eight. It stops as soon as a pass
+   * changes nothing, which for the 700 documents holding no column run at all is the first.
+   */
+  const roomLeftFor = (pages: readonly PageStack[]): ReadonlyMap<number, number> => {
+    const room = new Map<number, number>();
+    for (const page of pages) {
+      const body = bodyOfPage(sectionAt(page.openedBy ?? -1), opensASection(page.openedBy));
+      for (const opensAt of runsOpeningAt) {
+        const box = page.boxes.find((each) => each.index === opensAt);
+        if (box !== undefined) room.set(opensAt, body.bottomPt - box.topPt);
+      }
+    }
+    return room;
+  };
+
+  const asked = (room: ReadonlyMap<number, number>): string =>
+    [...room].map(([at, pt]) => `${String(at)}:${pt.toFixed(3)}`).join(" ");
+
+  let roomForRun: ReadonlyMap<number, number> = new Map();
+  let bodyStack = measureBody(roomForRun);
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
+  let broken = breakBody(bodyStack);
+
+  // One pass a run at the most, and a document with no column run in it takes none.
+  for (let pass = 0; pass < runsOpeningAt.length; pass += 1) {
+    const found = roomLeftFor(broken);
+    if (asked(found) === asked(roomForRun)) break;
+    roomForRun = found;
+    const again = measureBody(roomForRun);
+    if (again.kind === "blocked") return { kind: "blocked", blocker: again.blocker };
+    bodyStack = again;
+    broken = breakBody(bodyStack);
+  }
 
   // A drawing belongs to the page its anchoring paragraph landed on, and is placed
   // against the top that paragraph has there.
@@ -884,15 +954,6 @@ export function layOutDocument(
           floatFrame(story.part, columnTopPt, bodyTopPt),
         );
 
-  const broken = breakStack({
-    boxes: bodyStack.boxes,
-    cells: bodyStack.cells,
-    untornRows: bodyStack.untornRows,
-    anchoredObjects: bodyStack.anchoredObjects,
-    topPt: bodyTopPt,
-    bottomPt: bodyBottomPt,
-    bodyOf: (box) => bodyOfPage(sectionAt(box.index), opensASection(box.index)),
-  });
   const bodyDrawings = pageBoxes(broken).map((boxOf) =>
     drawingsFor(
       bodyBlocks,
