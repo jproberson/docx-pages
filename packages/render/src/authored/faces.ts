@@ -116,6 +116,7 @@ function faceOf(name: string, path: string | null): SuppliedFace | null {
     italic: false,
     metrics: read.metrics,
     advances: read.advances,
+    kerning: read.kerning,
     sansSerif: read.sansSerif,
   };
 }

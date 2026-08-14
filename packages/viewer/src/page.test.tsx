@@ -31,6 +31,7 @@ const MARK: ParagraphMark = {
   color: null,
   characterSpacingPt: 0,
   characterScale: 1,
+  kernFromHalfPoints: null,
 };
 
 const EMPTY_BODY: TextBoxBody = {

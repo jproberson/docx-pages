@@ -35,6 +35,39 @@ export type AdvanceTable =
 // the advances too, and only a caller-supplied font file carries them.
 export const NO_ADVANCES: AdvanceTable = { kind: "unavailable", reason: "unsupplied" };
 
+// How far one character of a face sits from the next beyond the sum of their
+// advances, in the same font units the advances are in. Negative for a pair that
+// closes up, which is nearly every pair a face states. Zero for a pair the face
+// says nothing about, so a caller adds it without asking whether there is one.
+export type PairKerning = (leftCodePoint: number, rightCodePoint: number) => number;
+
+// Kerning is read through the same character map the advances are, so every way
+// they can be unavailable is a way it can be. The rest are its own: `unkerned` is
+// a face that states no pairs anywhere, and the other three are a face whose
+// pairs are there and could not be honoured.
+export type KerningUnavailable =
+  AdvancesUnavailable | "unkerned" | "kern-malformed" | "gpos-malformed" | "gpos-unsupported";
+
+// Which of the two tables the pairs were read out of. Carried out so that a
+// measurement can say which one Word agrees with; `font-file.ts` states which is
+// preferred and why.
+export type KerningSource = "kern" | "gpos";
+
+export type KerningTable =
+  | {
+      readonly kind: "kerning";
+      readonly source: KerningSource;
+      readonly kerningBetween: PairKerning;
+      // How many of the face's pair subtables stated their movement in a way the
+      // reader will not guess at and were left unread. Every one measured belongs
+      // to a script that runs the other way and covers no Latin glyph at all;
+      // `font-file.ts` records the faces and why one of these is not a refusal.
+      readonly subtablesLeftUnread: number;
+    }
+  | { readonly kind: "unavailable"; readonly reason: KerningUnavailable };
+
+export const NO_KERNING: KerningTable = { kind: "unavailable", reason: "unsupplied" };
+
 // Bold and italic are separate files with their own advances, so a face is asked
 // for by style as well as by name.
 export type FaceRequest = {
@@ -43,9 +76,70 @@ export type FaceRequest = {
   readonly italic: boolean;
 };
 
+// What a run states about kerning and what it is set in, which is the whole of
+// what decides whether its pairs move. `w:kern` states the smallest size that
+// kerns, in half-points as Word states every size, and null is a run whose
+// cascade states none at all.
+export type RunKerning = FaceRequest & {
+  readonly kernFromHalfPoints: number | null;
+  readonly sizePt: number;
+};
+
+const HALF_POINTS_IN_A_POINT = 2;
+
+/**
+ * Whether a run kerns at all.
+ *
+ * **Kerning is opt-in.** Measured on 2026-08-13 off Word's own pdf, a right
+ * aligned line of kerning pairs in Calibri 12pt: it starts at 427.95 where the
+ * run states nothing and at that same 427.95 where it states `w:kern w:val="0"`,
+ * against 432.66 where it states `w:kern w:val="1"`. So a run that says nothing
+ * is a run that does not kern, and so is one that says zero.
+ *
+ * **The size the threshold names is a size that kerns.** Measured the same day
+ * against `w:kern w:val="32"`: at 15.5pt the line starts at 384.77, which is where
+ * that size unkerned starts, and at 16pt it starts at 384.88, which is where that
+ * size kerned starts. The comparison is at or above, not above.
+ */
+export function runKerns(run: RunKerning): boolean {
+  const from = run.kernFromHalfPoints;
+  if (from === null || from <= 0) return false;
+  return run.sizePt * HALF_POINTS_IN_A_POINT >= from;
+}
+
+/**
+ * Whether the last character of one run and the first of the next may move
+ * together.
+ *
+ * **A pair crosses a run boundary only where the runs are set alike.** Measured
+ * on 2026-08-13: `WAVY` written as one run and as `WA` beside `VY` was drawn
+ * identically, from 546.79 and 29.20 wide both times, so a boundary is nothing on
+ * its own. Where the second run is bold its `V` starts at 562.67 and the first
+ * run ends at 562.68, without the half point an `AV` pulls, and a second run set
+ * larger is drawn apart the same way.
+ *
+ * Both runs have to kern. Which of the two marks rules where only one of them
+ * states `w:kern` is unmeasured, and this is the reading that moves nothing
+ * nobody asked to move.
+ */
+export function runsKernAcross(before: RunKerning, after: RunKerning): boolean {
+  return (
+    runKerns(before) &&
+    runKerns(after) &&
+    normalise(before.name) === normalise(after.name) &&
+    before.bold === after.bold &&
+    before.italic === after.italic &&
+    before.sizePt === after.sizePt
+  );
+}
+
 export type SuppliedFace = FaceRequest & {
   readonly metrics: FontMetrics;
   readonly advances: AdvanceTable;
+  // Absent where nothing asked the file for its pairs, which is not the same as a
+  // face that states none: a caller that never read them is told nothing rather
+  // than told there is nothing.
+  readonly kerning?: KerningTable;
   // Whether the face draws its letters without serifs, which decides the face Word
   // borrows a character from where this one has no glyph for it: a sans face
   // borrows from Arial and every other face from Times New Roman, measured on
@@ -73,6 +167,7 @@ export type MetricsLookup =
       readonly source: "builtin" | "supplied";
       readonly metrics: FontMetrics;
       readonly advances: AdvanceTable;
+      readonly kerning?: KerningTable;
       readonly elsewhere?: FaceElsewhere;
     }
   | { readonly kind: "missing"; readonly fontName: string };
@@ -115,7 +210,13 @@ export function lookupFontMetrics(
   const exact = named.find((face) => sameStyle(face, request));
 
   if (exact !== undefined) {
-    return { kind: "found", source: "supplied", metrics: exact.metrics, advances: exact.advances };
+    return {
+      kind: "found",
+      source: "supplied",
+      metrics: exact.metrics,
+      advances: exact.advances,
+      ...(exact.kerning === undefined ? {} : { kerning: exact.kerning }),
+    };
   }
 
   // A family's styles share their vertical metrics in practice, so a near miss
@@ -128,6 +229,11 @@ export function lookupFontMetrics(
       source: "supplied",
       metrics: nearest.metrics,
       advances: { kind: "unavailable", reason: "style-unsupplied" },
+      // The pairs of the near miss are as much the wrong style's as its widths
+      // are, so they are refused for the same reason.
+      ...(nearest.kerning === undefined
+        ? {}
+        : { kerning: { kind: "unavailable", reason: "style-unsupplied" } as const }),
     };
   }
 

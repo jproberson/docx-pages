@@ -11,6 +11,9 @@ import {
   type FontMetrics,
   type GlyphAdvances,
   type MetricsLookup,
+  runKerns,
+  type PairKerning,
+  type RunKerning,
 } from "./font-metrics.js";
 import { nextTabStop, type TabStopPt } from "./tab-stops.js";
 import { roomForTurn } from "./turns.js";
@@ -153,10 +156,22 @@ export const faceRequestFor = (mark: ParagraphMark): FaceRequest => ({
   italic: mark.italic,
 });
 
+// What a run of one mark states about kerning, which is what the two predicates in
+// `font-metrics.ts` are asked. A mark carries the threshold and the size; the face
+// carries the pairs.
+export const kerningOf = (mark: ParagraphMark): RunKerning => ({
+  ...faceRequestFor(mark),
+  kernFromHalfPoints: mark.kernFromHalfPoints,
+  sizePt: mark.fontSizePt,
+});
+
 type Face = {
   readonly metrics: FontMetrics;
   readonly advanceFor: GlyphAdvances;
   readonly elsewhere: FaceElsewhere | null;
+  // How far a pair of the face's characters moves together, in font units, or
+  // nothing where the face states no pairs or nobody asked its file for them.
+  readonly kerningBetween: PairKerning | null;
 };
 
 type Fragment = {
@@ -235,6 +250,7 @@ class Measurer {
       metrics: lookup.metrics,
       advanceFor: lookup.advances.advanceFor,
       elsewhere: lookup.elsewhere ?? null,
+      kerningBetween: lookup.kerning?.kind === "kerning" ? lookup.kerning.kerningBetween : null,
     };
     this.faces.set(mark, face);
     return face;
@@ -271,6 +287,14 @@ class Measurer {
     let abovePt = ascentPt(face.metrics, mark.lineSizePt);
     let belowPt = lineHeightPt(face.metrics, mark.lineSizePt) - abovePt;
 
+    // **The pairs are summed in font units and scaled once**, which is what the same
+    // line at 12pt and at 10.5pt measured: it closed up by 11.94pt and by 10.45, and
+    // 11.94 scaled by 10.5/12 is 10.4475. So they are gathered here rather than
+    // converted a pair at a time.
+    const kerningBetween = runKerns(kerningOf(mark)) ? face.kerningBetween : null;
+    let kerningUnits = 0;
+    let lastCodePoint: number | null = null;
+
     for (const character of text) {
       if (beforePointPt === null && character === DECIMAL_POINT) beforePointPt = widthPt;
       const codePoint = character.codePointAt(0) ?? 0;
@@ -283,6 +307,11 @@ class Measurer {
         };
         return null;
       }
+
+      if (kerningBetween !== null && lastCodePoint !== null) {
+        kerningUnits += kerningBetween(lastCodePoint, codePoint);
+      }
+      lastCodePoint = codePoint;
 
       // A space takes the spacing as a letter does. A tab never reaches here:
       // it leaves no segment behind, and ends at its stop regardless.
@@ -315,7 +344,7 @@ class Measurer {
     return {
       mark,
       text,
-      widthPt,
+      widthPt: widthPt + advanceWidthPt(kerningUnits, face.metrics, mark.fontSizePt),
       beforePointPt,
       heightPt: raisedAbovePt + raisedBelowPt,
       ascentPt: raisedAbovePt,

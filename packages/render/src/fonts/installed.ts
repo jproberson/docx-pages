@@ -149,6 +149,9 @@ export function installedFaces(
             italic: face.italic,
             metrics: read.metrics,
             advances: read.advances,
+            // The pairs the file states, so a run that asks to kern kerns in the face
+            // Word drew it in rather than in a face measured without them.
+            kerning: read.kerning,
             sansSerif: read.sansSerif,
           };
         };

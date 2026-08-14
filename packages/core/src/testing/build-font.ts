@@ -38,7 +38,49 @@ export type FontFixture = {
   readonly underlinePosition?: number;
   readonly underlineThickness?: number;
   readonly italicAngle?: number;
+  // What each pair of the face's characters moves, in font units. `kernPairs`
+  // writes the legacy `kern` table and the other two write GPOS pair positioning,
+  // and a fixture may state both to ask which of them is read.
+  readonly kernPairs?: KerningPairs;
+  readonly gposPairs?: KerningPairs;
+  readonly gposClassPairs?: ClassKerningPairs;
+  // A second pair lookup, stating its movement as a placement beside the advance
+  // the way a face states the pairs of a script that runs the other way. The
+  // reader will not guess at one, so a fixture states it to ask what happens to
+  // the pairs beside it.
+  readonly gposRightToLeftPairs?: KerningPairs;
+  // What the kern subtable says it holds, for a fixture that wants one whose count
+  // lies about its own pairs.
+  readonly claimedKernPairs?: number;
+  // What the kern subtable says it is long, for a fixture that wants one whose
+  // length is too small for its own pairs, as Calibri's and Cambria's are.
+  readonly claimedKernLength?: number;
+  // How many bytes to cut off the end of the GPOS table, which is how a fixture
+  // states one whose offsets run past what is there.
+  readonly cutFromGpos?: number;
+  // What the pair positioning states it moves, as the two value formats. The
+  // default is an X advance on the first glyph and nothing on the second, which is
+  // the only movement the reader takes; a fixture states another to ask for the
+  // refusal.
+  readonly gposValueFormats?: readonly [first: number, second: number];
+  // Whether the pair lookup is reached through an extension, which is how a real
+  // face reaches a subtable further into the file than a two-byte offset can name.
+  readonly gposThroughExtension?: boolean;
   readonly omit?: "head" | "hhea" | "cmap" | "hmtx";
+};
+
+// A pair of the face's characters and what it moves: `{ AV: -80 }` says an A
+// followed by a V closes up by 80 font units. Both characters have to be ones the
+// fixture states an advance for, since a pair is stated in glyphs.
+export type KerningPairs = Readonly<Record<string, number>>;
+
+export type ClassKerningPairs = {
+  // The characters in each class from 1 up; class 0 is every other glyph.
+  readonly firstClasses: readonly string[];
+  readonly secondClasses: readonly string[];
+  // What a pair of classes moves, indexed by the first class and then the second,
+  // both counting from class 0.
+  readonly values: readonly (readonly number[])[];
 };
 
 type Glyph = {
@@ -243,6 +285,376 @@ function postTable(fixture: FontFixture): Uint8Array {
   return table;
 }
 
+const concat = (parts: readonly Uint8Array[]): Uint8Array => {
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+};
+
+type GlyphPair = { readonly left: number; readonly right: number; readonly value: number };
+
+const idOf = (codePoint: number | undefined, glyphs: readonly Glyph[]): number =>
+  glyphs.find((glyph) => glyph.codePoint === (codePoint ?? -1))?.id ?? 0;
+
+function glyphPairs(stated: KerningPairs, glyphs: readonly Glyph[]): readonly GlyphPair[] {
+  return Object.entries(stated)
+    .map(([pair, value]) => ({
+      left: idOf(pair.codePointAt(0), glyphs),
+      right: idOf(pair.codePointAt(1), glyphs),
+      value,
+    }))
+    .sort((left, right) => left.left - right.left || left.right - right.right);
+}
+
+const KERN_HEADER = 4;
+const KERN_SUBTABLE_HEADER = 6;
+const KERN_FORMAT_0_HEADER = 8;
+const KERN_PAIR_LENGTH = 6;
+
+// The legacy table as a Windows font states it: version zero, one format 0
+// subtable, horizontal values. The search range and its two companions are left at
+// zero, since a reader that maps the pairs never consults them.
+function kernTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const pairs = glyphPairs(fixture.kernPairs ?? {}, glyphs);
+  const subtableLength =
+    KERN_SUBTABLE_HEADER + KERN_FORMAT_0_HEADER + pairs.length * KERN_PAIR_LENGTH;
+  const table = new Uint8Array(KERN_HEADER + subtableLength);
+  const view = new DataView(table.buffer);
+
+  view.setUint16(2, 1);
+  view.setUint16(KERN_HEADER + 2, fixture.claimedKernLength ?? subtableLength);
+  // Format 0 in the high byte, horizontal values in the low one.
+  view.setUint16(KERN_HEADER + 4, 1);
+
+  const body = KERN_HEADER + KERN_SUBTABLE_HEADER;
+  view.setUint16(body, fixture.claimedKernPairs ?? pairs.length);
+  pairs.forEach((pair, index) => {
+    const at = body + KERN_FORMAT_0_HEADER + index * KERN_PAIR_LENGTH;
+    view.setUint16(at, pair.left);
+    view.setUint16(at + 2, pair.right);
+    view.setInt16(at + 4, pair.value);
+  });
+
+  return table;
+}
+
+const X_PLACEMENT = 0x0001;
+const X_ADVANCE = 0x0004;
+const FIRST_GLYPH_ADVANCE: readonly [number, number] = [X_ADVANCE, 0];
+
+// How a face states a pair of a script that runs the other way: the glyph is
+// placed by exactly what it is advanced. Every lookup of the kind measured on this
+// machine states it so, and none of them covers a Latin glyph.
+const PLACED_AND_ADVANCED: readonly [number, number] = [X_PLACEMENT | X_ADVANCE, 0];
+
+const valueLength = (format: number): number => {
+  let length = 0;
+  for (let bit = 1; bit <= 0x80; bit <<= 1) if ((format & bit) !== 0) length += 2;
+  return length;
+};
+
+// A value record holds the fields its format states, in the order of the bits that
+// state them. The movement goes in the X advance and, where the format states one,
+// in the X placement beside it, which is how a face states a pair for text running
+// the other way; everything else is written as zero.
+function writeValue(view: DataView, at: number, format: number, value: number): void {
+  let slot = at;
+  for (let bit = 1; bit <= 0x80; bit <<= 1) {
+    if ((format & bit) === 0) continue;
+    view.setInt16(slot, bit === X_ADVANCE || bit === X_PLACEMENT ? value : 0);
+    slot += 2;
+  }
+}
+
+function coverageTable(glyphs: readonly number[]): Uint8Array {
+  const table = new Uint8Array(4 + glyphs.length * 2);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 1);
+  view.setUint16(2, glyphs.length);
+  glyphs.forEach((glyph, index) => {
+    view.setUint16(4 + index * 2, glyph);
+  });
+  return table;
+}
+
+// The other spelling of a coverage, which names runs of glyphs rather than each of
+// them. Both are written by fixtures, since a face may state either.
+function rangedCoverage(glyphs: readonly number[]): Uint8Array {
+  const ranges: { start: number; end: number; at: number }[] = [];
+  glyphs.forEach((glyph, index) => {
+    const last = ranges.at(-1);
+    if (last !== undefined && glyph === last.end + 1) last.end = glyph;
+    else ranges.push({ start: glyph, end: glyph, at: index });
+  });
+
+  const table = new Uint8Array(4 + ranges.length * 6);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 2);
+  view.setUint16(2, ranges.length);
+  ranges.forEach((range, index) => {
+    const at = 4 + index * 6;
+    view.setUint16(at, range.start);
+    view.setUint16(at + 2, range.end);
+    view.setUint16(at + 4, range.at);
+  });
+  return table;
+}
+
+function classesOf(
+  classes: readonly string[],
+  glyphs: readonly Glyph[],
+): ReadonlyMap<number, number> {
+  const found = new Map<number, number>();
+  classes.forEach((characters, index) => {
+    for (const character of characters)
+      found.set(idOf(character.codePointAt(0), glyphs), index + 1);
+  });
+  return found;
+}
+
+// Class 0 is every glyph the definition does not name, so only the classes from
+// one up are written.
+function rangedClassDefinition(classes: ReadonlyMap<number, number>): Uint8Array {
+  const ranges: { start: number; end: number; value: number }[] = [];
+  for (const glyph of [...classes.keys()].sort((left, right) => left - right)) {
+    const value = classes.get(glyph) ?? 0;
+    const last = ranges.at(-1);
+    if (last !== undefined && glyph === last.end + 1 && value === last.value) last.end = glyph;
+    else ranges.push({ start: glyph, end: glyph, value });
+  }
+
+  const table = new Uint8Array(4 + ranges.length * 6);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 2);
+  view.setUint16(2, ranges.length);
+  ranges.forEach((range, index) => {
+    const at = 4 + index * 6;
+    view.setUint16(at, range.start);
+    view.setUint16(at + 2, range.end);
+    view.setUint16(at + 4, range.value);
+  });
+  return table;
+}
+
+// The other spelling of a class definition, which lists a class for every glyph of
+// one run.
+function listedClassDefinition(classes: ReadonlyMap<number, number>): Uint8Array {
+  const glyphs = [...classes.keys()].sort((left, right) => left - right);
+  const start = glyphs[0] ?? 0;
+  const count = glyphs.length === 0 ? 0 : (glyphs.at(-1) ?? start) - start + 1;
+
+  const table = new Uint8Array(6 + count * 2);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 1);
+  view.setUint16(2, start);
+  view.setUint16(4, count);
+  for (const [glyph, value] of classes) view.setUint16(6 + (glyph - start) * 2, value);
+  return table;
+}
+
+const PAIR_SET_HEADER = 10;
+
+function pairSetSubtable(
+  pairs: readonly GlyphPair[],
+  formats: readonly [number, number],
+): Uint8Array {
+  const byFirst = new Map<number, GlyphPair[]>();
+  for (const pair of pairs) {
+    const held = byFirst.get(pair.left);
+    if (held === undefined) byFirst.set(pair.left, [pair]);
+    else held.push(pair);
+  }
+
+  const firsts = [...byFirst.keys()].sort((left, right) => left - right);
+  const recordLength = 2 + valueLength(formats[0]) + valueLength(formats[1]);
+  const setLengths = firsts.map((first) => 2 + (byFirst.get(first)?.length ?? 0) * recordLength);
+  const setsAt = PAIR_SET_HEADER + firsts.length * 2;
+  const coverageAt = setsAt + setLengths.reduce((sum, each) => sum + each, 0);
+  const coverage = coverageTable(firsts);
+
+  const table = new Uint8Array(coverageAt + coverage.length);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 1);
+  view.setUint16(2, coverageAt);
+  view.setUint16(4, formats[0]);
+  view.setUint16(6, formats[1]);
+  view.setUint16(8, firsts.length);
+
+  let at = setsAt;
+  firsts.forEach((first, index) => {
+    view.setUint16(PAIR_SET_HEADER + index * 2, at);
+    const held = byFirst.get(first) ?? [];
+    view.setUint16(at, held.length);
+    held.forEach((pair, place) => {
+      const record = at + 2 + place * recordLength;
+      view.setUint16(record, pair.right);
+      writeValue(view, record + 2, formats[0], pair.value);
+      writeValue(view, record + 2 + valueLength(formats[0]), formats[1], 0);
+    });
+    at += setLengths[index] ?? 0;
+  });
+
+  table.set(coverage, coverageAt);
+  return table;
+}
+
+const CLASS_PAIR_HEADER = 16;
+
+function classPairSubtable(
+  stated: ClassKerningPairs,
+  glyphs: readonly Glyph[],
+  formats: readonly [number, number],
+): Uint8Array {
+  const firstClasses = classesOf(stated.firstClasses, glyphs);
+  const secondClasses = classesOf(stated.secondClasses, glyphs);
+  const firstCount = stated.firstClasses.length + 1;
+  const secondCount = stated.secondClasses.length + 1;
+  const recordLength = valueLength(formats[0]) + valueLength(formats[1]);
+
+  const firstDefinition = rangedClassDefinition(firstClasses);
+  const secondDefinition = listedClassDefinition(secondClasses);
+  const coverage = rangedCoverage([...firstClasses.keys()].sort((left, right) => left - right));
+
+  const firstAt = CLASS_PAIR_HEADER + firstCount * secondCount * recordLength;
+  const secondAt = firstAt + firstDefinition.length;
+  const coverageAt = secondAt + secondDefinition.length;
+
+  const table = new Uint8Array(coverageAt + coverage.length);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 2);
+  view.setUint16(2, coverageAt);
+  view.setUint16(4, formats[0]);
+  view.setUint16(6, formats[1]);
+  view.setUint16(8, firstAt);
+  view.setUint16(10, secondAt);
+  view.setUint16(12, firstCount);
+  view.setUint16(14, secondCount);
+
+  for (let first = 0; first < firstCount; first += 1) {
+    for (let second = 0; second < secondCount; second += 1) {
+      const at = CLASS_PAIR_HEADER + (first * secondCount + second) * recordLength;
+      writeValue(view, at, formats[0], stated.values[first]?.[second] ?? 0);
+      writeValue(view, at + valueLength(formats[0]), formats[1], 0);
+    }
+  }
+
+  table.set(firstDefinition, firstAt);
+  table.set(secondDefinition, secondAt);
+  table.set(coverage, coverageAt);
+  return table;
+}
+
+const LOOKUP_HEADER = 8;
+const EXTENSION_LENGTH = 8;
+const PAIR_ADJUSTMENT = 2;
+const EXTENSION_POSITIONING = 9;
+
+function extensionSubtable(subtable: Uint8Array): Uint8Array {
+  const wrapper = new Uint8Array(EXTENSION_LENGTH + subtable.length);
+  const view = new DataView(wrapper.buffer);
+  view.setUint16(0, 1);
+  view.setUint16(2, PAIR_ADJUSTMENT);
+  view.setUint32(4, EXTENSION_LENGTH);
+  wrapper.set(subtable, EXTENSION_LENGTH);
+  return wrapper;
+}
+
+function oneLookup(subtable: Uint8Array, throughExtension: boolean): Uint8Array {
+  const lookup = new Uint8Array(LOOKUP_HEADER + subtable.length);
+  const view = new DataView(lookup.buffer);
+  view.setUint16(0, throughExtension ? EXTENSION_POSITIONING : PAIR_ADJUSTMENT);
+  view.setUint16(4, 1);
+  view.setUint16(6, LOOKUP_HEADER);
+  lookup.set(subtable, LOOKUP_HEADER);
+  return lookup;
+}
+
+function lookupList(lookups: readonly Uint8Array[]): Uint8Array {
+  const listHeader = 2 + lookups.length * 2;
+  const list = new Uint8Array(listHeader + lookups.reduce((sum, each) => sum + each.length, 0));
+  const view = new DataView(list.buffer);
+  view.setUint16(0, lookups.length);
+
+  let at = listHeader;
+  lookups.forEach((lookup, index) => {
+    view.setUint16(2 + index * 2, at);
+    list.set(lookup, at);
+    at += lookup.length;
+  });
+  return list;
+}
+
+// One default script whose default language wants the one feature, which is the
+// least a face can state and still be shaped. The reader finds the lookups through
+// the feature rather than through this, but a face states it and so does a fixture.
+function scriptList(): Uint8Array {
+  const list = new Uint8Array(20);
+  const view = new DataView(list.buffer);
+  view.setUint16(0, 1);
+  list.set(tagBytes("DFLT"), 2);
+  view.setUint16(6, 8);
+  view.setUint16(8, 4);
+  view.setUint16(14, 0xffff);
+  view.setUint16(16, 1);
+  return list;
+}
+
+function featureList(lookupCount: number): Uint8Array {
+  const featureAt = 8;
+  const list = new Uint8Array(featureAt + 4 + lookupCount * 2);
+  const view = new DataView(list.buffer);
+  view.setUint16(0, 1);
+  list.set(tagBytes("kern"), 2);
+  view.setUint16(6, featureAt);
+  view.setUint16(featureAt + 2, lookupCount);
+  for (let index = 0; index < lookupCount; index += 1) {
+    view.setUint16(featureAt + 4 + index * 2, index);
+  }
+  return list;
+}
+
+const GPOS_HEADER = 10;
+
+function gposTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const formats = fixture.gposValueFormats ?? FIRST_GLYPH_ADVANCE;
+  const pairs =
+    fixture.gposClassPairs === undefined
+      ? pairSetSubtable(glyphPairs(fixture.gposPairs ?? {}, glyphs), formats)
+      : classPairSubtable(fixture.gposClassPairs, glyphs, formats);
+
+  const throughExtension = fixture.gposThroughExtension === true;
+  const lookups = [
+    oneLookup(throughExtension ? extensionSubtable(pairs) : pairs, throughExtension),
+  ];
+  if (fixture.gposRightToLeftPairs !== undefined) {
+    const other = pairSetSubtable(
+      glyphPairs(fixture.gposRightToLeftPairs, glyphs),
+      PLACED_AND_ADVANCED,
+    );
+    lookups.push(oneLookup(other, false));
+  }
+
+  const scripts = scriptList();
+  const features = featureList(lookups.length);
+
+  const header = new Uint8Array(GPOS_HEADER);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x00010000);
+  view.setUint16(4, GPOS_HEADER);
+  view.setUint16(6, GPOS_HEADER + scripts.length);
+  view.setUint16(8, GPOS_HEADER + scripts.length + features.length);
+
+  const whole = concat([header, scripts, features, lookupList(lookups)]);
+
+  return fixture.cutFromGpos === undefined
+    ? whole
+    : whole.subarray(0, whole.length - fixture.cutFromGpos);
+}
+
 function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array])[] {
   const glyphs = glyphsOf(fixture);
   const tables: (readonly [string, Uint8Array])[] = [
@@ -265,6 +677,12 @@ function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array]
   }
   if (fixture.advances !== undefined) {
     tables.push(["cmap", cmapTable(fixture, glyphs)], ["hmtx", hmtxTable(fixture, glyphs)]);
+  }
+  if (fixture.kernPairs !== undefined) {
+    tables.push(["kern", kernTable(fixture, glyphs)]);
+  }
+  if (fixture.gposPairs !== undefined || fixture.gposClassPairs !== undefined) {
+    tables.push(["GPOS", gposTable(fixture, glyphs)]);
   }
 
   return tables.filter(([tag]) => tag !== fixture.omit);
@@ -385,6 +803,9 @@ export type FaceFixture = {
   // Whether the face draws its letters without serifs, which it says through its
   // PANOSE classification as a real face does rather than being told.
   readonly sansSerif?: boolean;
+  // What each pair of its characters moves, stated in the legacy table. A face
+  // that states none supplies no kerning at all, as most faces do.
+  readonly kernPairs?: KerningPairs;
 };
 
 // The plainest PANOSE classification of each kind: a Latin text face of normal
@@ -401,6 +822,7 @@ export function buildFace(fixture: FaceFixture): SuppliedFace {
     ...(fixture.subtables === undefined ? {} : { subtables: fixture.subtables }),
     ...(fixture.notdefAdvance === undefined ? {} : { notdefAdvance: fixture.notdefAdvance }),
     ...(fixture.sansSerif === undefined ? {} : fixture.sansSerif ? SANS_SERIF : SERIF),
+    ...(fixture.kernPairs === undefined ? {} : { kernPairs: fixture.kernPairs }),
     advances: Object.fromEntries(
       Array.from(fixture.characters ?? MEASURABLE, (character) => [character, advance]),
     ),
@@ -414,5 +836,6 @@ export function buildFace(fixture: FaceFixture): SuppliedFace {
     metrics: fixture.metrics,
     advances: read.advances,
     sansSerif: read.sansSerif,
+    ...(read.kerning.kind === "kerning" ? { kerning: read.kerning } : {}),
   };
 }

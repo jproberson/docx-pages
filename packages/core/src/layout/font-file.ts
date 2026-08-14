@@ -1,7 +1,7 @@
 import { unzlibSync } from "fflate";
 
 import { DocxPagesError } from "../errors.js";
-import type { AdvanceTable, FontMetrics } from "./font-metrics.js";
+import type { AdvanceTable, FontMetrics, KerningSource, KerningTable } from "./font-metrics.js";
 import { readAdvanceTable, readGlyphIndex as glyphIndexIn, type CodeToGlyph } from "./glyphs.js";
 
 export type FontFileFormat = "sfnt" | "woff";
@@ -39,6 +39,10 @@ export type ReadFontFileResult = ReadFontMetricsResult & {
   // question the file itself answers about which face Word borrows a character
   // from. See `sansSerif` in `font-metrics.ts` for what turns on it.
   readonly sansSerif: boolean;
+  // What each pair of the face's characters moves beyond its advances, or why the
+  // face's pairs could not be read. A face stating none is `unkerned` rather than
+  // an error: most of them state none.
+  readonly kerning: KerningTable;
   // Null where the face states no `post` table, which nothing can be invented
   // for: a renderer that needs a line has to say what it did instead.
   readonly underline: UnderlineMetrics | null;
@@ -49,8 +53,10 @@ export type ReadFontFileResult = ReadFontMetricsResult & {
 
 const AT = "core/layout/font-file.readFontMetrics";
 
+const GPOS = "GPOS";
 const HEAD = "head";
 const HHEA = "hhea";
+const KERN = "kern";
 const NAME = "name";
 const OS2 = "OS/2";
 const POST = "post";
@@ -341,6 +347,484 @@ function readPost(tables: ReadonlyMap<string, Uint8Array>): {
   };
 }
 
+// What a pair of glyphs moves, in font units, or null where the table read says
+// nothing about that pair. Null rather than zero, so that one subtable saying
+// nothing lets the next one answer.
+type PairMovement = (leftGlyph: number, rightGlyph: number) => number | null;
+
+// What a table of pairs came to. `unstated` is a table that holds no pairs this
+// reader is looking for, which is not a fault. `unhonoured` counts the pair
+// lookups that state their movement in a way this reader will not guess at, which
+// are left unread and said out loud rather than read at half of what they say.
+type PairReading =
+  | { readonly kind: "pairs"; readonly movementFor: PairMovement; readonly unhonoured: number }
+  | { readonly kind: "unstated"; readonly unhonoured: number }
+  | { readonly kind: "malformed" };
+
+const UNSTATED: PairReading = { kind: "unstated", unhonoured: 0 };
+const UNHONOURED: PairReading = { kind: "unstated", unhonoured: 1 };
+const MALFORMED: PairReading = { kind: "malformed" };
+
+const pairKey = (leftGlyph: number, rightGlyph: number): number => leftGlyph * 0x10000 + rightGlyph;
+
+// The legacy table's coverage byte. Only horizontal values that add to an advance
+// are read: a minimum subtable bounds a pair rather than moving it, and a
+// cross-stream one moves the pair off the line of writing, and neither is a width.
+const HORIZONTAL_COVERAGE = 1;
+const MINIMUM_COVERAGE = 2;
+const CROSS_STREAM_COVERAGE = 4;
+
+const KERN_HEADER = 4;
+const KERN_SUBTABLE_HEADER = 6;
+const KERN_FORMAT_0_HEADER = 8;
+const KERN_PAIR_LENGTH = 6;
+
+// The version every Windows font states. Version 1 is Apple's table, whose header
+// and subtables are shaped differently; it is left unread rather than read as if
+// it were this one.
+const MICROSOFT_KERN_VERSION = 0;
+
+function readLegacyKern(kern: Uint8Array | undefined): PairReading {
+  if (kern === undefined) return UNSTATED;
+  if (kern.byteLength < KERN_HEADER) return MALFORMED;
+
+  const view = viewOf(kern);
+  if (view.getUint16(0) !== MICROSOFT_KERN_VERSION) return UNSTATED;
+
+  const values = new Map<number, number>();
+  let at = KERN_HEADER;
+  for (let index = 0; index < view.getUint16(2); index += 1) {
+    if (at + KERN_SUBTABLE_HEADER > kern.byteLength) return MALFORMED;
+
+    const coverage = view.getUint16(at + 4);
+    const format = coverage >> 8;
+    const length = subtableLength(kern, at, format);
+    if (length === null) return MALFORMED;
+
+    const horizontalAdvances =
+      (coverage & HORIZONTAL_COVERAGE) !== 0 &&
+      (coverage & (MINIMUM_COVERAGE | CROSS_STREAM_COVERAGE)) === 0;
+    if (horizontalAdvances && format === 0) {
+      const body = kern.subarray(at + KERN_SUBTABLE_HEADER, at + length);
+      if (!addFormat0Pairs(body, values)) return MALFORMED;
+    }
+    at += length;
+  }
+
+  if (values.size === 0) return UNSTATED;
+  return {
+    kind: "pairs",
+    unhonoured: 0,
+    movementFor: (left, right) => values.get(pairKey(left, right)) ?? null,
+  };
+}
+
+// How long a subtable really is, or null where it runs past the table.
+//
+// **A subtable states its length in two bytes and Word's own faces overflow it.**
+// Measured on 2026-08-13: Calibri's `kern` table is 160254 bytes and its one
+// subtable states 29178, which is what is left of 160250 after two whole turns of
+// the field; Cambria states 47232 where its pairs need 178304. The pair count is
+// the field that survives, so where the pairs reach further than the stated length
+// and still fit inside the table, they are what is read. Reading the stated length
+// instead loses every pair in both faces.
+function subtableLength(kern: Uint8Array, at: number, format: number): number | null {
+  const view = viewOf(kern);
+  const stated = view.getUint16(at + 2);
+
+  let length = stated;
+  if (format === 0 && at + KERN_SUBTABLE_HEADER + KERN_FORMAT_0_HEADER <= kern.byteLength) {
+    const pairs = view.getUint16(at + KERN_SUBTABLE_HEADER);
+    const implied = KERN_SUBTABLE_HEADER + KERN_FORMAT_0_HEADER + pairs * KERN_PAIR_LENGTH;
+    if (implied > stated && at + implied <= kern.byteLength) length = implied;
+  }
+
+  return length < KERN_SUBTABLE_HEADER || at + length > kern.byteLength ? null : length;
+}
+
+// False where the subtable states more pairs than it holds, which is refused
+// rather than read as far as it goes.
+function addFormat0Pairs(body: Uint8Array, values: Map<number, number>): boolean {
+  if (body.byteLength < KERN_FORMAT_0_HEADER) return false;
+
+  const view = viewOf(body);
+  const count = view.getUint16(0);
+  if (KERN_FORMAT_0_HEADER + count * KERN_PAIR_LENGTH > body.byteLength) return false;
+
+  for (let index = 0; index < count; index += 1) {
+    const at = KERN_FORMAT_0_HEADER + index * KERN_PAIR_LENGTH;
+    const key = pairKey(view.getUint16(at), view.getUint16(at + 2));
+    // A face may state the same pair in more than one subtable, and what those
+    // say adds up.
+    values.set(key, (values.get(key) ?? 0) + view.getInt16(at + 4));
+  }
+  return true;
+}
+
+const GPOS_HEADER = 10;
+const KERN_FEATURE = "kern";
+const PAIR_ADJUSTMENT = 2;
+const EXTENSION_POSITIONING = 9;
+const EXTENSION_LENGTH = 8;
+const X_ADVANCE = 0x0004;
+
+// The only movement read: the first glyph's own advance, which is what kerning a
+// line of text is. A subtable that also places a glyph, or that moves the second
+// one, is left unread rather than read at half of what it says.
+//
+// **A face is not refused whole over one of those.** Measured on 2026-08-13 over
+// the 472 faces on this machine: the subtables stating anything else place the
+// glyph by exactly what they advance it, which is how a pair is stated for text
+// running the other way, and not one of them covers a Latin glyph. Calibri states
+// its Latin pairs the readable way and eight subtables the other, all eight of
+// them Latin-free; Liberation Sans covers 105 glyphs the readable way and 49
+// Hebrew ones the other. Refusing the face over them loses every Latin pair in
+// Calibri, which is the face this repository's own documents are written in. So a
+// subtable is what is left unread, and how many were is carried out beside the
+// pairs.
+const onlyFirstAdvance = (first: number, second: number): boolean =>
+  (first === 0 || first === X_ADVANCE) && second === 0;
+
+function readGposPairs(gpos: Uint8Array | undefined): PairReading {
+  if (gpos === undefined) return UNSTATED;
+  if (gpos.byteLength < GPOS_HEADER) return MALFORMED;
+
+  const view = viewOf(gpos);
+  const wanted = kernFeatureLookups(gpos, view.getUint16(6));
+  if (wanted === null) return MALFORMED;
+  if (wanted.length === 0) return UNSTATED;
+
+  const lookupList = view.getUint16(8);
+  const movements: PairMovement[] = [];
+  let unhonoured = 0;
+  for (const index of wanted) {
+    const reading = readPairLookup(gpos, lookupList, index);
+    if (reading.kind === "malformed") return reading;
+    unhonoured += reading.unhonoured;
+    if (reading.kind === "pairs") movements.push(reading.movementFor);
+  }
+
+  if (movements.length === 0) return { kind: "unstated", unhonoured };
+  return { kind: "pairs", movementFor: added(movements), unhonoured };
+}
+
+// What every lookup of the pair says, added up, since each is applied in its turn
+// over the same two glyphs.
+function added(movements: readonly PairMovement[]): PairMovement {
+  return (left, right) => {
+    let moved: number | null = null;
+    for (const movementFor of movements) {
+      const value = movementFor(left, right);
+      if (value !== null) moved = (moved ?? 0) + value;
+    }
+    return moved;
+  };
+}
+
+// Which lookups the `kern` feature points at. The script list is not read: a face
+// states its pairs once and every script that kerns points at the same lookups,
+// and which script a document's text is in is a question the layout does not ask.
+function kernFeatureLookups(gpos: Uint8Array, featureListAt: number): readonly number[] | null {
+  if (featureListAt + 2 > gpos.byteLength) return null;
+
+  const view = viewOf(gpos);
+  const count = view.getUint16(featureListAt);
+  if (featureListAt + 2 + count * 6 > gpos.byteLength) return null;
+
+  const wanted = new Set<number>();
+  for (let index = 0; index < count; index += 1) {
+    const record = featureListAt + 2 + index * 6;
+    if (tagAt(gpos, record) !== KERN_FEATURE) continue;
+
+    const feature = featureListAt + view.getUint16(record + 4);
+    if (feature + 4 > gpos.byteLength) return null;
+    const lookupCount = view.getUint16(feature + 2);
+    if (feature + 4 + lookupCount * 2 > gpos.byteLength) return null;
+
+    for (let each = 0; each < lookupCount; each += 1) {
+      wanted.add(view.getUint16(feature + 4 + each * 2));
+    }
+  }
+  return [...wanted];
+}
+
+function readPairLookup(gpos: Uint8Array, lookupListAt: number, index: number): PairReading {
+  if (lookupListAt + 2 > gpos.byteLength) return MALFORMED;
+
+  const view = viewOf(gpos);
+  const count = view.getUint16(lookupListAt);
+  if (index >= count || lookupListAt + 2 + count * 2 > gpos.byteLength) return MALFORMED;
+
+  const lookup = lookupListAt + view.getUint16(lookupListAt + 2 + index * 2);
+  if (lookup + 6 > gpos.byteLength) return MALFORMED;
+
+  const type = view.getUint16(lookup);
+  const subtableCount = view.getUint16(lookup + 4);
+  if (lookup + 6 + subtableCount * 2 > gpos.byteLength) return MALFORMED;
+
+  // The feature may point at a lookup of another type, which refines what the
+  // pairs say rather than stating pairs of its own: contextual positioning is the
+  // one real faces state. What it would change is left unread, since the pair
+  // value under it is nearer than no movement at all.
+  if (type !== PAIR_ADJUSTMENT && type !== EXTENSION_POSITIONING) return UNSTATED;
+
+  const movements: PairMovement[] = [];
+  let unhonoured = 0;
+  for (let each = 0; each < subtableCount; each += 1) {
+    const at = lookup + view.getUint16(lookup + 6 + each * 2);
+    const reading =
+      type === EXTENSION_POSITIONING
+        ? readExtension(gpos, at)
+        : readPairSubtable(gpos.subarray(at));
+    if (reading.kind === "malformed") return reading;
+    unhonoured += reading.unhonoured;
+    if (reading.kind === "pairs") movements.push(reading.movementFor);
+  }
+
+  if (movements.length === 0) return { kind: "unstated", unhonoured };
+  // The subtables of one lookup are tried in turn and the first that covers the
+  // pair answers for it, which is how a face states a general rule and an
+  // exception to it.
+  return {
+    kind: "pairs",
+    unhonoured,
+    movementFor: (left, right) => {
+      for (const movementFor of movements) {
+        const value = movementFor(left, right);
+        if (value !== null) return value;
+      }
+      return null;
+    },
+  };
+}
+
+// How a face reaches a subtable sitting further into the file than a two-byte
+// offset can name. Word ships faces whose pair positioning is only reachable this
+// way, so a reader that stops here reads no pairs at all out of them.
+function readExtension(gpos: Uint8Array, at: number): PairReading {
+  if (at + EXTENSION_LENGTH > gpos.byteLength) return MALFORMED;
+
+  const view = viewOf(gpos);
+  if (view.getUint16(at) !== 1) return MALFORMED;
+  if (view.getUint16(at + 2) !== PAIR_ADJUSTMENT) return UNSTATED;
+  return readPairSubtable(gpos.subarray(at + view.getUint32(at + 4)));
+}
+
+function readPairSubtable(table: Uint8Array): PairReading {
+  if (table.byteLength < 2) return MALFORMED;
+
+  const format = viewOf(table).getUint16(0);
+  if (format === 1) return readPairSets(table);
+  if (format === 2) return readClassPairs(table);
+  return MALFORMED;
+}
+
+const PAIR_SET_HEADER = 10;
+
+// A pair set names the second glyph of every pair the first one kerns with, which
+// is how a face states the few hundred pairs it cares about one by one.
+function readPairSets(table: Uint8Array): PairReading {
+  if (table.byteLength < PAIR_SET_HEADER) return MALFORMED;
+
+  const view = viewOf(table);
+  const first = view.getUint16(4);
+  const second = view.getUint16(6);
+  if (!onlyFirstAdvance(first, second)) return UNHONOURED;
+
+  const covered = readCoverage(table, view.getUint16(2));
+  if (covered === null) return MALFORMED;
+
+  const setCount = view.getUint16(8);
+  if (PAIR_SET_HEADER + setCount * 2 > table.byteLength) return MALFORMED;
+  // A face states one pair set for each glyph its coverage names, so a table where
+  // the two disagree is one this reader cannot line up.
+  if (covered.glyphs.length !== setCount) return MALFORMED;
+
+  const recordLength = 2 + (first === 0 ? 0 : 2);
+  const values = new Map<number, number>();
+  for (const [index, glyph] of covered.glyphs.entries()) {
+    const set = view.getUint16(PAIR_SET_HEADER + index * 2);
+    if (set + 2 > table.byteLength) return MALFORMED;
+
+    const pairCount = view.getUint16(set);
+    if (set + 2 + pairCount * recordLength > table.byteLength) return MALFORMED;
+
+    for (let pair = 0; pair < pairCount; pair += 1) {
+      const at = set + 2 + pair * recordLength;
+      const moved = first === 0 ? 0 : view.getInt16(at + 2);
+      values.set(pairKey(glyph, view.getUint16(at)), moved);
+    }
+  }
+
+  if (values.size === 0) return UNSTATED;
+  return {
+    kind: "pairs",
+    unhonoured: 0,
+    movementFor: (left, right) => values.get(pairKey(left, right)) ?? null,
+  };
+}
+
+const CLASS_PAIR_HEADER = 16;
+
+// Every glyph of one class kerns the same against every glyph of another, which is
+// how a face states the pairs of whole alphabets without naming them.
+function readClassPairs(table: Uint8Array): PairReading {
+  if (table.byteLength < CLASS_PAIR_HEADER) return MALFORMED;
+
+  const view = viewOf(table);
+  const first = view.getUint16(4);
+  const second = view.getUint16(6);
+  if (!onlyFirstAdvance(first, second)) return UNHONOURED;
+  if (first === 0) return UNSTATED;
+
+  const covered = readCoverage(table, view.getUint16(2));
+  const firstClassOf = readClassDefinition(table, view.getUint16(8));
+  const secondClassOf = readClassDefinition(table, view.getUint16(10));
+  if (covered === null || firstClassOf === null || secondClassOf === null) return MALFORMED;
+
+  const firstCount = view.getUint16(12);
+  const secondCount = view.getUint16(14);
+  if (CLASS_PAIR_HEADER + firstCount * secondCount * 2 > table.byteLength) return MALFORMED;
+
+  return {
+    kind: "pairs",
+    unhonoured: 0,
+    movementFor: (left, right) => {
+      if (covered.indexOf(left) === null) return null;
+      const firstClass = firstClassOf(left);
+      const secondClass = secondClassOf(right);
+      if (firstClass >= firstCount || secondClass >= secondCount) return null;
+      return view.getInt16(CLASS_PAIR_HEADER + (firstClass * secondCount + secondClass) * 2);
+    },
+  };
+}
+
+type Coverage = {
+  readonly indexOf: (glyph: number) => number | null;
+  readonly glyphs: readonly number[];
+};
+
+// A face has at most this many glyphs, so a coverage naming more of them is one
+// whose ranges are not what they claim.
+const GLYPH_LIMIT = 0x10000;
+
+function readCoverage(table: Uint8Array, at: number): Coverage | null {
+  if (at + 4 > table.byteLength) return null;
+
+  const view = viewOf(table);
+  const format = view.getUint16(at);
+  const count = view.getUint16(at + 2);
+  const glyphs: number[] = [];
+
+  if (format === 1) {
+    if (at + 4 + count * 2 > table.byteLength) return null;
+    for (let index = 0; index < count; index += 1) glyphs.push(view.getUint16(at + 4 + index * 2));
+  } else if (format === 2) {
+    if (at + 4 + count * 6 > table.byteLength) return null;
+    for (let index = 0; index < count; index += 1) {
+      const record = at + 4 + index * 6;
+      const start = view.getUint16(record);
+      const end = view.getUint16(record + 2);
+      if (end < start || glyphs.length + (end - start) >= GLYPH_LIMIT) return null;
+      for (let glyph = start; glyph <= end; glyph += 1) glyphs.push(glyph);
+    }
+  } else return null;
+
+  const indices = new Map(glyphs.map((glyph, index) => [glyph, index]));
+  return { glyphs, indexOf: (glyph) => indices.get(glyph) ?? null };
+}
+
+// Which class a glyph belongs to. Class 0 is every glyph the table does not name,
+// and a face states a movement for it like any other.
+type GlyphClass = (glyph: number) => number;
+
+function readClassDefinition(table: Uint8Array, at: number): GlyphClass | null {
+  if (at + 4 > table.byteLength) return null;
+
+  const view = viewOf(table);
+  const format = view.getUint16(at);
+
+  if (format === 1) {
+    if (at + 6 > table.byteLength) return null;
+    const start = view.getUint16(at + 2);
+    const count = view.getUint16(at + 4);
+    if (at + 6 + count * 2 > table.byteLength) return null;
+    return (glyph) =>
+      glyph < start || glyph >= start + count ? 0 : view.getUint16(at + 6 + (glyph - start) * 2);
+  }
+
+  if (format !== 2) return null;
+  const count = view.getUint16(at + 2);
+  if (at + 4 + count * 6 > table.byteLength) return null;
+  return (glyph) => {
+    for (let index = 0; index < count; index += 1) {
+      const record = at + 4 + index * 6;
+      if (glyph < view.getUint16(record)) return 0;
+      if (glyph <= view.getUint16(record + 2)) return view.getUint16(record + 4);
+    }
+    return 0;
+  };
+}
+
+// Where a face states both tables, this is the one read and the other is left
+// alone. GPOS is taken because it is what a shaper on Windows applies: a face
+// carrying both states the same pairs in GPOS for anything that shapes text and
+// keeps the legacy table for software that does not.
+//
+// **Which one Word agrees with is unmeasured**, and on the faces here it may not
+// matter: Arial states both, and over the 256 pairs of sixteen letters the two
+// agree on all 53 that move and disagree on none (measured 2026-08-13). It is one
+// constant so that a measurement can move it: `"kern"` reads the legacy table
+// wherever a face has one and falls back on GPOS.
+const PREFERRED_KERNING_TABLE: KerningSource = "gpos";
+
+function readKerning(tables: ReadonlyMap<string, Uint8Array>, glyphFor: CodeToGlyph): KerningTable {
+  const gpos = readGposPairs(tables.get(GPOS));
+  const legacy = readLegacyKern(tables.get(KERN));
+
+  // A table that cannot be read at all refuses the face's kerning whole rather than
+  // falling back on the other one. A face states its pairs once, so a table nothing
+  // can be read out of is a face whose pairs are unknown, and the other table's
+  // half of them moves text to a place neither Word nor the face asked for.
+  if (gpos.kind === "malformed") return { kind: "unavailable", reason: "gpos-malformed" };
+  if (legacy.kind === "malformed") return { kind: "unavailable", reason: "kern-malformed" };
+
+  const inOrder: readonly (readonly [KerningSource, PairReading])[] =
+    PREFERRED_KERNING_TABLE === "gpos"
+      ? [
+          ["gpos", gpos],
+          ["kern", legacy],
+        ]
+      : [
+          ["kern", legacy],
+          ["gpos", gpos],
+        ];
+
+  for (const [source, reading] of inOrder) {
+    if (reading.kind !== "pairs") continue;
+    const { movementFor } = reading;
+    return {
+      kind: "kerning",
+      source,
+      subtablesLeftUnread: reading.unhonoured,
+      // Asked in characters, as the advances are, and answered through the same
+      // character map, so a pair measured here is the pair the face draws.
+      kerningBetween: (leftCodePoint, rightCodePoint) => {
+        const left = glyphFor(leftCodePoint);
+        const right = glyphFor(rightCodePoint);
+        if (left === 0 || right === 0) return 0;
+        return movementFor(left, right) ?? 0;
+      },
+    };
+  }
+
+  // A face whose only pair positioning states a movement this reader will not
+  // guess at has kerning and no pair of it could be read, which is a different
+  // answer from a face that states none.
+  if (gpos.unhonoured > 0) return { kind: "unavailable", reason: "gpos-unsupported" };
+  return { kind: "unavailable", reason: "unkerned" };
+}
+
 /**
  * Which glyph a face draws each character with, read out of the same cmap the
  * advances are read through, so that a character measured at one glyph's width is
@@ -386,6 +870,8 @@ export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFile
   const metricCount =
     hhea.byteLength >= HHEA_METRIC_COUNT_AT + 2 ? hheaView.getUint16(HHEA_METRIC_COUNT_AT) : 0;
 
+  const index = glyphIndexIn(tables);
+
   return {
     format,
     metrics: {
@@ -395,6 +881,12 @@ export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFile
       lineGap: hheaView.getInt16(8),
     },
     advances: readAdvanceTable(tables, metricCount),
+    // A face whose characters cannot be mapped to glyphs has no pairs either: the
+    // tables state glyphs, and there is nothing to look them up by.
+    kerning:
+      index.kind === "glyphs"
+        ? readKerning(tables, index.glyphFor)
+        : { kind: "unavailable", reason: index.reason },
     sansSerif: readsSansSerif(tables),
     ...readPost(tables),
   };

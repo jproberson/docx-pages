@@ -6,8 +6,13 @@ import {
   lineHeightPt,
   lookupFontMetrics,
   NO_ADVANCES,
+  NO_KERNING,
+  runKerns,
+  runsKernAcross,
   type FaceRequest,
   type FontMetrics,
+  type KerningTable,
+  type RunKerning,
   type SuppliedFace,
 } from "./font-metrics.js";
 
@@ -156,5 +161,139 @@ describe("lookupFontMetrics", () => {
       metrics: NARROW,
       advances: { kind: "unavailable", reason: "style-unsupplied" },
     });
+  });
+});
+
+// A line is the sum of its characters' advances and of what each pair of them
+// moves, so the pairs travel the same road the widths do: off the file, onto the
+// supplied face, and out of the lookup a run resolves to.
+describe("the pairs a lookup carries", () => {
+  const NARROW: FontMetrics = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
+  const kerning: KerningTable = {
+    kind: "kerning",
+    source: "kern",
+    kerningBetween: () => -80,
+    subtablesLeftUnread: 0,
+  };
+
+  it("carries a supplied face's pairs through to the caller", () => {
+    const supplied = [{ ...face("Meridian Sans", NARROW), kerning }];
+    const lookup = lookupFontMetrics(asked("Meridian Sans"), supplied);
+
+    expect(lookup.kind === "found" && lookup.kerning).toBe(kerning);
+  });
+
+  // The pairs of a near miss are as much the wrong style's as its widths are.
+  it("refuses the pairs when the asked-for style is absent, as it refuses the widths", () => {
+    const supplied = [{ ...face("Meridian Sans", NARROW), kerning }];
+    const lookup = lookupFontMetrics(asked("Meridian Sans", true), supplied);
+
+    expect(lookup.kind === "found" && lookup.kerning).toStrictEqual({
+      kind: "unavailable",
+      reason: "style-unsupplied",
+    });
+  });
+
+  // A face nothing asked for its pairs is not a face that states none, so a lookup
+  // over one says nothing about them at all.
+  it("says nothing about the pairs of a face that was never asked for them", () => {
+    const lookup = lookupFontMetrics(asked("Meridian Sans"), [face("Meridian Sans", NARROW)]);
+
+    expect(lookup.kind === "found" && lookup.kerning).toBeUndefined();
+  });
+
+  it("says nothing about the pairs of a built-in font, which comes from no file", () => {
+    const lookup = lookupFontMetrics(asked("Arial"));
+
+    expect(lookup.kind === "found" && lookup.kerning).toBeUndefined();
+    expect(NO_KERNING).toStrictEqual({ kind: "unavailable", reason: "unsupplied" });
+  });
+});
+
+const CALIBRI = { name: "Calibri", bold: false, italic: false };
+
+const set = (sizePt: number, kernFromHalfPoints: number | null): RunKerning => ({
+  ...CALIBRI,
+  sizePt,
+  kernFromHalfPoints,
+});
+
+// Measured on 2026-08-13 off Word's own pdf, over right aligned lines of kerning
+// pairs in Calibri written three times each, against a control line of no pairs
+// that started at 448.34 in every case.
+describe("runKerns", () => {
+  // A line stating nothing starts at 427.95, exactly where one stating zero
+  // starts, against 432.66 where it states one.
+  it("says a run that states nothing does not kern, since kerning is opt-in", () => {
+    expect(runKerns(set(12, null))).toBe(false);
+  });
+
+  it("says a run stating zero does not kern, which is where a run stating nothing lands", () => {
+    expect(runKerns(set(12, 0))).toBe(false);
+  });
+
+  it("says a run stating a threshold its size reaches kerns", () => {
+    expect(runKerns(set(12, 1))).toBe(true);
+  });
+
+  // Against `w:kern w:val="32"`: 15.5pt starts at 384.77, which is where that size
+  // unkerned starts, and 16pt at 384.88, which is where that size kerned starts.
+  it("kerns at the very size the threshold names", () => {
+    expect(runKerns(set(16, 32))).toBe(true);
+  });
+
+  it("does not kern half a point under it", () => {
+    expect(runKerns(set(15.5, 32))).toBe(false);
+    expect(runKerns(set(11, 32))).toBe(false);
+  });
+
+  it("kerns above it", () => {
+    expect(runKerns(set(16.5, 32))).toBe(true);
+  });
+
+  // The threshold is stated in half-points and the run is set in points, which is
+  // what everything else in the layout is measured in.
+  it("reads the threshold as half-points against a size in points", () => {
+    expect(runKerns(set(8, 16))).toBe(true);
+    expect(runKerns(set(7.5, 16))).toBe(false);
+  });
+});
+
+// `WAVY` in one run and as `WA` beside `VY` were drawn identically, from 546.79
+// and 29.20 wide; where the second run is bold its `V` starts at 562.67 and the
+// first ends at 562.68, without the half point an `AV` pulls.
+describe("runsKernAcross", () => {
+  const KERNING = set(12, 1);
+
+  it("lets a pair cross a boundary between runs set alike", () => {
+    expect(runsKernAcross(KERNING, { ...KERNING })).toBe(true);
+  });
+
+  it("stops a pair where the weight changes, as Word drew the bold V", () => {
+    expect(runsKernAcross(KERNING, { ...KERNING, bold: true })).toBe(false);
+  });
+
+  it("stops a pair where the slant changes", () => {
+    expect(runsKernAcross(KERNING, { ...KERNING, italic: true })).toBe(false);
+  });
+
+  it("stops a pair where the size changes", () => {
+    expect(runsKernAcross(KERNING, { ...KERNING, sizePt: 14 })).toBe(false);
+  });
+
+  it("stops a pair where the face changes", () => {
+    expect(runsKernAcross(KERNING, { ...KERNING, name: "Cambria" })).toBe(false);
+  });
+
+  it("calls a face by the same name the same face however it is written", () => {
+    expect(runsKernAcross(KERNING, { ...KERNING, name: "  calibri " })).toBe(true);
+  });
+
+  // A run that does not kern has no pairs to carry over a boundary, whichever side
+  // of it the run is on.
+  it("stops a pair where either run does not kern at all", () => {
+    expect(runsKernAcross(set(12, null), KERNING)).toBe(false);
+    expect(runsKernAcross(KERNING, set(12, null))).toBe(false);
+    expect(runsKernAcross(set(12, 32), set(12, 32))).toBe(false);
   });
 });

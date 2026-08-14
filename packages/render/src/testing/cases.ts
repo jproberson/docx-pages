@@ -406,6 +406,7 @@ function faceOf(font: ReferenceFont): SuppliedFace {
     ...style,
     metrics: font.metrics,
     advances: read.advances,
+    kerning: read.kerning,
     sansSerif: read.sansSerif,
   };
 }
@@ -425,6 +426,7 @@ function authoredFaceOf(face: AuthoredFace): SuppliedFace {
     italic: face.italic,
     metrics: read.metrics,
     advances: read.advances,
+    kerning: read.kerning,
     sansSerif: read.sansSerif,
   };
 }

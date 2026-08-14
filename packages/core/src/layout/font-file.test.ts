@@ -3,13 +3,14 @@ import { describe, expect, it } from "vitest";
 import { isDocxPagesError, type DocxPagesError } from "../errors.js";
 import {
   buildCollection,
+  buildFace,
   buildSfnt,
   buildWoff,
   buildWoff2,
   type FontFixture,
 } from "../testing/build-font.js";
 import { readFontFaces, readFontFile, readFontMetrics, readGlyphIndex } from "./font-file.js";
-import { lineHeightPt, type GlyphAdvances } from "./font-metrics.js";
+import { lineHeightPt, type GlyphAdvances, type KerningTable } from "./font-metrics.js";
 import type { CodeToGlyph } from "./glyphs.js";
 
 const FACE: FontFixture = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
@@ -181,6 +182,216 @@ describe("readFontFile", () => {
 
   it("still reports metrics for a face it cannot measure text with", () => {
     expect(readFontFile(buildSfnt(FACE)).metrics).toStrictEqual(METRICS);
+  });
+});
+
+// A line is the sum of its characters' advances plus what each pair of them moves,
+// which a face states in a legacy `kern` table, in GPOS pair positioning, or in
+// both. Everything here is read off the font formats; what Word does with the
+// answer is measured elsewhere.
+describe("what a pair of a face's characters moves", () => {
+  const KERNABLE = { ...FACE, advances: { ...WIDTHS, V: 620, a: 500 } };
+
+  const kerningOf = (fixture: FontFixture): KerningTable =>
+    readFontFile(buildSfnt(fixture)).kerning;
+
+  function movementIn(fixture: FontFixture): (pair: string) => number {
+    const table = kerningOf(fixture);
+    if (table.kind !== "kerning") throw new Error(`expected kerning, got ${table.reason}`);
+    return (pair) => table.kerningBetween(pair.codePointAt(0) ?? 0, pair.codePointAt(1) ?? 0);
+  }
+
+  it("reads a pair out of a legacy kern table", () => {
+    const movedBy = movementIn({ ...KERNABLE, kernPairs: { AV: -80, Aa: -15 } });
+
+    expect(movedBy("AV")).toBe(-80);
+    expect(movedBy("Aa")).toBe(-15);
+  });
+
+  // A subtable states its length in two bytes and Word's own faces overflow it:
+  // Calibri's table is 160254 bytes long and its subtable states 29178, which is
+  // 160250 less two whole turns of the field. The pair count is what survives.
+  it("reads a kern subtable whose stated length is too small for its own pairs", () => {
+    const overflowed = { ...KERNABLE, kernPairs: { AV: -80 }, claimedKernLength: 6 };
+
+    expect(movementIn(overflowed)("AV")).toBe(-80);
+  });
+
+  it("says a pair the table does not name moves nothing", () => {
+    const movedBy = movementIn({ ...KERNABLE, kernPairs: { AV: -80 } });
+
+    expect(movedBy("VA")).toBe(0);
+    expect(movedBy("AB")).toBe(0);
+  });
+
+  it("says nothing for a character the face has no glyph for", () => {
+    expect(movementIn({ ...KERNABLE, kernPairs: { AV: -80 } })("AZ")).toBe(0);
+  });
+
+  it("names the table the pairs came out of", () => {
+    expect(kerningOf({ ...KERNABLE, kernPairs: { AV: -80 } })).toMatchObject({ source: "kern" });
+    expect(kerningOf({ ...KERNABLE, gposPairs: { AV: -80 } })).toMatchObject({ source: "gpos" });
+  });
+
+  it("reads a pair GPOS states one pair at a time", () => {
+    const movedBy = movementIn({ ...KERNABLE, gposPairs: { AV: -55, AB: -10, Va: -30 } });
+
+    expect(movedBy("AV")).toBe(-55);
+    expect(movedBy("AB")).toBe(-10);
+    expect(movedBy("Va")).toBe(-30);
+    expect(movedBy("BA")).toBe(0);
+  });
+
+  // How a face states the pairs of whole alphabets without naming any of them: a
+  // class of first glyphs against a class of second ones.
+  it("reads a pair GPOS states as a pair of classes", () => {
+    const movedBy = movementIn({
+      ...KERNABLE,
+      gposClassPairs: {
+        firstClasses: ["AV"],
+        secondClasses: ["a", "B"],
+        values: [
+          [0, 0, 0],
+          [0, -40, -12],
+        ],
+      },
+    });
+
+    expect(movedBy("Aa")).toBe(-40);
+    expect(movedBy("Va")).toBe(-40);
+    expect(movedBy("AB")).toBe(-12);
+  });
+
+  it("says nothing for a pair whose classes state no movement", () => {
+    const movedBy = movementIn({
+      ...KERNABLE,
+      gposClassPairs: {
+        firstClasses: ["A"],
+        secondClasses: ["a"],
+        values: [
+          [0, 0],
+          [0, -40],
+        ],
+      },
+    });
+
+    // The second glyph is in no class the table names, and the first is in none
+    // the coverage does.
+    expect(movedBy("AB")).toBe(0);
+    expect(movedBy("Va")).toBe(0);
+  });
+
+  // A real face reaches a subtable further into the file than a two-byte offset can
+  // name this way, so a reader that stops at the wrapper reads no pairs at all.
+  it("follows an extension lookup to the pair positioning under it", () => {
+    const movedBy = movementIn({
+      ...KERNABLE,
+      gposPairs: { AV: -55 },
+      gposThroughExtension: true,
+    });
+
+    expect(movedBy("AV")).toBe(-55);
+  });
+
+  // Which table Word reads where a face states both is unmeasured; `font-file.ts`
+  // states which is taken and why, and this is what says so out loud.
+  it("takes GPOS over the legacy table where a face states both", () => {
+    const both = { ...KERNABLE, kernPairs: { AV: -80 }, gposPairs: { AV: -55 } };
+
+    expect(kerningOf(both)).toMatchObject({ source: "gpos" });
+    expect(movementIn(both)("AV")).toBe(-55);
+  });
+
+  it("answers nothing at all for a face that states neither table", () => {
+    expect(kerningOf(KERNABLE)).toStrictEqual({ kind: "unavailable", reason: "unkerned" });
+  });
+
+  it("answers nothing for a face whose pair positioning names no pair", () => {
+    const table = kerningOf({ ...KERNABLE, gposPairs: {} });
+
+    expect(table).toStrictEqual({ kind: "unavailable", reason: "unkerned" });
+  });
+
+  // Refused rather than half-read: a face states its pairs once, so a table that
+  // cannot be read is a face whose pairs are unknown, and some of them moves text
+  // to a place neither Word nor the face asked for.
+  it("refuses a kern table that states more pairs than it holds", () => {
+    const lying = { ...KERNABLE, kernPairs: { AV: -80 }, claimedKernPairs: 40 };
+
+    expect(kerningOf(lying)).toStrictEqual({ kind: "unavailable", reason: "kern-malformed" });
+  });
+
+  it("refuses GPOS whose offsets run past the end of it", () => {
+    const cut = { ...KERNABLE, gposPairs: { AV: -55 }, cutFromGpos: 8 };
+
+    expect(kerningOf(cut)).toStrictEqual({ kind: "unavailable", reason: "gpos-malformed" });
+  });
+
+  // The only movement read is an X advance on the first glyph, which is what
+  // kerning a line of text is. A subtable stating anything else is left unread and
+  // counted, rather than read at half of what it says or taken as a reason to
+  // refuse the pairs beside it: measured on 2026-08-13 over the 472 faces on this
+  // machine, every subtable of that kind belongs to a script running the other way
+  // and covers no Latin glyph, and Calibri states its Latin pairs beside eight.
+  it("reads the pairs it can beside a subtable whose movement it will not guess at", () => {
+    const both = { ...KERNABLE, gposPairs: { AV: -55 }, gposRightToLeftPairs: { Ta: -30 } };
+
+    expect(movementIn(both)("AV")).toBe(-55);
+    expect(movementIn(both)("Ta")).toBe(0);
+    expect(kerningOf(both)).toMatchObject({ subtablesLeftUnread: 1 });
+  });
+
+  it("counts nothing left unread where every subtable was read", () => {
+    expect(kerningOf({ ...KERNABLE, gposPairs: { AV: -55 } })).toMatchObject({
+      subtablesLeftUnread: 0,
+    });
+    expect(kerningOf({ ...KERNABLE, kernPairs: { AV: -80 } })).toMatchObject({
+      subtablesLeftUnread: 0,
+    });
+  });
+
+  // A face whose only pair positioning states such a movement has kerning and not
+  // one pair of it could be read, which is a different answer from a face that
+  // states none.
+  it("refuses a face whose every pair states a movement it will not guess at", () => {
+    const placed = { ...KERNABLE, gposPairs: { AV: -55 }, gposValueFormats: [0x0005, 0] as const };
+    const second = {
+      ...KERNABLE,
+      gposPairs: { AV: -55 },
+      gposValueFormats: [0x0004, 0x0004] as const,
+    };
+
+    expect(kerningOf(placed)).toStrictEqual({ kind: "unavailable", reason: "gpos-unsupported" });
+    expect(kerningOf(second)).toStrictEqual({ kind: "unavailable", reason: "gpos-unsupported" });
+  });
+
+  it("refuses a malformed table even where the other one could be read", () => {
+    const both = {
+      ...KERNABLE,
+      kernPairs: { AV: -80 },
+      claimedKernPairs: 40,
+      gposPairs: { AV: -55 },
+    };
+
+    expect(kerningOf(both)).toStrictEqual({ kind: "unavailable", reason: "kern-malformed" });
+  });
+
+  // The pairs are stated in glyphs, so a face whose characters cannot be mapped to
+  // glyphs has nothing to look them up by.
+  it("answers nothing for a face whose character map cannot be read", () => {
+    const table = kerningOf({ ...KERNABLE, kernPairs: { AV: -80 }, omit: "cmap" });
+
+    expect(table).toStrictEqual({ kind: "unavailable", reason: "cmap-missing" });
+  });
+
+  // The road a measurer takes to the pairs: off the file and onto the face a run
+  // resolves to.
+  it("hands a face built for a test the pairs its file states", () => {
+    const supplied = buildFace({ name: "Meridian", metrics: METRICS, kernPairs: { AV: -80 } });
+    const between = supplied.kerning?.kind === "kerning" ? supplied.kerning.kerningBetween : null;
+
+    expect(between?.("A".codePointAt(0) ?? 0, "V".codePointAt(0) ?? 0)).toBe(-80);
+    expect(buildFace({ name: "Meridian", metrics: METRICS }).kerning).toBeUndefined();
   });
 });
 

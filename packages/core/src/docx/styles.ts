@@ -91,6 +91,9 @@ export type ParagraphMark = {
   // What every glyph's own advance is multiplied by, and what it is drawn stretched
   // to. One where the run states no scale of its own.
   readonly characterScale: number;
+  // The size, in half-points, at and above which the run's pairs kern. Null where the
+  // cascade states none at all, which is a run that does not kern.
+  readonly kernFromHalfPoints: number | null;
 };
 
 type PartialMark = {
@@ -104,6 +107,7 @@ type PartialMark = {
   readonly color: string | undefined;
   readonly characterSpacingTwentieths: number | undefined;
   readonly characterScalePercent: number | undefined;
+  readonly kernFromHalfPoints: number | undefined;
 };
 
 // What a stop does with the text that follows a tab reaching it: a left stop
@@ -194,6 +198,7 @@ const EMPTY: PartialMark = {
   color: undefined,
   characterSpacingTwentieths: undefined,
   characterScalePercent: undefined,
+  kernFromHalfPoints: undefined,
 };
 
 const EMPTY_FRAME: PartialFrame = {
@@ -362,6 +367,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   color: over.color ?? base.color,
   characterSpacingTwentieths: over.characterSpacingTwentieths ?? base.characterSpacingTwentieths,
   characterScalePercent: over.characterScalePercent ?? base.characterScalePercent,
+  kernFromHalfPoints: over.kernFromHalfPoints ?? base.kernFromHalfPoints,
 });
 
 // The same three answers an on/off element gives, spelled as an attribute: an
@@ -439,6 +445,7 @@ function readMark(
     color: colorOf(rPr),
     characterSpacingTwentieths: characterSpacingOf(rPr),
     characterScalePercent: characterScaleOf(rPr),
+    kernFromHalfPoints: twipsAttribute(firstNamed(rPr, W_NS, "kern"), "val"),
   };
 }
 
@@ -793,6 +800,10 @@ function markOf(resolved: PartialMark): ParagraphMark {
     color: resolved.color ?? null,
     characterSpacingPt: (resolved.characterSpacingTwentieths ?? 0) / TWIPS_PER_POINT,
     characterScale: (resolved.characterScalePercent ?? 100) / 100,
+    // **Kerning is opt-in**, so a run stating nothing carries nothing here rather
+    // than a nought: the two are the same answer to Word and telling them apart
+    // costs nothing.
+    kernFromHalfPoints: resolved.kernFromHalfPoints ?? null,
   };
 }
 
