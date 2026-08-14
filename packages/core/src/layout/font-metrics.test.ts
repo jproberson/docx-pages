@@ -83,14 +83,16 @@ describe("lookupFontMetrics", () => {
     advanceFor: () => 500,
   };
 
-  // The line gap read 87 until 2026-08-14, which is 0.51pt a line at 12pt. Both this
-  // machine's own copy and the 151 pdfs Word embedded `TimesNewRomanPSMT` into state
-  // none at all.
+  // **The gap is Word's rather than the file's.** Times New Roman states none in any
+  // file here, and Word stepped 13.68pt between two 12pt lines and 23.04 between two
+  // 20pt ones, which puts its line between 1.146 and 1.150 em where the file alone
+  // gives 1.1074. The 87 below brings it to 1.1499. Arial states the same gap itself
+  // and Word drew it at exactly the same two steps.
   it("resolves a built-in font", () => {
     expect(lookupFontMetrics(asked("Times New Roman"))).toStrictEqual({
       kind: "found",
       source: "builtin",
-      metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 0 },
+      metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 },
       advances: NO_ADVANCES,
     });
   });

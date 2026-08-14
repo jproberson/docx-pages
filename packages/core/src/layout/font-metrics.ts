@@ -357,34 +357,45 @@ export const advanceWidthPt = (advance: number, metrics: FontMetrics, fontSizePt
 // which is the half a stand-in gets most wrong and the half that moves every line
 // under it rather than one line.
 //
-// **Every number is a face's own `hhea`, read rather than typed.** The first ten were
-// read off this machine's own copies on 2026-08-14, and each agrees with what Word
-// embedded in its own pdfs of the corpus: Arial in 695 of them, Verdana in 482,
-// Calibri in 284, Courier New in 102 and Tahoma in 3.
+// **A row holds what Word's layout does with the face, which is not always what the
+// face's file states.** Measured on 2026-08-14, four solid lines of each face at 12
+// and 20pt with no spacing stated, read baseline to baseline off Word's own pdf:
+// Times New Roman stepped 13.68 and 23.04, which on the pdf's own 0.24pt grid puts
+// its line between 1.146 and 1.150 em. Its file states 1825 and -443 and no line gap
+// at all, which comes to 1.1074 and is nowhere near; the 87-unit gap this row states
+// brings it to 1.1499, which is inside. **Arial is the proof the rule is Word's and
+// not this file's**: Arial states that same 67-unit gap in its own `hhea`, comes to
+// the same 1.1499 by arithmetic, and Word drew it at exactly the same 13.68 and
+// 23.04. Calibri at 14.64 and 24.48 against its file's 1.2207, and Cambria at 14.16
+// and 23.52 against 1.1724, both agree with their files and needed no gap added.
 //
-// **`times new roman` stated a line gap of 87 until that day**, which is 0.51pt a
-// line at 12pt. What Word drew with states none: `TimesNewRomanPSMT` reads the same
-// in every one of the 151 pdfs it is embedded in, and so does the copy under
-// `/Library/Fonts` here. **This machine does hold a copy stating 87**, and the face
-// set reaches for it: `Times New Roman` resolves to 87 while `Times New Roman Bold`
-// resolves to 0, so one document's regular and bold text is laid out at two line
-// heights. That is a fault in the set of files rather than in this table, and it is
-// unfixed; what this row answers is the machine that holds no copy at all, and for
-// that one the face Word drew with is the only answer worth giving.
+// So a file read off disk is where a row starts and not where it ends: `times new
+// roman` read from a file here states no gap, and this row deliberately does not.
+// `packages/fonts` ships its Times New Roman twin carrying the same 87 for the same
+// reason.
 //
-// The last two are faces no machine here holds at all, and their numbers come out of
-// the font programs Word embedded in its own pdfs of the documents that name them,
-// which for an uninstalled face is the only primary source there is: a subsetter
-// rewrites the outlines and the character map and copies `hhea` whole. `SegoeUI`
-// reads the same across 31 of those pdfs and `ArialNova` across 20.
+// The first ten were read off this machine's own copies and agree with the faces
+// Word embedded in its own pdfs. **The last two are faces no machine here holds**,
+// and both have been put to Word the same way Times New Roman was, in the same
+// document: four solid lines of the face at 12 and 20pt with no spacing stated, read
+// baseline to baseline off Word's own pdf. Segoe UI stepped 16.08 and 26.64, which is
+// 1.334 and 1.332 em against the 1.3301 these numbers give; Arial Nova stepped 14.40
+// and 24.24, which is 1.200 and 1.212 against 1.2095. Both sit inside the 0.24pt grid
+// the pdf reports on, so neither wants a gap it does not state, and both rows are a
+// measurement of Word rather than a reading of a file.
+//
+// Where those two numbers came from before Word saw them: the font programs Word
+// embedded in its own pdfs of the documents naming them, which for an uninstalled
+// face is the only primary source there is. A subsetter rewrites the outlines and the
+// character map and copies `hhea` whole, and every pdf carrying one agreed with every
+// other.
 //
 // A style is not asked for here. Every family met so far states one set of vertical
-// metrics for all of its cuts: Aptos over six of them, Arial over four, Calibri over
-// six and Times New Roman over four all read the same.
+// metrics for all of its cuts.
 const BUILTIN: ReadonlyMap<string, FontMetrics> = new Map([
   ["arial", { unitsPerEm: 2048, ascender: 1854, descender: -434, lineGap: 67 }],
   ["calibri", { unitsPerEm: 2048, ascender: 1950, descender: -550, lineGap: 0 }],
-  ["times new roman", { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 0 }],
+  ["times new roman", { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 }],
   ["courier new", { unitsPerEm: 2048, ascender: 1705, descender: -615, lineGap: 0 }],
   ["georgia", { unitsPerEm: 2048, ascender: 1878, descender: -449, lineGap: 0 }],
   ["verdana", { unitsPerEm: 2048, ascender: 2059, descender: -430, lineGap: 0 }],
