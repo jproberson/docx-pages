@@ -416,6 +416,16 @@ describe("resolveParagraphFrame", () => {
     expect(resolved(body).frame.alignment).toBe("center");
   });
 
+  // **A break draws nothing either, wherever it stands.** Measured on 2026-08-14 by the
+  // authored `equation-content-probe` document: Word drew the bar at 290.40 with the
+  // break before the equation and with it after, which is the same 290.40 it drew for
+  // the equation standing alone, on a body whose centre is 306.00.
+  it("centres it beside a run holding nothing but a break", () => {
+    const broken = `<w:r><w:br/></w:r>`;
+    expect(resolved(`<w:p>${broken}${equation}</w:p>`).frame.alignment).toBe("center");
+    expect(resolved(`<w:p>${equation}${broken}</w:p>`).frame.alignment).toBe("center");
+  });
+
   it("leaves a paragraph holding one space beside an equation as it is aligned", () => {
     const body =
       `<w:p><w:pPr><w:jc w:val="right"/></w:pPr>` +

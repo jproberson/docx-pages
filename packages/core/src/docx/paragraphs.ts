@@ -73,7 +73,10 @@ function holdsLineContent(run: XmlElement, mustDraw: boolean): boolean {
       const isInline = child.namespace === WP_DRAWING_NS && child.name === "inline";
       const isLegacy =
         holdsALegacyPicture(child.namespace, child.name) && inlinePictureOf(child) !== null;
-      if (isText && mustDraw && child.name === "t" && child.text === "") {
+      // **A `w:t` holding nothing draws nothing, and neither does a break.** Both
+      // still stand on the line; see `drawsInLine`.
+      const drawsNothing = (child.name === "t" && child.text === "") || child.name === "br";
+      if (isText && mustDraw && drawsNothing) {
         visit(child);
         continue;
       }
@@ -90,11 +93,27 @@ function holdsLineContent(run: XmlElement, mustDraw: boolean): boolean {
 
 const placesContentInLine = (run: XmlElement): boolean => holdsLineContent(run, false);
 
-// **Whether the run draws anything, which is not whether it stands on the line.** A
-// `w:t` holding nothing takes the line's own height with it and puts no ink on the
-// page, and the two questions part company over a display equation: Word centred one
-// beside an empty run and laid the same one in the flow beside a single space,
-// measured on 2026-08-13 over the authored probe.
+/**
+ * **Whether the run draws anything, which is not whether it stands on the line.**
+ *
+ * A `w:t` holding nothing takes the line's own height with it and puts no ink on the
+ * page, and a break ends the line and draws nothing either. The two questions part
+ * company over a display equation, which Word centres until something beside it draws.
+ *
+ * Measured on 2026-08-13 and again on 2026-08-14 by the authored `equation-content-probe`
+ * document, reading the bar Word filled against a body whose centre is 306.00:
+ *
+ * | the paragraph holds beside the equation | Word drew the bar at |
+ * | --- | --- |
+ * | nothing | 290.40, **centred** |
+ * | a run holding nothing but a `w:br`, before the equation | 290.40, **centred** |
+ * | the same break after it | 290.40, **centred** |
+ * | a run holding an empty `w:t` | 290.40, **centred** |
+ * | a run holding one space | 38.64, **in the flow** |
+ *
+ * So a break draws nothing exactly as an empty run draws nothing, wherever it stands,
+ * and a single space is the least thing that draws.
+ */
 export const drawsInLine = (run: XmlElement): boolean => holdsLineContent(run, true);
 
 export function paragraphRuns(paragraph: Paragraph): readonly XmlElement[] {
