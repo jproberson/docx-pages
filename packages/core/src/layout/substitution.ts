@@ -198,6 +198,26 @@ function candidates(
   ];
 }
 
+// **How tall the line is comes from the face the document named; everything drawn
+// on it comes from the face that answered.** The two are separate questions and a
+// stand-in used to answer both: a face states its own ascent, descent and leading in
+// `hhea` whether or not anything on the machine can measure a word in it, so where
+// that much is known it is kept and only the widths are borrowed. It is the same
+// division `throughAnotherFace` already makes one level down, where a character its
+// own face has no glyph for is measured out of the face that does.
+//
+// **A wrong line height moves every line under it and a wrong width moves one line**,
+// so this is the half worth getting right. Measured on 2026-08-14: `Segoe UI` stands
+// 1.3301 em against the 1.1724 of the Cambria that stood in for it, which is 1.9pt a
+// line at 12pt, and `Arial Nova` 1.2095 against Arial's 1.1499, which is 0.71pt.
+//
+// A face nothing knows the height of is unchanged: the stand-in answers for both, as
+// it did before.
+function asTallAsAsked(found: MetricsLookup, asked: MetricsLookup | null): MetricsLookup {
+  if (found.kind !== "found" || asked === null || asked.kind !== "found") return found;
+  return { ...found, metrics: asked.metrics };
+}
+
 /**
  * Resolves faces as `lookupFontMetrics` does, and where a document asks for one
  * that cannot be measured, stands the nearest usable face in its place and records
@@ -231,7 +251,7 @@ export function substitutingMetrics(
         const key = keyOf(request);
         if (!stood.has(key)) stood.set(key, { requested: request, used });
       }
-      return throughAnotherFace(found, used, supplied, characters);
+      return throughAnotherFace(asTallAsAsked(found, asked), used, supplied, characters);
     }
 
     return asked ?? lookupFontMetrics(request, supplied);

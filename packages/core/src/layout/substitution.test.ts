@@ -223,6 +223,19 @@ describe("the family a face's name begins with", () => {
     ]);
   });
 
+  it("keeps the height of the face the document named over the family's", () => {
+    const asked = { unitsPerEm: 1000, ascender: 900, descender: -300, lineGap: 0 };
+    const faces = substitutingMetrics(
+      [{ ...unmeasurable("Meridian Display"), metrics: asked }, measurable("Meridian")],
+      ["Cambria"],
+    );
+
+    expect(faces.metricsFor(ask("Meridian Display"))).toMatchObject({ metrics: asked });
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Meridian Display"), used: ask("Meridian") },
+    ]);
+  });
+
   it("takes the extra space in a name for the whitespace it is", () => {
     const faces = substitutingMetrics([measurable("Aptos"), measurable("Cambria")], ["Cambria"]);
 
@@ -230,6 +243,102 @@ describe("the family a face's name begins with", () => {
     expect(faces.substitutions()).toStrictEqual([
       { requested: ask("  Aptos   Display  "), used: ask("Aptos") },
     ]);
+  });
+});
+
+// **How tall the line is, and what is drawn on it, are two questions.** A face
+// states its own ascent and descent whether or not anything can measure a word in
+// it, so where that much is known it is kept and only the widths are borrowed.
+describe("the height of a face that was stood in for", () => {
+  const TALL = { unitsPerEm: 1000, ascender: 950, descender: -350, lineGap: 40 };
+
+  const knownButUnmeasurable = (name: string): SuppliedFace => ({
+    ...unmeasurable(name),
+    metrics: TALL,
+  });
+
+  it("keeps the height the face states and borrows only the widths", () => {
+    const faces = substitutingMetrics(
+      [knownButUnmeasurable("Meridian Sans"), measurable("Cambria")],
+      ["Cambria"],
+    );
+    const found = faces.metricsFor(ask("Meridian Sans"));
+
+    expect(found).toMatchObject({ kind: "found", metrics: TALL });
+    expect(found.kind === "found" && found.advances.kind).toBe("advances");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Meridian Sans"), used: ask("Cambria") },
+    ]);
+  });
+
+  // A line drawn a face's own height is still a line whose words are another face's
+  // width, so nothing about the report changes.
+  it("still says the face was stood in for", () => {
+    const faces = substitutingMetrics(
+      [knownButUnmeasurable("Meridian Sans"), measurable("Cambria")],
+      ["Cambria"],
+    );
+    faces.metricsFor(ask("Meridian Sans"));
+
+    expect(faces.substitutions()).toHaveLength(1);
+  });
+
+  // The rule reaches only as far as the height is known. A name nothing states
+  // anything about takes the stand-in's height as it always did.
+  it("takes the stand-in's height where the face states none", () => {
+    const faces = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
+    const found = faces.metricsFor(ask("Nonesuch Sans"));
+
+    expect(found).toMatchObject({ kind: "found", metrics: METRICS });
+  });
+
+  it("leaves a face the machine can measure with entirely alone", () => {
+    const own = { unitsPerEm: 1000, ascender: 700, descender: -300, lineGap: 0 };
+    const faces = substitutingMetrics(
+      [measurable("Meridian Sans", { metrics: own }), measurable("Cambria")],
+      ["Cambria"],
+    );
+
+    expect(faces.metricsFor(ask("Meridian Sans"))).toMatchObject({ metrics: own });
+    expect(faces.substitutions()).toStrictEqual([]);
+  });
+
+  // The height comes from the face the document named, not from the family that
+  // answered for its widths: the two are different faces and may stand differently.
+  it("keeps the named face's height over the family that measured for it", () => {
+    const faces = substitutingMetrics(
+      [knownButUnmeasurable("Meridian Display"), measurable("Meridian"), measurable("Cambria")],
+      ["Cambria"],
+    );
+
+    expect(faces.metricsFor(ask("Meridian Display"))).toMatchObject({ metrics: TALL });
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Meridian Display"), used: ask("Meridian") },
+    ]);
+  });
+
+  // The heights the table states are the faces' own `hhea`, and a face this machine
+  // holds has to agree with the one it was read off.
+  it("states Segoe UI and Arial Nova, which no machine here holds", () => {
+    const segoe = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
+    expect(segoe.metricsFor(ask("Segoe UI"))).toMatchObject({
+      metrics: { unitsPerEm: 2048, ascender: 2210, descender: -514, lineGap: 0 },
+    });
+
+    const nova = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
+    expect(nova.metricsFor(ask("Arial Nova"))).toMatchObject({
+      metrics: { unitsPerEm: 2048, ascender: 2011, descender: -466, lineGap: 0 },
+    });
+  });
+
+  // Read off this machine's own copy and off the 151 pdfs Word embedded it into,
+  // both of which state no line gap at all where the table used to state 87.
+  it("leaves Times New Roman no line gap", () => {
+    const faces = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
+
+    expect(faces.metricsFor(ask("Times New Roman"))).toMatchObject({
+      metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 0 },
+    });
   });
 });
 

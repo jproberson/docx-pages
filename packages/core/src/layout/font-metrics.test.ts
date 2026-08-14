@@ -83,11 +83,14 @@ describe("lookupFontMetrics", () => {
     advanceFor: () => 500,
   };
 
+  // The line gap read 87 until 2026-08-14, which is 0.51pt a line at 12pt. Both this
+  // machine's own copy and the 151 pdfs Word embedded `TimesNewRomanPSMT` into state
+  // none at all.
   it("resolves a built-in font", () => {
     expect(lookupFontMetrics(asked("Times New Roman"))).toStrictEqual({
       kind: "found",
       source: "builtin",
-      metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 },
+      metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 0 },
       advances: NO_ADVANCES,
     });
   });

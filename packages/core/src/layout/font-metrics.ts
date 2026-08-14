@@ -351,10 +351,40 @@ export const ascentPt = (metrics: FontMetrics, fontSizePt: number): number =>
 export const advanceWidthPt = (advance: number, metrics: FontMetrics, fontSizePt: number): number =>
   (fontSizePt * advance) / metrics.unitsPerEm;
 
+// How tall a line is in a face this project has met, whether or not the machine
+// holds one. **A face here states no advances**, so a document written in one still
+// has another face stood in to measure its words; only the height comes from here,
+// which is the half a stand-in gets most wrong and the half that moves every line
+// under it rather than one line.
+//
+// **Every number is a face's own `hhea`, read rather than typed.** The first ten were
+// read off this machine's own copies on 2026-08-14, and each agrees with what Word
+// embedded in its own pdfs of the corpus: Arial in 695 of them, Verdana in 482,
+// Calibri in 284, Courier New in 102 and Tahoma in 3.
+//
+// **`times new roman` stated a line gap of 87 until that day**, which is 0.51pt a
+// line at 12pt. What Word drew with states none: `TimesNewRomanPSMT` reads the same
+// in every one of the 151 pdfs it is embedded in, and so does the copy under
+// `/Library/Fonts` here. **This machine does hold a copy stating 87**, and the face
+// set reaches for it: `Times New Roman` resolves to 87 while `Times New Roman Bold`
+// resolves to 0, so one document's regular and bold text is laid out at two line
+// heights. That is a fault in the set of files rather than in this table, and it is
+// unfixed; what this row answers is the machine that holds no copy at all, and for
+// that one the face Word drew with is the only answer worth giving.
+//
+// The last two are faces no machine here holds at all, and their numbers come out of
+// the font programs Word embedded in its own pdfs of the documents that name them,
+// which for an uninstalled face is the only primary source there is: a subsetter
+// rewrites the outlines and the character map and copies `hhea` whole. `SegoeUI`
+// reads the same across 31 of those pdfs and `ArialNova` across 20.
+//
+// A style is not asked for here. Every family met so far states one set of vertical
+// metrics for all of its cuts: Aptos over six of them, Arial over four, Calibri over
+// six and Times New Roman over four all read the same.
 const BUILTIN: ReadonlyMap<string, FontMetrics> = new Map([
   ["arial", { unitsPerEm: 2048, ascender: 1854, descender: -434, lineGap: 67 }],
   ["calibri", { unitsPerEm: 2048, ascender: 1950, descender: -550, lineGap: 0 }],
-  ["times new roman", { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 }],
+  ["times new roman", { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 0 }],
   ["courier new", { unitsPerEm: 2048, ascender: 1705, descender: -615, lineGap: 0 }],
   ["georgia", { unitsPerEm: 2048, ascender: 1878, descender: -449, lineGap: 0 }],
   ["verdana", { unitsPerEm: 2048, ascender: 2059, descender: -430, lineGap: 0 }],
@@ -362,6 +392,8 @@ const BUILTIN: ReadonlyMap<string, FontMetrics> = new Map([
   ["tahoma", { unitsPerEm: 2048, ascender: 2049, descender: -423, lineGap: 0 }],
   ["comic sans ms", { unitsPerEm: 2048, ascender: 2257, descender: -597, lineGap: 0 }],
   ["impact", { unitsPerEm: 2048, ascender: 2066, descender: -432, lineGap: 0 }],
+  ["segoe ui", { unitsPerEm: 2048, ascender: 2210, descender: -514, lineGap: 0 }],
+  ["arial nova", { unitsPerEm: 2048, ascender: 2011, descender: -466, lineGap: 0 }],
 ]);
 
 const normalise = (fontName: string): string => fontName.trim().toLowerCase();
