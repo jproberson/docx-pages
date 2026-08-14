@@ -17,6 +17,7 @@ const MARK = {
   characterScale: 1,
   kernFromHalfPoints: null,
   highlight: null,
+  capitals: "none",
 } as const;
 
 const line = (topPt: number, heightPt: number, text: string): PlacedLine => ({

@@ -41,6 +41,7 @@ const MARK: ParagraphMark = {
   characterScale: 1,
   kernFromHalfPoints: null,
   highlight: null,
+  capitals: "none",
 };
 
 // Twelve points tall, its baseline ten below its own top, so the ink of a line asked

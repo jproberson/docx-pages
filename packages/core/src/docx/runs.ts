@@ -106,18 +106,121 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
 const inTheMathFont = (mark: ParagraphMark, mathFont: string): ParagraphMark =>
   mark.font.kind === "named" ? mark : { ...mark, font: { kind: "named", name: mathFont } };
 
+/**
+ * **Four fifths, rounded to the nearest half point**, which is what a small capital
+ * is set at. Measured 2026-08-13 against Word's own pdf, by where the text after a
+ * word of small capitals starts rather than by a size the pdf reports, which is
+ * quantised on the way out:
+ *
+ * | the run states | four fifths | Word set them at |
+ * | -------------- | ----------- | ---------------- |
+ * | 11pt           | 8.8         | **9.0**          |
+ * | 12pt           | 9.6         | **9.5**          |
+ * | 13pt           | 10.4        | **10.5**         |
+ * | 14pt           | 11.2        | **11.0**         |
+ * | 20pt           | 16.0        | **16.0**         |
+ * | 21pt           | 16.8        | **17.0**         |
+ *
+ * The 11pt and 13pt rows are what say it is the nearest half point rather than the
+ * one below, and a half point is what `w:sz` itself is written in.
+ *
+ * The line does not shrink with them: the 20pt run's line was the 20pt line, so the
+ * mark keeps the size it was declared at for measuring and carries the smaller one
+ * only for drawing.
+ */
+const SMALL_CAPITAL = 0.8;
+
+const smallCapitalSize = (sizePt: number): number => Math.round(sizePt * SMALL_CAPITAL * 2) / 2;
+
+// A letter Word sets small: one with a capital of its own. `ß` is one of them, and
+// it is drawn as itself, since its capital is two letters rather than one.
+const isSmall = (character: string): boolean =>
+  character !== character.toUpperCase() && character === character.toLowerCase();
+
+// **Every space in a run of small capitals is set small**, wherever it stands.
+// Measured 2026-08-13 by where the text after each space begins: all four in the
+// case came out 2.15pt against the 2.71 of a 12pt space, the two standing after a
+// digit and after a bracket included. A `(`, a `-`, a `)` and a digit are all drawn
+// at the run's own size, so the space is the only character with no capital of its
+// own that Word sets small.
+const SPACE = " ";
+
+// **A capital that is two letters is not made**: `ß` came back out of Word's pdf as
+// `ß` under both `w:caps` and `w:smallCaps`, at the small size under the second.
+const asCapital = (character: string): string => {
+  const upper = character.toUpperCase();
+  return String.fromCodePoint(upper.codePointAt(0) ?? 0) === upper ? upper : character;
+};
+
+const capitalsOfText = (text: string): string => {
+  let drawn = "";
+  for (const character of text) drawn += asCapital(character);
+  return drawn;
+};
+
+/**
+ * A run drawn as capitals, which is one run to Word and several to a pdf: it draws a
+ * small capital at its own size, so the run comes apart wherever the size changes.
+ * `w:caps` never comes apart, since every letter keeps the run's own size.
+ */
+function capitalised(mark: ParagraphMark, pieces: readonly RunPiece[]): readonly TextRun[] {
+  if (mark.capitals === "none") return [{ mark, pieces }];
+  if (mark.capitals === "all") {
+    return [
+      {
+        mark,
+        pieces: pieces.map((piece) =>
+          piece.kind === "text" ? { kind: "text", text: capitalsOfText(piece.text) } : piece,
+        ),
+      },
+    ];
+  }
+
+  const small: ParagraphMark = { ...mark, fontSizePt: smallCapitalSize(mark.fontSizePt) };
+  const runs: TextRun[] = [];
+  let heldSmall = false;
+  const add = (piece: RunPiece, isSmallPiece: boolean): void => {
+    const wanted = isSmallPiece ? small : mark;
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.mark === wanted) {
+      runs[runs.length - 1] = { mark: wanted, pieces: [...last.pieces, piece] };
+      return;
+    }
+    runs.push({ mark: wanted, pieces: [piece] });
+  };
+
+  for (const piece of pieces) {
+    if (piece.kind !== "text") {
+      add(piece, false);
+      continue;
+    }
+    let held = "";
+    for (const character of piece.text) {
+      const smallHere = character === SPACE || isSmall(character);
+      if (held !== "" && smallHere !== heldSmall) {
+        add({ kind: "text", text: held }, heldSmall);
+        held = "";
+      }
+      heldSmall = smallHere;
+      held += asCapital(character);
+    }
+    if (held !== "") add({ kind: "text", text: held }, heldSmall);
+  }
+  return runs;
+}
+
 export function readRuns(paragraph: Paragraph, styles: StyleTable): readonly TextRun[] {
-  return resolveRuns(paragraph, styles).map((marked) => {
+  return resolveRuns(paragraph, styles).flatMap((marked) => {
     const pieces: RunPiece[] = [];
     collectPieces(marked.run, pieces);
-    if (marked.run.namespace !== MATH_NS) return { mark: marked.mark, pieces };
+    if (marked.run.namespace !== MATH_NS) return capitalised(marked.mark, pieces);
 
     const style = mathStyleOf(marked.run);
-    return {
-      mark: inTheMathFont(marked.mark, styles.mathFont),
-      pieces: pieces.map((piece) =>
+    return capitalised(
+      inTheMathFont(marked.mark, styles.mathFont),
+      pieces.map((piece) =>
         piece.kind === "text" ? { kind: "text", text: spelledAsMath(piece.text, style) } : piece,
       ),
-    };
+    );
   });
 }

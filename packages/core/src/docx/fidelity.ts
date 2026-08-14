@@ -48,8 +48,6 @@ export type UnhonouredKind =
   | "merged-cells"
   | "table-style-conditional-formatting"
   | "keep-lines-together"
-  | "character-kerning"
-  | "capitals"
   | "hidden-text"
   | "automatic-hyphenation"
   | "right-to-left"
@@ -84,8 +82,6 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // unshaded and one lined by its style moves the text under it.
   "table-style-conditional-formatting": "moves-text",
   "keep-lines-together": "moves-text",
-  "character-kerning": "moves-text",
-  capitals: "moves-text",
   // Hidden text is measured and drawn here as any other run, so it takes room
   // Word gives it none of.
   "hidden-text": "moves-text",
@@ -140,11 +136,6 @@ function toggled(element: XmlElement): boolean {
   const value = attribute(element, W_NS, "val");
   return value === undefined || (value !== "0" && value !== "false" && value !== "off");
 }
-
-const numbered = (element: XmlElement): number => {
-  const value = Number(attribute(element, W_NS, "val"));
-  return Number.isFinite(value) ? value : 0;
-};
 
 // Which part a drawing's picture is held in, and what that part holds. Reading a
 // part the package does not carry is a broken package rather than a feature passed
@@ -211,11 +202,14 @@ function unhonouredBy(
       return conditionalFormattingUnread(element);
     case "keepLines":
       return toggled(element) ? "keep-lines-together" : null;
+    // Kerning was built on 2026-08-13, in the pairs the face itself states, and
+    // capitals the same day: every letter at the run's own size under `w:caps`, or a
+    // small capital at four fifths of it rounded to the nearest half point.
     case "kern":
-      return numbered(element) > 0 ? "character-kerning" : null;
+      return null;
     case "caps":
     case "smallCaps":
-      return toggled(element) ? "capitals" : null;
+      return null;
     case "vanish":
       return toggled(element) ? "hidden-text" : null;
     case "autoHyphenation":

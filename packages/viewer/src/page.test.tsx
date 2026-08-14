@@ -33,6 +33,7 @@ const MARK: ParagraphMark = {
   characterScale: 1,
   kernFromHalfPoints: null,
   highlight: null,
+  capitals: "none",
 };
 
 const EMPTY_BODY: TextBoxBody = {

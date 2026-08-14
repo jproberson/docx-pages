@@ -102,14 +102,13 @@ describe("readUnhonoured", () => {
     expect(kinds(reportOf(`<w:p>${alone}</w:p>`))).toStrictEqual(["equation"]);
   });
 
-  it("names a run's kerning and its capitals", () => {
-    const marks = `<w:kern w:val="16"/><w:caps/>`;
-    expect(kinds(reportOf(`<w:p><w:r><w:rPr>${marks}</w:rPr><w:t>a</w:t></w:r></w:p>`))).toContain(
-      "character-kerning",
-    );
-    expect(kinds(reportOf(`<w:p><w:r><w:rPr>${marks}</w:rPr><w:t>a</w:t></w:r></w:p>`))).toContain(
-      "capitals",
-    );
+  // Kerning and capitals are both laid out now, so a run asking for either is asking
+  // for what it gets.
+  it("says nothing about a run's kerning or its capitals", () => {
+    const marks = `<w:kern w:val="16"/><w:caps/><w:smallCaps/>`;
+    expect(
+      kinds(reportOf(`<w:p><w:r><w:rPr>${marks}</w:rPr><w:t>a</w:t></w:r></w:p>`)),
+    ).toStrictEqual([]);
   });
 
   // Letter spacing is measured and laid out rather than passed over, so a run
@@ -259,7 +258,7 @@ describe("readUnhonoured", () => {
   // that led the ranking for days was counting every one of them.
   it("passes over a style nothing in the flow is written in", () => {
     const styles = (used: string) => `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
-      <w:style w:type="paragraph" w:styleId="${used}"><w:rPr><w:kern w:val="16"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="${used}"><w:rPr><w:vanish/></w:rPr></w:style>
       </w:styles>`;
     expect(kinds(reportOf(`<w:p/>`, { "word/styles.xml": styles("Body") }))).toStrictEqual([]);
     expect(
@@ -268,14 +267,15 @@ describe("readUnhonoured", () => {
           "word/styles.xml": styles("Body"),
         }),
       ),
-    ).toStrictEqual(["character-kerning"]);
+    ).toStrictEqual(["hidden-text"]);
   });
 
   it("reads the style a paragraph's own style is based on, and the default one", () => {
     const styles = `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
-      <w:style w:type="paragraph" w:styleId="Base"><w:rPr><w:kern w:val="16"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Base"><w:rPr><w:vanish/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Body"><w:basedOn w:val="Base"/></w:style>
-      <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:rPr><w:caps/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+        <w:pPr><w:keepLines/></w:pPr></w:style>
       </w:styles>`;
     expect(
       kinds(
@@ -283,7 +283,7 @@ describe("readUnhonoured", () => {
           "word/styles.xml": styles,
         }),
       ),
-    ).toStrictEqual(["capitals", "character-kerning"]);
+    ).toStrictEqual(["hidden-text", "keep-lines-together"]);
   });
 
   it("gathers every place a kind was met into the one entry", () => {
@@ -300,7 +300,7 @@ describe("readUnhonoured", () => {
 // have been stood in for once the layout has asked for it.
 describe("withSubstitutedFaces", () => {
   const kerning: Unhonoured = {
-    kind: "character-kerning",
+    kind: "hidden-text",
     effect: "moves-text",
     places: [{ part: "word/document.xml", paragraphIndex: 0 }],
   };
@@ -322,7 +322,7 @@ describe("withSubstitutedFaces", () => {
       [{ requested: { name: "Meridian Sans" } }],
     );
     expect(merged.map((each) => each.kind)).toStrictEqual([
-      "character-kerning",
+      "hidden-text",
       "substituted-face",
       "text-columns",
     ]);

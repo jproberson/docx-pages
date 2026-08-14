@@ -31,10 +31,8 @@ const swept = (each: Partial<SweptDocument>): SweptDocument => ({
 
 describe("sweepDocument", () => {
   it("reads what a document asks for without needing to lay it out", () => {
-    const kerned = document(
-      `<w:p><w:r><w:rPr><w:kern w:val="16"/></w:rPr><w:t>a</w:t></w:r></w:p>`,
-    );
-    expect(sweepDocument(kerned, []).asks).toStrictEqual(["character-kerning"]);
+    const hidden = document(`<w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>a</w:t></w:r></w:p>`);
+    expect(sweepDocument(hidden, []).asks).toStrictEqual(["hidden-text"]);
   });
 
   it("names a document it cannot open rather than throwing out of the sweep", () => {

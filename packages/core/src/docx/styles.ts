@@ -99,7 +99,15 @@ export type ParagraphMark = {
   // nothing behind. A highlight is one of sixteen names rather than a colour of the
   // document's choosing, and `none` turns an inherited one off.
   readonly highlight: string | null;
+  // Whether the run's letters are drawn as capitals, and at what size the ones that
+  // were not capitals already are set. See `capitalised` in `runs.ts`.
+  readonly capitals: Capitals;
 };
+
+// `w:caps` draws every letter as a capital at the run's own size. `w:smallCaps`
+// draws a letter that was not a capital as one at four fifths of that size, and
+// leaves a capital, a digit and a mark alone. Both stated is `w:caps`.
+export type Capitals = "none" | "all" | "small";
 
 type PartialMark = {
   readonly fontName: string | undefined;
@@ -116,6 +124,7 @@ type PartialMark = {
   // Null rather than undefined for `w:highlight w:val="none"`, which is a run
   // turning an inherited highlight off rather than saying nothing.
   readonly highlight: string | null | undefined;
+  readonly capitals: Capitals | undefined;
 };
 
 // What a stop does with the text that follows a tab reaching it: a left stop
@@ -211,6 +220,7 @@ const EMPTY: PartialMark = {
   characterScalePercent: undefined,
   kernFromHalfPoints: undefined,
   highlight: undefined,
+  capitals: undefined,
 };
 
 const EMPTY_FRAME: PartialFrame = {
@@ -380,6 +390,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   characterSpacingTwentieths: over.characterSpacingTwentieths ?? base.characterSpacingTwentieths,
   characterScalePercent: over.characterScalePercent ?? base.characterScalePercent,
   highlight: over.highlight === undefined ? base.highlight : over.highlight,
+  capitals: over.capitals ?? base.capitals,
   kernFromHalfPoints: over.kernFromHalfPoints ?? base.kernFromHalfPoints,
 });
 
@@ -460,7 +471,20 @@ function readMark(
     characterScalePercent: characterScaleOf(rPr),
     kernFromHalfPoints: twipsAttribute(firstNamed(rPr, W_NS, "kern"), "val"),
     highlight: highlightOf(rPr),
+    capitals: capitalsOf(rPr),
   };
+}
+
+// **Both stated is `w:caps`.** Measured 2026-08-13: a run stating the two came out
+// exactly as one stating only `w:caps`, every letter a capital at the run's own size
+// and the same 153.09pt of advance.
+function capitalsOf(rPr: XmlElement): Capitals | undefined {
+  const all = onOff(rPr, "caps");
+  const small = onOff(rPr, "smallCaps");
+  if (all === true) return "all";
+  if (small === true) return "small";
+  if (all === false || small === false) return "none";
+  return undefined;
 }
 
 // **The sixteen colours Word paints a highlight in, read off its own pdf.** Measured
@@ -853,6 +877,7 @@ function markOf(resolved: PartialMark): ParagraphMark {
     // costs nothing.
     kernFromHalfPoints: resolved.kernFromHalfPoints ?? null,
     highlight: resolved.highlight ?? null,
+    capitals: resolved.capitals ?? "none",
   };
 }
 

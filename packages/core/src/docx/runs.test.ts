@@ -166,6 +166,7 @@ describe("readRuns", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
     expect(runs[1]?.mark).toStrictEqual({
       font: { kind: "named", name: "Georgia" },
@@ -181,6 +182,7 @@ describe("readRuns", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
   });
 
@@ -254,6 +256,85 @@ describe("readRuns", () => {
       `<m:oMath ${MATH}><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num>` +
       `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath>`;
     expect(runsOf(`<w:p>${fraction}</w:p>`)).toStrictEqual([]);
+  });
+
+  // **Capitals, measured against Word's own pdf on 2026-08-13.** `w:caps` draws every
+  // letter as a capital at the run's own size; `w:smallCaps` draws a letter that was
+  // not one already at four fifths of that size and leaves digits and marks alone.
+  const CAPS = `<w:caps/>`;
+  const SMALL = `<w:smallCaps/>`;
+
+  it("draws every letter of a w:caps run as a capital", () => {
+    const body = `<w:p><w:r><w:rPr>${CAPS}</w:rPr><w:t>Bandril 12 (a-b)</w:t></w:r></w:p>`;
+    expect(textOf(runsOf(body))).toBe("BANDRIL 12 (A-B)");
+    expect(runsOf(body)).toHaveLength(1);
+  });
+
+  // Word drew this one as itself under both, since its capital is two letters.
+  it("leaves a letter whose capital is two letters as it is", () => {
+    const body = `<w:p><w:r><w:rPr>${CAPS}</w:rPr><w:t>maß</w:t></w:r></w:p>`;
+    expect(textOf(runsOf(body))).toBe("MAß");
+  });
+
+  it("sets a small capital at four fifths of the run's size", () => {
+    const body = `<w:p><w:r><w:rPr>${SMALL}</w:rPr><w:t>Bandril</w:t></w:r></w:p>`;
+    const runs = runsOf(body);
+    expect(textOf(runs)).toBe("BANDRIL");
+    expect(runs.map((run) => run.mark.fontSizePt)).toStrictEqual([12, 9.5]);
+  });
+
+  it("leaves a digit and a mark at the run's own size", () => {
+    const body = `<w:p><w:r><w:rPr>${SMALL}</w:rPr><w:t>a1(b)</w:t></w:r></w:p>`;
+    const runs = runsOf(body);
+    expect(textOf(runs)).toBe("A1(B)");
+    expect(runs.map((run) => run.mark.fontSizePt)).toStrictEqual([9.5, 12, 9.5, 12]);
+  });
+
+  // The 20pt small capitals stood on the 20pt line, so what a small capital is drawn
+  // at is not what its line is measured at.
+  it("measures a small capital's line at the size the run states", () => {
+    const body = `<w:p><w:r><w:rPr>${SMALL}</w:rPr><w:t>ab</w:t></w:r></w:p>`;
+    expect(runsOf(body)[0]?.mark.lineSizePt).toBe(12);
+  });
+
+  // Four fifths of eleven is 8.8 and of thirteen is 10.4, and Word set them at 9 and
+  // 10.5: the nearest half point, not the one below.
+  it("rounds a small capital's size to the nearest half point", () => {
+    const at = (halfPoints: number): number | undefined => {
+      const body =
+        `<w:p><w:r><w:rPr>${SMALL}<w:sz w:val="${String(halfPoints)}"/></w:rPr>` +
+        `<w:t>a</w:t></w:r></w:p>`;
+      return runsOf(body)[0]?.mark.fontSizePt;
+    };
+    expect([at(22), at(26), at(28), at(42)]).toStrictEqual([9, 10.5, 11, 17]);
+  });
+
+  // Every space came out at the small size, the ones after a digit and after a
+  // bracket included, and no other character with no capital of its own did.
+  it("sets every space in a small capital run small", () => {
+    const body = `<w:p><w:r><w:rPr>${SMALL}</w:rPr><w:t xml:space="preserve">1 a 2</w:t></w:r></w:p>`;
+    const runs = runsOf(body);
+    expect(runs.map((run) => [run.mark.fontSizePt, textOf([run])])).toStrictEqual([
+      [12, "1"],
+      [9.5, " A "],
+      [12, "2"],
+    ]);
+  });
+
+  it("draws a run stating both as w:caps", () => {
+    const body = `<w:p><w:r><w:rPr>${CAPS}${SMALL}</w:rPr><w:t>ab</w:t></w:r></w:p>`;
+    const runs = runsOf(body);
+    expect(textOf(runs)).toBe("AB");
+    expect(runs.map((run) => run.mark.fontSizePt)).toStrictEqual([12]);
+  });
+
+  it("lets a run turn an inherited w:caps off", () => {
+    const styles = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+        <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/><w:caps/></w:rPr></w:style></w:styles>`;
+    const body = `<w:p><w:r><w:rPr><w:caps w:val="0"/></w:rPr><w:t>ab</w:t></w:r></w:p>`;
+    expect(textOf(runsOf(`<w:p><w:r><w:t>ab</w:t></w:r></w:p>`, styles))).toBe("AB");
+    expect(textOf(runsOf(body, styles))).toBe("ab");
   });
 });
 

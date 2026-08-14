@@ -68,6 +68,7 @@ const mark = (fontSizePt = 10, name = "Even Sans"): ParagraphMark => ({
   characterScale: 1,
   kernFromHalfPoints: null,
   highlight: null,
+  capitals: "none",
 });
 
 const runOf = (text: string, at: ParagraphMark = mark()): TextRun => ({
@@ -630,6 +631,7 @@ describe("breakLines", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     };
     const result = breakLines({
       runs: [runOf("abc", unnamed)],

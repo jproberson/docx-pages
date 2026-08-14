@@ -75,6 +75,7 @@ describe("resolveParagraphMark", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
   });
 
@@ -94,6 +95,7 @@ describe("resolveParagraphMark", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
   });
 
@@ -125,6 +127,7 @@ describe("resolveParagraphMark", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
   });
 
@@ -147,6 +150,7 @@ describe("resolveParagraphMark", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
   });
 
@@ -169,6 +173,7 @@ describe("resolveParagraphMark", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
   });
 
@@ -276,6 +281,7 @@ describe("resolveParagraphMark", () => {
       characterScale: 1,
       kernFromHalfPoints: null,
       highlight: null,
+      capitals: "none",
     });
   });
 
