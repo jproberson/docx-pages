@@ -33,7 +33,6 @@ const LETTER: SectionGeometry = {
   },
 };
 
-const PAGE_HEIGHT_PT = 792;
 const UNITS_PER_EM = 1000;
 
 // Glyphs are numbered from one in code point order, so `(` is the first of these
@@ -136,12 +135,39 @@ function filedAway(fonts: ReturnType<typeof pdfFonts>, objects: ReturnType<typeo
 }
 
 describe("a glyph the drawing names by number", () => {
+  // The baseline lands on the device grid before it reaches here, which
+  // `drawables.ts` does once for everything a page draws: 200pt down the page is
+  // 833 units and a third, so what is drawn is 199.92 and the flip of it is 592.08.
   it("is shown as its own two bytes, at the place the layout put it", () => {
     const { drawn } = streamOf([GROWN]);
 
     expect(drawn).toContain("/F0 22 Tf");
-    expect(drawn).toContain(`1 0 0 1 100 ${String(PAGE_HEIGHT_PT - 200)} Tm`);
+    expect(drawn).toContain("1 0 0 1 100 592.08 Tm");
     expect(drawn).toContain("<0001> Tj");
+  });
+
+  // Across the page nothing is rounded, which is Word's own arithmetic: only the
+  // baseline lands on the grid.
+  it("leaves the place across the page exactly where the layout put it", () => {
+    const { drawn } = streamOf([
+      {
+        ...GROWN,
+        glyphs: [
+          {
+            ...(GROWN.glyphs[0] ?? {
+              glyph: 1,
+              leftPt: 0,
+              baselinePt: 0,
+              advancePt: 0,
+              standsFor: null,
+            }),
+            leftPt: 100.137,
+          },
+        ],
+      },
+    ]);
+
+    expect(drawn).toContain("1 0 0 1 100.137 ");
   });
 
   it("is drawn in the colour the run states", () => {
@@ -171,7 +197,7 @@ describe("a glyph the drawing names by number", () => {
       },
     ]);
 
-    expect(drawn).toContain(`1 0 0 1 140 ${String(PAGE_HEIGHT_PT - 260)} Tm`);
+    expect(drawn).toContain("1 0 0 1 140 532.08 Tm");
     expect(drawn).toContain("<0002> Tj");
   });
 

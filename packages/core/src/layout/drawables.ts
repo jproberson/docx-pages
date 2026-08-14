@@ -3,13 +3,88 @@ import type { LaidOutDocument, LaidOutPage } from "./document.js";
 import type { PlacedContent, PlacedFloat } from "./floats.js";
 import type { FaceRequest } from "./font-metrics.js";
 import type { PlacedInline } from "./inlines.js";
-import type { ParagraphBox, ParagraphPaint, PlacedCell } from "./stack.js";
+import type { ParagraphBox, ParagraphPaint, PlacedCell, PlacedLine } from "./stack.js";
 import { turnedAbout } from "./turns.js";
 
 // What a page draws and the order it draws it in, as one flat list. Layout says
 // where everything sits; this says which of it is painted over which, which is
 // the same question whatever the drawing is done with. Every backend walks this,
 // so a rule about stacking is settled here once rather than answered twice.
+
+/**
+ * Where a drawn line lands down the page: a three-hundredth of an inch, which is
+ * the device Word draws every page in.
+ *
+ * **Measured on 2026-08-14 over Word's own pdf of 132 authored documents and 180
+ * corpus ones.** Word wraps each page in `0.24 0 0 0.24 x y cm` and counts
+ * everything inside it in those units: 32276 of 32308 such transforms are exactly
+ * that, and the page box itself is a whole number of them. Every baseline Word
+ * writes is a whole unit (100.0% over 23813 letter placements and 8562 A4 ones),
+ * and so is every type size, while a position **across** the page is not (28.2%
+ * and 3.8%) and carries the exact sum of the face's own advances: `abcdef` in
+ * Calibri moved 33.064464pt where the face's 5643 units come to 33.064453.
+ *
+ * **The height itself is not on the grid, so the layout must not be.** 31 runs of
+ * fifteen or more solid lines in Word's own exports mix two gaps exactly one step
+ * apart, which a height in whole steps cannot draw: 12pt Calibri lines come out
+ * 14.64 and 14.88 apart about an exact 14.6484375, and a 20pt rule comes out 19.92
+ * and 20.16 about an exact 20. So the layout keeps its exact arithmetic, as Word's
+ * does, and only what is drawn lands here.
+ *
+ * **Applied once, and only here.** Neither backend rounds again: the pdf writer
+ * subtracts a snapped distance from the page height to flip it, and the viewer
+ * writes it down the page as it stands.
+ */
+const DEVICE_UNITS_TO_THE_INCH = 300;
+const POINTS_TO_THE_INCH = 72;
+
+// Written as the two divisions rather than as 0.24 so that a snapped number comes
+// back as the number a reader of the page would write down: 198 units is 47.52,
+// not 47.519999999999996.
+export const onTheDeviceGrid = (downPt: number): number =>
+  (Math.round((downPt * DEVICE_UNITS_TO_THE_INCH) / POINTS_TO_THE_INCH) * POINTS_TO_THE_INCH) /
+  DEVICE_UNITS_TO_THE_INCH;
+
+// A line as it is drawn. Both edges land on the grid and the height is what lies
+// between them, so what is painted behind a line keeps the line's own foot instead
+// of drifting a step off it.
+function drawnLine(line: PlacedLine): PlacedLine {
+  const topPt = onTheDeviceGrid(line.topPt);
+  return {
+    ...line,
+    topPt,
+    baselinePt: onTheDeviceGrid(line.baselinePt),
+    fittingHeightPt: onTheDeviceGrid(line.topPt + line.fittingHeightPt) - topPt,
+  };
+}
+
+/**
+ * A story's paragraphs as they are drawn.
+ *
+ * **One snapped copy answers for everything drawn about them**: the text, the fill
+ * and border a paragraph asks for, and the highlight under a run are all worked
+ * out from these very numbers further down, so none of them can part company with
+ * the others. Only what is drawn is moved; what the layout used to decide where a
+ * line went is left exactly as it was.
+ */
+const drawnBoxes = (boxes: readonly ParagraphBox[]): readonly ParagraphBox[] =>
+  boxes.map((box) => ({
+    ...box,
+    markTopPt: onTheDeviceGrid(box.markTopPt),
+    contentBottomPt: onTheDeviceGrid(box.contentBottomPt),
+    marker:
+      box.marker === null
+        ? null
+        : { ...box.marker, baselinePt: onTheDeviceGrid(box.marker.baselinePt) },
+    lines: box.lines.map(drawnLine),
+  }));
+
+// A cell's floor is the ceiling of the cell under it, so both edges go on the grid
+// and the height is the distance between them.
+function drawnCell(cell: PlacedCell): PlacedCell {
+  const topPt = onTheDeviceGrid(cell.topPt);
+  return { ...cell, topPt, heightPt: onTheDeviceGrid(cell.topPt + cell.heightPt) - topPt };
+}
 
 // A paragraph's own fill and border, with the room its lines took: how far up and
 // down they reach is the paragraph's, how far across is the text area's.
@@ -238,7 +313,12 @@ function textOf(standing: Standing, key: string): readonly Drawable[] {
     widthPt: standing.widthPt,
     heightPt: standing.heightPt,
   };
-  const { boxes, cells, inlines } = content.text;
+  // A turned shape's text is drawn under a turn of its own, so the page's own
+  // grid is not the grid it lands on and it is left exactly where layout put it.
+  const square = standing.turnDegrees === 0;
+  const boxes = square ? drawnBoxes(content.text.boxes) : content.text.boxes;
+  const cells = square ? content.text.cells.map(drawnCell) : content.text.cells;
+  const { inlines } = content.text;
   const painted = paintLayer(cells, boxes, `${key}-paint`);
   const turnDegrees = standing.turnDegrees;
   return [
@@ -384,16 +464,24 @@ export type PageDrawing = LaidOutPage & {
 const glyphLayers = (page: PageDrawing): readonly Drawable[] =>
   (page.glyphRuns ?? [])
     .filter((run) => run.glyphs.length > 0)
-    .map((run, at) => ({ kind: "glyphs" as const, key: `glyphs-${String(at)}`, ...run }));
+    .map((run, at) => ({
+      kind: "glyphs" as const,
+      key: `glyphs-${String(at)}`,
+      ...run,
+      glyphs: run.glyphs.map((glyph) => ({
+        ...glyph,
+        baselinePt: onTheDeviceGrid(glyph.baselinePt),
+      })),
+    }));
 
 export function drawablesOf(layout: LaidOutDocument, page: PageDrawing): readonly Drawable[] {
   const inlines = [...page.headerInlines, ...page.inlines, ...page.footerInlines].flatMap(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
   );
 
-  const flowed = [...page.header, ...page.body, ...page.footer];
+  const flowed = drawnBoxes([...page.header, ...page.body, ...page.footer]);
   const text = [...flowedText(flowed), ...cutText(flowed)];
-  const cells = [...page.headerCells, ...page.cells, ...page.footerCells];
+  const cells = [...page.headerCells, ...page.cells, ...page.footerCells].map(drawnCell);
 
   // **Where the text stands in the body's own stack is what `behindDoc` says**, and
   // the stack itself is still ordered by the height each float was given. Measured on

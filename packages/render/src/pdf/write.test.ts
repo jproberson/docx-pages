@@ -8,6 +8,7 @@ import {
   bestEffortMetrics,
   layOutDocument,
   lookupFontMetrics,
+  onTheDeviceGrid,
   openDocx,
   paintOfParagraph,
   pdfOfDocx,
@@ -115,14 +116,16 @@ function laidOut(body: string, page = LETTER): LaidOutDocument {
 const written = (layout: LaidOutDocument): Uint8Array =>
   writePdf(layout, { fonts, imageBytes: () => undefined, metricsFor });
 
-// Where layout put every line of the body, so the file can be held to it.
+// Where layout put every line of the body, so the file can be held to it. The
+// baseline is the drawn one: **Word writes every baseline on a 300dpi grid**, so
+// `drawablesOf` puts ours there too and the writer draws what it is handed.
 const laidOutLines = (layout: LaidOutDocument) =>
   layout.pages.flatMap((page) =>
     page.body.flatMap((box) =>
       box.lines.map((line) => ({
         pageIndex: page.index,
         leftPt: line.leftPt,
-        baselinePt: line.baselinePt,
+        baselinePt: onTheDeviceGrid(line.baselinePt),
       })),
     ),
   );
@@ -206,7 +209,7 @@ describe("a page written out", () => {
     const placements = await readTextPlacements(written(layout));
 
     expect(round(placements[0]?.baselinePt ?? 0)).toBe(
-      round(layout.pages[0]?.body[0]?.lines[0]?.baselinePt ?? 0),
+      round(onTheDeviceGrid(layout.pages[0]?.body[0]?.lines[0]?.baselinePt ?? 0)),
     );
   });
 
@@ -273,7 +276,13 @@ describe("what a page paints behind its text", () => {
       throw new Error("the paragraph states a fill and the layout carries none");
     }
 
-    const wanted = paintOfParagraph(paint, box.lines[0]?.topPt ?? 0, box.contentBottomPt).fills[0];
+    // The fill follows the text onto the grid, so the geometry is asked for the
+    // snapped box rather than the laid-out one.
+    const wanted = paintOfParagraph(
+      paint,
+      onTheDeviceGrid(box.lines[0]?.topPt ?? 0),
+      onTheDeviceGrid(box.contentBottomPt),
+    ).fills[0];
     if (wanted === undefined) throw new Error("the geometry paints no fill");
 
     expect(
@@ -426,7 +435,7 @@ describe("an underlined run", () => {
     ).toStrictEqual([
       {
         leftPt: round(line.leftPt),
-        topPt: round(line.baselinePt + underline.position * em),
+        topPt: round(onTheDeviceGrid(line.baselinePt) + underline.position * em),
         widthPt: round(segment.widthPt),
         heightPt: round(underline.thickness * em),
       },

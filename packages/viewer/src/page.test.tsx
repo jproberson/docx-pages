@@ -451,7 +451,9 @@ describe("Page drawing text", () => {
 
     expect(html).toContain('data-kind="text"');
     expect(html).toContain('x="120"');
-    expect(html).toContain('y="41"');
+    // 41pt down the page is 170 device units and five sixths, so the line is drawn
+    // at 41.04: `drawables.ts` puts every drawn baseline on Word's own grid.
+    expect(html).toContain('y="41.04"');
     expect(html).toContain("Hello");
   });
 
@@ -490,7 +492,7 @@ describe("Page drawing text", () => {
     const raised: ParagraphMark = { ...MARK, raisePt: 4 };
     const html = markup(layoutWith([], [paragraphOf("2", raised, { baselinePt: 41 })]));
 
-    expect(html).toContain('y="37"');
+    expect(html).toContain('y="37.04"');
   });
 
   it("carries a run's own weight, slant, size and colour onto the page", () => {
@@ -570,7 +572,7 @@ const numbered = (text: string, markerText: string): ParagraphBox => ({
 describe("Page drawing a list number", () => {
   it("draws the number at the position layout gave it", () => {
     const html = markup(layoutWith([], [numbered("Item", "1.")]));
-    expect(html).toContain('x="102" y="41"');
+    expect(html).toContain('x="102" y="41.04"');
     expect(html).toContain(">1.<");
   });
 
@@ -630,7 +632,9 @@ describe("Page meeting a glyph it cannot draw", () => {
     const html = markup(withGlyphs());
 
     expect(html).toContain("left:100pt");
-    expect(html).toContain("top:186pt");
+    // The glyphs' own baseline lands on the grid like any other drawn line, so the
+    // room marked for them starts from 199.92 rather than 200.
+    expect(html).toContain("top:185.92pt");
     expect(html).toContain('width="11pt"');
     expect(html).toContain('height="21.5pt"');
   });

@@ -161,6 +161,7 @@ export type { DocumentLayout, LaidOutDocument, LaidOutPage } from "./layout/docu
 // would drift.
 
 export { drawablesOf } from "./layout/drawables.js";
+export { onTheDeviceGrid } from "./layout/drawables.js";
 export type { Drawable, HighlightPaint, PaintedParagraph } from "./layout/drawables.js";
 
 export { WHOLE_FRAME } from "./docx/anchors.js";
