@@ -435,14 +435,13 @@ function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
     : float.leftPt + float.widthPt * area.right + emuToPoints(distances.rightEmu + effect.rightEmu);
   const side = spansPage ? undefined : sideOf(float, leftPt, rightPt, frame);
 
-  const framedBottomPt = float.topPt + float.heightPt * area.bottom;
-
   return {
     leftPt,
     rightPt,
     topPt: float.topPt + float.heightPt * area.top - emuToPoints(distances.topEmu + effect.topEmu),
     bottomPt:
-      Math.max(framedBottomPt, overflowingTextBottomPt(float, frame) ?? framedBottomPt) +
+      float.topPt +
+      float.heightPt * area.bottom +
       emuToPoints(distances.bottomEmu + effect.bottomEmu),
     ...(side === undefined ? {} : { side }),
     ...(outline === undefined ? {} : { outline }),
@@ -451,42 +450,34 @@ function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
 }
 
 /**
- * How far a box's own text runs past the foot of the box, which a tight wrap keeps
- * text off as well, and nothing else does.
+ * **Nine authored cases say a tight wrap keeps text off what the box holds as well as
+ * off the box, and 715 corpus documents say building that costs more than it is
+ * worth.** So it is written down here rather than built, like the outlined band in
+ * `wrapping.ts`, and for the same reason: the cases are right and something else makes
+ * them wrong in a real document.
  *
  * Measured on 2026-08-14 by `text-box-band-probe`, three repeats a case, over a line
- * standing 108 to 132 beside a box whose frame opens at 60: a box 48pt tall holding
- * four lines ruled exactly 24pt narrows that line, 24pt below its own foot, and **the
- * same box wrapped square leaves it alone**. Reference `d` says the same in the other
- * direction: emptying the box its page wraps around stops the wrapping altogether.
+ * ruled exactly 24pt standing 108 to 132 beside a box whose frame opens at 60. **A box
+ * 48pt tall holding four lines ruled 24pt narrows that line**, 24pt below its own
+ * foot, and the same box wrapped square leaves it alone. Nothing else moves with the
+ * text: a box 200pt tall holding one line keeps the whole 200 of it, a box 300pt wide
+ * holding 25pt of text opens the line beside it at its own right edge and not at its
+ * text's, and a picture, which holds no text to run out of, is what it is. Reference
+ * `d` says the same from the other side, since emptying the box its page wraps around
+ * stops the line wrapping at all.
  *
- * Nothing else moves with the text. A box 200pt tall holding one line keeps the whole
- * 200 of it, and a box 300pt wide holding 25pt of text opens the line beside it at its
- * own right edge rather than at its text's, so neither the foot nor the side comes in.
+ * Built as `bandFor` growing a band to the foot of the text laid out inside the box,
+ * it was swept over the corpus on 2026-08-15 and **cost five documents dearly against
+ * one gained**: `1bd495dddcb2` went from none of its cells in the wrong place to a
+ * quarter of them and a page too many, `a258b4afe6f8` the same, and three more from
+ * near nothing to between 11 and 15 per cent. Every one of the five holds eighteen text
+ * boxes and exactly one tight wrap, and none holds an equation, which is what says it
+ * was this and not the work landing beside it.
  *
- * The room a box holds under its text is inside the box, so a text that has run out of
- * the box has none of it. That much is not measured: the boxes it would be measured on
- * hold no room under their text at all.
+ * **The rule can only grow a band, and it grows it by the height of a text this
+ * project lays out itself**, so a box whose text this project makes taller than Word
+ * does grows a band Word never had. That is where to look before building it again.
  */
-function overflowingTextBottomPt(float: PlacedFloat, frame: FloatFrame): number | null {
-  const { content, wrap } = float.anchor;
-  if (wrap !== "tight" && wrap !== "through") return null;
-  if (content.kind !== "text-box") return null;
-
-  const laid = layOutTextBox({
-    body: content.body,
-    rect: { leftPt: 0, topPt: 0, widthPt: float.widthPt, heightPt: float.heightPt },
-    styles: frame.styles,
-    metricsFor: frame.metricsFor,
-    settings: frame.settings,
-    part: frame.part,
-  });
-  if (laid.kind === "blocked") return null;
-
-  const bottomPt =
-    float.topPt + emuToPoints(content.body.insets.topEmu) + laid.text.contentHeightPt;
-  return bottomPt > float.topPt + float.heightPt ? bottomPt : null;
-}
 
 /**
  * Which side of an object a line may sit on, once the object stands where it will.

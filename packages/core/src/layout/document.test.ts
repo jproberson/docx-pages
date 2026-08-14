@@ -128,13 +128,16 @@ describe("where a page hangs its header", () => {
   });
 });
 
-// **A tight wrap keeps text off what a box holds as well as off the box.** Every case
-// below was put to Word on 2026-08-14 by `text-box-band-probe`, three repeats each,
-// and the answer is what it said. The page is the same one every time: a line ruled
-// exactly 24pt standing 108 to 132 beside a box whose frame opens at 60, and the box
-// stands against the left of the frame so the answer is where the line opens rather
-// than whether it broke. Word breaks that line in every case but one, and the one is
-// what the rule turns on.
+// What a box keeps text off. Every case below was put to Word on 2026-08-14 by
+// `text-box-band-probe`, three repeats each. The page is the same one every time: a
+// line ruled exactly 24pt standing 108 to 132 beside a box whose frame opens at 60,
+// and the box stands against the left of the frame so the answer is where the line
+// opens rather than whether it broke.
+//
+// **Word answers eight of the nine as this project does, and the ninth it does not**:
+// a box whose text has run out of it keeps text off that text, and this keeps text off
+// the box alone. That case is pinned below as this project answers it, with the corpus
+// result that put it back beside it in `bandFor`.
 const TIGHT = `<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon>
   <wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/>
   <wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>`;
@@ -243,11 +246,13 @@ describe("what a wrapping box keeps text off", () => {
     );
   });
 
-  // The case the rule turns on: 48pt of box holding 96pt of text, and the line stands
-  // below the box and inside the text.
-  it("keeps it off the text of a box the text has run out of", () => {
+  // **The one Word answers otherwise**: 48pt of box holding 96pt of text, with the
+  // line standing below the box and inside the text. Word narrows it and this leaves
+  // it, because keeping text off the text cost five corpus documents a quarter of
+  // their cells against one document gained.
+  it("leaves a line under a box its text has run out of", () => {
     expect(opensAtPt(boxAnchor({ wrap: TIGHT, widthPt: 120, heightPt: 48, lines: 4 }))).toBe(
-      BESIDE_THE_BOX_PT,
+      THE_FRAME_PT,
     );
   });
 
