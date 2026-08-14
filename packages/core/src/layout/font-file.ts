@@ -956,6 +956,10 @@ export type GlyphContour = {
  * this or not at all. A backend embedding the face should still name the glyph:
  * the embedded one is hinted, it is selectable, and it is the same shape by
  * construction.
+ *
+ * In font units, so a caller scales by the size the run is set at. Nothing that
+ * moves a glyph moves these: they are measured from the glyph's own origin, which
+ * is what the place a drawing gives the glyph puts somewhere.
  */
 export type GlyphOutline = {
   readonly unitsPerEm: number;

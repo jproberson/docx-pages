@@ -251,11 +251,74 @@ describe("readRuns", () => {
     expect(mark?.italic).toBe(false);
   });
 
-  it("reads nothing from an equation it cannot lay out", () => {
-    const fraction =
-      `<m:oMath ${MATH}><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num>` +
-      `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath>`;
-    expect(runsOf(`<w:p>${fraction}</w:p>`)).toStrictEqual([]);
+  // **A fraction comes back as one piece, never as its halves.** The runs standing
+  // inside it are handed out by `paragraphRuns` so that the cascade marks each of
+  // them, and they are gathered back into the shape the reader found before anything
+  // reaches a line: a line that saw a half would lay the two side by side.
+  const FRACTION =
+    `<m:f><m:num><m:r><m:t>a</m:t></m:r></m:num>` + `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>`;
+
+  it("gathers a fraction's halves back into one piece", () => {
+    const runs = runsOf(`<w:p><m:oMath ${MATH}>${FRACTION}</m:oMath></w:p>`);
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.pieces.map((each) => each.kind)).toStrictEqual(["equation"]);
+  });
+
+  it("keeps the shape the reader found, and the mark of every run in it", () => {
+    const piece = runsOf(`<w:p><m:oMath ${MATH}>${FRACTION}</m:oMath></w:p>`, NO_FACE)[0]
+      ?.pieces[0];
+    if (piece?.kind !== "equation") throw new Error("not an equation");
+    const [fraction] = piece.content;
+    if (fraction?.kind !== "fraction") throw new Error("not a fraction");
+
+    expect(fraction.numerator.map((each) => (each.kind === "run" ? each.text : ""))).toStrictEqual([
+      "\u{1D44E}",
+    ]);
+    expect(
+      fraction.denominator.map((each) => (each.kind === "run" ? each.text : "")),
+    ).toStrictEqual(["\u{1D44F}"]);
+    const [top] = fraction.numerator;
+    if (top?.kind !== "run") throw new Error("no numerator run");
+    expect(top.mark.font).toStrictEqual({ kind: "named", name: "Cambria Math" });
+  });
+
+  // **A structure takes the mark of the first run it holds at whatever depth that
+  // stands.** A delimiter round a fraction holds no run of its own, and looking only
+  // at what stands directly inside it left it with no mark and dropped the whole
+  // delimiter: the paragraph came out empty and Word's own page holds a fraction in
+  // brackets.
+  it("marks a delimiter that holds no run of its own", () => {
+    const round = `<m:d><m:e>${FRACTION}</m:e></m:d>`;
+    const piece = runsOf(`<w:p><m:oMath ${MATH}>${round}</m:oMath></w:p>`, NO_FACE)[0]?.pieces[0];
+    if (piece?.kind !== "equation") throw new Error("not an equation");
+    const [delimiter] = piece.content;
+    if (delimiter?.kind !== "delimiter") throw new Error("not a delimiter");
+
+    expect(delimiter.mark.font).toStrictEqual({ kind: "named", name: "Cambria Math" });
+    expect(delimiter.content.map((each) => each.kind)).toStrictEqual(["fraction"]);
+  });
+
+  // The text either side of an equation is untouched by any of this.
+  it("leaves the runs standing beside a fraction where they were", () => {
+    const runs = runsOf(
+      `<w:p><w:r><w:t>one</w:t></w:r><m:oMath ${MATH}>${FRACTION}</m:oMath>` +
+        `<w:r><w:t>two</w:t></w:r></w:p>`,
+    );
+
+    expect(runs.flatMap((run) => run.pieces.map((each) => each.kind))).toStrictEqual([
+      "text",
+      "equation",
+      "text",
+    ]);
+  });
+
+  // An equation of runs alone is drawn where a paragraph's own runs are, so it is
+  // left flat and never becomes a piece of its own.
+  it("leaves an equation of runs alone flat", () => {
+    const runs = runsOf(`<w:p><m:oMath ${MATH}><m:r><m:t>x</m:t></m:r></m:oMath></w:p>`);
+
+    expect(runs.flatMap((run) => run.pieces.map((each) => each.kind))).toStrictEqual(["text"]);
   });
 
   // **Capitals, measured against Word's own pdf on 2026-08-13.** `w:caps` draws every

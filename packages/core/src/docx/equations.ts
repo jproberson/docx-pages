@@ -125,6 +125,44 @@ export function runsAlone(equation: Equation): readonly EquationRun[] | null {
   return runs;
 }
 
+// Whether an equation holds anything that has to be set rather than laid along the
+// line: a fraction or a delimiter, at any depth. An equation of runs alone is drawn
+// where a paragraph's own runs are and needs no geometry at all.
+export function needsSetting(equation: Equation): boolean {
+  if (equation.kind === "refused") return false;
+  const holds = (pieces: readonly EquationPiece[]): boolean =>
+    pieces.some((piece) => {
+      if (piece.kind === "fraction") return true;
+      if (piece.kind === "delimiter") return true;
+      return false;
+    });
+  return holds(equation.content);
+}
+
+// Every run an equation holds, at whatever depth it stands, in the order the file
+// writes them. A caller that has to mark them one at a time walks this: what a run is
+// set in is the paragraph's own cascade over the `w:rPr` the `m:r` carries, which is
+// resolved for a run the paragraph hands out and for no other.
+export const runsOf = (equation: Equation): readonly EquationRun[] =>
+  equation.kind === "refused" ? [] : runsIn(equation.content);
+
+// The same over a structure rather than a whole equation, which is what a caller
+// asking a fraction or a delimiter what mark it takes is holding.
+export function runsIn(pieces: readonly EquationPiece[]): readonly EquationRun[] {
+  const runs: EquationRun[] = [];
+  const walk = (each: readonly EquationPiece[]): void => {
+    for (const piece of each) {
+      if (piece.kind === "run") runs.push(piece);
+      else if (piece.kind === "fraction") {
+        walk(piece.numerator);
+        walk(piece.denominator);
+      } else if (piece.kind === "delimiter") for (const part of piece.parts) walk(part);
+    }
+  };
+  walk(pieces);
+  return runs;
+}
+
 // How one run of an equation is set, asked of the run alone. `readEquation` answers
 // the same for it, and this is for a caller holding the `m:r` and nothing else: the
 // layout marks a run wherever it meets one rather than walking the equation again.

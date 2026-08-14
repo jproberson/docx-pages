@@ -85,6 +85,11 @@ const faceOf = (name: string, path: string): SuppliedFace => {
     italic: false,
     metrics: read.metrics,
     advances: read.advances,
+    // Cambria Math comes out of this list and out of no other, and an equation
+    // cannot be set at all without the outlines its halves are measured off and the
+    // MATH table it takes its every constant from.
+    ink: read.ink,
+    math: read.math,
     sansSerif: read.sansSerif,
   };
 };

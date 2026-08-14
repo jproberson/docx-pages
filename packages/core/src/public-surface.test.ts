@@ -52,6 +52,7 @@ const CORE_SURFACE: readonly string[] = [
   "lineHeightPt",
   "lookupFontMetrics",
   "onTheDeviceGrid",
+  "runWidthMadeUpBy",
   "openDocx",
   "paintOfCell",
   "paintOfParagraph",

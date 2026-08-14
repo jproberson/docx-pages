@@ -4,6 +4,7 @@ import {
   drawablesOf,
   METAFILE_PEN_OFFSET,
   ROUNDED_CORNER_FRACTION,
+  runWidthMadeUpBy,
   twipsToPoints,
   type CropInsets,
   type Drawable,
@@ -512,6 +513,12 @@ const colorOf = (color: string): string => (color.startsWith("#") ? color : `#${
 const familyOf = (mark: ParagraphMark, fallback: string): string =>
   mark.font.kind === "named" ? `"${mark.font.name}", ${fallback}` : fallback;
 
+// **Whether a run held to its measured width is stretched or spaced out is decided
+// in `drawables.ts`**, beside the measurement that settled it. This says that answer
+// in the two words an svg has for it and decides nothing itself.
+const lengthAdjustOf = (mark: ParagraphMark): "spacing" | "spacingAndGlyphs" =>
+  runWidthMadeUpBy(mark) === "glyphs" ? "spacingAndGlyphs" : "spacing";
+
 // **What a run shows and what colour it is drawn in are decided in
 // `drawables.ts`**: a run in a stood-in symbol face has its positions turned into
 // what they mean there, and a run stating no colour of its own is resolved to the
@@ -538,10 +545,7 @@ function lineText(placed: PlacedLine, key: string, fallback: string): ReactEleme
             textDecoration={segment.mark.underline ? "underline" : undefined}
             fill={segment.mark.color ?? undefined}
             textLength={segment.widthPt > 0 ? segment.widthPt : undefined}
-            // **The answer is `runWidthMadeUpBy` in `drawables.ts`**, where the
-            // measurement that settled it lives; this repeats it only until
-            // `core`'s own entry publishes that name.
-            lengthAdjust={segment.mark.characterScale === 1 ? "spacing" : "spacingAndGlyphs"}
+            lengthAdjust={lengthAdjustOf(segment.mark)}
           >
             {segment.text}
           </tspan>,
@@ -574,7 +578,7 @@ function markerText(marker: ParagraphMarker, key: string, fallback: string): Rea
       textDecoration={marker.mark.underline ? "underline" : undefined}
       fill={marker.mark.color ?? undefined}
       textLength={marker.widthPt > 0 ? marker.widthPt : undefined}
-      lengthAdjust="spacing"
+      lengthAdjust={lengthAdjustOf(marker.mark)}
     >
       {marker.text}
     </text>

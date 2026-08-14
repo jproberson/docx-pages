@@ -407,6 +407,8 @@ function faceOf(font: ReferenceFont): SuppliedFace {
     metrics: font.metrics,
     advances: read.advances,
     kerning: read.kerning,
+    ink: read.ink,
+    math: read.math,
     sansSerif: read.sansSerif,
   };
 }
@@ -427,6 +429,8 @@ function authoredFaceOf(face: AuthoredFace): SuppliedFace {
     metrics: read.metrics,
     advances: read.advances,
     kerning: read.kerning,
+    ink: read.ink,
+    math: read.math,
     sansSerif: read.sansSerif,
   };
 }

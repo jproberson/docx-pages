@@ -10,7 +10,8 @@ import {
   type MetricsLookup,
   type SuppliedFace,
 } from "./font-metrics.js";
-import { beginLines, breakLines, justifyLine, type TextLine } from "./lines.js";
+import { beginLines, breakLines, justifyLine, type LineSegment, type TextLine } from "./lines.js";
+import type { MarkedMath } from "./math.js";
 import type { TabStopPt } from "./tab-stops.js";
 
 // Every glyph is half an em wide, so a 10pt run measures exactly 5pt a character
@@ -731,6 +732,110 @@ describe("a character drawn out of another face", () => {
 
     expect(line.ascentPt).toBeCloseTo(8, 9);
     expect(line.heightPt).toBeCloseTo(10, 9);
+  });
+});
+
+/**
+ * **A line holding a set equation stands as tall as the ink of it and the face's
+ * own `mathLeading`, and that leading is room above.**
+ *
+ * Measured on 2026-08-13 off Word's own pdf of the authored `equation-probe`
+ * document: three paragraphs holding a fraction and nothing else drew their
+ * numerators 1.59, 1.42 and 1.55pt below where the ink of their boxes begins,
+ * against Cambria Math's `mathLeading` of 1.62 at the size Word drew them.
+ *
+ * The face here states a `mathLeading` of 300 units in a thousand, so the leading
+ * is three tenths of the size and the whole line can be counted by hand: the
+ * numerator's ink stands 900 units up and the denominator's 200 down, the halves
+ * are shifted by the face's own two shifts, and every glyph is half an em wide.
+ */
+describe("breakLines over a line holding a fraction", () => {
+  const SIZE_PT = 10;
+  const LEADING_PT = 3;
+
+  const MATHS = readFontFile(
+    buildSfnt({
+      unitsPerEm: 1000,
+      ascender: 800,
+      descender: -200,
+      lineGap: 0,
+      advances: { a: 500, b: 500 },
+      boxes: {
+        a: { left: 0, bottom: 0, right: 500, top: 900 },
+        b: { left: 0, bottom: -200, right: 500, top: 500 },
+      },
+      math: {
+        constants: {
+          mathLeading: 300,
+          axisHeight: 250,
+          fractionRuleThickness: 50,
+          fractionNumeratorDisplayStyleShiftUp: 700,
+          fractionDenominatorDisplayStyleShiftDown: 600,
+          fractionNumDisplayStyleGapMin: 100,
+          fractionDenomDisplayStyleGapMin: 100,
+          scriptPercentScaleDown: 70,
+        },
+      },
+    }),
+  );
+
+  const setting = (request: { readonly name: string }): MetricsLookup => {
+    const found = metricsFor()(request);
+    return found.kind === "found"
+      ? { ...found, advances: MATHS.advances, ink: MATHS.ink, math: MATHS.math }
+      : found;
+  };
+
+  const half = (text: string): MarkedMath => ({ kind: "run", text, mark: mark(SIZE_PT) });
+
+  const fraction: RunPiece = {
+    kind: "equation",
+    content: [
+      {
+        kind: "fraction",
+        mark: mark(SIZE_PT),
+        numerator: [half("a")],
+        denominator: [half("b")],
+      },
+    ],
+  };
+
+  const lineOf = (pieces: readonly RunPiece[]): TextLine => {
+    const result = breakLines({
+      runs: [piecesRun(pieces, mark(SIZE_PT))],
+      widthPt: 1000,
+      metricsFor: setting,
+    });
+    if (result.kind !== "lines") throw new Error(result.failure.kind);
+    const [line] = result.lines;
+    if (line === undefined) throw new Error("no line");
+    return line;
+  };
+
+  const equationOf = (line: TextLine): Extract<LineSegment, { kind: "equation" }> => {
+    const segment = line.segments[0];
+    if (segment?.kind !== "equation") throw new Error("no equation on the line");
+    return segment;
+  };
+
+  it("reaches as far above the baseline as the equation does, and no further", () => {
+    const line = lineOf([fraction]);
+
+    expect(line.ascentPt).toBeCloseTo(equationOf(line).ascentPt, 9);
+  });
+
+  it("stands as tall as the ink of the equation and the leading over it", () => {
+    const line = lineOf([fraction]);
+    const equation = equationOf(line);
+
+    expect(line.heightPt).toBeCloseTo(equation.ascentPt + equation.descentPt + LEADING_PT, 9);
+    expect(line.seatPt).toBeCloseTo(LEADING_PT, 9);
+  });
+
+  it("is never shorter than the line the face on its run would have made", () => {
+    const line = lineOf([{ kind: "text", text: "" }, fraction]);
+
+    expect(line.heightPt).toBeGreaterThanOrEqual(SIZE_PT);
   });
 });
 

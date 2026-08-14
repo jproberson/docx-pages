@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import type { SectionGeometry } from "../docx/section.js";
 import type { LaidOutDocument } from "../layout/document.js";
-import type { PageDrawing, PlacedEquation, PlacedGlyphs } from "../layout/drawables.js";
+import type { PageDrawing, PlacedGlyphs } from "../layout/drawables.js";
+import type { SetMath } from "../layout/math.js";
+import type { ParagraphBox, PlacedLine } from "../layout/stack.js";
 import type { ParagraphMark } from "../docx/styles.js";
 import { buildSfnt } from "../testing/build-font.js";
 
@@ -62,12 +64,12 @@ const GROWN: PlacedGlyphs = {
 
 function pageWith(
   glyphRuns: readonly PlacedGlyphs[],
-  equations: readonly PlacedEquation[] = [],
+  body: readonly ParagraphBox[] = [],
 ): PageDrawing {
   return {
     index: 0,
     geometry: LETTER,
-    body: [],
+    body,
     cells: [],
     floats: [],
     inlines: [],
@@ -85,7 +87,6 @@ function pageWith(
     headerInlines: [],
     footerInlines: [],
     glyphRuns,
-    equations,
   };
 }
 
@@ -105,9 +106,9 @@ const textOf = (bytes: Uint8Array): string => strFromU8(bytes, true);
 function streamOf(
   glyphRuns: readonly PlacedGlyphs[],
   fonts: readonly PdfFont[] = [SUPPLIED],
-  equations: readonly PlacedEquation[] = [],
+  body: readonly ParagraphBox[] = [],
 ) {
-  const page = pageWith(glyphRuns, equations);
+  const page = pageWith(glyphRuns, body);
   const objects = pdfObjects();
   const written = pdfFonts(fonts);
   const images = pdfImages({
@@ -327,60 +328,152 @@ const EQUATION_MARK: ParagraphMark = {
   capitals: "none",
 };
 
-const FRACTION: PlacedEquation = {
+// A fraction as the line holds it: two halves of a face the file embeds, and the
+// bar between them. `math.ts` places the pieces about the line's own baseline and
+// `drawables.ts` turns them into the three things drawn below.
+const half = (text: string): SetMath => ({
+  kind: "run",
+  text,
   mark: EQUATION_MARK,
-  primitives: [
-    { kind: "text", text: "A", sizePt: 7.92, widthPt: 5.2, leftPt: 290.5, baselinePt: 100.1 },
-    { kind: "fill", leftPt: 290.4, topPt: 104.9, widthPt: 20.96, heightPt: 0.7223 },
-    { kind: "text", text: "B", sizePt: 7.92, widthPt: 5.1, leftPt: 291.85, baselinePt: 115.87 },
-  ],
+  sizePt: 7.92,
+  box: { widthPt: 5.2, ascentPt: 5.6, descentPt: 0 },
+});
+
+const SET_FRACTION: SetMath = {
+  kind: "fraction",
+  mark: EQUATION_MARK,
+  box: {
+    widthPt: 5.2,
+    ascentPt: 8,
+    descentPt: 5,
+    numerator: { widthPt: 5.2, ascentPt: 5.6, descentPt: 0, leftPt: 0, baselinePt: 5.02 },
+    denominator: { widthPt: 5.2, ascentPt: 5.6, descentPt: 0, leftPt: 1.35, baselinePt: -5.6 },
+    bar: { leftPt: 0, widthPt: 20.96, topPt: 3.1, thicknessPt: 0.7223 },
+  },
+  numerator: [half("A")],
+  denominator: [half("B")],
+};
+
+const EQUATION_LINE: PlacedLine = {
+  line: {
+    segments: [
+      {
+        kind: "equation",
+        pieces: [SET_FRACTION],
+        widthPt: 5.2,
+        ascentPt: 8,
+        descentPt: 5,
+        offsetPt: 0,
+      },
+    ],
+    widthPt: 5.2,
+    heightPt: 14.6484375,
+    ascentPt: 11.7,
+    seatPt: 0,
+    fontHeightPt: 14.6484375,
+    heldOpenPt: null,
+  },
+  leftPt: 290.5,
+  topPt: 90,
+  heightPt: 14.6484375,
+  seatPt: 0,
+  fittingHeightPt: 14.6484375,
+  baselinePt: 100.1,
+  startsPage: false,
+};
+
+const EQUATION_BOX: ParagraphBox = {
+  index: 0,
+  topPt: 90,
+  anchorTopPt: 90,
+  heightPt: 14.6484375,
+  lines: [EQUATION_LINE],
+  marker: null,
+  contentWidthPt: 5.2,
+  markTopPt: 90,
+  contentBottomPt: 104.6484375,
+  resumesUnderPt: 0,
+  widowControl: false,
+  keepNext: false,
+  startsPage: false,
+  endsPage: false,
+  endsPageAtASection: false,
+  clipTo: null,
+  paint: null,
 };
 
 describe("a fraction reaching the page", () => {
-  // Each half at the size the flattener set it at, on the baseline that size was
-  // set on: 100.1 down the page lands on the grid at 100.08, which the writer flips
-  // to 691.92, and 115.87 lands at 115.92 and flips to 676.08.
+  // Each half at the size the flattener set it at, on the baseline that size was set
+  // on. The line's own baseline of 100.1 lands on the grid at 100.08; the numerator
+  // stands 5.02 above it, is drawn at 95.04 and flips to 696.96, and the denominator
+  // stands 5.6 below it, is drawn at 105.6 and flips to 686.4.
   it("writes each half at its own size on its own snapped baseline", () => {
-    const { drawn } = streamOf([], [SUPPLIED], [FRACTION]);
+    const { drawn } = streamOf([], [SUPPLIED], [EQUATION_BOX]);
 
     expect(drawn).toContain("/F0 7.92 Tf");
-    expect(drawn).toContain("1 0 0 1 290.5 691.92 Tm");
+    expect(drawn).toContain("1 0 0 1 290.5 696.96 Tm");
     expect(drawn).toContain("<0002> Tj");
-    expect(drawn).toContain("1 0 0 1 291.85 676.08 Tm");
+    expect(drawn).toContain("1 0 0 1 291.85 686.4 Tm");
     expect(drawn).toContain("<0003> Tj");
   });
 
-  // The bar is filled, as Word fills it, between the two snapped edges: 104.88 down
-  // to 105.6, which the writer flips to a rectangle standing at 686.4.
+  // The bar is filled, as Word fills it, between the two snapped edges: 3.1 above the
+  // line's baseline is 96.96 and the foot of it 97.68, which the writer flips into a
+  // rectangle standing at 694.32 and exactly 0.72 tall.
   it("fills the bar between the two edges the drawing snapped", () => {
-    const { drawn } = streamOf([], [SUPPLIED], [FRACTION]);
+    const { drawn } = streamOf([], [SUPPLIED], [EQUATION_BOX]);
 
-    expect(drawn).toContain("290.4 686.4 20.96 0.72 re");
+    expect(drawn).toContain("290.5 694.32 20.96 0.72 re");
   });
 
   // A stretched delimiter is the glyph run, which this file already draws: what is
-  // held here is that an equation reaches it, and that the two are drawn together.
+  // held here is that an equation reaches it, and at the size the piece was set at.
   it("writes a stretched delimiter as a glyph named by number", () => {
-    const grown: PlacedEquation = {
+    const grown: SetMath = {
+      kind: "delimiter",
       mark: EQUATION_MARK,
-      primitives: [
-        {
-          kind: "glyph",
-          glyph: OPENING_GLYPH,
-          sizePt: 22,
-          leftPt: 281.28,
-          baselinePt: 100.1,
-          advancePt: 11,
+      sizePt: 22,
+      box: {
+        widthPt: 11,
+        ascentPt: 14,
+        descentPt: 7.6,
+        opening: {
+          codePoint: 0x28,
+          variant: { glyph: OPENING_GLYPH, measurement: 4047, advance: 500, ink: null },
+          grown: true,
+          widthPt: 11,
           ascentPt: 14,
           descentPt: 7.6,
-          standsFor: "(",
+          leftPt: 0,
+          baselinePt: 0,
         },
-      ],
+        closing: null,
+        content: { widthPt: 0, ascentPt: 0, descentPt: 0, leftPt: 11, baselinePt: 0 },
+        setAsASubFormula: true,
+        grownShort: false,
+      },
+      content: [],
     };
-    const { drawn } = streamOf([], [SUPPLIED], [grown]);
+    const line: PlacedLine = {
+      ...EQUATION_LINE,
+      line: {
+        ...EQUATION_LINE.line,
+        segments: [
+          {
+            kind: "equation",
+            pieces: [grown],
+            widthPt: 11,
+            ascentPt: 14,
+            descentPt: 7.6,
+            offsetPt: 0,
+          },
+        ],
+      },
+    };
+    const { drawn } = streamOf([], [SUPPLIED], [{ ...EQUATION_BOX, lines: [line] }]);
 
     expect(drawn).toContain("/F0 22 Tf");
-    expect(drawn).toContain("1 0 0 1 281.28 691.92 Tm");
+    expect(drawn).toContain("1 0 0 1 290.5 691.92 Tm");
     expect(drawn).toContain("<0001> Tj");
   });
 });

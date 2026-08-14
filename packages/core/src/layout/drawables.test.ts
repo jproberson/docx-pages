@@ -15,11 +15,11 @@ import {
   runWidthMadeUpBy,
   type Drawable,
   type DrawnRun,
-  type MathPrimitive,
   type PageDrawing,
-  type PlacedEquation,
   type PlacedGlyphs,
+  type SetEquation,
 } from "./drawables.js";
+import type { MathPrimitive, SetMath } from "./math.js";
 import type { PaintedFill } from "./painting.js";
 import type { ParagraphBox, ParagraphPaint, PlacedCell, PlacedLine } from "./stack.js";
 
@@ -612,22 +612,32 @@ describe("what a page draws rather than what a renderer decides", () => {
   });
 });
 
-// A fraction as a flattener hands it over: a numerator, the bar, a denominator, at
-// places no two of which land on the grid on their own. The numbers are the shape
-// of Cambria Math's own answer at 11pt and are not measured off anything: what is
-// held here is what the drawing does to them, and the measurement that settled that
-// is in `drawables.ts` beside `drawnMathRun`.
+// The face a document sets its mathematics in, which is not the face the text
+// around it is in: on the authored equation probes Word drew the markers in the body
+// face and every piece of the equations in a second one.
+const MATH_MARK: ParagraphMark = {
+  ...MARK,
+  font: { kind: "named", name: "Meridian Math" },
+  fontSizePt: 11,
+};
+
+// A fraction as `mathPrimitivesOf` hands it over: a numerator, the bar, a
+// denominator, at places no two of which land on the grid on their own. The numbers
+// are the shape of a maths face's own answer at 11pt and are not measured off
+// anything: what is held here is what the drawing does to them, and the measurement
+// that settled that is in `drawables.ts` beside `drawnMathRun`.
 const NUMERATOR: MathPrimitive = {
   kind: "text",
   text: "gralm",
+  mark: MATH_MARK,
   sizePt: 7.92,
-  widthPt: 20.5,
   leftPt: 290.5,
   baselinePt: 100.1,
 };
 
 const BAR: MathPrimitive = {
   kind: "fill",
+  mark: MATH_MARK,
   leftPt: 290.4,
   topPt: 104.9,
   widthPt: 20.96,
@@ -637,17 +647,86 @@ const BAR: MathPrimitive = {
 const DENOMINATOR: MathPrimitive = {
   kind: "text",
   text: "presk",
+  mark: MATH_MARK,
   sizePt: 7.92,
-  widthPt: 19.4,
   leftPt: 291.85,
   baselinePt: 115.87,
 };
 
 const FRACTION: readonly MathPrimitive[] = [NUMERATOR, BAR, DENOMINATOR];
 
-const equationOf = (primitives: readonly MathPrimitive[]): PlacedEquation => ({
-  mark: { ...MARK, font: { kind: "named", name: "Meridian Math" } },
+// The same fraction as the line holds it, which is what `setMath` answers with: the
+// geometry, and what is drawn hung on it. A line hands this to `mathPrimitivesOf`
+// and the pieces above are what comes back.
+const half = (text: string): SetMath => ({
+  kind: "run",
+  text,
+  mark: MATH_MARK,
+  sizePt: 7.92,
+  box: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0 },
+});
+
+const SET_FRACTION: SetMath = {
+  kind: "fraction",
+  mark: MATH_MARK,
+  box: {
+    widthPt: 20.96,
+    ascentPt: 8,
+    descentPt: 5,
+    numerator: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0, leftPt: 0.23, baselinePt: 5.02 },
+    denominator: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0, leftPt: 0.23, baselinePt: -5.6 },
+    bar: { leftPt: 0, widthPt: 20.96, topPt: 3.1, thicknessPt: 0.7223 },
+  },
+  numerator: [half("gralm")],
+  denominator: [half("presk")],
+};
+
+const equationLineAt = (topPt: number, baselinePt: number, offsetPt = 0): PlacedLine => ({
+  line: {
+    segments: [
+      {
+        kind: "equation",
+        pieces: [SET_FRACTION],
+        widthPt: 20.96,
+        ascentPt: 8,
+        descentPt: 5,
+        offsetPt,
+      },
+    ],
+    widthPt: 20.96 + offsetPt,
+    heightPt: 14.6484375,
+    ascentPt: 11.7,
+    seatPt: 0,
+    fontHeightPt: 14.6484375,
+    heldOpenPt: null,
+  },
+  leftPt: 72.137,
+  topPt,
+  heightPt: 14.6484375,
+  seatPt: 0,
+  fittingHeightPt: 14.6484375,
+  baselinePt,
+  startsPage: false,
+});
+
+// A parenthesis the face grew to fit what it stands round, which is a glyph of its
+// own with no character to ask for it by.
+const RUNG: MathPrimitive = {
+  kind: "glyph",
+  glyph: 3436,
+  mark: MATH_MARK,
+  sizePt: 11,
+  leftPt: 281.28,
+  baselinePt: 100.1,
+};
+
+// How far the equation reaches either side of the line's own baseline, which is
+// what the line measured and the only thing a glyph run needs that a piece does not
+// carry.
+const equationOf = (primitives: readonly MathPrimitive[]): SetEquation => ({
   primitives,
+  ascentPt: 8,
+  descentPt: 5,
 });
 
 const runsOf = (drawables: readonly Drawable[]): readonly DrawnRun[] =>
@@ -702,25 +781,24 @@ describe("a set equation reaching the page", () => {
     expect(numerator?.mark.fontSizePt).toBe(7.92);
     expect(numerator?.mark.font).toStrictEqual({ kind: "named", name: "Meridian Math" });
     expect(numerator?.text).toBe("gralm");
-    expect(numerator?.widthPt).toBe(20.5);
+    // Held to no width, because a piece states none: a set equation is drawn in the
+    // very face it was measured in, so its own advances are the ones that draw it.
+    expect(numerator?.widthPt).toBe(0);
   });
 
   // What a run states about spacing and scale would move the glyphs off the places
   // the arithmetic measured with the face's plain advances, and the bar's own width
   // is made of those same advances. A raise is already in the baseline it was given.
   it("draws no piece with the spacing, the scale or the raise a run may state", () => {
-    const stated: PlacedEquation = {
-      mark: {
-        ...MARK,
-        characterSpacingPt: 1.5,
-        characterScale: 1.5,
-        raisePt: 4,
-        underline: true,
-        highlight: "yellow",
-      },
-      primitives: FRACTION,
+    const stated: ParagraphMark = {
+      ...MATH_MARK,
+      characterSpacingPt: 1.5,
+      characterScale: 1.5,
+      raisePt: 4,
+      underline: true,
+      highlight: "yellow",
     };
-    const [numerator] = runsOf(mathDrawables(stated, "e"));
+    const [numerator] = runsOf(mathDrawables(equationOf([{ ...NUMERATOR, mark: stated }]), "e"));
 
     expect(numerator?.mark.characterSpacingPt).toBe(0);
     expect(numerator?.mark.characterScale).toBe(1);
@@ -736,24 +814,7 @@ describe("a set equation reaching the page", () => {
    * Word's own pdf as a glyph its ToUnicode calls `!`.
    */
   it("draws a stretched delimiter as the glyph run built for a shape with no character", () => {
-    const outline = { unitsPerEm: 2048, contours: [] };
-    const drawables = mathDrawables(
-      equationOf([
-        {
-          kind: "glyph",
-          glyph: 3436,
-          sizePt: 11,
-          leftPt: 281.28,
-          baselinePt: 100.1,
-          advancePt: 5.44,
-          ascentPt: 14,
-          descentPt: 7.6,
-          standsFor: "(",
-          outline,
-        },
-      ]),
-      "e",
-    );
+    const drawables = mathDrawables(equationOf([RUNG]), "e");
 
     expect(drawables).toStrictEqual([
       {
@@ -762,45 +823,23 @@ describe("a set equation reaching the page", () => {
         face: { name: "Meridian Math", bold: false, italic: false },
         sizePt: 11,
         color: "#000000",
-        ascentPt: 14,
-        descentPt: 7.6,
+        // The equation's own reach, since a piece states no ink of its own.
+        ascentPt: 8,
+        descentPt: 5,
         glyphs: [
           {
             glyph: 3436,
             leftPt: 281.28,
             baselinePt: 100.08,
-            advancePt: 5.44,
-            standsFor: "(",
-            outline,
+            // **Three things a piece does not carry yet**, each stated here so that
+            // the day it does, this test says what changed: what the glyph advances,
+            // what it stands for, and the outline a browser needs to draw it at all.
+            advancePt: 0,
+            standsFor: null,
           },
         ],
       },
     ]);
-  });
-
-  // A glyph the face could not be read for carries no outline, exactly as one the
-  // layout named does: a backend that cannot name a glyph then draws nothing and
-  // says so rather than drawing the character it stands for at the wrong height.
-  it("hands over a glyph with no outline as a glyph with no outline", () => {
-    const drawables = mathDrawables(
-      equationOf([
-        {
-          kind: "glyph",
-          glyph: 3436,
-          sizePt: 11,
-          leftPt: 281.28,
-          baselinePt: 100.1,
-          advancePt: 5.44,
-          ascentPt: 14,
-          descentPt: 7.6,
-          standsFor: "(",
-        },
-      ]),
-      "e",
-    );
-    const [drawn] = drawables;
-
-    expect(drawn?.kind === "glyphs" && drawn.glyphs[0]).not.toHaveProperty("outline");
   });
 
   // **The order the flattener set the pieces in is the order they are painted.**
@@ -825,17 +864,7 @@ describe("a set equation reaching the page", () => {
   // A run of glyphs is drawn at one size, so two rungs set at different sizes are
   // two runs however they stand.
   it("parts a run of glyphs at a change of size", () => {
-    const rung = (sizePt: number): MathPrimitive => ({
-      kind: "glyph",
-      glyph: 3436,
-      sizePt,
-      leftPt: 281.28,
-      baselinePt: 100.1,
-      advancePt: 5.44,
-      ascentPt: 14,
-      descentPt: 7.6,
-      standsFor: "(",
-    });
+    const rung = (sizePt: number): MathPrimitive => ({ ...RUNG, sizePt });
 
     expect(mathDrawables(equationOf([rung(11), rung(11)]), "e")).toHaveLength(1);
     expect(mathDrawables(equationOf([rung(11), rung(7.92)]), "e")).toHaveLength(2);
@@ -844,18 +873,41 @@ describe("a set equation reaching the page", () => {
   // An equation is text, and what stands over it and under it is what stands over
   // and under any other text.
   it("is drawn where the story's own text is drawn", () => {
-    const page = { ...pageWith(), equations: [equationOf(FRACTION)] };
+    const page = bodyPage([boxOf([equationLineAt(36.1, 47.4258)])]);
     const kinds = drawablesOf(layoutOf(page), page).map((drawable) => drawable.kind);
 
-    expect(kinds).toStrictEqual(["text", "paint", "text"]);
+    expect(kinds).toStrictEqual(["text", "text", "paint", "text"]);
   });
 
-  // A page laid out before anything set an equation states none, which is not the
-  // same as stating none, and one that set nothing draws nothing.
-  it("draws nothing for a page that set no equation", () => {
-    const page = pageWith();
-    expect(drawablesOf(layoutOf(page), page)).toStrictEqual([]);
-    const empty = { ...page, equations: [equationOf([])] };
-    expect(drawablesOf(layoutOf(empty), empty)).toStrictEqual([]);
+  /**
+   * **An equation is found on the line that holds it**, and the line says where its
+   * baseline is: the segment carries the pieces placed about that baseline and an
+   * offset along the line, and nothing hangs off the page.
+   *
+   * The whole chain is in these four numbers. The line's own baseline lands on the
+   * grid at 47.52; the numerator stands 5.02 above it and is drawn at 42.48, the bar
+   * 3.1 above it and is filled from 44.4 down to 45.12, the denominator 5.6 below it
+   * and is drawn at 53.04. Across the page the offset and the half's own place are
+   * added and nothing is rounded: 72.137 + 10 + 0.23.
+   */
+  it("stands where the line put it, on the grid, piece by piece", () => {
+    const page = bodyPage([boxOf([equationLineAt(36.1, 47.4258, 10)])]);
+    const drawables = drawablesOf(layoutOf(page), page);
+
+    expect(runsOf(drawables).map((run) => run.baselinePt)).toStrictEqual([42.48, 53.04]);
+    expect(runsOf(drawables).map((run) => run.leftPt)).toStrictEqual([82.367, 82.367]);
+
+    const [bar] = fillsOf(drawables);
+    expect(bar?.topPt).toBe(44.4);
+    expect((bar?.topPt ?? 0) + (bar?.heightPt ?? 0)).toBe(45.12);
+    expect(bar?.leftPt).toBe(82.137);
+  });
+
+  // A line that set no equation draws none, and a page of plain text draws as it
+  // always did.
+  it("draws nothing for a line that holds no equation", () => {
+    const page = bodyPage([boxOf([lineAt(36.1, 47.4258)])]);
+
+    expect(drawablesOf(layoutOf(page), page).map((each) => each.kind)).toStrictEqual(["text"]);
   });
 });

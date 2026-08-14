@@ -408,6 +408,21 @@ describe("resolveParagraphFrame", () => {
     expect(resolved(body).frame.alignment).toBe("left");
   });
 
+  // **A run drawing nothing does not take the equation out of display.** Measured on
+  // 2026-08-13: the same fraction beside an empty run came out centred at 290.51 and
+  // full size, where one beside a single space was laid in the flow at 38.71.
+  it("centres it beside a run that draws nothing", () => {
+    const body = `<w:p><w:r><w:rPr/><w:t></w:t></w:r>${equation}</w:p>`;
+    expect(resolved(body).frame.alignment).toBe("center");
+  });
+
+  it("leaves a paragraph holding one space beside an equation as it is aligned", () => {
+    const body =
+      `<w:p><w:pPr><w:jc w:val="right"/></w:pPr>` +
+      `<w:r><w:t xml:space="preserve"> </w:t></w:r>${equation}</w:p>`;
+    expect(resolved(body).frame.alignment).toBe("right");
+  });
+
   it("leaves a paragraph holding text beside an equation as it is aligned", () => {
     const body = `<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>a</w:t></w:r>${equation}</w:p>`;
     expect(resolved(body).frame.alignment).toBe("right");

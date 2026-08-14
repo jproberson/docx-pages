@@ -3,7 +3,11 @@ import type { DrawingFlip } from "../docx/drawing.js";
 import type { ParagraphMark } from "../docx/styles.js";
 import type { LaidOutDocument, LaidOutPage } from "./document.js";
 import type { PlacedContent, PlacedFloat } from "./floats.js";
+// The shape a glyph draws is the face's own answer, so it is declared with the
+// reader that gets it out of the file rather than a second time here.
+import type { GlyphOutline } from "./font-file.js";
 import type { FaceRequest } from "./font-metrics.js";
+import { mathPrimitivesOf, type MathPrimitive } from "./math.js";
 import type { PlacedInline } from "./inlines.js";
 import { paintOfCell, paintOfParagraph, type PaintedFill, type PaintedLine } from "./painting.js";
 import type { ParagraphBox, ParagraphPaint, PlacedCell, PlacedLine } from "./stack.js";
@@ -285,49 +289,6 @@ const drawnPaint = (painted: {
  * Everything else on a page is asked for in characters, and this is the one thing
  * that cannot be.
  */
-// A point of an outline, in the face's own units, with x from the glyph's origin
-// and y up from the baseline as the face states it.
-export type GlyphPoint = readonly [number, number];
-
-// What the outline does next. A TrueType face draws its curves with one control
-// point and a PostScript one with two, and neither is worth turning into the other
-// here: every backend that can draw a curve at all can draw both.
-export type GlyphStep =
-  | { readonly kind: "line"; readonly to: GlyphPoint }
-  | { readonly kind: "quadratic"; readonly control: GlyphPoint; readonly to: GlyphPoint }
-  | {
-      readonly kind: "cubic";
-      readonly first: GlyphPoint;
-      readonly second: GlyphPoint;
-      readonly to: GlyphPoint;
-    };
-
-// One closed contour of a glyph: where it starts and what it does from there. A
-// letter with a counter, an `o` above all, is two of them, and what is inside what
-// is settled by the winding rather than by their order.
-export type GlyphContour = {
-  readonly from: GlyphPoint;
-  readonly steps: readonly GlyphStep[];
-};
-
-/**
- * The shape a glyph draws, as the face itself states it.
- *
- * **This is what a backend that cannot name a glyph draws instead**: a browser
- * addresses a face by character and by nothing else, so a stretched parenthesis
- * reaches it as the outline or not at all. A backend that embeds the face should
- * still name the glyph rather than draw this: the embedded one is hinted, it is
- * selectable, and it is the same shape by construction.
- *
- * In font units, so a caller scales by the size the run is set at. Nothing that
- * moves a glyph moves these: they are measured from the glyph's own origin, which
- * is what `leftPt` and `baselinePt` place.
- */
-export type GlyphOutline = {
-  readonly unitsPerEm: number;
-  readonly contours: readonly GlyphContour[];
-};
-
 export type DrawnGlyph = {
   readonly glyph: number;
   readonly leftPt: number;
@@ -388,66 +349,23 @@ export type DrawnRun = {
 };
 
 /**
- * One thing a set equation draws, already placed.
+ * A set equation as the drawing takes it: the pieces `math.ts` placed, and how far
+ * the whole of it reaches either side of the line's own baseline.
  *
- * **This is the seam between the arithmetic and the drawing.** `math.ts` sets a
- * fraction measured from the box's own baseline with up positive, which is how the
- * MATH table states every constant it works from; a flattener there turns a placed
- * box and an origin into this list. **Everything here is in the page's own
- * coordinates, down positive**, so the axis turns over once, on that side, and
- * nothing below this line knows the other way up exists.
+ * **The pieces are the seam between the arithmetic and the drawing**, and `math.ts`
+ * declares them: it sets a fraction measured from the box's own baseline with up
+ * positive, which is how the MATH table states every constant it works from, and
+ * `mathPrimitivesOf` turns that into a list in the page's own coordinates, down
+ * positive, in the order the pieces are painted. The axis turns over once, there,
+ * and nothing here knows the other way up exists.
  *
- * The list is in the order the pieces are painted.
+ * The ink comes from the line rather than from the pieces, because it is the only
+ * thing a glyph run needs that a piece does not yet carry: see `drawnMathGlyphs`.
  */
-export type MathPrimitive =
-  | {
-      readonly kind: "text";
-      readonly text: string;
-      readonly sizePt: number;
-      // What the flattener measured the piece at, off the face's own advances. The
-      // geometry round it is made of those same advances, the bar's width above
-      // all, so a backend holding the run to this keeps the two together.
-      readonly widthPt: number;
-      readonly leftPt: number;
-      readonly baselinePt: number;
-    }
-  // A fraction's bar, and anything else Word fills rather than strokes.
-  | {
-      readonly kind: "fill";
-      readonly leftPt: number;
-      readonly topPt: number;
-      readonly widthPt: number;
-      readonly heightPt: number;
-    }
-  // A stretched delimiter, which is a rung of the face's own ladder and has no
-  // character to be asked for by. Everything past the glyph and its place is what
-  // `DrawnGlyph` needs and only the face can answer: what it advances, how far its
-  // ink reaches either side of its baseline, and the character it stands for.
-  | {
-      readonly kind: "glyph";
-      readonly glyph: number;
-      readonly sizePt: number;
-      readonly leftPt: number;
-      readonly baselinePt: number;
-      readonly advancePt: number;
-      readonly ascentPt: number;
-      readonly descentPt: number;
-      readonly standsFor: string | null;
-      readonly outline?: GlyphOutline;
-    };
-
-/**
- * One equation as it was set: the pieces, and the mark they are drawn with.
- *
- * **The mark is the equation's own and not the paragraph's.** Word draws set
- * mathematics in the face the document names for it: on the authored equation
- * probes the text around each equation came out in the body face at 12pt and every
- * piece of the equations themselves in a second face, so a caller hands over the
- * mark the equation is set in.
- */
-export type PlacedEquation = {
-  readonly mark: ParagraphMark;
+export type SetEquation = {
   readonly primitives: readonly MathPrimitive[];
+  readonly ascentPt: number;
+  readonly descentPt: number;
 };
 
 /**
@@ -474,7 +392,10 @@ const markOfPiece = (mark: ParagraphMark, sizePt: number): ParagraphMark => ({
   highlight: null,
 });
 
-const faceAskedFor = (mark: ParagraphMark): FaceRequest => ({
+// The face a run asks to be drawn in, which is the three things a document states
+// about it. **Decided here** because it is a fact about what is drawn, and both the
+// pdf writer and the metafile player ask in this one shape.
+export const faceAskedFor = (mark: ParagraphMark): FaceRequest => ({
   name: mark.font.kind === "named" ? mark.font.name : "",
   bold: mark.bold,
   italic: mark.italic,
@@ -499,24 +420,26 @@ const faceAskedFor = (mark: ParagraphMark): FaceRequest => ({
  * the unit its head sits on: the bar is filled between two snapped edges, which is
  * what `drawnLine` and `drawnCell` already do with everything else that is filled.
  */
-const drawnMathRun = (
-  piece: Extract<MathPrimitive, { kind: "text" }>,
-  mark: ParagraphMark,
-): DrawnRun => ({
+const drawnMathRun = (piece: Extract<MathPrimitive, { kind: "text" }>): DrawnRun => ({
   text: piece.text,
-  mark: markOfPiece(mark, piece.sizePt),
-  widthPt: piece.widthPt,
+  mark: markOfPiece(piece.mark, piece.sizePt),
+  // **A piece states no width, so none is held to one.** Every other run is held to
+  // what it was measured at so that a stand-in face keeps Word's break points; a set
+  // equation is drawn in the very face it was measured in or it is not set at all,
+  // since a face stating no MATH table cannot set one. What is left is a browser
+  // substituting under the viewer, where the halves would drift from their bar; the
+  // piece carrying its own `box.widthPt` is what would close that.
+  widthPt: 0,
   leftPt: piece.leftPt,
   baselinePt: onTheDeviceGrid(piece.baselinePt),
 });
 
-const drawnMathFill = (
-  piece: Extract<MathPrimitive, { kind: "fill" }>,
-  mark: ParagraphMark,
-): PaintedFill => {
+const drawnMathFill = (piece: Extract<MathPrimitive, { kind: "fill" }>): PaintedFill => {
   const topPt = onTheDeviceGrid(piece.topPt);
   return {
-    color: drawnColor(mark.color),
+    // A bar takes its colour from the mark the piece carries, which for a fraction
+    // is the `m:ctrlPr`'s own where the file wrote one.
+    color: drawnColor(piece.mark.color),
     leftPt: piece.leftPt,
     topPt,
     widthPt: piece.widthPt,
@@ -524,13 +447,27 @@ const drawnMathFill = (
   };
 };
 
+/**
+ * A stretched delimiter, which is a rung of the face's own ladder and has no
+ * character to be asked for by: the glyph run was built for exactly this.
+ *
+ * **Three things a glyph needs are not on the piece yet**, and each costs something
+ * stated rather than hidden. Its advance is what the pdf writes as the glyph's own
+ * width, since an advance table answers by character and can answer for none of
+ * these; nought there costs a reader the width when it selects the shape, and never
+ * moves it, because every glyph is drawn at a place of its own. What it stands for
+ * is what lets a reader search the page for the bracket. Its outline is the whole of
+ * what a browser can draw, so the viewer marks it undrawn and says which it was.
+ *
+ * All three are on `PlacedDelimiter` and `MathVariant` already, an argument away
+ * from the flattener that placed the piece.
+ */
 const drawnMathGlyph = (piece: Extract<MathPrimitive, { kind: "glyph" }>): DrawnGlyph => ({
   glyph: piece.glyph,
   leftPt: piece.leftPt,
   baselinePt: onTheDeviceGrid(piece.baselinePt),
-  advancePt: piece.advancePt,
-  standsFor: piece.standsFor,
-  ...(piece.outline === undefined ? {} : { outline: piece.outline }),
+  advancePt: 0,
+  standsFor: null,
 });
 
 // Whether a piece is drawn together with the one before it. Kinds part company
@@ -563,7 +500,7 @@ function piecesInTheirOrder(
 
 function drawableOfPieces(
   pieces: readonly MathPrimitive[],
-  mark: ParagraphMark,
+  ink: { readonly ascentPt: number; readonly descentPt: number },
   key: string,
 ): readonly Drawable[] {
   const head = pieces[0];
@@ -573,13 +510,13 @@ function drawableOfPieces(
     case "text": {
       const runs = pieces
         .filter((piece): piece is Extract<MathPrimitive, { kind: "text" }> => piece.kind === "text")
-        .map((piece) => drawnMathRun(piece, mark));
+        .map(drawnMathRun);
       return [{ kind: "text", key, boxes: [], runs, underlines: [], clipTo: null, turnDegrees: 0 }];
     }
     case "fill": {
       const fills = pieces
         .filter((piece): piece is Extract<MathPrimitive, { kind: "fill" }> => piece.kind === "fill")
-        .map((piece) => drawnMathFill(piece, mark));
+        .map(drawnMathFill);
       return [{ kind: "paint", key, painted: [{ fills, lines: [] }], highlights: [] }];
     }
     case "glyph": {
@@ -590,11 +527,14 @@ function drawableOfPieces(
         {
           kind: "glyphs",
           key,
-          face: faceAskedFor(mark),
+          face: faceAskedFor(head.mark),
           sizePt: head.sizePt,
-          color: drawnColor(mark.color),
-          ascentPt: Math.max(...drawn.map((piece) => piece.ascentPt)),
-          descentPt: Math.max(...drawn.map((piece) => piece.descentPt)),
+          color: drawnColor(head.mark.color),
+          // The equation's own reach, which is the nearest thing to the glyph's ink
+          // that gets this far: what a backend that cannot draw the shape shows the
+          // room of, and a delimiter is what makes an equation as tall as it is.
+          ascentPt: ink.ascentPt,
+          descentPt: ink.descentPt,
           glyphs: drawn.map(drawnMathGlyph),
         },
       ];
@@ -611,9 +551,9 @@ function drawableOfPieces(
  * by. What this settles is which of the three each piece is and where it lands, and
  * a backend that draws a page already draws all three.
  */
-export const mathDrawables = (equation: PlacedEquation, key: string): readonly Drawable[] =>
+export const mathDrawables = (equation: SetEquation, key: string): readonly Drawable[] =>
   piecesInTheirOrder(equation.primitives).flatMap((pieces, at) =>
-    drawableOfPieces(pieces, equation.mark, `${key}-${String(at)}`),
+    drawableOfPieces(pieces, equation, `${key}-${String(at)}`),
   );
 
 export type Drawable =
@@ -819,6 +759,9 @@ function textOf(standing: Standing, key: string, options: DrawingOptions): reado
           },
         ]
       : []),
+    // A box's own text sets its equations as the flow does, and they are drawn where
+    // that text is drawn. Nothing cuts them to the frame the text is cut to yet.
+    ...equationLayers(boxes, `${key}-equation`),
     // **A drawing standing in the box's own text is drawn where that text put it.**
     // Fifteen corpus documents hold 76 of them and not one was drawn until
     // 2026-08-14: the text around each came out as usual, so no page said anything
@@ -1036,9 +979,6 @@ function paintedParagraphs(boxes: readonly ParagraphBox[]): readonly PaintedPara
  */
 export type PageDrawing = LaidOutPage & {
   readonly glyphRuns?: readonly PlacedGlyphs[];
-  // The equations the page set, on the same footing and for the same reason. Both
-  // lines go together when the seam lands.
-  readonly equations?: readonly PlacedEquation[];
 };
 
 // A run holding no glyph at all draws nothing, so it is left out rather than
@@ -1056,12 +996,40 @@ const glyphLayers = (page: PageDrawing): readonly Drawable[] =>
       })),
     }));
 
-// An equation that set nothing draws nothing, so it is left out rather than handed
-// to a backend to skip.
-const equationLayers = (page: PageDrawing): readonly Drawable[] =>
-  (page.equations ?? [])
-    .filter((equation) => equation.primitives.length > 0)
-    .flatMap((equation, at) => mathDrawables(equation, `equation-${String(at)}`));
+/**
+ * Every equation the story's lines hold, as the drawables that draw them.
+ *
+ * **An equation stands on a line like anything else on it**, so it is found where
+ * the line put it rather than hung off the page: the segment carries the pieces
+ * `setMath` placed about their own baseline, and the line says where that baseline
+ * is. The boxes handed here are the drawn ones, so the origin is already on the
+ * grid and each piece lands with its own line rather than a step off it.
+ *
+ * An equation that set nothing draws nothing, and is left out rather than handed to
+ * a backend to skip.
+ */
+function equationLayers(boxes: readonly ParagraphBox[], prefix: string): readonly Drawable[] {
+  const drawables: Drawable[] = [];
+
+  boxes.forEach((box, boxAt) => {
+    box.lines.forEach((placed, lineAt) => {
+      for (const segment of placed.line.segments) {
+        if (segment.kind !== "equation" || segment.pieces.length === 0) continue;
+        const primitives = mathPrimitivesOf(segment.pieces, {
+          leftPt: placed.leftPt + segment.offsetPt,
+          baselinePt: placed.baselinePt,
+        });
+        drawables.push(
+          ...mathDrawables(
+            { primitives, ascentPt: segment.ascentPt, descentPt: segment.descentPt },
+            `${prefix}-${String(boxAt)}-${String(lineAt)}`,
+          ),
+        );
+      }
+    });
+  });
+  return drawables;
+}
 
 export function drawablesOf(
   layout: LaidOutDocument,
@@ -1105,7 +1073,7 @@ export function drawablesOf(
     // An equation is text, and stands where the story's text stands. Its own
     // pieces stack among themselves in the order the flattener set them in, a bar
     // over the half it crosses and not under it.
-    ...equationLayers(page),
+    ...equationLayers(flowed, "equation"),
     ...inlines,
     ...stacked(inFront, "float", options),
   ];

@@ -1,9 +1,8 @@
 import { strToU8 } from "fflate";
 
-import type { ParagraphMark } from "../docx/styles.js";
 import { DocxPagesError } from "../errors.js";
 import { readFontFile, readGlyphIndex, type UnderlineMetrics } from "../layout/font-file.js";
-import type { FontMetrics } from "../layout/font-metrics.js";
+import type { FaceRequest, FontMetrics } from "../layout/font-metrics.js";
 import type { CodeToGlyph } from "../layout/glyphs.js";
 
 import {
@@ -42,25 +41,10 @@ const scaled = (value: number, metrics: FontMetrics): number =>
 
 const normalise = (name: string): string => name.trim().toLowerCase();
 
-// A face as something asking to be drawn names it. The same three things a
-// document states about a run and a metafile states about the text it records, so
-// both ask here in the one shape.
-export type PdfFaceRequest = {
-  readonly name: string;
-  readonly bold: boolean;
-  readonly italic: boolean;
-};
-
-export const faceOf = (mark: ParagraphMark): PdfFaceRequest => ({
-  name: mark.font.kind === "named" ? mark.font.name : "",
-  bold: mark.bold,
-  italic: mark.italic,
-});
-
-const keyOf = (want: PdfFaceRequest): string =>
+const keyOf = (want: FaceRequest): string =>
   `${normalise(want.name)}|${want.bold ? "b" : ""}${want.italic ? "i" : ""}`;
 
-const supplies = (font: PdfFont, want: PdfFaceRequest): boolean =>
+const supplies = (font: PdfFont, want: FaceRequest): boolean =>
   normalise(font.name) === normalise(want.name) &&
   (font.bold ?? false) === want.bold &&
   (font.italic ?? false) === want.italic;
@@ -104,7 +88,7 @@ export type PdfFonts = {
   // The face something is drawn in. **Refuses the document** where nothing
   // supplies it: there is no stand-in here, and drawing a page in the wrong face
   // is the one thing this project will not do quietly.
-  readonly faceFor: (want: PdfFaceRequest) => PdfFace;
+  readonly faceFor: (want: FaceRequest) => PdfFace;
   // The `/Font` resource dictionary, once every page has been written and it is
   // settled what each face was asked to draw.
   readonly resources: (objects: PdfObjects) => PdfValue;
@@ -156,7 +140,7 @@ function openFace(font: PdfFont, resource: string): Used {
 export function pdfFonts(fonts: readonly PdfFont[]): PdfFonts {
   const used = new Map<string, Used>();
 
-  const faceFor = (want: PdfFaceRequest): PdfFace => {
+  const faceFor = (want: FaceRequest): PdfFace => {
     const key = keyOf(want);
 
     let face = used.get(key);

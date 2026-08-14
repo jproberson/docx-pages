@@ -15,6 +15,17 @@ import {
   type PairKerning,
   type RunKerning,
 } from "./font-metrics.js";
+import { NO_INK, NO_MATH } from "./font-metrics.js";
+import {
+  mathFace,
+  mathLeadingPt,
+  mathRowOf,
+  scriptSizePt,
+  setMath,
+  textBox,
+  type MathFace,
+  type SetMath,
+} from "./math.js";
 import { nextTabStop, type TabStopPt } from "./tab-stops.js";
 import { roomForTurn } from "./turns.js";
 import { emuToPoints } from "./units.js";
@@ -42,6 +53,17 @@ export type LineSegment =
       readonly kind: "drawing";
       readonly widthPt: number;
       readonly heightPt: number;
+      readonly offsetPt: number;
+    }
+  // A set equation, already placed about its own baseline, which the line's baseline
+  // is. A renderer asks `mathPrimitivesOf` what to draw and nothing here has to know
+  // a fraction from a delimiter.
+  | {
+      readonly kind: "equation";
+      readonly pieces: readonly SetMath[];
+      readonly widthPt: number;
+      readonly ascentPt: number;
+      readonly descentPt: number;
       readonly offsetPt: number;
     };
 
@@ -203,6 +225,14 @@ type Unit =
       readonly heightPt: number;
     }
   | {
+      readonly kind: "equation";
+      readonly widthPt: number;
+      readonly ascentPt: number;
+      readonly descentPt: number;
+      readonly fontHeightPt: number;
+      readonly pieces: readonly SetMath[];
+    }
+  | {
       readonly kind: "drawing";
       readonly widthPt: number;
       readonly heightPt: number;
@@ -225,6 +255,20 @@ class Measurer {
   failure: MeasureFailure | null = null;
 
   constructor(private readonly metricsFor: MetricsResolver) {}
+
+  // The face an equation is set out of, which wants more of a file than a line of
+  // text does: the outlines a fraction's height is measured off and the MATH table it
+  // takes its every constant from. A face carrying neither cannot set one at all.
+  mathFaceFor(mark: ParagraphMark): MathFace | null {
+    const lookup = this.metricsFor(faceRequestFor(mark));
+    if (lookup.kind === "missing") return null;
+    return mathFace({
+      metrics: lookup.metrics,
+      advances: lookup.advances,
+      ink: lookup.ink ?? NO_INK,
+      math: lookup.math ?? NO_MATH,
+    });
+  }
 
   private faceFor(mark: ParagraphMark): Face | null {
     const cached = this.faces.get(mark);
@@ -398,8 +442,25 @@ const AFTER_HYPHEN = /(?<=-)/;
 const endsOnHyphen = (unit: Unit): boolean =>
   unit.kind === "word" && (unit.fragments.at(-1)?.text ?? "").endsWith("-");
 
+// **What decides the size a fraction's halves are set at is drawn text on the line,
+// not the shape of the paragraph.** Measured on 2026-08-13: a paragraph holding a
+// fraction and an empty run drew the halves full size and centred, one holding the
+// fraction and a single space drew them at the script size and in the flow, and a
+// delimiter standing alone was full size like anything else. So a run holding nothing
+// does not count and a space does.
+const drawsBesideAnEquation = (runs: readonly TextRun[]): boolean =>
+  runs.some((run) =>
+    run.pieces.some(
+      (piece) =>
+        (piece.kind === "text" && piece.text !== "") ||
+        piece.kind === "tab" ||
+        piece.kind === "drawing",
+    ),
+  );
+
 function tokenize(runs: readonly TextRun[], measurer: Measurer): Measured<readonly Unit[]> {
   const units: Unit[] = [];
+  const setting = drawsBesideAnEquation(runs) ? "text" : "display";
 
   const append = (kind: "word" | "space", fragment: Fragment): void => {
     const last = units.at(-1);
@@ -412,7 +473,7 @@ function tokenize(runs: readonly TextRun[], measurer: Measurer): Measured<readon
 
   for (const run of runs) {
     for (const piece of run.pieces) {
-      if (!addPiece(piece, run.mark, units, append, measurer)) return { kind: "failed" };
+      if (!addPiece(piece, run.mark, units, append, measurer, setting)) return { kind: "failed" };
     }
   }
 
@@ -425,7 +486,50 @@ function addPiece(
   units: Unit[],
   append: (kind: "word" | "space", fragment: Fragment) => void,
   measurer: Measurer,
+  setting: "display" | "text",
 ): boolean {
+  if (piece.kind === "equation") {
+    const face = measurer.mathFaceFor(mark);
+    const fontHeightPt = measurer.lineHeight(mark);
+    if (face === null || fontHeightPt === null) return false;
+
+    // The halves shrink where the line holds anything else that draws; the bar and
+    // the axis keep to the size the run states either way.
+    const halfSizePt = setting === "text" ? scriptSizePt(mark.fontSizePt, face) : mark.fontSizePt;
+    const pieces = setMath(piece.content, {
+      sizePt: mark.fontSizePt,
+      halfSizePt,
+      setting,
+      face,
+      measure: (text, runMark, sizePt) => {
+        const own = measurer.mathFaceFor(runMark);
+        return own === null ? null : textBox(text, sizePt, own);
+      },
+    });
+    if (pieces === null) return false;
+
+    // **A line holding an equation is the ink of it and the face's own
+    // `mathLeading`, and the leading is room above.** Measured on 2026-08-13 over
+    // the three fractions of the authored probe, whose paragraphs stood 1.59, 1.42
+    // and 1.55pt above the ink of their boxes against a `mathLeading` of 1.62 at the
+    // size Word drew them. It is asked for here rather than in the builder because
+    // that room is what `fontHeightPt` already means: a line is never shorter than
+    // it, and what it opens over the line's own content is a seat.
+    const box = mathRowOf(pieces);
+    units.push({
+      kind: "equation",
+      widthPt: box.widthPt,
+      ascentPt: box.ascentPt,
+      descentPt: box.descentPt,
+      fontHeightPt: Math.max(
+        fontHeightPt,
+        box.ascentPt + box.descentPt + mathLeadingPt(mark.fontSizePt, face),
+      ),
+      pieces,
+    });
+    return true;
+  }
+
   if (piece.kind === "tab") {
     units.push({ kind: "tab" });
     return true;
@@ -482,7 +586,7 @@ function spanAfterTab(units: readonly Unit[], from: number): TabbedSpan {
     const unit = units[at];
     if (unit === undefined || unit.kind === "tab" || unit.kind === "break") break;
 
-    if (unit.kind === "drawing") {
+    if (unit.kind === "drawing" || unit.kind === "equation") {
       widthPt += unit.widthPt;
       trailingSpacePt = 0;
       continue;
@@ -659,6 +763,29 @@ class LineBuilder {
 
   // A drawing stands on the baseline and reaches nothing below it, however deep
   // the text beside it goes.
+  // An equation straddles the baseline where a drawing sits on it, so it raises the
+  // line by its own ascent and its own descent rather than by one height.
+  equation(unit: Extract<Unit, { kind: "equation" }>): Taken {
+    if (!this.empty && this.filled + unit.widthPt > this.room + EPSILON) {
+      return { kind: "full", rest: null };
+    }
+    this.raise(unit.ascentPt, unit.descentPt, unit.fontHeightPt);
+    this.commit(
+      [
+        {
+          kind: "equation",
+          pieces: unit.pieces,
+          widthPt: unit.widthPt,
+          ascentPt: unit.ascentPt,
+          descentPt: unit.descentPt,
+          offsetPt: 0,
+        },
+      ],
+      unit.widthPt,
+    );
+    return TAKEN;
+  }
+
   drawing(widthPt: number, heightPt: number, fontHeightPt: number): Taken {
     if (!this.empty && this.filled + widthPt > this.room + EPSILON) {
       return { kind: "full", rest: null };
@@ -894,6 +1021,8 @@ function tookOf(
       return builder.space(unit.fragments);
     case "tab":
       return builder.tab(spanAfter());
+    case "equation":
+      return builder.equation(unit);
     case "drawing":
       return builder.drawing(unit.widthPt, unit.heightPt, unit.fontHeightPt);
     case "break":

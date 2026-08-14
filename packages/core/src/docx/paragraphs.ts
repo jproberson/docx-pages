@@ -1,5 +1,5 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
-import { MATH_NS, readEquation, runsAlone } from "./equations.js";
+import { MATH_NS, readEquation, runsOf } from "./equations.js";
 import { W_NS } from "./section.js";
 import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
 import { descendantsNamed, type XmlElement } from "./xml.js";
@@ -29,16 +29,20 @@ export const paragraphDescendants = (
 ): readonly XmlElement[] => descendantsNamed(paragraph.element, namespace, name);
 
 // An equation stands where the paragraph holds it, so its runs are gathered by the
-// same walk rather than appended after. Only an equation of runs alone is read:
-// anything stacked draws nothing until there is geometry for it, and descending
-// into one would put a fraction's halves on the line side by side.
+// same walk rather than appended after, and every run it holds comes out however deep
+// it stands. **Descending into a fraction would put its halves on the line side by
+// side, which is why it was refused until there was geometry for one**; what makes it
+// safe now is that `readRuns` gathers an equation's runs back into one piece before
+// anything reaches a line, so a half is never a thing a line can see. The runs are
+// wanted here all the same, because a run is marked by the cascade only where the
+// paragraph hands it out, and a half cannot be measured without its mark.
 function collectNamed(node: XmlElement, name: string, into: XmlElement[]): void {
   for (const child of node.children) {
     if (isDetachedContent(child)) continue;
     if (child.namespace === W_NS && child.name === "p") continue;
     if (child.namespace === MATH_NS && child.name === "oMath") {
       if (name === "r") {
-        for (const run of runsAlone(readEquation(child)) ?? []) into.push(run.element);
+        for (const run of runsOf(readEquation(child))) into.push(run.element);
       }
       continue;
     }
@@ -55,7 +59,7 @@ const WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordproc
 // text either side of it together.
 const LINE_CONTENT = new Set(["t", "tab", "br"]);
 
-function placesContentInLine(run: XmlElement): boolean {
+function holdsLineContent(run: XmlElement, mustDraw: boolean): boolean {
   let found = false;
   const visit = (node: XmlElement): void => {
     if (found) return;
@@ -67,6 +71,10 @@ function placesContentInLine(run: XmlElement): boolean {
       const isInline = child.namespace === WP_DRAWING_NS && child.name === "inline";
       const isLegacy =
         holdsALegacyPicture(child.namespace, child.name) && inlinePictureOf(child) !== null;
+      if (isText && mustDraw && child.name === "t" && child.text === "") {
+        visit(child);
+        continue;
+      }
       if (isText || isInline || isLegacy) {
         found = true;
         return;
@@ -77,6 +85,15 @@ function placesContentInLine(run: XmlElement): boolean {
   visit(run);
   return found;
 }
+
+const placesContentInLine = (run: XmlElement): boolean => holdsLineContent(run, false);
+
+// **Whether the run draws anything, which is not whether it stands on the line.** A
+// `w:t` holding nothing takes the line's own height with it and puts no ink on the
+// page, and the two questions part company over a display equation: Word centred one
+// beside an empty run and laid the same one in the flow beside a single space,
+// measured on 2026-08-13 over the authored probe.
+export const drawsInLine = (run: XmlElement): boolean => holdsLineContent(run, true);
 
 export function paragraphRuns(paragraph: Paragraph): readonly XmlElement[] {
   const found: XmlElement[] = [];

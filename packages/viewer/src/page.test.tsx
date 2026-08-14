@@ -781,46 +781,123 @@ describe("Page saying what a glyph it drew stands for", () => {
   });
 });
 
-// A fraction as `drawables.ts` hands it over: two halves at their own size and the
-// bar between them, each already on the device grid. It hangs off the page exactly
-// as a glyph run does, and for the same reason.
-const FRACTION = [
-  { kind: "text", text: "gralm", sizePt: 7.92, widthPt: 20.5, leftPt: 290.5, baselinePt: 100.08 },
-  { kind: "fill", leftPt: 290.4, topPt: 104.88, widthPt: 20.96, heightPt: 0.72 },
-  { kind: "text", text: "presk", sizePt: 7.92, widthPt: 19.4, leftPt: 291.85, baselinePt: 115.92 },
-];
+// A fraction as the line holds it: `math.ts` places the pieces about the line's own
+// baseline and `drawables.ts` turns them into a run, a fill and a run.
+const half = (text: string) => ({
+  kind: "run" as const,
+  text,
+  mark: MARK,
+  sizePt: 7.92,
+  box: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0 },
+});
 
-const withEquation = (): LaidOutDocument => {
-  const layout = layoutWith([]);
-  const page = { ...firstPage(layout), equations: [{ mark: MARK, primitives: FRACTION }] };
-  return { ...layout, pages: [page] };
+const EQUATION_BOX: ParagraphBox = {
+  index: 0,
+  topPt: 90,
+  anchorTopPt: 90,
+  heightPt: 14.6484375,
+  marker: null,
+  contentWidthPt: 20.96,
+  markTopPt: 90,
+  contentBottomPt: 104.6484375,
+  resumesUnderPt: 0,
+  widowControl: false,
+  keepNext: false,
+  startsPage: false,
+  endsPage: false,
+  endsPageAtASection: false,
+  clipTo: null,
+  paint: null,
+  lines: [
+    {
+      line: {
+        segments: [
+          {
+            kind: "equation",
+            pieces: [
+              {
+                kind: "fraction",
+                mark: MARK,
+                box: {
+                  widthPt: 20.96,
+                  ascentPt: 8,
+                  descentPt: 5,
+                  numerator: {
+                    widthPt: 20.5,
+                    ascentPt: 5.6,
+                    descentPt: 0,
+                    leftPt: 0,
+                    baselinePt: 5.02,
+                  },
+                  denominator: {
+                    widthPt: 20.5,
+                    ascentPt: 5.6,
+                    descentPt: 0,
+                    leftPt: 1.35,
+                    baselinePt: -5.6,
+                  },
+                  bar: { leftPt: 0, widthPt: 20.96, topPt: 3.1, thicknessPt: 0.7223 },
+                },
+                numerator: [half("gralm")],
+                denominator: [half("presk")],
+              },
+            ],
+            widthPt: 20.96,
+            ascentPt: 8,
+            descentPt: 5,
+            offsetPt: 0,
+          },
+        ],
+        widthPt: 20.96,
+        heightPt: 14.6484375,
+        ascentPt: 11.7,
+        seatPt: 0,
+        fontHeightPt: 14.6484375,
+        heldOpenPt: null,
+      },
+      leftPt: 290.5,
+      topPt: 90,
+      heightPt: 14.6484375,
+      seatPt: 0,
+      fittingHeightPt: 14.6484375,
+      baselinePt: 100.1,
+      startsPage: false,
+    },
+  ],
 };
+
+const withEquation = (): LaidOutDocument => layoutWith([], [EQUATION_BOX]);
 
 describe("Page drawing a set equation", () => {
   // A piece of an equation is a string at a place at a size, which is the shape a
-  // list's number already had, so the viewer draws it the way it draws one.
-  it("draws each half at its own size where the drawing placed it", () => {
+  // list's number already had, so the viewer draws it the way it draws one. The
+  // line's own baseline is 100.08 on the grid; the numerator stands 5.02 above it
+  // and is drawn at 95.04, the denominator 5.6 below it and drawn at 105.6.
+  it("draws each half at its own size where the line put it", () => {
     const html = markup(withEquation());
 
-    expect(html).toContain('x="290.5" y="100.08"');
+    expect(html).toContain('x="290.5" y="95.04"');
     expect(html).toContain(">gralm<");
-    expect(html).toContain('x="291.85" y="115.92"');
+    expect(html).toContain('x="291.85" y="105.6"');
     expect(html).toContain(">presk<");
     expect(html).toContain('font-size="7.92"');
   });
 
   // The bar is a fill like any other, so it is the rectangle the drawing states and
-  // nothing here works anything out about it.
+  // nothing here works anything out about it: 3.1 above the baseline is 96.96 on the
+  // grid, and the foot of it is a snapped edge of its own.
   it("draws the bar as the rectangle it was handed", () => {
     const html = markup(withEquation());
 
-    expect(html).toContain('x="290.4" y="104.88" width="20.96"');
+    expect(html).toContain('x="290.5" y="96.96" width="20.96"');
   });
 
-  // Held to the width it was set at, as every other run is: the halves were
-  // measured off the face's own advances and the bar's width is made of the same,
-  // so a browser drawing them in another face keeps the two together.
-  it("holds each half to the width it was set at", () => {
-    expect(markup(withEquation())).toContain('textLength="20.5"');
+  // **A piece states no width, so no half is held to one.** Every other run is held
+  // to what it was measured at so that a stand-in face keeps Word's break points; a
+  // set equation is drawn in the very face it was measured in or it is not set at
+  // all. What is left is a browser substituting under this, where the halves would
+  // drift from their bar, and the piece carrying its own width is what closes it.
+  it("holds no half to a width, since a piece states none", () => {
+    expect(markup(withEquation())).not.toContain("textLength");
   });
 });

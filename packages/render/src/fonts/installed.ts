@@ -152,6 +152,11 @@ export function installedFaces(
             // The pairs the file states, so a run that asks to kern kerns in the face
             // Word drew it in rather than in a face measured without them.
             kerning: read.kerning,
+            // What each glyph draws and what the face says about setting
+            // mathematics, without which a face carrying a MATH table cannot set an
+            // equation at all.
+            ink: read.ink,
+            math: read.math,
             sansSerif: read.sansSerif,
           };
         };

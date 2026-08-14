@@ -1,10 +1,21 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
 import { readDrawingTurn } from "./drawing.js";
-import { mathStyleOf, MATH_NS } from "./equations.js";
+import {
+  equationsIn,
+  mathStyleOf,
+  MATH_NS,
+  needsSetting,
+  readEquation,
+  runsIn,
+  runsOf,
+  type Equation,
+  type EquationPiece,
+} from "./equations.js";
+import type { MarkedMath } from "../layout/math.js";
 import { spelledAsMath } from "./math-letters.js";
 import { WP_NS } from "./inlines.js";
 import { W_NS } from "./section.js";
-import { resolveRuns, type ParagraphMark, type StyleTable } from "./styles.js";
+import { resolveRuns, type MarkedRun, type ParagraphMark, type StyleTable } from "./styles.js";
 import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
 
@@ -22,7 +33,13 @@ export type RunPiece =
       // The extent is the drawing the right way up, so how far round it was turned
       // is part of how much of the line it takes.
       readonly turnDegrees: number;
-    };
+    }
+  // An equation that has to be set rather than laid along the line: a fraction or a
+  // delimiter, with the runs it holds gathered back into the shape the reader found.
+  // The line measures it through `setMath` and a renderer draws what
+  // `mathPrimitivesOf` hands out, so nothing between here and the page knows a
+  // fraction from a delimiter.
+  | { readonly kind: "equation"; readonly content: readonly MarkedMath[] };
 
 export type TextRun = {
   readonly mark: ParagraphMark;
@@ -209,15 +226,117 @@ function capitalised(mark: ParagraphMark, pieces: readonly RunPiece[]): readonly
   return runs;
 }
 
-export function readRuns(paragraph: Paragraph, styles: StyleTable): readonly TextRun[] {
-  return resolveRuns(paragraph, styles).flatMap((marked) => {
-    const pieces: RunPiece[] = [];
-    collectPieces(marked.run, pieces);
-    if (marked.run.namespace !== MATH_NS) return capitalised(marked.mark, pieces);
+// **An equation that has to be set is gathered back into one piece here**, which is
+// what makes it safe for `paragraphRuns` to hand out the runs standing inside a
+// fraction: they are marked one at a time by the cascade, as every run is, and then
+// put back into the shape the reader found before anything reaches a line. A line
+// never sees a half.
+//
+// An equation of runs alone is left flat, which is what it was before there was any
+// geometry: its runs are drawn where a paragraph's own runs are.
+function equationsToSet(
+  paragraph: Paragraph,
+): ReadonlyMap<XmlElement, { readonly at: XmlElement; readonly equation: Equation }> {
+  const held = new Map<XmlElement, { at: XmlElement; equation: Equation }>();
+  for (const oMath of equationsIn(paragraph.element)) {
+    const equation = readEquation(oMath);
+    if (!needsSetting(equation)) continue;
+    const first = runsOf(equation)[0];
+    if (first === undefined) continue;
+    for (const run of runsOf(equation)) held.set(run.element, { at: first.element, equation });
+  }
+  return held;
+}
 
-    const style = mathStyleOf(marked.run);
+// The equation's own tree, with the mark each of its runs resolved to hung on it.
+function markedMathOf(
+  pieces: readonly EquationPiece[],
+  marks: ReadonlyMap<XmlElement, ParagraphMark>,
+  mathFont: string,
+): readonly MarkedMath[] {
+  const marked: MarkedMath[] = [];
+  for (const piece of pieces) {
+    if (piece.kind === "break") continue;
+    if (piece.kind === "run") {
+      const mark = marks.get(piece.element);
+      if (mark === undefined) continue;
+      marked.push({
+        kind: "run",
+        text: spelledAsMath(piece.text, piece.style),
+        mark: inTheMathFont(mark, mathFont),
+      });
+      continue;
+    }
+
+    // A structure takes the mark of the `m:ctrlPr` the file writes for it, which is
+    // where a bar's colour and size come from, and the mark of the first run it holds
+    // where the file wrote none. **The run may be any depth down**: a delimiter round
+    // a fraction holds no run of its own, and taking only the runs standing directly
+    // inside left it with no mark and dropped the whole delimiter.
+    const first = runsIn([piece])[0];
+    const mark = first === undefined ? undefined : marks.get(first.element);
+    if (mark === undefined) continue;
+    const own = inTheMathFont(mark, mathFont);
+
+    if (piece.kind === "fraction") {
+      marked.push({
+        kind: "fraction",
+        mark: own,
+        numerator: markedMathOf(piece.numerator, marks, mathFont),
+        denominator: markedMathOf(piece.denominator, marks, mathFont),
+      });
+      continue;
+    }
+    marked.push({
+      kind: "delimiter",
+      mark: own,
+      opening: piece.opening === null ? null : (piece.opening.codePointAt(0) ?? null),
+      closing: piece.closing === null ? null : (piece.closing.codePointAt(0) ?? null),
+      // **A file stating nothing means it grows**: a parenthesis round a fraction came
+      // back on the fourth rung of Cambria Math's ladder where the same one with
+      // `m:grow` turned off came back on the first.
+      grows: piece.grows ?? true,
+      content: piece.parts.flatMap((part) => markedMathOf(part, marks, mathFont)),
+    });
+  }
+  return marked;
+}
+
+export function readRuns(paragraph: Paragraph, styles: StyleTable): readonly TextRun[] {
+  const marked = resolveRuns(paragraph, styles);
+  const toSet = equationsToSet(paragraph);
+  if (toSet.size === 0) return flatRuns(marked, styles);
+
+  const marks = new Map(marked.map((each) => [each.run, each.mark] as const));
+  const runs: TextRun[] = [];
+  for (const each of marked) {
+    const equation = toSet.get(each.run);
+    if (equation === undefined) {
+      runs.push(...flatRuns([each], styles));
+      continue;
+    }
+    // Every run of one equation answers with the same piece, emitted where the first
+    // of them stands and passed over at the rest.
+    if (each.run !== equation.at) continue;
+    const content = markedMathOf(
+      equation.equation.kind === "read" ? equation.equation.content : [],
+      marks,
+      styles.mathFont,
+    );
+    if (content.length > 0) runs.push({ mark: each.mark, pieces: [{ kind: "equation", content }] });
+  }
+  return runs;
+}
+
+function flatRuns(marked: readonly MarkedRun[], styles: StyleTable): readonly TextRun[] {
+  return marked.flatMap((each) => {
+    const pieces: RunPiece[] = [];
+    collectPieces(each.run, pieces);
+    if (each.run.namespace !== MATH_NS) return capitalised(each.mark, pieces);
+
+    const style = mathStyleOf(each.run);
     return capitalised(
-      inTheMathFont(marked.mark, styles.mathFont),
+      inTheMathFont(each.mark, styles.mathFont),
       pieces.map((piece) =>
         piece.kind === "text" ? { kind: "text", text: spelledAsMath(piece.text, style) } : piece,
       ),

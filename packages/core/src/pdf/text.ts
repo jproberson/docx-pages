@@ -1,9 +1,14 @@
 import type { ParagraphMark } from "../docx/styles.js";
-import { drawnColor, type Drawable, type UnderlinePaint } from "../layout/drawables.js";
+import {
+  drawnColor,
+  faceAskedFor,
+  type Drawable,
+  type UnderlinePaint,
+} from "../layout/drawables.js";
 import type { ParagraphMarker, PlacedLine } from "../layout/stack.js";
 
 import { bottomOf, upFromTop, type PdfPage } from "./coordinates.js";
-import { faceOf, type PdfFonts } from "./fonts.js";
+import type { PdfFonts } from "./fonts.js";
 import type { Content } from "./content.js";
 
 // The text-showing half of a page, which mirrors the viewer's `textLayer` and
@@ -36,7 +41,7 @@ function shownRun(
 ): void {
   if (text === "") return;
 
-  const face = options.fonts.faceFor(faceOf(mark));
+  const face = options.fonts.faceFor(faceAskedFor(mark));
   const glyphs = face.glyphsFor(text);
 
   out.fillColor(drawnColor(mark.color));

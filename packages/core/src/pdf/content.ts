@@ -2,11 +2,11 @@ import { strToU8 } from "fflate";
 
 import { DocxPagesError } from "../errors.js";
 import type { LaidOutDocument } from "../layout/document.js";
-import { drawablesOf, type PageDrawing } from "../layout/drawables.js";
+import { drawablesOf, faceAskedFor, type PageDrawing } from "../layout/drawables.js";
 
 import { formatPdfNumber } from "./objects.js";
 import { pdfPageOf, turnedAboutInPdf, upFromTop, type PdfPage } from "./coordinates.js";
-import { faceOf, type PdfFonts } from "./fonts.js";
+import type { PdfFonts } from "./fonts.js";
 import type { PdfImages } from "./images.js";
 import { paintedObject, type ObjectDrawable } from "./objects-paint.js";
 import { paintLayer } from "./paint.js";
@@ -320,7 +320,7 @@ export function contentOf(
     aliasSymbolFaces: options.aliasSymbolFaces,
     // The faces are this backend's to hold; where the line under a run goes is
     // not this backend's to decide.
-    underlineFor: (mark) => options.fonts.faceFor(faceOf(mark)).underlineAt(mark.fontSizePt),
+    underlineFor: (mark) => options.fonts.faceFor(faceAskedFor(mark)).underlineAt(mark.fontSizePt),
   })) {
     switch (drawable.kind) {
       case "text": {

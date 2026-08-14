@@ -16,7 +16,7 @@ import {
   type NumberingTable,
 } from "./numbering.js";
 import { MATH_NS, readMathFont } from "./equations.js";
-import { paragraphRuns } from "./paragraphs.js";
+import { drawsInLine, paragraphRuns } from "./paragraphs.js";
 import { TWIPS_PER_POINT } from "../layout/units.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
@@ -1069,7 +1069,10 @@ export function styleIdOf(paragraph: Paragraph, table: StyleTable): string | und
 // The settings part's own `m:mathPr/m:defJc` is not read: no document here states
 // one, and what Word does with it was not measured.
 function displayEquationAlignment(paragraph: Paragraph): ParagraphAlignment | null {
-  const runs = paragraphRuns(paragraph);
+  // **A run that draws nothing does not count, and a single space does.** Measured
+  // on 2026-08-13: the same fraction beside an empty run came out centred and full
+  // size, and beside one space came out in the flow at the script size.
+  const runs = paragraphRuns(paragraph).filter(drawsInLine);
   if (runs.length === 0 || runs.some((run) => run.namespace !== MATH_NS)) return null;
   const stated = descendantsNamed(paragraph.element, MATH_NS, "jc")[0];
   const alignment = stated === undefined ? undefined : attribute(stated, MATH_NS, "val");
