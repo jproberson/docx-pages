@@ -612,8 +612,9 @@ describe("Page meeting a glyph it cannot draw", () => {
   it("marks the room the glyphs take and says which they were", () => {
     const html = markup(withGlyphs());
 
-    expect(html).toContain('data-kind="undrawn-glyphs"');
+    expect(html).toContain('data-kind="glyphs"');
     expect(html).toContain('data-glyphs="3436"');
+    expect(html).toContain('data-undrawn-glyphs="3436"');
   });
 
   // **Not the character it stands for.** A stretched parenthesis drawn as a plain
@@ -622,8 +623,11 @@ describe("Page meeting a glyph it cannot draw", () => {
   it("draws nothing in that room, the character the glyph stands for least of all", () => {
     const html = markup(withGlyphs());
 
-    expect(html).not.toContain(">(<");
+    expect(html).not.toContain("<path");
     expect(html).not.toContain("Meridian Math");
+    // The character it stands for is written for a reader to search by and
+    // painted nowhere, which is the pdf writer's answer in the other notation.
+    expect(html).toContain('fill="none"');
   });
 
   // The ink the layout stated, which is what says where the shape would have been:
@@ -642,5 +646,137 @@ describe("Page meeting a glyph it cannot draw", () => {
   it("outlines the room only where the page is asked to outline what it cannot draw", () => {
     expect(markup(withGlyphs(), { frames: "outlined" })).toContain('stroke-dasharray="3 3"');
     expect(markup(withGlyphs())).not.toContain('stroke-dasharray="3 3"');
+  });
+});
+
+// A glyph reaching the page with the shape the face draws it as. **This is the one
+// way a browser can draw a glyph with no character**: it addresses a face by
+// character and by nothing else, and an svg draws a path as well as it draws a
+// letter.
+const OUTLINED = {
+  ...GROWN,
+  sizePt: 1000,
+  glyphs: [
+    {
+      ...(GROWN.glyphs[0] ?? { glyph: 0, leftPt: 0, baselinePt: 0, advancePt: 0, standsFor: null }),
+      outline: {
+        unitsPerEm: 1000,
+        contours: [
+          {
+            from: [0, 0] as const,
+            steps: [
+              { kind: "line" as const, to: [10, 0] as const },
+              { kind: "quadratic" as const, control: [20, 5] as const, to: [10, 10] as const },
+              {
+                kind: "cubic" as const,
+                first: [5, 12] as const,
+                second: [2, 12] as const,
+                to: [0, 10] as const,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+};
+
+const withOutlines = (): LaidOutDocument => {
+  const layout = layoutWith([]);
+  const page = { ...firstPage(layout), glyphRuns: [OUTLINED] };
+  return { ...layout, pages: [page] };
+};
+
+describe("Page drawing a glyph from the face's own outline", () => {
+  it("draws the shape the face states, as a path", () => {
+    const html = markup(withOutlines());
+
+    expect(html).toContain('data-glyph="3436"');
+    expect(html).toContain("<path");
+    expect(html).not.toContain("data-undrawn-glyphs");
+  });
+
+  // The face counts up from the baseline and a page counts down from its top, so
+  // the outline is turned over about the glyph's own origin: the glyph starts at
+  // 100pt across and 199.92 down, and its first point is the origin itself.
+  it("puts the outline where the glyph stands, the right way up", () => {
+    const html = markup(withOutlines());
+
+    expect(html).toContain("M 0 14 L 10 14");
+    expect(html).toContain("Q 20 9 10 4");
+  });
+
+  it("fills it in the colour the run states", () => {
+    expect(markup(withOutlines())).toContain('fill="#112233"');
+  });
+
+  // A run whose glyphs are not all readable draws the ones that are and names the
+  // ones it could not, rather than drawing none or pretending it drew all.
+  it("draws what it can of a run and names what it could not", () => {
+    const layout = layoutWith([]);
+    const mixed = {
+      ...OUTLINED,
+      glyphs: [
+        ...OUTLINED.glyphs,
+        { glyph: 12, leftPt: 140, baselinePt: 200, advancePt: 9, standsFor: null },
+      ],
+    };
+    const page = { ...firstPage(layout), glyphRuns: [mixed] };
+    const html = markup({ ...layout, pages: [page] });
+
+    expect(html).toContain('data-glyph="3436"');
+    expect(html).toContain('data-undrawn-glyphs="12"');
+  });
+
+  // Nothing else about the run moves it: the outline is measured from the glyph's
+  // own origin, which the baseline and the left already place.
+  it("draws nothing at all for a glyph that reaches it without one", () => {
+    const html = markup(withGlyphs());
+
+    expect(html).not.toContain("<path");
+    expect(html).toContain('data-undrawn-glyphs="3436"');
+  });
+});
+
+// **A run stating no colour is drawn black, which is what Word draws.** The page
+// used to inherit whatever colour it stood in, so a themed container drew text
+// Word would have drawn black; `drawables.ts` resolves it now and both backends
+// draw the same thing.
+describe("Page drawing text that states no colour", () => {
+  it("draws it in the black Word draws it in rather than inheriting the page's", () => {
+    const html = markup(layoutWith([], [paragraphOf("Hello")]));
+
+    expect(html).toContain('fill="#000000"');
+  });
+});
+
+// A glyph named by number has no character of its own, so a page drawing one holds
+// no text to select or search unless it says what the glyph stands for. The pdf
+// writer maps each to its character; this is the same answer in the other
+// notation.
+describe("Page saying what a glyph it drew stands for", () => {
+  it("writes the character beside the shape, painted nowhere", () => {
+    const html = markup(withOutlines());
+
+    expect(html).toContain('fill="none"');
+    expect(html).toContain(">(</tspan>");
+  });
+
+  it("says so even where it could not draw the glyph at all", () => {
+    const html = markup(withGlyphs());
+
+    expect(html).toContain(">(</tspan>");
+    expect(html).not.toContain("<path");
+  });
+
+  it("says nothing for a glyph that stands for nothing", () => {
+    const layout = layoutWith([]);
+    const nameless = {
+      ...OUTLINED,
+      glyphs: [{ ...(OUTLINED.glyphs[0] ?? {}), standsFor: null }],
+    };
+    const page = { ...firstPage(layout), glyphRuns: [nameless] };
+
+    expect(markup({ ...layout, pages: [page] })).not.toContain("<tspan");
   });
 });

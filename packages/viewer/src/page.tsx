@@ -1,20 +1,15 @@
 import type { CSSProperties, ReactElement } from "react";
 
 import {
-  aliasedSymbolText,
   drawablesOf,
-  paintOfCell,
-  paintOfParagraph,
+  METAFILE_PEN_OFFSET,
   ROUNDED_CORNER_FRACTION,
   twipsToPoints,
-  type BorderStyle,
   type CropInsets,
   type Drawable,
   type DrawingFlip,
   type PathCommand,
-  type Painted,
   type PaintedFill,
-  type PaintedLine,
   type LaidOutDocument,
   type LaidOutPage,
   type MetafilePicture,
@@ -62,7 +57,12 @@ const DEFAULT_FALLBACK_FONTS = "sans-serif";
 const pt = (value: number): string => `${String(value)}pt`;
 
 type ObjectDrawable = Extract<Drawable, { kind: "object" }>;
+// Named through the drawable rather than imported, since the shape belongs to the
+// layout and only the drawable is published.
+type DrawnPaint = Extract<Drawable, { kind: "paint" }>["painted"][number];
+type DrawnLine = DrawnPaint["lines"][number];
 type GlyphsDrawable = Extract<Drawable, { kind: "glyphs" }>;
+type DrawnGlyph = GlyphsDrawable["glyphs"][number];
 
 // An object turned after it was drawn is turned about the middle of the box it
 // stands in, which is where a css transform turns an element by default.
@@ -177,10 +177,8 @@ function clipPathsOf(
   return byRect;
 }
 
-// A metafile's pen hangs its line off the cell whose corner the line runs through,
-// where a stroke is centred on the line it follows, so the line moves half a unit
-// down and right to cover the same cells.
-const PEN_OFFSET = 0.5;
+// Where a metafile's pen stands, which `drawables.ts` states for both backends.
+const PEN_OFFSET = METAFILE_PEN_OFFSET;
 
 function metafileShape(shape: MetafileShape, key: string, fallback: string): ReactElement {
   switch (shape.kind) {
@@ -398,20 +396,43 @@ function frame(drawable: ObjectDrawable, kind: string, frames: FrameStyle): Reac
 }
 
 /**
- * Glyphs the drawing named by number, which this cannot draw.
+ * Glyphs the drawing named by number, drawn from the outlines the face states.
  *
  * **A browser addresses a face by character and by nothing else.** There is no
  * css, and no attribute of an svg `text`, that asks for glyph 3436 of a family;
  * the page names the face and the browser picks the glyph, which is the whole
- * arrangement. The one way round it would be the outlines themselves, and the
- * viewer holds no font file: it names families and lets the machine find them.
+ * arrangement. So the shape itself is what reaches here, and an svg draws a shape
+ * as well as it draws a letter.
  *
- * So the room is marked and nothing is drawn in it. **Not the character the glyph
- * stands for**, which `drawables.ts` states beside it and says plainly is not what
- * to draw instead: a stretched parenthesis drawn as a plain one is the right
- * character at the wrong height, and a page that looks finished and is wrong is
- * worse than one visibly missing a piece.
+ * **Not the character the glyph stands for**, which `drawables.ts` states beside
+ * it and says plainly is not what to draw instead: the stretched parenthesis round
+ * a fraction is 21.6pt of ink where the plain one is 10.08, and drawing the plain
+ * one at the right place and the wrong height is a page that looks finished and is
+ * wrong. A glyph reaching here with no outline is marked and left undrawn, which
+ * says so.
  */
+function glyphPath(glyph: DrawnGlyph, sizePt: number, leftPt: number, topPt: number): string {
+  const outline = glyph.outline;
+  if (outline === undefined) return "";
+
+  const scale = sizePt / outline.unitsPerEm;
+  // The face counts up from the baseline and a page counts down from its top, so
+  // the outline is turned over as it is scaled, about the glyph's own origin.
+  const at = (point: readonly [number, number]): string =>
+    `${String(glyph.leftPt - leftPt + point[0] * scale)} ${String(glyph.baselinePt - topPt - point[1] * scale)}`;
+
+  return outline.contours
+    .map((contour) => {
+      const steps = contour.steps.map((step) => {
+        if (step.kind === "line") return `L ${at(step.to)}`;
+        if (step.kind === "quadratic") return `Q ${at(step.control)} ${at(step.to)}`;
+        return `C ${at(step.first)} ${at(step.second)} ${at(step.to)}`;
+      });
+      return `M ${at(contour.from)} ${steps.join(" ")} Z`;
+    })
+    .join(" ");
+}
+
 function glyphLayer(drawable: GlyphsDrawable, frames: FrameStyle): ReactElement {
   const leftPt = Math.min(...drawable.glyphs.map((each) => each.leftPt));
   const rightPt = Math.max(...drawable.glyphs.map((each) => each.leftPt + each.advancePt));
@@ -419,6 +440,7 @@ function glyphLayer(drawable: GlyphsDrawable, frames: FrameStyle): ReactElement 
   const topPt = Math.min(...baselines) - drawable.ascentPt;
   const heightPt = Math.max(...baselines) + drawable.descentPt - topPt;
   const widthPt = rightPt - leftPt;
+  const undrawn = drawable.glyphs.filter((each) => each.outline === undefined);
 
   return (
     <svg
@@ -427,10 +449,20 @@ function glyphLayer(drawable: GlyphsDrawable, frames: FrameStyle): ReactElement 
       width={pt(widthPt)}
       height={pt(heightPt)}
       viewBox={`0 0 ${String(widthPt)} ${String(heightPt)}`}
-      data-kind="undrawn-glyphs"
+      data-kind="glyphs"
       data-glyphs={drawable.glyphs.map((each) => each.glyph).join(" ")}
+      {...(undrawn.length === 0
+        ? {}
+        : { "data-undrawn-glyphs": undrawn.map((each) => each.glyph).join(" ") })}
     >
-      {frames === "outlined" ? (
+      {drawable.glyphs.flatMap((glyph, at) => {
+        const path = glyphPath(glyph, drawable.sizePt, leftPt, topPt);
+        return path === ""
+          ? []
+          : [<path key={at} d={path} fill={colorOf(drawable.color)} data-glyph={glyph.glyph} />];
+      })}
+      {searchable(drawable, leftPt, topPt)}
+      {frames === "outlined" && undrawn.length > 0 ? (
         <rect
           x={0}
           y={0}
@@ -446,32 +478,51 @@ function glyphLayer(drawable: GlyphsDrawable, frames: FrameStyle): ReactElement 
   );
 }
 
+/**
+ * What the glyphs stand for, written where they stand and painted nowhere.
+ *
+ * A glyph named by number has no character of its own, so a page drawing one holds
+ * no text a reader could select or search. The pdf writer answers that by mapping
+ * each glyph to the character `drawables.ts` says it stands for; this is the same
+ * answer in the other notation, and a page that draws a stretched parenthesis can
+ * be searched for a parenthesis on both.
+ *
+ * **Painted nowhere**: the shape itself is drawn from the outline above, and this
+ * would be a second, wrong drawing of it. Word's own pdf carries neither.
+ */
+function searchable(drawable: GlyphsDrawable, leftPt: number, topPt: number): ReactElement | null {
+  const said = drawable.glyphs.filter((each) => each.standsFor !== null);
+  if (said.length === 0) return null;
+
+  return (
+    <text fill="none" fontSize={drawable.sizePt} xmlSpace="preserve">
+      {said.map((glyph, at) => (
+        <tspan key={at} x={glyph.leftPt - leftPt} y={glyph.baselinePt - topPt}>
+          {glyph.standsFor}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
+// A colour reaches a backend as the six hex digits layout resolved it to, which
+// css needs a hash in front of.
+const colorOf = (color: string): string => (color.startsWith("#") ? color : `#${color}`);
+
 const familyOf = (mark: ParagraphMark, fallback: string): string =>
   mark.font.kind === "named" ? `"${mark.font.name}", ${fallback}` : fallback;
 
-// A run in a symbol face that was stood in for holds positions in that face's
-// page, and the stand-in would draw them as its own letters. Drawn as what the
-// positions mean instead, which is how the layout measured them.
-function shownText(
-  mark: ParagraphMark,
-  text: string,
-  aliasFaces: ReadonlySet<string> | null,
-): string {
-  if (aliasFaces === null || mark.font.kind !== "named") return text;
-  if (!aliasFaces.has(mark.font.name.trim().toLowerCase())) return text;
-  return aliasedSymbolText(mark.font.name, text) ?? text;
-}
+// **What a run shows and what colour it is drawn in are decided in
+// `drawables.ts`**: a run in a stood-in symbol face has its positions turned into
+// what they mean there, and a run stating no colour of its own is resolved to the
+// black Word draws it in. The text and the colour reaching here are what is drawn,
+// which is why nothing below falls back on anything.
 
-// The line was measured with the authored face's own widths. Holding each run to
-// that width keeps the break points Word chose even when the page draws the text
-// in a substitute, and starting each one where layout put it keeps a tab's gap
-// and an inline picture from carrying the rest of the line along with them.
-function lineText(
-  placed: PlacedLine,
-  key: string,
-  fallback: string,
-  aliasFaces: ReadonlySet<string> | null,
-): ReactElement | null {
+// **Why a run is held to its measured width, and how the difference is made up,
+// are stated in `drawables.ts` beside `runWidthMadeUpBy`**, which is where the
+// measurement that settled it lives. This spells that answer in the two words an
+// svg uses for it.
+function lineText(placed: PlacedLine, key: string, fallback: string): ReactElement | null {
   const spans = placed.line.segments.flatMap((segment, at) =>
     segment.kind === "text"
       ? [
@@ -487,14 +538,12 @@ function lineText(
             textDecoration={segment.mark.underline ? "underline" : undefined}
             fill={segment.mark.color ?? undefined}
             textLength={segment.widthPt > 0 ? segment.widthPt : undefined}
-            // **A run the file scaled is stretched rather than spaced out.** Holding
-            // a run to its measured width by the gaps between its glyphs is what
-            // keeps Word's break points under a substituted face, but a run stating
-            // `w:w` is drawn wider or narrower glyph by glyph, which is what the pdf
-            // writer's `Tz` does and what this asks for by name.
+            // **The answer is `runWidthMadeUpBy` in `drawables.ts`**, where the
+            // measurement that settled it lives; this repeats it only until
+            // `core`'s own entry publishes that name.
             lengthAdjust={segment.mark.characterScale === 1 ? "spacing" : "spacingAndGlyphs"}
           >
-            {shownText(segment.mark, segment.text, aliasFaces)}
+            {segment.text}
           </tspan>,
         ]
       : [],
@@ -510,12 +559,7 @@ function lineText(
 
 // A list's number is drawn out of the text flow, at the position the level's
 // hanging indent pulls the first line back to.
-function markerText(
-  marker: ParagraphMarker,
-  key: string,
-  fallback: string,
-  aliasFaces: ReadonlySet<string> | null,
-): ReactElement | null {
+function markerText(marker: ParagraphMarker, key: string, fallback: string): ReactElement | null {
   if (marker.text === "") return null;
   return (
     <text
@@ -532,7 +576,7 @@ function markerText(
       textLength={marker.widthPt > 0 ? marker.widthPt : undefined}
       lengthAdjust="spacing"
     >
-      {shownText(marker.mark, marker.text, aliasFaces)}
+      {marker.text}
     </text>
   );
 }
@@ -542,20 +586,17 @@ function textLayer(
   widthPt: number,
   heightPt: number,
   fallback: string,
-  aliasFaces: ReadonlySet<string> | null,
 ): ReactElement {
   // The header, the body and the footer each number their paragraphs from zero, so
   // a key is where the box sits in the layer rather than the index it carries.
   const lines = drawable.boxes.flatMap((paragraph: ParagraphBox, box: number) => {
     const key = String(box);
     const marker =
-      paragraph.marker === null
-        ? null
-        : markerText(paragraph.marker, `${key}-number`, fallback, aliasFaces);
+      paragraph.marker === null ? null : markerText(paragraph.marker, `${key}-number`, fallback);
     return [
       ...(marker === null ? [] : [marker]),
       ...paragraph.lines.flatMap((placed, at) => {
-        const element = lineText(placed, `${key}-${String(at)}`, fallback, aliasFaces);
+        const element = lineText(placed, `${key}-${String(at)}`, fallback);
         return element === null ? [] : [element];
       }),
     ];
@@ -595,15 +636,9 @@ function textLayer(
 // How Word draws each pattern, measured at a width of a point and a half: a
 // dashed line runs four widths on and four off, where a dotted one runs one and
 // one. A double line is two bands, which the geometry has already made of it.
-const DASHES: Readonly<Record<BorderStyle, readonly number[] | null>> = {
-  single: null,
-  double: null,
-  dashed: [4, 4],
-  dotted: [1, 1],
-};
-
-function paintedLine(line: PaintedLine, key: string): ReactElement {
-  const dashes = DASHES[line.style];
+// **How the dashes fall is decided in `drawables.ts`**, out of the pattern Word
+// draws each border style with; the band reaching here carries its own.
+function paintedLine(line: DrawnLine, key: string): ReactElement {
   return (
     <line
       key={key}
@@ -611,11 +646,9 @@ function paintedLine(line: PaintedLine, key: string): ReactElement {
       x2={line.vertical ? line.atPt : line.toPt}
       y1={line.vertical ? line.fromPt : line.atPt}
       y2={line.vertical ? line.toPt : line.atPt}
-      stroke={line.color ?? "currentColor"}
+      stroke={line.color}
       strokeWidth={line.widthPt}
-      strokeDasharray={
-        dashes === null ? undefined : dashes.map((each) => each * line.widthPt).join(" ")
-      }
+      strokeDasharray={line.dashes === null ? undefined : line.dashes.join(" ")}
     />
   );
 }
@@ -631,13 +664,13 @@ const paintedFill = (fill: PaintedFill, key: string): ReactElement => (
   />
 );
 
-const drawn = (painted: Painted, key: string): readonly ReactElement[] => [
+const drawn = (painted: DrawnPaint, key: string): readonly ReactElement[] => [
   ...painted.fills.map((fill, at) => paintedFill(fill, `${key}-fill-${String(at)}`)),
   ...painted.lines.map((line, at) => paintedLine(line, `${key}-line-${String(at)}`)),
 ];
 
-// Everything drawn behind a story's text: the cells of its tables first, then what
-// each paragraph asks for, which Word draws over the cell holding it, and last the
+// Everything drawn behind a story's text, in the order `drawables.ts` put it in:
+// the cells of the story's tables, then what each paragraph asks for, and last the
 // highlights, which Word draws over a shaded paragraph.
 function paintLayer(
   drawable: Extract<Drawable, { kind: "paint" }>,
@@ -653,10 +686,7 @@ function paintLayer(
       height={pt(heightPt)}
       viewBox={`0 0 ${String(widthPt)} ${String(heightPt)}`}
     >
-      {drawable.cells.flatMap((cell, at) => drawn(paintOfCell(cell), `cell-${String(at)}`))}
-      {drawable.paragraphs.flatMap((each, at) =>
-        drawn(paintOfParagraph(each.paint, each.topPt, each.bottomPt), `paragraph-${String(at)}`),
-      )}
+      {drawable.painted.flatMap((each, at) => drawn(each, `painted-${String(at)}`))}
       {drawable.highlights.map((each, at) => (
         <rect
           key={`highlight-${String(at)}`}
@@ -759,10 +789,10 @@ export function Page(props: PageProps): ReactElement {
         transformOrigin: "top left",
       }}
     >
-      {drawablesOf(layout, page).flatMap((drawable) => {
+      {drawablesOf(layout, page, { aliasSymbolFaces }).flatMap((drawable) => {
         if (drawable.kind === "paint") return [paintLayer(drawable, widthPt, heightPt)];
         if (drawable.kind === "text") {
-          return [textLayer(drawable, widthPt, heightPt, fallbackFonts, aliasSymbolFaces)];
+          return [textLayer(drawable, widthPt, heightPt, fallbackFonts)];
         }
         if (drawable.kind === "glyphs") return [glyphLayer(drawable, frames)];
         return renderObject(drawable, imageUrl, frames, fallbackFonts);

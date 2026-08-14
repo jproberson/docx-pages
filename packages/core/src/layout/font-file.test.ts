@@ -9,7 +9,14 @@ import {
   buildWoff2,
   type FontFixture,
 } from "../testing/build-font.js";
-import { readFontFaces, readFontFile, readFontMetrics, readGlyphIndex } from "./font-file.js";
+import {
+  readFontFaces,
+  readFontFile,
+  readFontMetrics,
+  readGlyphIndex,
+  type GlyphOutline,
+  type OutlineTable,
+} from "./font-file.js";
 import {
   lineHeightPt,
   type GlyphAdvances,
@@ -1012,5 +1019,225 @@ describe("readFontFaces", () => {
 
   it("refuses what is not a font at all", () => {
     expect(caught(() => readFontFaces(new Uint8Array(4))).code).toBe("font-unreadable");
+  });
+});
+
+// The shape itself, which is what a backend that cannot name a glyph draws
+// instead: a browser addresses a face by character and by nothing else.
+describe("the outline a face states for a glyph", () => {
+  const BOX = { left: 20, bottom: 0, right: 640, top: 700 };
+  const DRAWN: FontFixture = { ...FACE, advances: WIDTHS, boxes: { A: BOX } };
+
+  const outlinesIn = (fixture: FontFixture): OutlineTable =>
+    readFontFile(buildSfnt(fixture)).outlines;
+
+  function outlineOf(fixture: FontFixture, character: string): GlyphOutline | null {
+    const table = outlinesIn(fixture);
+    if (table.kind !== "outlines") throw new Error(`expected outlines, got ${table.reason}`);
+    return table.outlineOf(character.codePointAt(0) ?? 0);
+  }
+
+  // The fixture writes a box as the four corners it has, all of them on the curve.
+  it("reads a TrueType contour, closed on the point it started at", () => {
+    expect(outlineOf(DRAWN, "A")).toStrictEqual({
+      unitsPerEm: 1000,
+      contours: [
+        {
+          from: [20, 0],
+          steps: [
+            { kind: "line", to: [640, 0] },
+            { kind: "line", to: [640, 700] },
+            { kind: "line", to: [20, 700] },
+            { kind: "line", to: [20, 0] },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("answers nothing for a character whose glyph draws nothing", () => {
+    expect(outlineOf(DRAWN, " ")).toBeNull();
+    expect(outlineOf(DRAWN, "Z")).toBeNull();
+  });
+
+  it("answers by glyph as well, which is how a math variant is reached", () => {
+    const table = outlinesIn(DRAWN);
+    expect(table.kind === "outlines" && table.outlineOfGlyph(2)?.contours.length).toBe(1);
+  });
+
+  it("reports a face carrying no outlines at all", () => {
+    expect(outlinesIn({ ...FACE, advances: WIDTHS })).toStrictEqual({
+      kind: "unavailable",
+      reason: "outlines-missing",
+    });
+  });
+
+  // A PostScript face states its outline as the charstring itself, which is the
+  // very walk the box is worked out by.
+  it("reads a PostScript path back as the face wrote it", () => {
+    const outlines: FontFixture = {
+      ...FACE,
+      advances: WIDTHS,
+      outlines: {
+        A: {
+          from: [20, 0],
+          steps: [{ line: [600, 0] }, { curve: [0, 300, 100, 200, -300, 100] }],
+        },
+      },
+    };
+
+    expect(outlineOf(outlines, "A")).toStrictEqual({
+      unitsPerEm: 1000,
+      contours: [
+        {
+          from: [20, 0],
+          steps: [
+            { kind: "line", to: [620, 0] },
+            { kind: "cubic", first: [620, 300], second: [720, 500], to: [420, 600] },
+          ],
+        },
+      ],
+    });
+  });
+});
+
+// A font built table by table, for the two things a face states that the fixture
+// builder has no way to write: a contour of curves, and a glyph made of another.
+function tablesOfSfnt(font: Uint8Array): Map<string, Uint8Array> {
+  const view = new DataView(font.buffer, font.byteOffset, font.byteLength);
+  const tables = new Map<string, Uint8Array>();
+  for (let index = 0; index < view.getUint16(4); index += 1) {
+    const record = 12 + index * 16;
+    const tag = String.fromCharCode(...font.subarray(record, record + 4));
+    const at = view.getUint32(record + 8);
+    tables.set(tag, font.subarray(at, at + view.getUint32(record + 12)));
+  }
+  return tables;
+}
+
+function sfntOfTables(tables: ReadonlyMap<string, Uint8Array>): Uint8Array {
+  const written = [...tables];
+  const padded = (length: number): number => (length + 3) & ~3;
+  const directory = 12 + written.length * 16;
+  const total = directory + written.reduce((sum, [, data]) => sum + padded(data.length), 0);
+
+  const out = new Uint8Array(total);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 0x00010000);
+  view.setUint16(4, written.length);
+
+  let at = directory;
+  written.forEach(([tag, data], index) => {
+    const record = 12 + index * 16;
+    for (let byte = 0; byte < 4; byte += 1) out[record + byte] = tag.charCodeAt(byte);
+    view.setUint32(record + 8, at);
+    view.setUint32(record + 12, data.length);
+    out.set(data, at);
+    at += padded(data.length);
+  });
+  return out;
+}
+
+// One contour of four points, the middle two off the curve, which is where a face
+// leaves an on-curve point implied halfway between them.
+function curvedGlyph(): Uint8Array {
+  const glyph = new Uint8Array(34);
+  const view = new DataView(glyph.buffer);
+  view.setInt16(0, 1);
+  view.setInt16(2, 0);
+  view.setInt16(4, 0);
+  view.setInt16(6, 300);
+  view.setInt16(8, 200);
+  view.setUint16(10, 3);
+  view.setUint16(12, 0);
+  glyph[14] = 1;
+  glyph[15] = 0;
+  glyph[16] = 0;
+  glyph[17] = 1;
+  [0, 100, 100, 100].forEach((step, at) => {
+    view.setInt16(18 + at * 2, step);
+  });
+  [0, 200, 0, -200].forEach((step, at) => {
+    view.setInt16(26 + at * 2, step);
+  });
+  return glyph;
+}
+
+// A glyph that is another glyph, moved where it stands.
+function composedGlyph(of: number, acrossPt: number, upPt: number): Uint8Array {
+  const glyph = new Uint8Array(18);
+  const view = new DataView(glyph.buffer);
+  view.setInt16(0, -1);
+  view.setUint16(10, 0x0003);
+  view.setUint16(12, of);
+  view.setInt16(14, acrossPt);
+  view.setInt16(16, upPt);
+  return glyph;
+}
+
+function faceDrawing(glyphs: readonly Uint8Array[]): Uint8Array {
+  const tables = tablesOfSfnt(
+    buildSfnt({
+      ...FACE,
+      advances: { A: 660, B: 640 },
+      boxes: { A: { left: 0, bottom: 0, right: 1, top: 1 } },
+    }),
+  );
+
+  const glyf = new Uint8Array(glyphs.reduce((sum, each) => sum + each.length, 0));
+  const loca = new Uint8Array((glyphs.length + 1) * 2);
+  const view = new DataView(loca.buffer);
+  let at = 0;
+  glyphs.forEach((glyph, index) => {
+    view.setUint16(index * 2, at / 2);
+    glyf.set(glyph, at);
+    at += glyph.length;
+  });
+  view.setUint16(glyphs.length * 2, at / 2);
+
+  tables.set("glyf", glyf);
+  tables.set("loca", loca);
+  return sfntOfTables(tables);
+}
+
+describe("a TrueType outline of curves", () => {
+  const outlineOfGlyph = (font: Uint8Array, glyph: number): GlyphOutline | null => {
+    const table = readFontFile(font).outlines;
+    if (table.kind !== "outlines") throw new Error(`expected outlines, got ${table.reason}`);
+    return table.outlineOfGlyph(glyph);
+  };
+
+  // **Two off-curve points in a row have an on-curve point implied halfway between
+  // them.** A reader that misses that draws a straight line through every second
+  // curve: here the implied point is (150, 200), halfway between the two controls.
+  it("puts back the point a face leaves out between two controls", () => {
+    const outline = outlineOfGlyph(faceDrawing([new Uint8Array(0), curvedGlyph()]), 1);
+
+    expect(outline?.contours[0]).toStrictEqual({
+      from: [0, 0],
+      steps: [
+        { kind: "quadratic", control: [100, 200], to: [150, 200] },
+        { kind: "quadratic", control: [200, 200], to: [300, 0] },
+        { kind: "line", to: [0, 0] },
+      ],
+    });
+  });
+
+  // A composite is other glyphs, each moved where it stands: an accented letter is
+  // written this way, and so is much of a maths face.
+  it("draws a glyph made of another, moved where it stands", () => {
+    const font = faceDrawing([new Uint8Array(0), curvedGlyph(), composedGlyph(1, 500, -50)]);
+    const outline = outlineOfGlyph(font, 2);
+
+    expect(outline?.contours[0]?.from).toStrictEqual([500, -50]);
+    expect(outline?.contours[0]?.steps[0]).toStrictEqual({
+      kind: "quadratic",
+      control: [600, 150],
+      to: [650, 150],
+    });
+  });
+
+  it("answers nothing for a glyph of no length at all", () => {
+    expect(outlineOfGlyph(faceDrawing([new Uint8Array(0), curvedGlyph()]), 0)).toBeNull();
   });
 });

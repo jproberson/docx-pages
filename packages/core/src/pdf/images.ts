@@ -1,5 +1,6 @@
 import type { CropInsets } from "../docx/drawing.js";
 import { METAFILE_EXTENSION, OLD_METAFILE_EXTENSION, pictureExtension } from "../docx/pictures.js";
+import { METAFILE_PEN_OFFSET } from "../layout/drawables.js";
 import { pngFromMetafile } from "../metafile/wmf.js";
 import type { MetricsResolver } from "../layout/stack.js";
 import {
@@ -367,10 +368,8 @@ function drawBitmap(
   out.restore();
 }
 
-// A metafile's pen hangs its line off the cell whose corner the line runs through,
-// where a stroke is centred on the line it follows, so the line moves half a unit
-// down and right to cover the same cells.
-const PEN_OFFSET = 0.5;
+// Where a metafile's pen stands, which `drawables.ts` states for both backends.
+const PEN_OFFSET = METAFILE_PEN_OFFSET;
 
 /**
  * A played metafile, written into the frame the document gave it.

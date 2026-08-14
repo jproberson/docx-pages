@@ -9,7 +9,9 @@ import type { ParagraphMark } from "../docx/styles.js";
 import type { LaidOutDocument } from "./document.js";
 import {
   drawablesOf,
+  METAFILE_PEN_OFFSET,
   onTheDeviceGrid,
+  runWidthMadeUpBy,
   type Drawable,
   type PageDrawing,
   type PlacedGlyphs,
@@ -122,6 +124,33 @@ describe("a run of glyphs named by number", () => {
     expect(drawn([])).toStrictEqual([]);
   });
 
+  // The shape a backend that cannot name a glyph draws instead. It is measured
+  // from the glyph's own origin, so nothing that moves the glyph touches it: the
+  // baseline lands on the grid and the outline is carried through as it stands.
+  it("carries the face's own outline through untouched", () => {
+    const outline = {
+      unitsPerEm: 2048,
+      contours: [
+        {
+          from: [0, 0] as const,
+          steps: [
+            { kind: "line" as const, to: [100, 0] as const },
+            { kind: "quadratic" as const, control: [150, 50] as const, to: [100, 100] as const },
+          ],
+        },
+      ],
+    };
+    const carved: PlacedGlyphs = {
+      ...STRETCHED,
+      glyphs: STRETCHED.glyphs.map((glyph) => ({ ...glyph, outline })),
+    };
+    const page = pageWith([carved]);
+    const first = drawablesOf(layoutOf(page), page)[0];
+
+    expect(first?.kind === "glyphs" && first.glyphs[0]?.outline).toBe(outline);
+    expect(first?.kind === "glyphs" && first.glyphs[0]?.baselinePt).toBe(199.92);
+  });
+
   it("keeps each run apart, in the order the page states them", () => {
     const second: PlacedGlyphs = {
       ...STRETCHED,
@@ -231,7 +260,9 @@ const textIn = (page: PageDrawing): Extract<Drawable, { kind: "text" }> => {
   return found;
 };
 
-const paintIn = (page: PageDrawing): Extract<Drawable, { kind: "paint" }> => {
+type PaintDrawable = Extract<Drawable, { kind: "paint" }>;
+
+const paintIn = (page: PageDrawing): PaintDrawable => {
   const found = drawablesOfPage(page).find((each) => each.kind === "paint");
   if (found === undefined) throw new Error("nothing was painted");
   return found;
@@ -302,12 +333,13 @@ describe("where a page's ink lands", () => {
       borders: NO_BORDERS,
     };
     const page = bodyPage([boxOf([lineAt(36.1, 47.4258)], paint)]);
-    const painted = paintIn(page).paragraphs[0];
+    // The paragraph's own fill, which reaches a backend as the rectangle to fill.
+    const filled = paintIn(page).painted[0]?.fills[0];
     const box = textIn(page).boxes[0];
 
-    expect(painted?.topPt).toBe(box?.lines[0]?.topPt);
-    expect(painted?.bottomPt).toBe(box?.contentBottomPt);
-    expect(onTheDeviceGrid(painted?.bottomPt ?? 0)).toBe(painted?.bottomPt);
+    expect(filled?.topPt).toBe(box?.lines[0]?.topPt);
+    expect((filled?.topPt ?? 0) + (filled?.heightPt ?? 0)).toBe(box?.contentBottomPt);
+    expect(onTheDeviceGrid(filled?.heightPt ?? 0)).toBe(filled?.heightPt);
   });
 
   // A cell's floor is the ceiling of the cell under it, so both edges go on the
@@ -332,10 +364,12 @@ describe("where a page's ink lands", () => {
         borders: NO_BORDERS,
       },
     ];
-    const painted = paintIn(bodyPage([], cells)).cells;
+    const painted = paintIn(bodyPage([], cells)).painted;
+    const first = painted[0]?.fills[0];
+    const second = painted[1]?.fills[0];
 
-    const floor = (painted[0]?.topPt ?? 0) + (painted[0]?.heightPt ?? 0);
-    expect(floor).toBe(painted[1]?.topPt);
+    const floor = (first?.topPt ?? 0) + (first?.heightPt ?? 0);
+    expect(floor).toBe(second?.topPt);
     expect(onTheDeviceGrid(floor)).toBe(floor);
   });
 
@@ -357,11 +391,7 @@ describe("where a page's ink lands", () => {
       ],
     );
     const once = drawablesOfPage(page);
-    const twice = drawablesOfPage({
-      ...page,
-      body: textIn(page).boxes,
-      cells: paintIn(page).cells,
-    });
+    const twice = drawablesOfPage({ ...page, body: textIn(page).boxes });
 
     expect(twice).toStrictEqual(once);
   });
@@ -431,5 +461,148 @@ describe("text inside a shape", () => {
 
   it("is left exactly where layout put it where the shape is turned", () => {
     expect(baselineIn(textBox(30))).toBe(47.4258);
+  });
+});
+
+// Four rules a renderer used to decide for itself, moved here so that neither
+// backend can answer them differently and a third cannot miss them.
+describe("what a page draws rather than what a renderer decides", () => {
+  const wingdings = (text: string): ParagraphBox =>
+    boxOf([
+      {
+        ...lineAt(36, 47.4258),
+        line: {
+          ...lineAt(36, 47.4258).line,
+          segments: [
+            {
+              kind: "text",
+              mark: { ...MARK, font: { kind: "named", name: "Wingdings" } },
+              text,
+              widthPt: 12,
+              offsetPt: 0,
+            },
+          ],
+        },
+      },
+    ]);
+
+  // A run in a symbol face that was stood in for holds positions in that face's
+  // own page; the stand-in would draw them as its own letters.
+  it("shows a stood-in symbol face's positions as what they mean, when told", () => {
+    const page = bodyPage([wingdings("l")]);
+    const shown = (aliasSymbolFaces: ReadonlySet<string> | null): string | undefined => {
+      const drawn = drawablesOf(layoutOf(page), page, { aliasSymbolFaces });
+      const first = drawn.find((each) => each.kind === "text");
+      const segment = first?.kind === "text" ? first.boxes[0]?.lines[0]?.line.segments[0] : null;
+      return segment?.kind === "text" ? segment.text : undefined;
+    };
+
+    expect(shown(new Set(["wingdings"]))).toBe("●");
+    expect(shown(null)).toBe("l");
+  });
+
+  // A pdf has no such thing as an underline and neither has Word: the line is
+  // filled, where the drawn face's own `post` table says to put it.
+  it("states the rectangle an underline is drawn as, out of the face's own metrics", () => {
+    const underlined = boxOf([
+      {
+        ...lineAt(36, 47.4258),
+        line: {
+          ...lineAt(36, 47.4258).line,
+          segments: [
+            {
+              kind: "text",
+              mark: { ...MARK, underline: true },
+              text: "gralm",
+              widthPt: 30,
+              offsetPt: 0,
+            },
+          ],
+        },
+      },
+    ]);
+    const page = bodyPage([underlined]);
+    const drawn = drawablesOf(layoutOf(page), page, {
+      underlineFor: () => ({ belowBaselinePt: 1.45, thicknessPt: 0.83 }),
+    });
+    const text = drawn.find((each) => each.kind === "text");
+
+    expect(text?.kind === "text" && text.underlines).toStrictEqual([
+      { leftPt: 72.137, topPt: 47.52 + 1.45, widthPt: 30, heightPt: 0.83, color: "#000000" },
+    ]);
+  });
+
+  // A backend holding no faces cannot be told where the line goes, and gets no
+  // rectangle rather than one in a made-up place.
+  it("states none where nothing can say where the line goes", () => {
+    const page = bodyPage([boxOf([lineAt(36, 47.4258)])]);
+    const text = drawablesOf(layoutOf(page), page).find((each) => each.kind === "text");
+
+    expect(text?.kind === "text" && text.underlines).toStrictEqual([]);
+  });
+
+  // A dashed line runs four widths on and four off, where a dotted one runs one
+  // and one, measured at a width of a point and a half.
+  it("states how the dashes of a border fall, at the width it is drawn", () => {
+    const dashed: ParagraphPaint = {
+      leftPt: 36,
+      rightPt: 576,
+      fillColor: null,
+      borders: {
+        ...NO_BORDERS,
+        top: { style: "dashed", color: "000000", widthPt: 1.5, spacePt: 0 },
+      },
+    };
+    const page = bodyPage([boxOf([lineAt(36.1, 47.4258)], dashed)]);
+    const lines = paintIn(page).painted.flatMap((each) => each.lines);
+
+    expect(lines[0]?.dashes).toStrictEqual([6, 6]);
+  });
+
+  it("states no dashes for a line Word draws solid", () => {
+    const solid: ParagraphPaint = {
+      leftPt: 36,
+      rightPt: 576,
+      fillColor: null,
+      borders: { ...NO_BORDERS, top: { style: "single", color: "000000", widthPt: 1, spacePt: 0 } },
+    };
+    const page = bodyPage([boxOf([lineAt(36.1, 47.4258)], solid)]);
+    const lines = paintIn(page).painted.flatMap((each) => each.lines);
+
+    expect(lines[0]?.dashes).toBeNull();
+  });
+
+  // Black is what Word draws text and borders it was told nothing about. The two
+  // backends disagreed until this moved: the pdf writer drew black and the viewer
+  // inherited whatever colour the page around it was set in.
+  it("resolves a run that states no colour of its own to the black Word draws", () => {
+    const page = bodyPage([boxOf([lineAt(36, 47.4258)])]);
+    const text = textIn(page).boxes[0]?.lines[0]?.line.segments[0];
+
+    expect(text?.kind === "text" && text.mark.color).toBe("#000000");
+  });
+
+  it("resolves a border stating no colour to the same black", () => {
+    const unstated: ParagraphPaint = {
+      leftPt: 36,
+      rightPt: 576,
+      fillColor: null,
+      borders: { ...NO_BORDERS, top: { style: "single", color: null, widthPt: 1, spacePt: 0 } },
+    };
+    const page = bodyPage([boxOf([lineAt(36.1, 47.4258)], unstated)]);
+
+    expect(paintIn(page).painted.flatMap((each) => each.lines)[0]?.color).toBe("#000000");
+  });
+
+  // A run held to the width it was measured at is stretched glyph by glyph only
+  // where the file scaled it; otherwise the gaps between its glyphs are opened.
+  it("says how a run's measured width is made up", () => {
+    expect(runWidthMadeUpBy(MARK)).toBe("spacing");
+    expect(runWidthMadeUpBy({ ...MARK, characterScale: 1.5 })).toBe("glyphs");
+  });
+
+  // Where a metafile's own pen stands, which both backends carried until this did.
+  it("states how far a metafile's pen stands from the line it is told to draw", () => {
+    expect(METAFILE_PEN_OFFSET).toBe(0.5);
   });
 });

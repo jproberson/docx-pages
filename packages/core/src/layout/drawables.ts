@@ -1,9 +1,13 @@
+import type { BorderStyle } from "../docx/borders.js";
 import type { DrawingFlip } from "../docx/drawing.js";
+import type { ParagraphMark } from "../docx/styles.js";
 import type { LaidOutDocument, LaidOutPage } from "./document.js";
 import type { PlacedContent, PlacedFloat } from "./floats.js";
 import type { FaceRequest } from "./font-metrics.js";
 import type { PlacedInline } from "./inlines.js";
+import { paintOfCell, paintOfParagraph, type PaintedFill, type PaintedLine } from "./painting.js";
 import type { ParagraphBox, ParagraphPaint, PlacedCell, PlacedLine } from "./stack.js";
+import { aliasedSymbolText } from "./symbol-aliases.js";
 import { turnedAbout } from "./turns.js";
 
 // What a page draws and the order it draws it in, as one flat list. Layout says
@@ -45,16 +49,72 @@ export const onTheDeviceGrid = (downPt: number): number =>
   (Math.round((downPt * DEVICE_UNITS_TO_THE_INCH) / POINTS_TO_THE_INCH) * POINTS_TO_THE_INCH) /
   DEVICE_UNITS_TO_THE_INCH;
 
+/**
+ * What the machine could not do for itself, which a caller states and this decides
+ * what to do about.
+ *
+ * A backend is handed the page as it is drawn; what a face was stood in for is a
+ * fact about the machine the page was laid out on, and only the caller knows it.
+ */
+export type DrawingOptions = {
+  // Symbol faces the layout stood in for, by lowercased name. A run written in one
+  // holds positions in that face's own page, and the stand-in would draw them as
+  // its own letters.
+  readonly aliasSymbolFaces?: ReadonlySet<string> | null;
+  // Where the drawn face puts the line under its own letters, which only a caller
+  // holding the face can say. One that cannot gets no rectangle and has to draw
+  // the line whatever way it can.
+  readonly underlineFor?: (mark: ParagraphMark) => UnderlineMetrics | null;
+};
+
+// What a face states about the line under its letters, at the size a run is set
+// at: how far below the baseline its top sits, and how thick it is.
+export type UnderlineMetrics = {
+  readonly belowBaselinePt: number;
+  readonly thicknessPt: number;
+};
+
+/**
+ * What a run of text actually shows.
+ *
+ * A run in a symbol face that was stood in for holds positions in that face's own
+ * page, and the stand-in would draw them as its own letters. Drawn as what the
+ * positions mean instead, which is how the layout measured them.
+ *
+ * **Decided here and not in a renderer.** Both backends worked this out for
+ * themselves until 2026-08-14, from the same set and with the same words, which is
+ * two chances to get it wrong and no way for a third backend to know it was a
+ * question at all.
+ */
+function shownText(mark: ParagraphMark, text: string, options: DrawingOptions): string {
+  const aliasFaces = options.aliasSymbolFaces;
+  if (aliasFaces === undefined || aliasFaces === null || mark.font.kind !== "named") return text;
+  if (!aliasFaces.has(mark.font.name.trim().toLowerCase())) return text;
+  return aliasedSymbolText(mark.font.name, text) ?? text;
+}
+
 // A line as it is drawn. Both edges land on the grid and the height is what lies
 // between them, so what is painted behind a line keeps the line's own foot instead
 // of drifting a step off it.
-function drawnLine(line: PlacedLine): PlacedLine {
+function drawnLine(line: PlacedLine, options: DrawingOptions): PlacedLine {
   const topPt = onTheDeviceGrid(line.topPt);
   return {
     ...line,
     topPt,
     baselinePt: onTheDeviceGrid(line.baselinePt),
     fittingHeightPt: onTheDeviceGrid(line.topPt + line.fittingHeightPt) - topPt,
+    line: {
+      ...line.line,
+      segments: line.line.segments.map((segment) =>
+        segment.kind === "text"
+          ? {
+              ...segment,
+              text: shownText(segment.mark, segment.text, options),
+              mark: { ...segment.mark, color: drawnColor(segment.mark.color) },
+            }
+          : segment,
+      ),
+    },
   };
 }
 
@@ -67,7 +127,10 @@ function drawnLine(line: PlacedLine): PlacedLine {
  * the others. Only what is drawn is moved; what the layout used to decide where a
  * line went is left exactly as it was.
  */
-const drawnBoxes = (boxes: readonly ParagraphBox[]): readonly ParagraphBox[] =>
+const drawnBoxes = (
+  boxes: readonly ParagraphBox[],
+  options: DrawingOptions,
+): readonly ParagraphBox[] =>
   boxes.map((box) => ({
     ...box,
     markTopPt: onTheDeviceGrid(box.markTopPt),
@@ -75,9 +138,53 @@ const drawnBoxes = (boxes: readonly ParagraphBox[]): readonly ParagraphBox[] =>
     marker:
       box.marker === null
         ? null
-        : { ...box.marker, baselinePt: onTheDeviceGrid(box.marker.baselinePt) },
-    lines: box.lines.map(drawnLine),
+        : {
+            ...box.marker,
+            baselinePt: onTheDeviceGrid(box.marker.baselinePt),
+            text: shownText(box.marker.mark, box.marker.text, options),
+            mark: { ...box.marker.mark, color: drawnColor(box.marker.mark.color) },
+          },
+    lines: box.lines.map((line) => drawnLine(line, options)),
   }));
+
+/**
+ * How a backend makes up the difference between the width a run was measured at
+ * and the width the face it draws with comes to.
+ *
+ * The line was measured with the authored face's own widths. Holding each run to
+ * that width keeps the break points Word chose even when the page draws the text
+ * in a substitute, and starting each one where layout put it keeps a tab's gap and
+ * an inline picture from carrying the rest of the line along with them.
+ *
+ * **A run the file scaled is stretched rather than spaced out.** Holding a run to
+ * its measured width by the gaps between its glyphs is what keeps Word's break
+ * points under a substituted face, but a run stating `w:w` is drawn wider or
+ * narrower glyph by glyph, which is what the pdf writer's `Tz` does and what a
+ * viewer asks for by name.
+ *
+ * **Decided here and not in a renderer.** A backend embedding the very face the
+ * line was measured with needs none of this and the pdf writer does not ask; one
+ * drawing in whatever face it can find needs all of it, and until 2026-08-14 the
+ * only statement of it was inside that one backend, where no other could find it.
+ */
+export type WidthMadeUpBy = "spacing" | "glyphs";
+
+export const runWidthMadeUpBy = (mark: ParagraphMark): WidthMadeUpBy =>
+  mark.characterScale === 1 ? "spacing" : "glyphs";
+
+/**
+ * How far a metafile's own pen stands from the line it is told to draw.
+ *
+ * A metafile's pen hangs its line off the cell whose corner the line runs through,
+ * where a stroke is centred on the line it follows, so the line moves half a unit
+ * down and right to cover the same cells.
+ *
+ * **Decided here and not in a renderer**, which both of them did until 2026-08-14.
+ * It belongs further back still, in the reader that turns a recording into shapes:
+ * a shape reaching a backend already standing where it is drawn would need no
+ * constant here at all. That reader is `metafile/picture.ts`.
+ */
+export const METAFILE_PEN_OFFSET = 0.5;
 
 // A cell's floor is the ceiling of the cell under it, so both edges go on the grid
 // and the height is the distance between them.
@@ -105,6 +212,67 @@ export type HighlightPaint = {
 };
 
 /**
+ * The line under an underlined run, as the rectangle it is drawn as.
+ *
+ * A pdf has no such thing as an underline and neither has Word: the line is
+ * filled. **Where it goes is the drawn face's own business** and not a renderer's.
+ * Measured on 2026-08-07 off Word's own pdf of a reference document: every
+ * underline there sat 0.1207 em below the baseline and was 0.0690 em thick, the
+ * same at three places on the page, and those are the ratios the drawn face's
+ * `post` table states rather than any constant Word carries.
+ *
+ * A face stating no `post` table gets no rectangle, since nothing here could
+ * invent where to put one and a line in the wrong place is worse than a run drawn
+ * without it. The README names it. A backend holding no faces at all gets none
+ * either, and draws the line whatever way it can.
+ */
+export type UnderlinePaint = HighlightPaint;
+
+/**
+ * How Word draws each pattern, measured at a width of a point and a half: a dashed
+ * line runs four widths on and four off, where a dotted one runs one and one. A
+ * double line is two bands, which the geometry has already made of it.
+ *
+ * **Decided here and not in a renderer.** Both backends carried this table until
+ * 2026-08-14, which is two places for a measurement to drift from itself.
+ */
+const DASHES: Readonly<Record<BorderStyle, readonly number[] | null>> = {
+  single: null,
+  double: null,
+  dashed: [4, 4],
+  dotted: [1, 1],
+};
+
+// A band of a border as it is drawn: where the geometry puts it, and how the
+// dashes fall along it at the width it is drawn at.
+export type DrawnLine = Omit<PaintedLine, "color"> & {
+  readonly dashes: readonly number[] | null;
+  readonly color: string;
+};
+
+// One thing's paint: what it fills, and the bands it draws round itself. Kept
+// apart from the next thing's so that what covers what is the order they are in.
+export type DrawnPaint = {
+  readonly fills: readonly PaintedFill[];
+  readonly lines: readonly DrawnLine[];
+};
+
+const drawnPaint = (painted: {
+  fills: readonly PaintedFill[];
+  lines: readonly PaintedLine[];
+}): DrawnPaint => ({
+  fills: painted.fills,
+  lines: painted.lines.map((line) => {
+    const dashes = DASHES[line.style];
+    return {
+      ...line,
+      color: drawnColor(line.color),
+      dashes: dashes === null ? null : dashes.map((each) => each * line.widthPt),
+    };
+  }),
+});
+
+/**
  * One glyph of a face, named by its number in that face rather than by a
  * character.
  *
@@ -117,10 +285,57 @@ export type HighlightPaint = {
  * Everything else on a page is asked for in characters, and this is the one thing
  * that cannot be.
  */
+// A point of an outline, in the face's own units, with x from the glyph's origin
+// and y up from the baseline as the face states it.
+export type GlyphPoint = readonly [number, number];
+
+// What the outline does next. A TrueType face draws its curves with one control
+// point and a PostScript one with two, and neither is worth turning into the other
+// here: every backend that can draw a curve at all can draw both.
+export type GlyphStep =
+  | { readonly kind: "line"; readonly to: GlyphPoint }
+  | { readonly kind: "quadratic"; readonly control: GlyphPoint; readonly to: GlyphPoint }
+  | {
+      readonly kind: "cubic";
+      readonly first: GlyphPoint;
+      readonly second: GlyphPoint;
+      readonly to: GlyphPoint;
+    };
+
+// One closed contour of a glyph: where it starts and what it does from there. A
+// letter with a counter, an `o` above all, is two of them, and what is inside what
+// is settled by the winding rather than by their order.
+export type GlyphContour = {
+  readonly from: GlyphPoint;
+  readonly steps: readonly GlyphStep[];
+};
+
+/**
+ * The shape a glyph draws, as the face itself states it.
+ *
+ * **This is what a backend that cannot name a glyph draws instead**: a browser
+ * addresses a face by character and by nothing else, so a stretched parenthesis
+ * reaches it as the outline or not at all. A backend that embeds the face should
+ * still name the glyph rather than draw this: the embedded one is hinted, it is
+ * selectable, and it is the same shape by construction.
+ *
+ * In font units, so a caller scales by the size the run is set at. Nothing that
+ * moves a glyph moves these: they are measured from the glyph's own origin, which
+ * is what `leftPt` and `baselinePt` place.
+ */
+export type GlyphOutline = {
+  readonly unitsPerEm: number;
+  readonly contours: readonly GlyphContour[];
+};
+
 export type DrawnGlyph = {
   readonly glyph: number;
   readonly leftPt: number;
   readonly baselinePt: number;
+  // What the glyph draws, where whoever built the run could read it out of the
+  // face. Absent where nothing did, and a backend with no other way to draw the
+  // glyph then says so rather than drawing something else.
+  readonly outline?: GlyphOutline;
   // What the glyph advances at the size it is drawn, which the face's own metrics
   // state and the layout measured with. It comes with the glyph because a glyph
   // with no character has no advance anything else here could look up: an advance
@@ -170,6 +385,9 @@ export type Drawable =
       readonly kind: "text";
       readonly key: string;
       readonly boxes: readonly ParagraphBox[];
+      // Drawn after the text of this same layer, which is where the run they
+      // belong to puts them.
+      readonly underlines: readonly UnderlinePaint[];
       // The rectangle the text is cut to, which a shape's own text has and the
       // text a story flowed down the page does not.
       readonly clipTo: Rect | null;
@@ -187,8 +405,10 @@ export type Drawable =
   | {
       readonly kind: "paint";
       readonly key: string;
-      readonly cells: readonly PlacedCell[];
-      readonly paragraphs: readonly PaintedParagraph[];
+      // The cells of the story's tables first, then what each paragraph asks for,
+      // which Word draws over the cell holding it. Each keeps its own fills and
+      // bands together, since that is what settles which of them covers which.
+      readonly painted: readonly DrawnPaint[];
       // Painted over both of those and under the text, which is where Word puts a
       // highlight: measured against a shaded paragraph holding a highlighted run,
       // whose fill Word drew first and the highlight over it.
@@ -224,7 +444,7 @@ type Standing = {
  * group is the whole of the arithmetic, and it is the same arithmetic at every
  * depth. A renderer therefore never learns that a group exists.
  */
-function objectsOf(standing: Standing, key: string): readonly Drawable[] {
+function objectsOf(standing: Standing, key: string, options: DrawingOptions): readonly Drawable[] {
   const { content } = standing;
   if (content.kind === "group") {
     // A group turned as a whole carries its children round with it, so each one is
@@ -256,14 +476,15 @@ function objectsOf(standing: Standing, key: string): readonly Drawable[] {
           turnDegrees: standing.turnDegrees + child.turnDegrees,
         },
         `${key}-${String(at)}`,
+        options,
       );
     });
   }
 
-  return [{ kind: "object", key, ...standing }, ...textOf(standing, key)];
+  return [{ kind: "object", key, ...standing }, ...textOf(standing, key, options)];
 }
 
-const fromFloat = (float: PlacedFloat, key: string): readonly Drawable[] =>
+const fromFloat = (float: PlacedFloat, key: string, options: DrawingOptions): readonly Drawable[] =>
   objectsOf(
     {
       name: float.anchor.name,
@@ -276,9 +497,14 @@ const fromFloat = (float: PlacedFloat, key: string): readonly Drawable[] =>
       turnDegrees: float.turnDegrees,
     },
     key,
+    options,
   );
 
-const fromInline = (inline: PlacedInline, key: string): readonly Drawable[] =>
+const fromInline = (
+  inline: PlacedInline,
+  key: string,
+  options: DrawingOptions,
+): readonly Drawable[] =>
   objectsOf(
     {
       name: inline.drawing.name,
@@ -291,6 +517,7 @@ const fromInline = (inline: PlacedInline, key: string): readonly Drawable[] =>
       turnDegrees: inline.turnDegrees,
     },
     key,
+    options,
   );
 
 const hasText = (boxes: readonly ParagraphBox[]): boolean =>
@@ -303,7 +530,7 @@ const hasText = (boxes: readonly ParagraphBox[]): boolean =>
 // grown to hold all of it and loses nothing, but one that was not keeps the size
 // it was stored at and shows only as much as fits: the rest is not moved
 // anywhere, it is simply not drawn.
-function textOf(standing: Standing, key: string): readonly Drawable[] {
+function textOf(standing: Standing, key: string, options: DrawingOptions): readonly Drawable[] {
   const { content } = standing;
   if (content.kind !== "text-box" || content.text === null) return [];
 
@@ -316,7 +543,7 @@ function textOf(standing: Standing, key: string): readonly Drawable[] {
   // A turned shape's text is drawn under a turn of its own, so the page's own
   // grid is not the grid it lands on and it is left exactly where layout put it.
   const square = standing.turnDegrees === 0;
-  const boxes = square ? drawnBoxes(content.text.boxes) : content.text.boxes;
+  const boxes = square ? drawnBoxes(content.text.boxes, options) : content.text.boxes;
   const cells = square ? content.text.cells.map(drawnCell) : content.text.cells;
   const { inlines } = content.text;
   const painted = paintLayer(cells, boxes, `${key}-paint`);
@@ -324,13 +551,22 @@ function textOf(standing: Standing, key: string): readonly Drawable[] {
   return [
     ...painted,
     ...(hasText(boxes)
-      ? [{ kind: "text" as const, key: `${key}-text`, boxes, clipTo, turnDegrees }]
+      ? [
+          {
+            kind: "text" as const,
+            key: `${key}-text`,
+            boxes,
+            underlines: underlinesIn(boxes, options),
+            clipTo,
+            turnDegrees,
+          },
+        ]
       : []),
     // **A drawing standing in the box's own text is drawn where that text put it.**
     // Fifteen corpus documents hold 76 of them and not one was drawn until
     // 2026-08-14: the text around each came out as usual, so no page said anything
     // was missing.
-    ...inlines.flatMap((inline, at) => fromInline(inline, `${key}-inline-${String(at)}`)),
+    ...inlines.flatMap((inline, at) => fromInline(inline, `${key}-inline-${String(at)}`, options)),
   ];
 }
 
@@ -343,7 +579,14 @@ function paintLayer(
   const paragraphs = paintedParagraphs(boxes);
   const highlights = highlightsIn(boxes);
   if (cells.length + paragraphs.length + highlights.length === 0) return [];
-  return [{ kind: "paint", key, cells, paragraphs, highlights }];
+
+  const painted = [
+    ...cells.map((cell) => drawnPaint(paintOfCell(cell))),
+    ...paragraphs.map((each) =>
+      drawnPaint(paintOfParagraph(each.paint, each.topPt, each.bottomPt)),
+    ),
+  ];
+  return [{ kind: "paint", key, painted, highlights }];
 }
 
 /**
@@ -367,6 +610,69 @@ function paintLayer(
  * Nothing is painted for an empty paragraph whose mark states a highlight: Word's
  * pdf of one holds no fill at all.
  */
+function underlinesIn(
+  boxes: readonly ParagraphBox[],
+  options: DrawingOptions,
+): readonly UnderlinePaint[] {
+  const stated = options.underlineFor;
+  if (stated === undefined) return [];
+
+  const under = (
+    mark: ParagraphMark,
+    leftPt: number,
+    baselinePt: number,
+    widthPt: number,
+  ): readonly UnderlinePaint[] => {
+    if (!mark.underline || widthPt <= 0) return [];
+    const line = stated(mark);
+    if (line === null || line.thicknessPt <= 0) return [];
+    return [
+      {
+        leftPt,
+        topPt: baselinePt + line.belowBaselinePt,
+        widthPt,
+        heightPt: line.thicknessPt,
+        color: drawnColor(mark.color),
+      },
+    ];
+  };
+
+  return boxes.flatMap((box) => [
+    ...(box.marker === null
+      ? []
+      : under(box.marker.mark, box.marker.leftPt, box.marker.baselinePt, box.marker.widthPt)),
+    ...box.lines.flatMap((placed) =>
+      placed.line.segments.flatMap((segment) =>
+        segment.kind !== "text"
+          ? []
+          : under(
+              segment.mark,
+              placed.leftPt + segment.offsetPt,
+              placed.baselinePt - segment.mark.raisePt,
+              segment.widthPt,
+            ),
+      ),
+    ),
+  ]);
+}
+
+/**
+ * What anything leaving its colour unstated is drawn in.
+ *
+ * **Black.** Word states `auto` for text on a light ground and draws it black, and
+ * layout has already resolved anything else; the colour Word draws an unstated
+ * border in is black as well.
+ *
+ * **Decided here and not in a renderer**, which is where the two of them
+ * disagreed until 2026-08-14: the pdf writer drew black and the viewer inherited
+ * whatever colour the page around it was set in, so a page in a themed container
+ * drew text Word would have drawn black. Written with its hash, which is the
+ * spelling everything else reaching a backend uses.
+ */
+export const UNSTATED_COLOR = "#000000";
+
+export const drawnColor = (stated: string | null): string => stated ?? UNSTATED_COLOR;
+
 function highlightsIn(boxes: readonly ParagraphBox[]): readonly HighlightPaint[] {
   return boxes.flatMap((box) =>
     box.lines.flatMap((placed) => {
@@ -397,25 +703,38 @@ function highlightsIn(boxes: readonly ParagraphBox[]): readonly HighlightPaint[]
 // body: what a panel anchored in the body covers on the first page includes the
 // footer's own classification line, which is why Word shows that line on the
 // second page and not on the first.
-function stacked(floats: readonly PlacedFloat[], prefix: string): readonly Drawable[] {
+function stacked(
+  floats: readonly PlacedFloat[],
+  prefix: string,
+  options: DrawingOptions,
+): readonly Drawable[] {
   return floats
     .map((float, at) => ({ float, key: `${prefix}-${String(at)}` }))
     .sort((one, other) => one.float.anchor.relativeHeight - other.float.anchor.relativeHeight)
-    .flatMap(({ float, key }) => fromFloat(float, key));
+    .flatMap(({ float, key }) => fromFloat(float, key, options));
 }
 
 // The text a story flowed down the page, which nothing cuts off.
-function flowedText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
+function flowedText(boxes: readonly ParagraphBox[], options: DrawingOptions): readonly Drawable[] {
   const uncut = boxes.filter((box) => box.clipTo === null);
   return hasText(uncut)
-    ? [{ kind: "text", key: "flowed-text", boxes: uncut, clipTo: null, turnDegrees: 0 }]
+    ? [
+        {
+          kind: "text",
+          key: "flowed-text",
+          boxes: uncut,
+          underlines: underlinesIn(uncut, options),
+          clipTo: null,
+          turnDegrees: 0,
+        },
+      ]
     : [];
 }
 
 // A paragraph in a row told exactly how tall to be is drawn in a layer that is
 // the row, so that what the row has no room for is not drawn at all. Each one
 // keeps its own layer: cells of one row are cut off at different places along it.
-function cutText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
+function cutText(boxes: readonly ParagraphBox[], options: DrawingOptions): readonly Drawable[] {
   return boxes.flatMap((box, at) => {
     const clipTo = box.clipTo;
     if (clipTo === null || !hasText([box])) return [];
@@ -424,6 +743,7 @@ function cutText(boxes: readonly ParagraphBox[]): readonly Drawable[] {
         kind: "text" as const,
         key: `cut-text-${String(at)}`,
         boxes: [box],
+        underlines: underlinesIn([box], options),
         clipTo,
         turnDegrees: 0,
       },
@@ -474,13 +794,17 @@ const glyphLayers = (page: PageDrawing): readonly Drawable[] =>
       })),
     }));
 
-export function drawablesOf(layout: LaidOutDocument, page: PageDrawing): readonly Drawable[] {
+export function drawablesOf(
+  layout: LaidOutDocument,
+  page: PageDrawing,
+  options: DrawingOptions = {},
+): readonly Drawable[] {
   const inlines = [...page.headerInlines, ...page.inlines, ...page.footerInlines].flatMap(
-    (inline, at) => fromInline(inline, `inline-${String(at)}`),
+    (inline, at) => fromInline(inline, `inline-${String(at)}`, options),
   );
 
-  const flowed = drawnBoxes([...page.header, ...page.body, ...page.footer]);
-  const text = [...flowedText(flowed), ...cutText(flowed)];
+  const flowed = drawnBoxes([...page.header, ...page.body, ...page.footer], options);
+  const text = [...flowedText(flowed, options), ...cutText(flowed, options)];
   const cells = [...page.headerCells, ...page.cells, ...page.footerCells].map(drawnCell);
 
   // **Where the text stands in the body's own stack is what `behindDoc` says**, and
@@ -504,12 +828,12 @@ export function drawablesOf(layout: LaidOutDocument, page: PageDrawing): readonl
   const inFront = ordered.slice(lastBehind + 1);
 
   return [
-    ...stacked([...page.headerFloats, ...page.footerFloats], "story"),
-    ...stacked(behind, "behind"),
+    ...stacked([...page.headerFloats, ...page.footerFloats], "story", options),
+    ...stacked(behind, "behind", options),
     ...paintLayer(cells, flowed, "paint"),
     ...text,
     ...glyphLayers(page),
     ...inlines,
-    ...stacked(inFront, "float"),
+    ...stacked(inFront, "float", options),
   ];
 }

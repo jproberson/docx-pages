@@ -201,6 +201,31 @@ describe("a glyph the drawing names by number", () => {
     expect(drawn).toContain("<0002> Tj");
   });
 
+  // A backend that embeds the face names the glyph rather than drawing its
+  // outline: the embedded one is hinted, it is selectable, and it is the same
+  // shape by construction. The outline is there for a backend that cannot.
+  it("names the glyph even where the run carries the shape as well", () => {
+    const outlined: PlacedGlyphs = {
+      ...GROWN,
+      glyphs: [
+        {
+          ...(GROWN.glyphs[0] ?? {
+            glyph: OPENING_GLYPH,
+            leftPt: 0,
+            baselinePt: 0,
+            advancePt: 0,
+            standsFor: null,
+          }),
+          outline: { unitsPerEm: 1000, contours: [] },
+        },
+      ],
+    };
+    const { drawn } = streamOf([outlined]);
+
+    expect(drawn).toContain("<0001> Tj");
+    expect(drawn).not.toContain(" re");
+  });
+
   it("draws nothing at all for a page that names no glyph", () => {
     expect(streamOf([]).drawn).not.toContain("Tj");
   });

@@ -6,7 +6,7 @@ import { drawablesOf, type PageDrawing } from "../layout/drawables.js";
 
 import { formatPdfNumber } from "./objects.js";
 import { pdfPageOf, turnedAboutInPdf, upFromTop, type PdfPage } from "./coordinates.js";
-import type { PdfFonts } from "./fonts.js";
+import { faceOf, type PdfFonts } from "./fonts.js";
 import type { PdfImages } from "./images.js";
 import { paintedObject, type ObjectDrawable } from "./objects-paint.js";
 import { paintLayer } from "./paint.js";
@@ -314,18 +314,19 @@ export function contentOf(
 ): PageContent {
   const pdfPage = pdfPageOf(page.geometry);
   const out = content();
-  const text: TextOptions = {
-    page: pdfPage,
-    fonts: options.fonts,
-    aliasSymbolFaces: options.aliasSymbolFaces,
-  };
+  const text: TextOptions = { page: pdfPage, fonts: options.fonts };
 
-  for (const drawable of drawablesOf(layout, page)) {
+  for (const drawable of drawablesOf(layout, page, {
+    aliasSymbolFaces: options.aliasSymbolFaces,
+    // The faces are this backend's to hold; where the line under a run goes is
+    // not this backend's to decide.
+    underlineFor: (mark) => options.fonts.faceFor(faceOf(mark)).underlineAt(mark.fontSizePt),
+  })) {
     switch (drawable.kind) {
       case "text": {
         const { clipTo } = drawable;
         if (clipTo === null) {
-          textOfBoxes(out, text, drawable.boxes);
+          textOfBoxes(out, text, drawable);
           break;
         }
         // Word draws the text a shape or an exact row has no room for and then
@@ -353,7 +354,7 @@ export function contentOf(
           clipTo.heightPt,
         );
         out.clip();
-        textOfBoxes(out, text, drawable.boxes);
+        textOfBoxes(out, text, drawable);
         out.restore();
         break;
       }
@@ -361,7 +362,7 @@ export function contentOf(
         drawnGlyphs(out, text, drawable);
         break;
       case "paint":
-        paintLayer(out, pdfPage, drawable.cells, drawable.paragraphs, drawable.highlights);
+        paintLayer(out, pdfPage, drawable.painted, drawable.highlights);
         break;
       case "object":
         drawObject(out, pdfPage, options.images, drawable);

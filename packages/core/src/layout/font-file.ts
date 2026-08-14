@@ -7,6 +7,7 @@ import {
   type FontMetrics,
   type InkBox,
   type InkTable,
+  type InkUnavailable,
   type KerningSource,
   type KerningTable,
   type MathAssembly,
@@ -57,10 +58,12 @@ export type ReadFontFileResult = ReadFontMetricsResult & {
   // face's pairs could not be read. A face stating none is `unkerned` rather than
   // an error: most of them state none.
   readonly kerning: KerningTable;
-  // What each of the face's glyphs draws, out of its outlines, and what it says
-  // about setting mathematics. A face stating no MATH table is `math-missing`
+  // What each of the face's glyphs draws, out of its outlines: the box it fills,
+  // and the shape itself for a backend that cannot name a glyph. And what the face
+  // says about setting mathematics. A face stating no MATH table is `math-missing`
   // rather than an error: all but a handful state none.
   readonly ink: InkTable;
+  readonly outlines: OutlineTable;
   readonly math: MathTable;
   // Null where the face states no `post` table, which nothing can be invented
   // for: a renderer that needs a line has to say what it did instead.
@@ -858,7 +861,13 @@ type GlyphInkOf = (glyph: number) => InkBox | null;
 const NOTHING_MAPPED: CodeToGlyph = () => 0;
 
 type InkReading =
-  | { readonly kind: "ink"; readonly inkOfGlyph: GlyphInkOf }
+  | {
+      readonly kind: "ink";
+      readonly inkOfGlyph: GlyphInkOf;
+      // A PostScript face states no box, so the box is what the path comes to and
+      // the path is there for the asking. A TrueType one states both apart.
+      readonly pathOfGlyph?: (glyph: number) => readonly GlyphContour[];
+    }
   | { readonly kind: "missing" }
   | { readonly kind: "unsupported" }
   | { readonly kind: "malformed" };
@@ -873,41 +882,389 @@ const INK_MALFORMED: InkReading = { kind: "malformed" };
 const LOCA_FORMAT_AT = 50;
 const GLYPH_HEADER_LENGTH = 10;
 
-// A TrueType glyph states the box it draws in its own header, so nothing has to
-// follow the outline. A composite glyph states it there too, over all the glyphs
-// it is built from.
-function readTrueTypeInk(tables: ReadonlyMap<string, Uint8Array>): InkReading {
+// Where a glyph's own bytes are, or null for a glyph that draws nothing.
+type GlyphBytes = (glyph: number) => Uint8Array | null;
+
+// How deep a composite may reach into another, which is the depth the format
+// itself allows.
+const COMPONENT_DEPTH = 5;
+
+function trueTypeContours(bytesOf: GlyphBytes): (glyph: number) => readonly GlyphContour[] {
+  const contoursOf = (glyph: number, depth: number): readonly GlyphContour[] => {
+    const bytes = bytesOf(glyph);
+    if (bytes === null || bytes.byteLength < GLYPH_HEADER_LENGTH) return [];
+
+    const contours = viewOf(bytes).getInt16(0);
+    if (contours >= 0) {
+      return (pointsOf(bytes) ?? []).flatMap((points) => {
+        const contour = contourOf(points);
+        return contour === null ? [] : [contour];
+      });
+    }
+
+    // A composite glyph is other glyphs, each moved and possibly turned or scaled
+    // where it stands. Accented letters are written this way, and so is much of a
+    // maths face.
+    if (depth >= COMPONENT_DEPTH) return [];
+    const built: GlyphContour[] = [];
+    let read = GLYPH_HEADER_LENGTH;
+    while (read > 0) {
+      const component = componentAt(bytes, read);
+      if (component === null) break;
+      for (const contour of contoursOf(component.glyph, depth + 1)) {
+        built.push(movedBy(contour, component));
+      }
+      read = component.next;
+    }
+    return built;
+  };
+
+  return (glyph) => contoursOf(glyph, 0);
+}
+
+// A point of an outline, in the face's own units, with x from the glyph's origin
+// and y up from the baseline as the face states it.
+export type GlyphPoint = readonly [number, number];
+
+// What an outline does next. A TrueType face draws its curves with one control
+// point and a PostScript one with two, and neither is turned into the other here:
+// every backend that can draw a curve at all can draw both, and converting would
+// move the ink for nothing.
+export type GlyphStep =
+  | { readonly kind: "line"; readonly to: GlyphPoint }
+  | { readonly kind: "quadratic"; readonly control: GlyphPoint; readonly to: GlyphPoint }
+  | {
+      readonly kind: "cubic";
+      readonly first: GlyphPoint;
+      readonly second: GlyphPoint;
+      readonly to: GlyphPoint;
+    };
+
+// One closed contour: where it starts and what it does from there. A letter with a
+// counter is two of them, and what is inside what is settled by the winding rather
+// than by their order.
+export type GlyphContour = {
+  readonly from: GlyphPoint;
+  readonly steps: readonly GlyphStep[];
+};
+
+/**
+ * The shape a glyph draws, as the face itself states it.
+ *
+ * **What a backend that cannot name a glyph draws instead**: a browser addresses a
+ * face by character and by nothing else, so a stretched parenthesis reaches it as
+ * this or not at all. A backend embedding the face should still name the glyph:
+ * the embedded one is hinted, it is selectable, and it is the same shape by
+ * construction.
+ */
+export type GlyphOutline = {
+  readonly unitsPerEm: number;
+  readonly contours: readonly GlyphContour[];
+};
+
+// **This belongs beside the ink on `InkTable`**, which is the same question asked
+// of the same tables; it is a table of its own only because `InkTable` is declared
+// in `font-metrics.ts`, which was another agent's while this was written. Joining
+// them is a rename and no more.
+export type OutlineTable =
+  | {
+      readonly kind: "outlines";
+      readonly outlineOf: (codePoint: number) => GlyphOutline | null;
+      readonly outlineOfGlyph: (glyph: number) => GlyphOutline | null;
+    }
+  | { readonly kind: "unavailable"; readonly reason: InkUnavailable };
+
+/**
+ * A TrueType glyph's own points, which are a quadratic B-spline rather than a
+ * path: a point is on the curve or off it, and **two off-curve points in a row
+ * have an on-curve point implied halfway between them.** A reader that misses that
+ * draws a straight line through every second curve.
+ *
+ * A contour whose first point is off the curve starts at the last point where that
+ * one is on it, and halfway between the two where it is not, which is how a face
+ * states a contour made of nothing but curves.
+ */
+type OutlinePoint = { readonly x: number; readonly y: number; readonly onCurve: boolean };
+
+const halfway = (one: OutlinePoint, other: OutlinePoint): OutlinePoint => ({
+  x: (one.x + other.x) / 2,
+  y: (one.y + other.y) / 2,
+  onCurve: true,
+});
+
+const pointAt = (point: OutlinePoint): GlyphPoint => [point.x, point.y];
+
+function contourOf(points: readonly OutlinePoint[]): GlyphContour | null {
+  const first = points[0];
+  const last = points.at(-1);
+  if (first === undefined || last === undefined) return null;
+
+  const start = first.onCurve ? first : last.onCurve ? last : halfway(first, last);
+  // Where the contour started on a point of its own, that point is not walked
+  // again; where it was implied or borrowed from the end, every point is.
+  const walked = first.onCurve ? points.slice(1) : last.onCurve ? points.slice(0, -1) : points;
+
+  const steps: GlyphStep[] = [];
+  let control: OutlinePoint | null = null;
+  for (const point of walked) {
+    if (point.onCurve) {
+      steps.push(
+        control === null
+          ? { kind: "line", to: pointAt(point) }
+          : { kind: "quadratic", control: pointAt(control), to: pointAt(point) },
+      );
+      control = null;
+      continue;
+    }
+    if (control !== null) {
+      steps.push({
+        kind: "quadratic",
+        control: pointAt(control),
+        to: pointAt(halfway(control, point)),
+      });
+    }
+    control = point;
+  }
+  // The contour closes on where it started, through the control still in hand.
+  if (control !== null) {
+    steps.push({ kind: "quadratic", control: pointAt(control), to: pointAt(start) });
+  } else if (steps.length > 0) {
+    steps.push({ kind: "line", to: pointAt(start) });
+  }
+
+  return { from: pointAt(start), steps };
+}
+
+const ON_CURVE = 1;
+const X_SHORT = 2;
+const Y_SHORT = 4;
+const REPEATED = 8;
+const X_SAME = 16;
+const Y_SAME = 32;
+
+// The points of one simple glyph, contour by contour, or null where the table runs
+// out under it.
+function pointsOf(glyph: Uint8Array): readonly (readonly OutlinePoint[])[] | null {
+  if (glyph.byteLength < GLYPH_HEADER_LENGTH) return null;
+
+  const view = viewOf(glyph);
+  const contours = view.getInt16(0);
+  if (contours <= 0) return null;
+  if (GLYPH_HEADER_LENGTH + contours * 2 + 2 > glyph.byteLength) return null;
+
+  const ends: number[] = [];
+  for (let index = 0; index < contours; index += 1) {
+    ends.push(view.getUint16(GLYPH_HEADER_LENGTH + index * 2));
+  }
+  const count = (ends.at(-1) ?? -1) + 1;
+  if (count < 1) return null;
+
+  let read = GLYPH_HEADER_LENGTH + contours * 2;
+  read += 2 + view.getUint16(read);
+
+  const flags: number[] = [];
+  while (flags.length < count && read < glyph.byteLength) {
+    const flag = glyph[read] ?? 0;
+    read += 1;
+    flags.push(flag);
+    if ((flag & REPEATED) === 0) continue;
+    const repeats = glyph[read] ?? 0;
+    read += 1;
+    for (let more = 0; more < repeats && flags.length < count; more += 1) flags.push(flag);
+  }
+  if (flags.length < count) return null;
+
+  // Each coordinate is a byte where the face says so, two bytes where it says
+  // neither, and nothing at all where it repeats the one before.
+  const coordinates = (shortBit: number, sameBit: number): number[] | null => {
+    const out: number[] = [];
+    let value = 0;
+    for (const flag of flags) {
+      if ((flag & shortBit) !== 0) {
+        if (read + 1 > glyph.byteLength) return null;
+        const step = glyph[read] ?? 0;
+        read += 1;
+        value += (flag & sameBit) !== 0 ? step : -step;
+      } else if ((flag & sameBit) === 0) {
+        if (read + 2 > glyph.byteLength) return null;
+        value += view.getInt16(read);
+        read += 2;
+      }
+      out.push(value);
+    }
+    return out;
+  };
+
+  const xs = coordinates(X_SHORT, X_SAME);
+  const ys = xs === null ? null : coordinates(Y_SHORT, Y_SAME);
+  if (xs === null || ys === null) return null;
+
+  const all: OutlinePoint[] = flags.map((flag, index) => ({
+    x: xs[index] ?? 0,
+    y: ys[index] ?? 0,
+    onCurve: (flag & ON_CURVE) !== 0,
+  }));
+
+  const walked: (readonly OutlinePoint[])[] = [];
+  let from = 0;
+  for (const end of ends) {
+    if (end < from || end >= count) return null;
+    walked.push(all.slice(from, end + 1));
+    from = end + 1;
+  }
+  return walked;
+}
+
+const ARGUMENTS_ARE_WORDS = 0x0001;
+const ARGUMENTS_ARE_OFFSETS = 0x0002;
+const HAS_A_SCALE = 0x0008;
+const MORE_COMPONENTS = 0x0020;
+const HAS_TWO_SCALES = 0x0040;
+const HAS_A_MATRIX = 0x0080;
+
+// A scale in a composite glyph is a number between minus two and two, kept as a
+// whole part of two bits and a fraction of fourteen.
+const F2DOT14 = 16384;
+
+type Component = {
+  readonly glyph: number;
+  readonly acrossPt: number;
+  readonly upPt: number;
+  readonly matrix: readonly [number, number, number, number];
+  // Where the next component starts, or nought where this was the last.
+  readonly next: number;
+};
+
+function componentAt(glyph: Uint8Array, read: number): Component | null {
+  if (read + 4 > glyph.byteLength) return null;
+  const view = viewOf(glyph);
+  const flags = view.getUint16(read);
+  const index = view.getUint16(read + 2);
+  let at = read + 4;
+
+  let acrossPt: number;
+  let upPt: number;
+  if ((flags & ARGUMENTS_ARE_WORDS) !== 0) {
+    if (at + 4 > glyph.byteLength) return null;
+    acrossPt = view.getInt16(at);
+    upPt = view.getInt16(at + 2);
+    at += 4;
+  } else {
+    if (at + 2 > glyph.byteLength) return null;
+    acrossPt = view.getInt8(at);
+    upPt = view.getInt8(at + 1);
+    at += 2;
+  }
+
+  let matrix: readonly [number, number, number, number] = [1, 0, 0, 1];
+  if ((flags & HAS_A_SCALE) !== 0) {
+    if (at + 2 > glyph.byteLength) return null;
+    const scale = view.getInt16(at) / F2DOT14;
+    matrix = [scale, 0, 0, scale];
+    at += 2;
+  } else if ((flags & HAS_TWO_SCALES) !== 0) {
+    if (at + 4 > glyph.byteLength) return null;
+    matrix = [view.getInt16(at) / F2DOT14, 0, 0, view.getInt16(at + 2) / F2DOT14];
+    at += 4;
+  } else if ((flags & HAS_A_MATRIX) !== 0) {
+    if (at + 8 > glyph.byteLength) return null;
+    matrix = [
+      view.getInt16(at) / F2DOT14,
+      view.getInt16(at + 2) / F2DOT14,
+      view.getInt16(at + 4) / F2DOT14,
+      view.getInt16(at + 6) / F2DOT14,
+    ];
+    at += 8;
+  }
+
+  // A component placed by matching one glyph's point to another's is left out
+  // rather than guessed at: it is rare, and a letter drawn in the wrong place is
+  // worse than one not drawn.
+  if ((flags & ARGUMENTS_ARE_OFFSETS) === 0) return null;
+
+  return {
+    glyph: index,
+    acrossPt,
+    upPt,
+    matrix,
+    next: (flags & MORE_COMPONENTS) === 0 ? 0 : at,
+  };
+}
+
+const movedBy = (contour: GlyphContour, { acrossPt, upPt, matrix }: Component): GlyphContour => {
+  const [a, b, c, d] = matrix;
+  const moved = (point: GlyphPoint): GlyphPoint => [
+    a * point[0] + c * point[1] + acrossPt,
+    b * point[0] + d * point[1] + upPt,
+  ];
+  return {
+    from: moved(contour.from),
+    steps: contour.steps.map((step) => {
+      if (step.kind === "line") return { kind: "line", to: moved(step.to) };
+      if (step.kind === "quadratic") {
+        return { kind: "quadratic", control: moved(step.control), to: moved(step.to) };
+      }
+      return {
+        kind: "cubic",
+        first: moved(step.first),
+        second: moved(step.second),
+        to: moved(step.to),
+      };
+    }),
+  };
+};
+
+// Where each glyph's own bytes are, which the box and the outline both start from.
+function trueTypeGlyphs(
+  tables: ReadonlyMap<string, Uint8Array>,
+): GlyphBytes | "missing" | "malformed" {
   const glyf = tables.get(GLYF);
   const loca = tables.get(LOCA);
-  if (glyf === undefined || loca === undefined) return INK_MISSING;
+  if (glyf === undefined || loca === undefined) return "missing";
 
   const head = tables.get(HEAD);
-  if (head === undefined || head.byteLength < LOCA_FORMAT_AT + 2) return INK_MALFORMED;
+  if (head === undefined || head.byteLength < LOCA_FORMAT_AT + 2) return "malformed";
 
   const long = viewOf(head).getInt16(LOCA_FORMAT_AT) === 1;
   const entry = long ? 4 : 2;
   const glyphCount = Math.floor(loca.byteLength / entry) - 1;
-  if (glyphCount < 1) return INK_MALFORMED;
+  if (glyphCount < 1) return "malformed";
 
   const locaView = viewOf(loca);
-  const glyfView = viewOf(glyf);
   // A short `loca` counts in pairs of bytes, which is what lets it reach a table
   // twice as long as its own numbers.
   const offsetAt = (index: number): number =>
     long ? locaView.getUint32(index * 4) : locaView.getUint16(index * 2) * 2;
 
+  return (glyph) => {
+    if (glyph < 0 || glyph >= glyphCount) return null;
+    const from = offsetAt(glyph);
+    const to = offsetAt(glyph + 1);
+    // A glyph of no length draws nothing: a space is written this way.
+    if (to <= from || to > glyf.byteLength) return null;
+    return glyf.subarray(from, to);
+  };
+}
+
+// A TrueType glyph states the box it draws in its own header, so nothing has to
+// follow the outline. A composite glyph states it there too, over all the glyphs
+// it is built from.
+function readTrueTypeInk(tables: ReadonlyMap<string, Uint8Array>): InkReading {
+  const bytesOf = trueTypeGlyphs(tables);
+  if (bytesOf === "missing") return INK_MISSING;
+  if (bytesOf === "malformed") return INK_MALFORMED;
+
   return {
     kind: "ink",
     inkOfGlyph: (glyph) => {
-      if (glyph < 0 || glyph >= glyphCount) return null;
-      const from = offsetAt(glyph);
-      const to = offsetAt(glyph + 1);
-      if (to <= from || from + GLYPH_HEADER_LENGTH > glyf.byteLength) return null;
+      const bytes = bytesOf(glyph);
+      if (bytes === null || bytes.byteLength < GLYPH_HEADER_LENGTH) return null;
+      const view = viewOf(bytes);
       return {
-        left: glyfView.getInt16(from + 2),
-        bottom: glyfView.getInt16(from + 4),
-        right: glyfView.getInt16(from + 6),
-        top: glyfView.getInt16(from + 8),
+        left: view.getInt16(2),
+        bottom: view.getInt16(4),
+        right: view.getInt16(6),
+        top: view.getInt16(8),
       };
     },
   };
@@ -1165,6 +1522,10 @@ function readCffInk(cff: Uint8Array): InkReading {
       if (charstring === null) return null;
       return outlineBoxOf(charstring, globalSubrs, subrsFor(glyph));
     },
+    pathOfGlyph: (glyph) => {
+      const charstring = charStrings.entry(glyph);
+      return charstring === null ? [] : outlinePathOf(charstring, globalSubrs, subrsFor(glyph));
+    },
   };
 }
 
@@ -1180,7 +1541,35 @@ type Pen = {
   width: boolean;
   stack: number[];
   broken: boolean;
+  // The path itself, kept only where somebody asked for it: the box is what the
+  // layout needs and the outline is what a backend that cannot name a glyph does,
+  // and following the charstring twice for both would be waste.
+  contours: GlyphContour[] | null;
+  steps: GlyphStep[];
+  // Where the contour in hand started, which is where the last move put the pen.
+  from: GlyphPoint;
 };
+
+const newPen = (contours: GlyphContour[] | null): Pen => ({
+  x: 0,
+  y: 0,
+  box: null,
+  stems: 0,
+  width: false,
+  stack: [],
+  broken: false,
+  contours,
+  steps: [],
+  from: [0, 0],
+});
+
+// A charstring closes each contour where it starts the next, and the last where it
+// ends. Nothing states the closing line, since a contour is closed by being one.
+function closeContour(pen: Pen): void {
+  if (pen.contours === null || pen.steps.length === 0) return;
+  pen.contours.push({ from: pen.from, steps: pen.steps });
+  pen.steps = [];
+}
 
 /**
  * The box a PostScript outline comes to, worked out by following the charstring:
@@ -1195,10 +1584,22 @@ function outlineBoxOf(
   globalSubrs: CffIndex,
   localSubrs: CffIndex | null,
 ): InkBox | null {
-  const pen: Pen = { x: 0, y: 0, box: null, stems: 0, width: false, stack: [], broken: false };
+  const pen = newPen(null);
   runCharstring(charstring, pen, globalSubrs, localSubrs, 0);
   if (pen.broken || pen.box === null) return null;
   return { ...pen.box };
+}
+
+// The same walk, keeping the path rather than only how far it reached.
+function outlinePathOf(
+  charstring: Uint8Array,
+  globalSubrs: CffIndex,
+  localSubrs: CffIndex | null,
+): readonly GlyphContour[] {
+  const pen = newPen([]);
+  runCharstring(charstring, pen, globalSubrs, localSubrs, 0);
+  closeContour(pen);
+  return pen.broken ? [] : (pen.contours ?? []);
 }
 
 function runCharstring(
@@ -1357,8 +1758,10 @@ function countStems(pen: Pen): void {
 }
 
 function moveBy(pen: Pen, across: number, up: number): void {
+  closeContour(pen);
   pen.x += across;
   pen.y += up;
+  pen.from = [pen.x, pen.y];
   pen.box = extendedBy(pen.box, pen.x, pen.y);
 }
 
@@ -1366,8 +1769,13 @@ function drawLines(pen: Pen, stack: readonly number[]): void {
   for (let at = 0; at + 1 < stack.length; at += 2) {
     pen.x += stack[at] ?? 0;
     pen.y += stack[at + 1] ?? 0;
-    pen.box = extendedBy(pen.box, pen.x, pen.y);
+    lineTo(pen);
   }
+}
+
+function lineTo(pen: Pen): void {
+  pen.box = extendedBy(pen.box, pen.x, pen.y);
+  if (pen.contours !== null) pen.steps.push({ kind: "line", to: [pen.x, pen.y] });
 }
 
 function drawAlternatingLines(pen: Pen, stack: readonly number[], horizontal: boolean): void {
@@ -1376,7 +1784,7 @@ function drawAlternatingLines(pen: Pen, stack: readonly number[], horizontal: bo
     if (across) pen.x += step;
     else pen.y += step;
     across = !across;
-    pen.box = extendedBy(pen.box, pen.x, pen.y);
+    lineTo(pen);
   }
 }
 
@@ -1397,6 +1805,7 @@ function curveTo(
   pen.box = alongCurve(pen.box, from, first, second, to);
   pen.x = to[0];
   pen.y = to[1];
+  if (pen.contours !== null) pen.steps.push({ kind: "cubic", first, second, to });
 }
 
 function drawCurves(pen: Pen, stack: readonly number[]): void {
@@ -1582,6 +1991,54 @@ function readInkOfGlyph(tables: ReadonlyMap<string, Uint8Array>): InkReading {
 
   const cff = tables.get(CFF);
   return cff === undefined ? INK_MISSING : readCffInk(cff);
+}
+
+/**
+ * The shape of every glyph the face draws, for a backend that cannot name one.
+ *
+ * A TrueType face states its points and a PostScript one its charstring, and the
+ * two are read the same way as the box is: whichever the face carries.
+ */
+function readOutlines(
+  tables: ReadonlyMap<string, Uint8Array>,
+  glyphFor: CodeToGlyph,
+  unitsPerEm: number,
+): OutlineTable {
+  const bytesOf = trueTypeGlyphs(tables);
+  const reading = bytesOf === "missing" ? readInkOfGlyph(tables) : null;
+
+  const contoursOfGlyph =
+    bytesOf === "malformed"
+      ? null
+      : bytesOf === "missing"
+        ? reading?.kind === "ink"
+          ? (reading.pathOfGlyph ?? null)
+          : null
+        : trueTypeContours(bytesOf);
+
+  if (contoursOfGlyph === null) {
+    if (bytesOf === "malformed") return { kind: "unavailable", reason: "outlines-malformed" };
+    if (reading?.kind === "unsupported") {
+      return { kind: "unavailable", reason: "outlines-unsupported" };
+    }
+    if (reading?.kind === "malformed") return { kind: "unavailable", reason: "outlines-malformed" };
+    return { kind: "unavailable", reason: "outlines-missing" };
+  }
+
+  const outlineOfGlyph = (glyph: number): GlyphOutline | null => {
+    const contours = contoursOfGlyph(glyph);
+    return contours.length === 0 ? null : { unitsPerEm, contours };
+  };
+
+  return {
+    kind: "outlines",
+    outlineOfGlyph,
+    // A character the face has no glyph for draws nothing here, as it draws no ink.
+    outlineOf: (codePoint) => {
+      const glyph = glyphFor(codePoint);
+      return glyph === 0 ? null : outlineOfGlyph(glyph);
+    },
+  };
 }
 
 function readInk(tables: ReadonlyMap<string, Uint8Array>, glyphFor: CodeToGlyph): InkTable {
@@ -1930,6 +2387,7 @@ export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFile
     advances: readAdvanceTable(tables, metricCount),
     kerning: unmapped ?? readKerning(tables, glyphFor),
     ink,
+    outlines: unmapped ?? readOutlines(tables, glyphFor, headView.getUint16(18)),
     math: unmapped ?? readMath(tables, glyphFor, metricCount, ink),
     sansSerif: readsSansSerif(tables),
     ...readPost(tables),

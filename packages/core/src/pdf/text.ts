@@ -1,10 +1,9 @@
 import type { ParagraphMark } from "../docx/styles.js";
-import type { Drawable } from "../layout/drawables.js";
-import type { ParagraphBox, ParagraphMarker, PlacedLine } from "../layout/stack.js";
-import { aliasedSymbolText } from "../layout/symbol-aliases.js";
+import { drawnColor, type Drawable, type UnderlinePaint } from "../layout/drawables.js";
+import type { ParagraphMarker, PlacedLine } from "../layout/stack.js";
 
 import { bottomOf, upFromTop, type PdfPage } from "./coordinates.js";
-import { faceOf, type PdfFonts, type PdfUnderline } from "./fonts.js";
+import { faceOf, type PdfFonts } from "./fonts.js";
 import type { Content } from "./content.js";
 
 // The text-showing half of a page, which mirrors the viewer's `textLayer` and
@@ -20,29 +19,12 @@ import type { Content } from "./content.js";
 export type TextOptions = {
   readonly page: PdfPage;
   readonly fonts: PdfFonts;
-  // Symbol faces the layout stood in for, by lowercased name, exactly as the
-  // viewer takes them: a run written in one holds positions in that face's page
-  // and is drawn as what those positions mean.
-  readonly aliasSymbolFaces: ReadonlySet<string> | null;
 };
 
-// A run in a symbol face that was stood in for holds positions in that face's own
-// page, and the stand-in would draw them as its own letters. Drawn as what the
-// positions mean instead, which is how the layout measured them.
-function shownText(
-  mark: ParagraphMark,
-  text: string,
-  aliasFaces: ReadonlySet<string> | null,
-): string {
-  if (aliasFaces === null || mark.font.kind !== "named") return text;
-  if (!aliasFaces.has(mark.font.name.trim().toLowerCase())) return text;
-  return aliasedSymbolText(mark.font.name, text) ?? text;
-}
-
-// Black, which is what a run leaving its colour unstated is drawn in. Word states
-// `auto` for text on a light ground and draws it black, and layout has already
-// resolved anything else.
-const DEFAULT_COLOR = "000000";
+// **What a run shows is decided in `drawables.ts`**, which is where a run in a
+// stood-in symbol face has its positions turned into what they mean, and what an
+// unstated colour comes to. The text and the colour reaching here are what is
+// drawn.
 
 function shownRun(
   out: Content,
@@ -51,14 +33,13 @@ function shownRun(
   text: string,
   leftPt: number,
   baselinePt: number,
-  widthPt: number,
 ): void {
   if (text === "") return;
 
   const face = options.fonts.faceFor(faceOf(mark));
-  const glyphs = face.glyphsFor(shownText(mark, text, options.aliasSymbolFaces));
+  const glyphs = face.glyphsFor(text);
 
-  out.fillColor(mark.color ?? DEFAULT_COLOR);
+  out.fillColor(drawnColor(mark.color));
   out.beginText();
   out.font(face.resource, mark.fontSizePt);
   // Laid after every character of the run, the last one included, which is how
@@ -70,45 +51,22 @@ function shownRun(
   out.textPosition(leftPt, upFromTop(options.page, baselinePt));
   out.showGlyphs(glyphs);
   out.endText();
-
-  if (mark.underline) underlined(out, options, face, mark, leftPt, baselinePt, widthPt);
 }
 
-/**
- * The line under an underlined run.
- *
- * A pdf has no such thing as an underline: the line is drawn, as Word draws it,
- * as a filled rectangle. **Where it goes is the face's own business** and not this
- * package's. Measured on 2026-08-07 off Word's own pdf of a reference document:
- * every underline there sat 0.1207 em below the baseline and was 0.0690 em thick,
- * the same at three places on the page, and those are the ratios the drawn face's
- * `post` table states rather than any constant Word carries.
- *
- * A face stating no `post` table gets no line, since nothing here could invent
- * where to put one and a line in the wrong place is worse than the run being
- * drawn without it. The README names it.
- */
-function underlined(
-  out: Content,
-  options: TextOptions,
-  face: { readonly underlineAt: (fontSizePt: number) => PdfUnderline | null },
-  mark: ParagraphMark,
-  leftPt: number,
-  baselinePt: number,
-  widthPt: number,
-): void {
-  const underline = face.underlineAt(mark.fontSizePt);
-  if (underline === null || widthPt <= 0 || underline.thicknessPt <= 0) return;
-
-  const topPt = baselinePt + underline.belowBaselinePt;
-  out.fillColor(mark.color ?? DEFAULT_COLOR);
-  out.rectangle(
-    leftPt,
-    bottomOf(options.page, topPt, underline.thicknessPt),
-    widthPt,
-    underline.thicknessPt,
-  );
-  out.fill();
+// **Where an underline goes is decided in `drawables.ts`**, out of the metrics the
+// drawn face states, and reaches here as the rectangle to fill. A pdf has no such
+// thing as an underline and neither has Word: the line is filled.
+function underlines(out: Content, page: PdfPage, drawn: readonly UnderlinePaint[]): void {
+  for (const line of drawn) {
+    out.fillColor(line.color);
+    out.rectangle(
+      line.leftPt,
+      bottomOf(page, line.topPt, line.heightPt),
+      line.widthPt,
+      line.heightPt,
+    );
+    out.fill();
+  }
 }
 
 /**
@@ -125,7 +83,6 @@ export function lineText(out: Content, options: TextOptions, placed: PlacedLine)
       segment.text,
       placed.leftPt + segment.offsetPt,
       placed.baselinePt - segment.mark.raisePt,
-      segment.widthPt,
     );
   }
 }
@@ -133,15 +90,7 @@ export function lineText(out: Content, options: TextOptions, placed: PlacedLine)
 // A list's number is drawn out of the text flow, at the position the level's
 // hanging indent pulls the first line back to.
 export function markerText(out: Content, options: TextOptions, marker: ParagraphMarker): void {
-  shownRun(
-    out,
-    options,
-    marker.mark,
-    marker.text,
-    marker.leftPt,
-    marker.baselinePt,
-    marker.widthPt,
-  );
+  shownRun(out, options, marker.mark, marker.text, marker.leftPt, marker.baselinePt);
 }
 
 /**
@@ -181,10 +130,11 @@ export function drawnGlyphs(
 export function textOfBoxes(
   out: Content,
   options: TextOptions,
-  boxes: readonly ParagraphBox[],
+  drawable: Extract<Drawable, { kind: "text" }>,
 ): void {
-  for (const box of boxes) {
+  for (const box of drawable.boxes) {
     if (box.marker !== null) markerText(out, options, box.marker);
     for (const line of box.lines) lineText(out, options, line);
   }
+  underlines(out, options.page, drawable.underlines);
 }
