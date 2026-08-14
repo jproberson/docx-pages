@@ -151,6 +151,40 @@ const crosses = (band: WrapBand, topPt: number, bottomPt: number): boolean =>
       band.bottomPt > (topPt + bottomPt) / 2 + EPSILON
     : band.topPt < bottomPt - EPSILON && band.bottomPt > topPt + EPSILON;
 
+/**
+ * **Fourteen authored cases say the outline half of that is wrong, and two real pages
+ * say it is right. Nothing found so far tells them apart, so it stands as measured
+ * and this is written down instead of acted on.**
+ *
+ * The fourteen were asked of Word on 2026-08-14, three repeats each, over a line
+ * standing 108 to 132 in a frame of 36 to 576 beside a band 120pt wide against the
+ * right of it, held 9pt off, so a line it reaches is narrowed rather than moved. A
+ * band whose top reaches the last 1, 2, 4 or 8pt of the line, and one whose foot
+ * reaches the first 1, 2, 4 or 8pt, wrapped to an outline and wrapped to a frame; a
+ * text box and a picture, in front of the text and behind it; a square wrap behind
+ * the text. **Word narrowed the line in all fourteen**, and the reading above says it
+ * should have left eight of them alone. Two controls standing 40pt clear of the line
+ * came back whole, so the cases were read right.
+ *
+ * Reference `d` is the counter-example, over the same geometry. Its line's own place
+ * is 600.52; Word draws it at 736.95, eight steps of its own 17.09pt height down,
+ * with the tight band's foot at 739.19 standing 2.04pt into it and the line running
+ * from 291 straight through that band's ground. The reading above puts it at 737.23.
+ * Reference `f` says the same with no fall in it: its band covers the first 4.9pt of
+ * the line and Word draws the line at the frame's own left through the band. Word was
+ * asked about `d` twice over, by its pdf and by the paragraph oracle, and the oracle
+ * says the paragraphs above the line do not move and the three objects stand exactly
+ * where the file states them.
+ *
+ * What has been put to Word and does not separate the two: the wrap kind, the wrap
+ * polygon, `behindDoc`, what the object holds, the distances, an object overhanging
+ * the frame, a `wrapNone` object covering the same ground, the pile the objects stand
+ * in, the page's margins, its header, its footer, the faces, the settings, the other
+ * objects on the page, and the paragraphs above. Cut `d` down to any one of those and
+ * Word still answers as `d`; rebuild the same three objects at the same offsets from
+ * the same paragraph on the same page and it answers as the fourteen.
+ */
+
 // Where a line refused its place looks next: past a frame it falls to the edge that
 // blocked it, landing on it exactly, and past an outline it steps down by its own
 // height. Both are measured, and nothing lands between the two.
