@@ -364,6 +364,258 @@ export type PlacedGlyphs = {
   readonly glyphs: readonly DrawnGlyph[];
 };
 
+/**
+ * A run of text drawn at a place of its own rather than along a line.
+ *
+ * **This is the shape a list's number already had**, which is why nothing below
+ * learns a new way to draw text: a number pulled out of the flow and a fraction's
+ * numerator are the one question, a string at a place at a size, and both
+ * backends answer it in a function they already have.
+ *
+ * A run inside a line is placed by the line: it carries an offset along it and
+ * takes the line's own baseline, raised by whatever its mark asks for. A run here
+ * carries the whole answer, because the arithmetic that placed it is not the
+ * line's.
+ */
+export type DrawnRun = {
+  readonly text: string;
+  readonly mark: ParagraphMark;
+  // What the run was measured at, which a backend drawing it in another face holds
+  // it to; see `runWidthMadeUpBy` for how the difference is made up.
+  readonly widthPt: number;
+  readonly leftPt: number;
+  readonly baselinePt: number;
+};
+
+/**
+ * One thing a set equation draws, already placed.
+ *
+ * **This is the seam between the arithmetic and the drawing.** `math.ts` sets a
+ * fraction measured from the box's own baseline with up positive, which is how the
+ * MATH table states every constant it works from; a flattener there turns a placed
+ * box and an origin into this list. **Everything here is in the page's own
+ * coordinates, down positive**, so the axis turns over once, on that side, and
+ * nothing below this line knows the other way up exists.
+ *
+ * The list is in the order the pieces are painted.
+ */
+export type MathPrimitive =
+  | {
+      readonly kind: "text";
+      readonly text: string;
+      readonly sizePt: number;
+      // What the flattener measured the piece at, off the face's own advances. The
+      // geometry round it is made of those same advances, the bar's width above
+      // all, so a backend holding the run to this keeps the two together.
+      readonly widthPt: number;
+      readonly leftPt: number;
+      readonly baselinePt: number;
+    }
+  // A fraction's bar, and anything else Word fills rather than strokes.
+  | {
+      readonly kind: "fill";
+      readonly leftPt: number;
+      readonly topPt: number;
+      readonly widthPt: number;
+      readonly heightPt: number;
+    }
+  // A stretched delimiter, which is a rung of the face's own ladder and has no
+  // character to be asked for by. Everything past the glyph and its place is what
+  // `DrawnGlyph` needs and only the face can answer: what it advances, how far its
+  // ink reaches either side of its baseline, and the character it stands for.
+  | {
+      readonly kind: "glyph";
+      readonly glyph: number;
+      readonly sizePt: number;
+      readonly leftPt: number;
+      readonly baselinePt: number;
+      readonly advancePt: number;
+      readonly ascentPt: number;
+      readonly descentPt: number;
+      readonly standsFor: string | null;
+      readonly outline?: GlyphOutline;
+    };
+
+/**
+ * One equation as it was set: the pieces, and the mark they are drawn with.
+ *
+ * **The mark is the equation's own and not the paragraph's.** Word draws set
+ * mathematics in the face the document names for it: on the authored equation
+ * probes the text around each equation came out in the body face at 12pt and every
+ * piece of the equations themselves in a second face, so a caller hands over the
+ * mark the equation is set in.
+ */
+export type PlacedEquation = {
+  readonly mark: ParagraphMark;
+  readonly primitives: readonly MathPrimitive[];
+};
+
+/**
+ * The mark one piece of an equation is drawn with: the equation's own face, weight,
+ * slant and colour, at the size the flattener set that piece at.
+ *
+ * **What a run states about spacing and scale is left off.** Both would move the
+ * glyphs off the places `math.ts` measured, which it measures from the face's plain
+ * advances, and the geometry standing round them is made of those same advances.
+ * The glyph run states the same two for the same reason.
+ *
+ * A raise is left off because the flattener has already placed the piece: the
+ * baseline reaching here is where the piece goes, raise and all. An underline and a
+ * highlight are left off because the flattener states neither, and one backend
+ * drawing what the other cannot is worse than neither drawing it.
+ */
+const markOfPiece = (mark: ParagraphMark, sizePt: number): ParagraphMark => ({
+  ...mark,
+  fontSizePt: sizePt,
+  characterSpacingPt: 0,
+  characterScale: 1,
+  raisePt: 0,
+  underline: false,
+  highlight: null,
+});
+
+const faceAskedFor = (mark: ParagraphMark): FaceRequest => ({
+  name: mark.font.kind === "named" ? mark.font.name : "",
+  bold: mark.bold,
+  italic: mark.italic,
+});
+
+/**
+ * Where a set equation lands down the page, which is the rule for all three of the
+ * pieces below.
+ *
+ * **Every piece goes on the grid on its own, and Word's own pdf is what says so.**
+ * Measured on 2026-08-14 over Word's exports of the two authored equation probes:
+ * all 301 text baselines on those pages are a whole device unit, the numerator and
+ * the denominator of every fraction among them, and so are both edges of all 72
+ * filled rectangles and every one of their heights. Across the page nothing is:
+ * 45.2% of the lefts, which is the exact arithmetic the rest of the page keeps.
+ *
+ * So a fraction is **not** moved as one thing with its offsets kept exact. The bar
+ * keeps its place against its halves because the three of them land on the one
+ * grid, not because the distances between them survive. Snapping the origin alone
+ * would leave every baseline inside the fraction off the grid Word has them on, and
+ * snapping a bar's thickness rather than its two edges would let its foot drift off
+ * the unit its head sits on: the bar is filled between two snapped edges, which is
+ * what `drawnLine` and `drawnCell` already do with everything else that is filled.
+ */
+const drawnMathRun = (
+  piece: Extract<MathPrimitive, { kind: "text" }>,
+  mark: ParagraphMark,
+): DrawnRun => ({
+  text: piece.text,
+  mark: markOfPiece(mark, piece.sizePt),
+  widthPt: piece.widthPt,
+  leftPt: piece.leftPt,
+  baselinePt: onTheDeviceGrid(piece.baselinePt),
+});
+
+const drawnMathFill = (
+  piece: Extract<MathPrimitive, { kind: "fill" }>,
+  mark: ParagraphMark,
+): PaintedFill => {
+  const topPt = onTheDeviceGrid(piece.topPt);
+  return {
+    color: drawnColor(mark.color),
+    leftPt: piece.leftPt,
+    topPt,
+    widthPt: piece.widthPt,
+    heightPt: onTheDeviceGrid(piece.topPt + piece.heightPt) - topPt,
+  };
+};
+
+const drawnMathGlyph = (piece: Extract<MathPrimitive, { kind: "glyph" }>): DrawnGlyph => ({
+  glyph: piece.glyph,
+  leftPt: piece.leftPt,
+  baselinePt: onTheDeviceGrid(piece.baselinePt),
+  advancePt: piece.advancePt,
+  standsFor: piece.standsFor,
+  ...(piece.outline === undefined ? {} : { outline: piece.outline }),
+});
+
+// Whether a piece is drawn together with the one before it. Kinds part company
+// because each is a drawable of its own, and two runs of glyphs part company at a
+// change of size because a run of them is drawn at one size.
+function joinsThePieceBefore(head: MathPrimitive, next: MathPrimitive): boolean {
+  if (head.kind !== next.kind) return false;
+  if (head.kind === "glyph" && next.kind === "glyph") return head.sizePt === next.sizePt;
+  return true;
+}
+
+// **Consecutive pieces of one kind are drawn together, and the runs stay in the
+// order the flattener gave them**, so what an equation paints over what is settled
+// by that order rather than by gathering every fill of an equation into one layer.
+function piecesInTheirOrder(
+  primitives: readonly MathPrimitive[],
+): readonly (readonly MathPrimitive[])[] {
+  const groups: MathPrimitive[][] = [];
+  for (const primitive of primitives) {
+    const open = groups[groups.length - 1];
+    const head = open?.[0];
+    if (open === undefined || head === undefined || !joinsThePieceBefore(head, primitive)) {
+      groups.push([primitive]);
+      continue;
+    }
+    open.push(primitive);
+  }
+  return groups;
+}
+
+function drawableOfPieces(
+  pieces: readonly MathPrimitive[],
+  mark: ParagraphMark,
+  key: string,
+): readonly Drawable[] {
+  const head = pieces[0];
+  if (head === undefined) return [];
+
+  switch (head.kind) {
+    case "text": {
+      const runs = pieces
+        .filter((piece): piece is Extract<MathPrimitive, { kind: "text" }> => piece.kind === "text")
+        .map((piece) => drawnMathRun(piece, mark));
+      return [{ kind: "text", key, boxes: [], runs, underlines: [], clipTo: null, turnDegrees: 0 }];
+    }
+    case "fill": {
+      const fills = pieces
+        .filter((piece): piece is Extract<MathPrimitive, { kind: "fill" }> => piece.kind === "fill")
+        .map((piece) => drawnMathFill(piece, mark));
+      return [{ kind: "paint", key, painted: [{ fills, lines: [] }], highlights: [] }];
+    }
+    case "glyph": {
+      const drawn = pieces.filter(
+        (piece): piece is Extract<MathPrimitive, { kind: "glyph" }> => piece.kind === "glyph",
+      );
+      return [
+        {
+          kind: "glyphs",
+          key,
+          face: faceAskedFor(mark),
+          sizePt: head.sizePt,
+          color: drawnColor(mark.color),
+          ascentPt: Math.max(...drawn.map((piece) => piece.ascentPt)),
+          descentPt: Math.max(...drawn.map((piece) => piece.descentPt)),
+          glyphs: drawn.map(drawnMathGlyph),
+        },
+      ];
+    }
+  }
+}
+
+/**
+ * A set equation as the drawables that draw it.
+ *
+ * **Nothing here is new to a backend.** A piece of text is the run a list's number
+ * already is, a fraction's bar is a fill like any other, and a stretched delimiter
+ * is the glyph run built for exactly this: a shape with no character to ask for it
+ * by. What this settles is which of the three each piece is and where it lands, and
+ * a backend that draws a page already draws all three.
+ */
+export const mathDrawables = (equation: PlacedEquation, key: string): readonly Drawable[] =>
+  piecesInTheirOrder(equation.primitives).flatMap((pieces, at) =>
+    drawableOfPieces(pieces, equation.mark, `${key}-${String(at)}`),
+  );
+
 export type Drawable =
   | {
       readonly kind: "object";
@@ -385,6 +637,10 @@ export type Drawable =
       readonly kind: "text";
       readonly key: string;
       readonly boxes: readonly ParagraphBox[];
+      // Text this layer draws that stands in no paragraph of it: the pieces of a
+      // set equation, which are placed by their own arithmetic rather than by a
+      // line. Drawn after the boxes and cut and turned with them.
+      readonly runs: readonly DrawnRun[];
       // Drawn after the text of this same layer, which is where the run they
       // belong to puts them.
       readonly underlines: readonly UnderlinePaint[];
@@ -556,6 +812,7 @@ function textOf(standing: Standing, key: string, options: DrawingOptions): reado
             kind: "text" as const,
             key: `${key}-text`,
             boxes,
+            runs: [],
             underlines: underlinesIn(boxes, options),
             clipTo,
             turnDegrees,
@@ -723,6 +980,7 @@ function flowedText(boxes: readonly ParagraphBox[], options: DrawingOptions): re
           kind: "text",
           key: "flowed-text",
           boxes: uncut,
+          runs: [],
           underlines: underlinesIn(uncut, options),
           clipTo: null,
           turnDegrees: 0,
@@ -743,6 +1001,7 @@ function cutText(boxes: readonly ParagraphBox[], options: DrawingOptions): reado
         kind: "text" as const,
         key: `cut-text-${String(at)}`,
         boxes: [box],
+        runs: [],
         underlines: underlinesIn([box], options),
         clipTo,
         turnDegrees: 0,
@@ -777,6 +1036,9 @@ function paintedParagraphs(boxes: readonly ParagraphBox[]): readonly PaintedPara
  */
 export type PageDrawing = LaidOutPage & {
   readonly glyphRuns?: readonly PlacedGlyphs[];
+  // The equations the page set, on the same footing and for the same reason. Both
+  // lines go together when the seam lands.
+  readonly equations?: readonly PlacedEquation[];
 };
 
 // A run holding no glyph at all draws nothing, so it is left out rather than
@@ -793,6 +1055,13 @@ const glyphLayers = (page: PageDrawing): readonly Drawable[] =>
         baselinePt: onTheDeviceGrid(glyph.baselinePt),
       })),
     }));
+
+// An equation that set nothing draws nothing, so it is left out rather than handed
+// to a backend to skip.
+const equationLayers = (page: PageDrawing): readonly Drawable[] =>
+  (page.equations ?? [])
+    .filter((equation) => equation.primitives.length > 0)
+    .flatMap((equation, at) => mathDrawables(equation, `equation-${String(at)}`));
 
 export function drawablesOf(
   layout: LaidOutDocument,
@@ -833,6 +1102,10 @@ export function drawablesOf(
     ...paintLayer(cells, flowed, "paint"),
     ...text,
     ...glyphLayers(page),
+    // An equation is text, and stands where the story's text stands. Its own
+    // pieces stack among themselves in the order the flattener set them in, a bar
+    // over the half it crosses and not under it.
+    ...equationLayers(page),
     ...inlines,
     ...stacked(inFront, "float", options),
   ];

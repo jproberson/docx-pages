@@ -136,5 +136,9 @@ export function textOfBoxes(
     if (box.marker !== null) markerText(out, options, box.marker);
     for (const line of box.lines) lineText(out, options, line);
   }
+  // **A run standing in no paragraph is drawn exactly as a list's number is**, which
+  // is what a piece of a set equation is: a string at a place at a size, already
+  // placed by arithmetic that is not a line's.
+  for (const run of drawable.runs) markerText(out, options, run);
   underlines(out, options.page, drawable.underlines);
 }

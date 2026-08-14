@@ -780,3 +780,47 @@ describe("Page saying what a glyph it drew stands for", () => {
     expect(markup({ ...layout, pages: [page] })).not.toContain("<tspan");
   });
 });
+
+// A fraction as `drawables.ts` hands it over: two halves at their own size and the
+// bar between them, each already on the device grid. It hangs off the page exactly
+// as a glyph run does, and for the same reason.
+const FRACTION = [
+  { kind: "text", text: "gralm", sizePt: 7.92, widthPt: 20.5, leftPt: 290.5, baselinePt: 100.08 },
+  { kind: "fill", leftPt: 290.4, topPt: 104.88, widthPt: 20.96, heightPt: 0.72 },
+  { kind: "text", text: "presk", sizePt: 7.92, widthPt: 19.4, leftPt: 291.85, baselinePt: 115.92 },
+];
+
+const withEquation = (): LaidOutDocument => {
+  const layout = layoutWith([]);
+  const page = { ...firstPage(layout), equations: [{ mark: MARK, primitives: FRACTION }] };
+  return { ...layout, pages: [page] };
+};
+
+describe("Page drawing a set equation", () => {
+  // A piece of an equation is a string at a place at a size, which is the shape a
+  // list's number already had, so the viewer draws it the way it draws one.
+  it("draws each half at its own size where the drawing placed it", () => {
+    const html = markup(withEquation());
+
+    expect(html).toContain('x="290.5" y="100.08"');
+    expect(html).toContain(">gralm<");
+    expect(html).toContain('x="291.85" y="115.92"');
+    expect(html).toContain(">presk<");
+    expect(html).toContain('font-size="7.92"');
+  });
+
+  // The bar is a fill like any other, so it is the rectangle the drawing states and
+  // nothing here works anything out about it.
+  it("draws the bar as the rectangle it was handed", () => {
+    const html = markup(withEquation());
+
+    expect(html).toContain('x="290.4" y="104.88" width="20.96"');
+  });
+
+  // Held to the width it was set at, as every other run is: the halves were
+  // measured off the face's own advances and the bar's width is made of the same,
+  // so a browser drawing them in another face keeps the two together.
+  it("holds each half to the width it was set at", () => {
+    expect(markup(withEquation())).toContain('textLength="20.5"');
+  });
+});

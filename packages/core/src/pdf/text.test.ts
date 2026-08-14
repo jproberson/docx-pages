@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import type { SectionGeometry } from "../docx/section.js";
 import type { LaidOutDocument } from "../layout/document.js";
-import type { PageDrawing, PlacedGlyphs } from "../layout/drawables.js";
+import type { PageDrawing, PlacedEquation, PlacedGlyphs } from "../layout/drawables.js";
+import type { ParagraphMark } from "../docx/styles.js";
 import { buildSfnt } from "../testing/build-font.js";
 
 import { contentOf } from "./content.js";
@@ -59,7 +60,10 @@ const GROWN: PlacedGlyphs = {
   glyphs: [{ glyph: OPENING_GLYPH, leftPt: 100, baselinePt: 200, advancePt: 11, standsFor: "(" }],
 };
 
-function pageWith(glyphRuns: readonly PlacedGlyphs[]): PageDrawing {
+function pageWith(
+  glyphRuns: readonly PlacedGlyphs[],
+  equations: readonly PlacedEquation[] = [],
+): PageDrawing {
   return {
     index: 0,
     geometry: LETTER,
@@ -81,6 +85,7 @@ function pageWith(glyphRuns: readonly PlacedGlyphs[]): PageDrawing {
     headerInlines: [],
     footerInlines: [],
     glyphRuns,
+    equations,
   };
 }
 
@@ -97,8 +102,12 @@ const layoutOf = (page: PageDrawing): LaidOutDocument => ({
 // The syntax is latin1, so a stream reads back one character to a byte.
 const textOf = (bytes: Uint8Array): string => strFromU8(bytes, true);
 
-function streamOf(glyphRuns: readonly PlacedGlyphs[], fonts: readonly PdfFont[] = [SUPPLIED]) {
-  const page = pageWith(glyphRuns);
+function streamOf(
+  glyphRuns: readonly PlacedGlyphs[],
+  fonts: readonly PdfFont[] = [SUPPLIED],
+  equations: readonly PlacedEquation[] = [],
+) {
+  const page = pageWith(glyphRuns, equations);
   const objects = pdfObjects();
   const written = pdfFonts(fonts);
   const images = pdfImages({
@@ -290,5 +299,88 @@ describe("a glyph the drawing names by number", () => {
     // the width its own character advances.
     expect(face.resource).toBe("F0");
     expect(text).toContain("/W [1 [500 660]]");
+  });
+});
+
+// A set equation, which reaches a backend as the three things `drawables.ts` makes
+// of it and not as a fourth kind of drawing: a piece of text at a place, a fill for
+// the bar, and a glyph named by number for a stretched delimiter.
+//
+// What is held here is the narrower thing the writer is answerable for, that each
+// of the three is written where the drawing put it. Where the drawing puts them,
+// and the measurement behind that, is `drawables.ts`.
+
+const EQUATION_MARK: ParagraphMark = {
+  font: { kind: "named", name: "Meridian Math" },
+  fontSizePt: 11,
+  bold: false,
+  italic: false,
+  underline: false,
+  raisePt: 0,
+  lineSizePt: 11,
+  lineRaisePt: 0,
+  color: null,
+  characterSpacingPt: 0,
+  characterScale: 1,
+  kernFromHalfPoints: null,
+  highlight: null,
+  capitals: "none",
+};
+
+const FRACTION: PlacedEquation = {
+  mark: EQUATION_MARK,
+  primitives: [
+    { kind: "text", text: "A", sizePt: 7.92, widthPt: 5.2, leftPt: 290.5, baselinePt: 100.1 },
+    { kind: "fill", leftPt: 290.4, topPt: 104.9, widthPt: 20.96, heightPt: 0.7223 },
+    { kind: "text", text: "B", sizePt: 7.92, widthPt: 5.1, leftPt: 291.85, baselinePt: 115.87 },
+  ],
+};
+
+describe("a fraction reaching the page", () => {
+  // Each half at the size the flattener set it at, on the baseline that size was
+  // set on: 100.1 down the page lands on the grid at 100.08, which the writer flips
+  // to 691.92, and 115.87 lands at 115.92 and flips to 676.08.
+  it("writes each half at its own size on its own snapped baseline", () => {
+    const { drawn } = streamOf([], [SUPPLIED], [FRACTION]);
+
+    expect(drawn).toContain("/F0 7.92 Tf");
+    expect(drawn).toContain("1 0 0 1 290.5 691.92 Tm");
+    expect(drawn).toContain("<0002> Tj");
+    expect(drawn).toContain("1 0 0 1 291.85 676.08 Tm");
+    expect(drawn).toContain("<0003> Tj");
+  });
+
+  // The bar is filled, as Word fills it, between the two snapped edges: 104.88 down
+  // to 105.6, which the writer flips to a rectangle standing at 686.4.
+  it("fills the bar between the two edges the drawing snapped", () => {
+    const { drawn } = streamOf([], [SUPPLIED], [FRACTION]);
+
+    expect(drawn).toContain("290.4 686.4 20.96 0.72 re");
+  });
+
+  // A stretched delimiter is the glyph run, which this file already draws: what is
+  // held here is that an equation reaches it, and that the two are drawn together.
+  it("writes a stretched delimiter as a glyph named by number", () => {
+    const grown: PlacedEquation = {
+      mark: EQUATION_MARK,
+      primitives: [
+        {
+          kind: "glyph",
+          glyph: OPENING_GLYPH,
+          sizePt: 22,
+          leftPt: 281.28,
+          baselinePt: 100.1,
+          advancePt: 11,
+          ascentPt: 14,
+          descentPt: 7.6,
+          standsFor: "(",
+        },
+      ],
+    };
+    const { drawn } = streamOf([], [SUPPLIED], [grown]);
+
+    expect(drawn).toContain("/F0 22 Tf");
+    expect(drawn).toContain("1 0 0 1 281.28 691.92 Tm");
+    expect(drawn).toContain("<0001> Tj");
   });
 });

@@ -602,6 +602,14 @@ function textLayer(
     ];
   });
 
+  // **A run standing in no paragraph is drawn exactly as a list's number is**, which
+  // is what a piece of a set equation is: a string at a place at a size, already
+  // placed by arithmetic that is not a line's.
+  const runs = drawable.runs.flatMap((run, at) => {
+    const element = markerText(run, `run-${String(at)}`, fallback);
+    return element === null ? [] : [element];
+  });
+
   // The page around it is sized in points, so the layer has to be as well: sized
   // in the browser's own pixels instead, every glyph is drawn three quarters of
   // the size layout measured it at and lands three quarters of the way to where
@@ -629,6 +637,7 @@ function textLayer(
       fill="currentColor"
     >
       {lines}
+      {runs}
     </svg>
   );
 }

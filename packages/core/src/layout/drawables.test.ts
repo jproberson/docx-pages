@@ -9,13 +9,18 @@ import type { ParagraphMark } from "../docx/styles.js";
 import type { LaidOutDocument } from "./document.js";
 import {
   drawablesOf,
+  mathDrawables,
   METAFILE_PEN_OFFSET,
   onTheDeviceGrid,
   runWidthMadeUpBy,
   type Drawable,
+  type DrawnRun,
+  type MathPrimitive,
   type PageDrawing,
+  type PlacedEquation,
   type PlacedGlyphs,
 } from "./drawables.js";
+import type { PaintedFill } from "./painting.js";
 import type { ParagraphBox, ParagraphPaint, PlacedCell, PlacedLine } from "./stack.js";
 
 // A glyph named by number is the one thing a page cannot ask for in characters,
@@ -604,5 +609,253 @@ describe("what a page draws rather than what a renderer decides", () => {
   // Where a metafile's own pen stands, which both backends carried until this did.
   it("states how far a metafile's pen stands from the line it is told to draw", () => {
     expect(METAFILE_PEN_OFFSET).toBe(0.5);
+  });
+});
+
+// A fraction as a flattener hands it over: a numerator, the bar, a denominator, at
+// places no two of which land on the grid on their own. The numbers are the shape
+// of Cambria Math's own answer at 11pt and are not measured off anything: what is
+// held here is what the drawing does to them, and the measurement that settled that
+// is in `drawables.ts` beside `drawnMathRun`.
+const NUMERATOR: MathPrimitive = {
+  kind: "text",
+  text: "gralm",
+  sizePt: 7.92,
+  widthPt: 20.5,
+  leftPt: 290.5,
+  baselinePt: 100.1,
+};
+
+const BAR: MathPrimitive = {
+  kind: "fill",
+  leftPt: 290.4,
+  topPt: 104.9,
+  widthPt: 20.96,
+  heightPt: 0.7223,
+};
+
+const DENOMINATOR: MathPrimitive = {
+  kind: "text",
+  text: "presk",
+  sizePt: 7.92,
+  widthPt: 19.4,
+  leftPt: 291.85,
+  baselinePt: 115.87,
+};
+
+const FRACTION: readonly MathPrimitive[] = [NUMERATOR, BAR, DENOMINATOR];
+
+const equationOf = (primitives: readonly MathPrimitive[]): PlacedEquation => ({
+  mark: { ...MARK, font: { kind: "named", name: "Meridian Math" } },
+  primitives,
+});
+
+const runsOf = (drawables: readonly Drawable[]): readonly DrawnRun[] =>
+  drawables.flatMap((drawable) => (drawable.kind === "text" ? drawable.runs : []));
+
+const fillsOf = (drawables: readonly Drawable[]): readonly PaintedFill[] =>
+  drawables.flatMap((drawable) =>
+    drawable.kind === "paint" ? drawable.painted.flatMap((each) => each.fills) : [],
+  );
+
+describe("a set equation reaching the page", () => {
+  /**
+   * **Every piece lands on the grid on its own, which is what Word does.** Measured
+   * on 2026-08-14 off Word's own pdf of the two authored equation probes: all 301
+   * text baselines there are a whole device unit and so are both edges of all 72
+   * fills. The full statement is in `drawables.ts`.
+   *
+   * So the bar keeps its place against its halves because all three land on the one
+   * grid, and **not** because the fraction is moved as one thing with its offsets
+   * kept: 100.1 goes to 100.08 and 104.9 to 104.88, which are different distances.
+   * A bar drawn from a snapped top at the thickness it was handed would be the fault
+   * the other way, its foot a fraction of a unit off the grid its head sits on, so
+   * **both edges are snapped and the bar is filled between them**: 104.88 down to
+   * 105.6, where the 0.7223 it was handed would have ended at 105.6223.
+   */
+  it("puts each of a fraction's pieces on the grid, the bar between two snapped edges", () => {
+    const drawables = mathDrawables(equationOf(FRACTION), "e");
+    const [bar] = fillsOf(drawables);
+
+    expect(runsOf(drawables).map((run) => run.baselinePt)).toStrictEqual([100.08, 115.92]);
+    expect(bar?.topPt).toBe(104.88);
+    expect((bar?.topPt ?? 0) + (bar?.heightPt ?? 0)).toBe(105.6);
+    expect(bar).toMatchObject({ color: "#000000", leftPt: 290.4, widthPt: 20.96 });
+  });
+
+  // Across the page nothing is snapped: 45.2% of the lefts of those same 301
+  // placements are whole units, which is the exact arithmetic the rest of the page
+  // keeps and the same answer `onTheDeviceGrid` gives every other drawing.
+  it("leaves where a piece stands across the page exactly where it was set", () => {
+    const drawables = mathDrawables(equationOf(FRACTION), "e");
+
+    expect(runsOf(drawables).map((run) => run.leftPt)).toStrictEqual([290.5, 291.85]);
+    expect(fillsOf(drawables)[0]?.leftPt).toBe(290.4);
+  });
+
+  // A piece is drawn at the size the flattener set it at, which is not the size the
+  // equation's own mark states: Word shrinks the halves of a fraction that shares
+  // its line with ordinary text and leaves the bar at the stated size.
+  it("draws a piece at its own size, in the equation's own face and colour", () => {
+    const [numerator] = runsOf(mathDrawables(equationOf(FRACTION), "e"));
+
+    expect(numerator?.mark.fontSizePt).toBe(7.92);
+    expect(numerator?.mark.font).toStrictEqual({ kind: "named", name: "Meridian Math" });
+    expect(numerator?.text).toBe("gralm");
+    expect(numerator?.widthPt).toBe(20.5);
+  });
+
+  // What a run states about spacing and scale would move the glyphs off the places
+  // the arithmetic measured with the face's plain advances, and the bar's own width
+  // is made of those same advances. A raise is already in the baseline it was given.
+  it("draws no piece with the spacing, the scale or the raise a run may state", () => {
+    const stated: PlacedEquation = {
+      mark: {
+        ...MARK,
+        characterSpacingPt: 1.5,
+        characterScale: 1.5,
+        raisePt: 4,
+        underline: true,
+        highlight: "yellow",
+      },
+      primitives: FRACTION,
+    };
+    const [numerator] = runsOf(mathDrawables(stated, "e"));
+
+    expect(numerator?.mark.characterSpacingPt).toBe(0);
+    expect(numerator?.mark.characterScale).toBe(1);
+    expect(numerator?.mark.raisePt).toBe(0);
+    expect(numerator?.mark.underline).toBe(false);
+    expect(numerator?.mark.highlight).toBeNull();
+  });
+
+  /**
+   * **A stretched delimiter needs nothing new.** It is a rung of the face's own
+   * ladder, which is a glyph with no character at all, and that is the one thing the
+   * glyph run was built for: the parenthesis Word stretches round a fraction reached
+   * Word's own pdf as a glyph its ToUnicode calls `!`.
+   */
+  it("draws a stretched delimiter as the glyph run built for a shape with no character", () => {
+    const outline = { unitsPerEm: 2048, contours: [] };
+    const drawables = mathDrawables(
+      equationOf([
+        {
+          kind: "glyph",
+          glyph: 3436,
+          sizePt: 11,
+          leftPt: 281.28,
+          baselinePt: 100.1,
+          advancePt: 5.44,
+          ascentPt: 14,
+          descentPt: 7.6,
+          standsFor: "(",
+          outline,
+        },
+      ]),
+      "e",
+    );
+
+    expect(drawables).toStrictEqual([
+      {
+        kind: "glyphs",
+        key: "e-0",
+        face: { name: "Meridian Math", bold: false, italic: false },
+        sizePt: 11,
+        color: "#000000",
+        ascentPt: 14,
+        descentPt: 7.6,
+        glyphs: [
+          {
+            glyph: 3436,
+            leftPt: 281.28,
+            baselinePt: 100.08,
+            advancePt: 5.44,
+            standsFor: "(",
+            outline,
+          },
+        ],
+      },
+    ]);
+  });
+
+  // A glyph the face could not be read for carries no outline, exactly as one the
+  // layout named does: a backend that cannot name a glyph then draws nothing and
+  // says so rather than drawing the character it stands for at the wrong height.
+  it("hands over a glyph with no outline as a glyph with no outline", () => {
+    const drawables = mathDrawables(
+      equationOf([
+        {
+          kind: "glyph",
+          glyph: 3436,
+          sizePt: 11,
+          leftPt: 281.28,
+          baselinePt: 100.1,
+          advancePt: 5.44,
+          ascentPt: 14,
+          descentPt: 7.6,
+          standsFor: "(",
+        },
+      ]),
+      "e",
+    );
+    const [drawn] = drawables;
+
+    expect(drawn?.kind === "glyphs" && drawn.glyphs[0]).not.toHaveProperty("outline");
+  });
+
+  // **The order the flattener set the pieces in is the order they are painted.**
+  // Gathering every fill of an equation into one layer would put a rule under a half
+  // it was drawn over, so a change of kind opens another drawable and the two stay
+  // where they were put.
+  it("keeps the order the pieces were set in", () => {
+    const drawables = mathDrawables(equationOf([BAR, NUMERATOR, BAR]), "e");
+
+    expect(drawables.map((each) => each.kind)).toStrictEqual(["paint", "text", "paint"]);
+  });
+
+  // Pieces of one kind standing together are drawn together, so a fraction of two
+  // halves is one text drawable and not two.
+  it("draws pieces of one kind standing together in one drawable", () => {
+    const halves = [NUMERATOR, DENOMINATOR];
+
+    expect(mathDrawables(equationOf(halves), "e")).toHaveLength(1);
+    expect(runsOf(mathDrawables(equationOf(halves), "e"))).toHaveLength(2);
+  });
+
+  // A run of glyphs is drawn at one size, so two rungs set at different sizes are
+  // two runs however they stand.
+  it("parts a run of glyphs at a change of size", () => {
+    const rung = (sizePt: number): MathPrimitive => ({
+      kind: "glyph",
+      glyph: 3436,
+      sizePt,
+      leftPt: 281.28,
+      baselinePt: 100.1,
+      advancePt: 5.44,
+      ascentPt: 14,
+      descentPt: 7.6,
+      standsFor: "(",
+    });
+
+    expect(mathDrawables(equationOf([rung(11), rung(11)]), "e")).toHaveLength(1);
+    expect(mathDrawables(equationOf([rung(11), rung(7.92)]), "e")).toHaveLength(2);
+  });
+
+  // An equation is text, and what stands over it and under it is what stands over
+  // and under any other text.
+  it("is drawn where the story's own text is drawn", () => {
+    const page = { ...pageWith(), equations: [equationOf(FRACTION)] };
+    const kinds = drawablesOf(layoutOf(page), page).map((drawable) => drawable.kind);
+
+    expect(kinds).toStrictEqual(["text", "paint", "text"]);
+  });
+
+  // A page laid out before anything set an equation states none, which is not the
+  // same as stating none, and one that set nothing draws nothing.
+  it("draws nothing for a page that set no equation", () => {
+    const page = pageWith();
+    expect(drawablesOf(layoutOf(page), page)).toStrictEqual([]);
+    const empty = { ...page, equations: [equationOf([])] };
+    expect(drawablesOf(layoutOf(empty), empty)).toStrictEqual([]);
   });
 });
