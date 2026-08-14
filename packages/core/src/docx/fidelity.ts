@@ -119,9 +119,9 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // drawn.
   "undrawable-picture": "changes-paint",
   "approximated-border": "changes-paint",
-  // Only one header and one footer are drawn, on every page alike, so a document
-  // that asks for another on its first page or on its even ones draws the wrong
-  // one there.
+  // A document asking for one header on its even pages and another on its odd ones
+  // draws the odd one everywhere, and a header of another height moves every line
+  // under it.
   "alternate-first-or-even-page": "moves-text",
   // A face the document asked for that another one answered for: every line drawn
   // in it may break where Word did not break it.
@@ -253,7 +253,12 @@ function unhonouredBy(
       return borderPattern(element, parent);
     case "background":
       return "page-background";
+    // A first-page header and footer were built on 2026-08-10: the page a section
+    // opens draws that section's own first-page pair where it states w:titlePg, so
+    // stating it stands in for nothing. What is left of this gap is the even-page
+    // pair, which is read and never chosen.
     case "titlePg":
+      return null;
     case "evenAndOddHeaders":
       return toggled(element) ? "alternate-first-or-even-page" : null;
     // Columns were built on 2026-08-08, so a section running its text in more than

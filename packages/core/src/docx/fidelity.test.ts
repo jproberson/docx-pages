@@ -47,6 +47,21 @@ const withAHeader = (body: string) =>
   );
 
 describe("readUnhonoured", () => {
+  // A section's own first-page header and footer are drawn on the page it opens, so
+  // w:titlePg stands in for nothing. The even-page pair is still read and never
+  // chosen, which is what is left of this gap.
+  it("says nothing about a section stating w:titlePg", () => {
+    const body = `<w:p><w:pPr><w:sectPr><w:titlePg/></w:sectPr></w:pPr></w:p>`;
+    expect(kinds(reportOf(body))).not.toContain("alternate-first-or-even-page");
+  });
+
+  it("names a document asking for a header of its own on even pages", () => {
+    const settings = `<?xml version="1.0"?><w:settings xmlns:w="${WORDPROCESSING_NS}">
+      <w:evenAndOddHeaders/></w:settings>`;
+    const report = reportOf(`<w:p/>`, { "word/settings.xml": settings });
+    expect(kinds(report)).toContain("alternate-first-or-even-page");
+  });
+
   it("says nothing about a document holding only what is read", () => {
     expect(reportOf(`<w:p><w:r><w:t>plain</w:t></w:r></w:p>`)).toStrictEqual([]);
   });
