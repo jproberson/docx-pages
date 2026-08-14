@@ -1208,6 +1208,16 @@ export type FaceFixture = {
   // What each pair of its characters moves, stated in the legacy table. A face
   // that states none supplies no kerning at all, as most faces do.
   readonly kernPairs?: KerningPairs;
+  // What a character advances where that is not the one width every other
+  // character of the face has. A character named here and nowhere else is added
+  // to the face, which is how a face is given a letter outside the measurable
+  // ASCII the default states.
+  readonly advances?: Readonly<Record<string, number>>;
+  // What each character draws, written as a TrueType outline, and what the face
+  // says about setting mathematics. A face stating neither supplies neither, as a
+  // face read off a file that states neither does.
+  readonly boxes?: Readonly<Record<string, InkFixture>>;
+  readonly math?: MathFixture;
 };
 
 // The plainest PANOSE classification of each kind: a Latin text face of normal
@@ -1219,15 +1229,33 @@ const SERIF = { panoseFamily: 2, panoseSerifStyle: 2 };
 // instead of consulting a real font's widths.
 export function buildFace(fixture: FaceFixture): SuppliedFace {
   const advance = fixture.advance ?? fixture.metrics.unitsPerEm / 2;
+  // Every character the face measures at the one width, and then whatever the
+  // fixture states a width of its own for, which may be a character none of the
+  // others is: a face has to map a letter before it can draw it or grow it.
+  const advances = {
+    ...Object.fromEntries(
+      Array.from(fixture.characters ?? MEASURABLE, (character) => [character, advance]),
+    ),
+    ...fixture.advances,
+  };
+
+  // A face mapping a character past the basic plane states the wider cmap, as a
+  // real one does: Word draws a math run in the Mathematical Italic block, which
+  // is all beyond it.
+  const beyondBasicPlane = Object.keys(advances).some(
+    (character) => (character.codePointAt(0) ?? 0) > 0xffff,
+  );
+
   const file = buildSfnt({
     ...fixture.metrics,
+    ...(beyondBasicPlane ? { cmapFormat: 12 as const } : {}),
     ...(fixture.subtables === undefined ? {} : { subtables: fixture.subtables }),
     ...(fixture.notdefAdvance === undefined ? {} : { notdefAdvance: fixture.notdefAdvance }),
     ...(fixture.sansSerif === undefined ? {} : fixture.sansSerif ? SANS_SERIF : SERIF),
     ...(fixture.kernPairs === undefined ? {} : { kernPairs: fixture.kernPairs }),
-    advances: Object.fromEntries(
-      Array.from(fixture.characters ?? MEASURABLE, (character) => [character, advance]),
-    ),
+    ...(fixture.boxes === undefined ? {} : { boxes: fixture.boxes }),
+    ...(fixture.math === undefined ? {} : { math: fixture.math }),
+    advances,
   });
   const read = readFontFile(file);
 
@@ -1239,5 +1267,7 @@ export function buildFace(fixture: FaceFixture): SuppliedFace {
     advances: read.advances,
     sansSerif: read.sansSerif,
     ...(read.kerning.kind === "kerning" ? { kerning: read.kerning } : {}),
+    ...(read.ink.kind === "ink" ? { ink: read.ink } : {}),
+    ...(read.math.kind === "math" ? { math: read.math } : {}),
   };
 }

@@ -646,6 +646,68 @@ describe("what a face says about setting mathematics", () => {
     expect(settingIn(SETTING).piecesToGrowTaller(codePointOf("A"))).toBeNull();
   });
 
+  // What a test elsewhere builds a face out of, so that a rule about setting
+  // mathematics can be pinned without a font file off this machine: the same three
+  // answers `math.ts` asks a face for, off a face made up for the case.
+  it("hands a face built for a test its ink and what it says about mathematics", () => {
+    const built = buildFace({
+      name: "Meridian Math",
+      metrics: METRICS,
+      advances: { "(": 400, "𝑏": 550 },
+      boxes: {
+        "𝑏": { left: 30, bottom: -10, right: 520, top: 720 },
+        "(": { left: 60, bottom: -200, right: 340, top: 700 },
+      },
+      math: {
+        constants: { axisHeight: 250, fractionRuleThickness: 60 },
+        tallerVariants: {
+          "(": [
+            { character: "(", measurement: 900 },
+            { character: "A", measurement: 1400 },
+          ],
+        },
+      },
+    });
+
+    expect(built.ink?.kind === "ink" && built.ink.inkOf(codePointOf("𝑏"))).toStrictEqual({
+      left: 30,
+      bottom: -10,
+      right: 520,
+      top: 720,
+    });
+    expect(built.math?.kind === "math" && built.math.constants.axisHeight).toBe(250);
+    expect(
+      built.math?.kind === "math" &&
+        built.math.tallerVariantsOf(codePointOf("(")).map((each) => each.measurement),
+    ).toStrictEqual([900, 1400]);
+    expect(built.advances.kind === "advances" && built.advances.advanceFor(codePointOf("("))).toBe(
+      400,
+    );
+  });
+
+  // A variant is a glyph with no character of its own, so what it draws and what it
+  // advances have to come back with it.
+  it("resolves a built face's variants against the glyphs it wrote them for", () => {
+    const built = buildFace({
+      name: "Meridian Math",
+      metrics: METRICS,
+      boxes: { A: { left: 20, bottom: 0, right: 640, top: 700 } },
+      math: { tallerVariants: { "(": [{ character: "A", measurement: 1400 }] } },
+    });
+    const variant =
+      built.math?.kind === "math" ? built.math.tallerVariantsOf(codePointOf("("))[0] : null;
+
+    expect(variant?.advance).toBe(METRICS.unitsPerEm / 2);
+    expect(variant?.ink).toStrictEqual({ left: 20, bottom: 0, right: 640, top: 700 });
+  });
+
+  it("leaves a built face that states neither saying nothing about either", () => {
+    const plain = buildFace({ name: "Meridian", metrics: METRICS });
+
+    expect(plain.ink).toBeUndefined();
+    expect(plain.math).toBeUndefined();
+  });
+
   it("reports a face that says nothing about mathematics, which is nearly all of them", () => {
     expect(mathIn({ ...FACE, advances: WIDTHS })).toStrictEqual({
       kind: "unavailable",
