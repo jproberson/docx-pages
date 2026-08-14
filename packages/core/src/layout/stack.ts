@@ -850,7 +850,7 @@ function fillColumns(
     cells.push(...kept.cells);
     untornRows.push(...kept.untornRows);
     for (const box of measured.boxes) bottomsPt.push(box.topPt + box.heightPt - topPt);
-    columnHeightsPt.push(kept.heightPt);
+    columnHeightsPt.push(kept.heightPt + nearSideOfABreak(measured.boxes, blockOf, forced, cut));
     columnsDrawing.push(kept.boxes.some(drawsSomething));
     from = cut;
   }
@@ -871,6 +871,37 @@ function fillColumns(
     columnHeightsPt,
     columnsDrawing,
   };
+}
+
+/**
+ * The room the paragraph carrying a column break leaves at the foot of the column it
+ * breaks out of.
+ *
+ * **A paragraph stands on both sides of its own break**: an empty line closing the
+ * column it leaves, and what follows the break opening the next. Measured on
+ * 2026-08-13 by the authored cases L and M, whose runs cost 72 where the column the
+ * break opens holds 48: a paragraph holding nothing but the break and one carrying its
+ * own text after it both leave a line of their own height behind them.
+ *
+ * The corpus said it first, in tenths of a point: `299724db7cc1` divides a three-column
+ * run with two such paragraphs, half a point tall apiece, and the paragraph under the
+ * run stands 0.39pt lower in Word than it did here. That 0.39 carries the last line of
+ * its page from a fifth of a point inside the body to a fifth past it, which is where
+ * Word puts it on the next page and this did not.
+ *
+ * It is one line and not the whole paragraph: what follows the break may run to several
+ * lines in the column it opens, and only the empty piece before it stays behind.
+ */
+function nearSideOfABreak(
+  boxes: readonly ParagraphBox[],
+  blockOf: ReadonlyMap<number, number>,
+  forced: ReadonlySet<number>,
+  cut: number,
+): number {
+  if (!forced.has(cut)) return 0;
+  const box = boxes.find((each) => blockOf.get(each.index) === cut);
+  if (box === undefined) return 0;
+  return box.lines[0]?.heightPt ?? box.heightPt;
 }
 
 // The first block of the run that belongs in the next column: the one carrying a

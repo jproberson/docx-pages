@@ -1447,6 +1447,9 @@ describe("measureStack over a section of more than one column", () => {
     };
 
     const empty = `<w:p><w:pPr>${exactly}</w:pPr></w:p>`;
+    // A paragraph whose whole content is the break, which is how 23 of the 25 corpus
+    // documents that divide a run write one.
+    const breakOnly = `<w:p><w:pPr>${exactly}</w:pPr><w:r><w:br w:type="column"/></w:r></w:p>`;
     const wrapping = (text: string) =>
       `<w:p><w:pPr>${exactly}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
     const exactlyTall = (heightPt: number) =>
@@ -1631,6 +1634,27 @@ describe("measureStack over a section of more than one column", () => {
         NARROW_THEN_WIDE,
       );
       expect(run.drawnIn).toStrictEqual([0, 0, 0, 1, 1]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // L: two lines, a paragraph holding nothing but a column break, then one line. Word
+    // drew that line at the second line of the second column and cost the run **72**,
+    // where the column the break opens holds only 48: **a paragraph stands on both sides
+    // of its own break**, an empty line closing the column it leaves and its mark opening
+    // the next.
+    it("leaves a line of the break's own paragraph in the column it breaks out of", () => {
+      const run = runIn([line("l1"), line("l2"), breakOnly, line("l3")], TWO);
+      expect(run.drawnIn).toStrictEqual([0, 0, 1]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // M: the same with the break opening a paragraph that carries its own text, which is
+    // how the other of the two kinds is written. Word drew that text at the head of the
+    // second column and cost the run 72 again, so what stays behind is a line of the
+    // paragraph and not the paragraph itself.
+    it("leaves one behind for a break that opens a paragraph carrying text", () => {
+      const run = runIn([line("m1"), line("m2"), opensAColumn("m3")], TWO);
+      expect(run.drawnIn).toStrictEqual([0, 0, 1]);
       expect(run.costPt).toBeCloseTo(72, 9);
     });
   });
