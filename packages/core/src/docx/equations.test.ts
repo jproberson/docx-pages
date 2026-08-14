@@ -430,6 +430,7 @@ describe("markedAsMath", () => {
     characterSpacingPt: 0,
     characterScale: 1,
     kernFromHalfPoints: null,
+    highlight: null,
   };
 
   it("sets an equation in the document's own face where the run names none", () => {

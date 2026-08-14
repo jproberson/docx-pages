@@ -74,6 +74,7 @@ describe("resolveParagraphMark", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
   });
 
@@ -92,6 +93,7 @@ describe("resolveParagraphMark", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
   });
 
@@ -122,6 +124,7 @@ describe("resolveParagraphMark", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
   });
 
@@ -143,6 +146,7 @@ describe("resolveParagraphMark", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
   });
 
@@ -164,6 +168,7 @@ describe("resolveParagraphMark", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
   });
 
@@ -270,6 +275,7 @@ describe("resolveParagraphMark", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
   });
 

@@ -47,6 +47,13 @@ const withAHeader = (body: string) =>
   );
 
 describe("readUnhonoured", () => {
+  // A highlight is painted now: the run's own advance across, the line's box down.
+  it("says nothing about a highlighted run", () => {
+    const body =
+      `<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr>` + `<w:t>one</w:t></w:r></w:p>`;
+    expect(kinds(reportOf(body))).toStrictEqual([]);
+  });
+
   // A section's own first-page header and footer are drawn on the page it opens, so
   // w:titlePg stands in for nothing. The even-page pair is still read and never
   // chosen, which is what is left of this gap.

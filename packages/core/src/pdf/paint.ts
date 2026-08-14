@@ -1,5 +1,5 @@
 import type { BorderStyle } from "../docx/borders.js";
-import type { PaintedParagraph } from "../layout/drawables.js";
+import type { HighlightPaint, PaintedParagraph } from "../layout/drawables.js";
 import {
   type Painted,
   type PaintedFill,
@@ -72,13 +72,15 @@ const drawn = (out: Content, page: PdfPage, painted: Painted): void => {
 
 /**
  * Everything drawn behind a story's text: the cells of its tables first, then what
- * each paragraph asks for, which Word draws over the cell holding it.
+ * each paragraph asks for, which Word draws over the cell holding it, and last the
+ * highlights, which Word draws over a shaded paragraph.
  */
 export function paintLayer(
   out: Content,
   page: PdfPage,
   cells: readonly PlacedCell[],
   paragraphs: readonly PaintedParagraph[],
+  highlights: readonly HighlightPaint[],
 ): void {
   // The dash pattern and the line width outlive the band that set them, so the
   // whole layer is drawn inside a saved state rather than each band undoing what
@@ -87,6 +89,9 @@ export function paintLayer(
   for (const cell of cells) drawn(out, page, paintOfCell(cell));
   for (const each of paragraphs) {
     drawn(out, page, paintOfParagraph(each.paint, each.topPt, each.bottomPt));
+  }
+  for (const each of highlights) {
+    paintedFill(out, page, { ...each, color: each.color });
   }
   out.restore();
 }

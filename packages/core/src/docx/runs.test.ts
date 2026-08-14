@@ -165,6 +165,7 @@ describe("readRuns", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
     expect(runs[1]?.mark).toStrictEqual({
       font: { kind: "named", name: "Georgia" },
@@ -179,6 +180,7 @@ describe("readRuns", () => {
       characterSpacingPt: 0,
       characterScale: 1,
       kernFromHalfPoints: null,
+      highlight: null,
     });
   });
 

@@ -582,7 +582,8 @@ const drawn = (painted: Painted, key: string): readonly ReactElement[] => [
 ];
 
 // Everything drawn behind a story's text: the cells of its tables first, then what
-// each paragraph asks for, which Word draws over the cell holding it.
+// each paragraph asks for, which Word draws over the cell holding it, and last the
+// highlights, which Word draws over a shaded paragraph.
 function paintLayer(
   drawable: Extract<Drawable, { kind: "paint" }>,
   widthPt: number,
@@ -601,6 +602,16 @@ function paintLayer(
       {drawable.paragraphs.flatMap((each, at) =>
         drawn(paintOfParagraph(each.paint, each.topPt, each.bottomPt), `paragraph-${String(at)}`),
       )}
+      {drawable.highlights.map((each, at) => (
+        <rect
+          key={`highlight-${String(at)}`}
+          x={each.leftPt}
+          y={each.topPt}
+          width={each.widthPt}
+          height={each.heightPt}
+          fill={each.color}
+        />
+      ))}
     </svg>
   );
 }

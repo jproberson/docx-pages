@@ -95,6 +95,10 @@ export type ParagraphMark = {
   // The size, in half-points, at and above which the run's pairs kern. Null where the
   // cascade states none at all, which is a run that does not kern.
   readonly kernFromHalfPoints: number | null;
+  // What is painted behind the run, as a colour, or null for a run Word paints
+  // nothing behind. A highlight is one of sixteen names rather than a colour of the
+  // document's choosing, and `none` turns an inherited one off.
+  readonly highlight: string | null;
 };
 
 type PartialMark = {
@@ -109,6 +113,9 @@ type PartialMark = {
   readonly characterSpacingTwentieths: number | undefined;
   readonly characterScalePercent: number | undefined;
   readonly kernFromHalfPoints: number | undefined;
+  // Null rather than undefined for `w:highlight w:val="none"`, which is a run
+  // turning an inherited highlight off rather than saying nothing.
+  readonly highlight: string | null | undefined;
 };
 
 // What a stop does with the text that follows a tab reaching it: a left stop
@@ -203,6 +210,7 @@ const EMPTY: PartialMark = {
   characterSpacingTwentieths: undefined,
   characterScalePercent: undefined,
   kernFromHalfPoints: undefined,
+  highlight: undefined,
 };
 
 const EMPTY_FRAME: PartialFrame = {
@@ -371,6 +379,7 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   color: over.color ?? base.color,
   characterSpacingTwentieths: over.characterSpacingTwentieths ?? base.characterSpacingTwentieths,
   characterScalePercent: over.characterScalePercent ?? base.characterScalePercent,
+  highlight: over.highlight === undefined ? base.highlight : over.highlight,
   kernFromHalfPoints: over.kernFromHalfPoints ?? base.kernFromHalfPoints,
 });
 
@@ -450,7 +459,39 @@ function readMark(
     characterSpacingTwentieths: characterSpacingOf(rPr),
     characterScalePercent: characterScaleOf(rPr),
     kernFromHalfPoints: twipsAttribute(firstNamed(rPr, W_NS, "kern"), "val"),
+    highlight: highlightOf(rPr),
   };
+}
+
+// **The sixteen colours Word paints a highlight in, read off its own pdf.** Measured
+// 2026-08-13, one word highlighted in each: they are the plain and the dark web
+// colours, and nothing about them is the document's to choose. `none` is a run
+// turning an inherited highlight off and paints nothing.
+const HIGHLIGHTS: Readonly<Record<string, string>> = {
+  yellow: "#ffff00",
+  green: "#00ff00",
+  cyan: "#00ffff",
+  magenta: "#ff00ff",
+  blue: "#0000ff",
+  red: "#ff0000",
+  darkBlue: "#00008b",
+  darkCyan: "#008b8b",
+  darkGreen: "#006400",
+  darkMagenta: "#800080",
+  darkRed: "#8b0000",
+  darkYellow: "#808000",
+  darkGray: "#a9a9a9",
+  lightGray: "#d3d3d3",
+  black: "#000000",
+  white: "#ffffff",
+};
+
+function highlightOf(rPr: XmlElement): string | null | undefined {
+  const stated = firstNamed(rPr, W_NS, "highlight");
+  if (stated === null) return undefined;
+  const name = attribute(stated, W_NS, "val");
+  if (name === undefined || name === "none") return null;
+  return HIGHLIGHTS[name] ?? null;
 }
 
 // **How wide every glyph of the run is drawn, as a percentage of its own width.**
@@ -811,6 +852,7 @@ function markOf(resolved: PartialMark): ParagraphMark {
     // than a nought: the two are the same answer to Word and telling them apart
     // costs nothing.
     kernFromHalfPoints: resolved.kernFromHalfPoints ?? null,
+    highlight: resolved.highlight ?? null,
   };
 }
 

@@ -56,7 +56,6 @@ export type UnhonouredKind =
   | "footnote"
   | "column-break"
   | "bar-tab-stop"
-  | "highlighting"
   | "page-background"
   | "equation"
   | "unknown-drawing"
@@ -104,7 +103,6 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // refuses, the fraction above all.
   equation: "moves-text",
   "bar-tab-stop": "changes-paint",
-  highlighting: "changes-paint",
   "page-background": "changes-paint",
   // A drawing that is neither a picture nor a shape, a chart being the one met so
   // far: its room is held and nothing is drawn in it.
@@ -238,8 +236,11 @@ function unhonouredBy(
         : null;
     case "tab":
       return attribute(element, W_NS, "val") === "bar" ? "bar-tab-stop" : null;
+    // Built on 2026-08-13: the run's own advance across, the line's box down, in the
+    // colour the name stands for. A colour outside the sixteen is nothing Word
+    // paints either, so no name is left to raise.
     case "highlight":
-      return "highlighting";
+      return null;
     // Every side of every border is written the same way, so one case answers for
     // a table's, a cell's and a paragraph's alike.
     case "top":

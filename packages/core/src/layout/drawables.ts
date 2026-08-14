@@ -18,6 +18,16 @@ export type PaintedParagraph = {
   readonly bottomPt: number;
 };
 
+// What is painted behind one run of a line, which is the run's own advance across
+// and the line's box down.
+export type HighlightPaint = {
+  readonly leftPt: number;
+  readonly topPt: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+  readonly color: string;
+};
+
 export type Drawable =
   | {
       readonly kind: "object";
@@ -54,6 +64,10 @@ export type Drawable =
       readonly key: string;
       readonly cells: readonly PlacedCell[];
       readonly paragraphs: readonly PaintedParagraph[];
+      // Painted over both of those and under the text, which is where Word puts a
+      // highlight: measured against a shaded paragraph holding a highlighted run,
+      // whose fill Word drew first and the highlight over it.
+      readonly highlights: readonly HighlightPaint[];
     };
 
 export type Rect = {
@@ -197,8 +211,51 @@ function paintLayer(
   key: string,
 ): readonly Drawable[] {
   const paragraphs = paintedParagraphs(boxes);
-  if (cells.length + paragraphs.length === 0) return [];
-  return [{ kind: "paint", key, cells, paragraphs }];
+  const highlights = highlightsIn(boxes);
+  if (cells.length + paragraphs.length + highlights.length === 0) return [];
+  return [{ kind: "paint", key, cells, paragraphs, highlights }];
+}
+
+/**
+ * **A highlight is the run's own advance across and the line's box down**, whatever
+ * size the run itself is set at. Measured 2026-08-13 against Word's own pdf, six
+ * cases of one highlighted word:
+ *
+ * | the line                          | Word painted |
+ * | --------------------------------- | ------------ |
+ * | 12pt throughout                   | 14.64pt tall, the 12pt line |
+ * | 24pt throughout                   | 29.28pt      |
+ * | a 12pt run on a line holding 24pt | 29.28pt, the whole line and not the run |
+ * | a superscript run                 | 14.64pt, the line rather than the raised text |
+ * | an exact rule of 24pt under 12pt  | 24.00pt, the whole of what the rule asked for |
+ * | a line multiple of two            | 14.64pt, the text's own box and not the room |
+ *
+ * So the room a multiple opens below the text is not painted and the slot an exact
+ * rule states is, which is exactly the height the line has to be given to stay on a
+ * page: `fittingHeightPt` answers both without asking what the rule was.
+ *
+ * Nothing is painted for an empty paragraph whose mark states a highlight: Word's
+ * pdf of one holds no fill at all.
+ */
+function highlightsIn(boxes: readonly ParagraphBox[]): readonly HighlightPaint[] {
+  return boxes.flatMap((box) =>
+    box.lines.flatMap((placed) => {
+      const topPt = placed.topPt;
+      const heightPt = placed.fittingHeightPt;
+      return placed.line.segments.flatMap((segment) => {
+        if (segment.kind !== "text" || segment.mark.highlight === null) return [];
+        return [
+          {
+            leftPt: placed.leftPt + segment.offsetPt,
+            topPt,
+            widthPt: segment.widthPt,
+            heightPt,
+            color: segment.mark.highlight,
+          },
+        ];
+      });
+    }),
+  );
 }
 
 // Word stacks the floats of one story by relativeHeight alone. It is not two

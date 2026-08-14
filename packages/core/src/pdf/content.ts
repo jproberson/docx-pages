@@ -358,7 +358,7 @@ export function contentOf(
         break;
       }
       case "paint":
-        paintLayer(out, pdfPage, drawable.cells, drawable.paragraphs);
+        paintLayer(out, pdfPage, drawable.cells, drawable.paragraphs, drawable.highlights);
         break;
       case "object":
         drawObject(out, pdfPage, options.images, drawable);
