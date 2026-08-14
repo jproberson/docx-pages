@@ -126,6 +126,113 @@ describe("substitutingMetrics", () => {
   });
 });
 
+// **The family a name begins with, before any stranger.** Read off `9d343f6d69d7` on
+// 2026-08-14: its headings ask for `Aptos Display`, which no machine here holds, and
+// standing Cambria in for them made every heading's line 1.25pt short of Word's.
+describe("the family a face's name begins with", () => {
+  it("stands the family in before it reaches a fallback", () => {
+    const faces = substitutingMetrics([measurable("Aptos"), measurable("Cambria")], ["Cambria"]);
+
+    expect(faces.metricsFor(ask("Aptos Display")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Aptos Display"), used: ask("Aptos") },
+    ]);
+  });
+
+  it("keeps the style asked for where the family answers in it", () => {
+    const faces = substitutingMetrics(
+      [measurable("Arial"), measurable("Arial", { bold: true }), measurable("Cambria")],
+      ["Cambria"],
+    );
+
+    expect(faces.metricsFor(ask("Arial Nova", { bold: true })).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Arial Nova", { bold: true }), used: ask("Arial", { bold: true }) },
+    ]);
+  });
+
+  // The same order the request itself is tried in: a face of the right family at the
+  // wrong weight is nearer than the right weight of a stranger.
+  it("gives up the style before it gives up the family", () => {
+    const faces = substitutingMetrics(
+      [measurable("Arial"), measurable("Cambria", { bold: true })],
+      ["Cambria"],
+    );
+
+    expect(faces.metricsFor(ask("Arial Nova", { bold: true })).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Arial Nova", { bold: true }), used: ask("Arial") },
+    ]);
+  });
+
+  // **The case that must not change.** `Times New Roman` shortens to `Times New`,
+  // which names no face at all, so the request falls through to the fallbacks exactly
+  // as it did before there was a family step.
+  it("falls through where the shortened name reaches nothing", () => {
+    const faces = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
+
+    expect(faces.metricsFor(ask("Times New Roman")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Times New Roman"), used: ask("Cambria") },
+    ]);
+  });
+
+  it("shortens a name of one word to nothing, and reaches the fallback as before", () => {
+    const faces = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
+
+    expect(faces.metricsFor(ask("Nonesuch")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Nonesuch"), used: ask("Cambria") },
+    ]);
+  });
+
+  // A face the document names is never given up for its own family, however many
+  // words its name holds.
+  it("leaves a face the document has alone, family or no family", () => {
+    const faces = substitutingMetrics(
+      [measurable("Aptos"), measurable("Aptos Display")],
+      ["Cambria"],
+    );
+
+    expect(faces.metricsFor(ask("Aptos Display")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([]);
+  });
+
+  // Vertical metrics alone cannot break a line, so a family that answers with them
+  // is no more use than one the machine does not hold at all.
+  it("passes over a family that cannot be measured", () => {
+    const faces = substitutingMetrics([unmeasurable("Aptos"), measurable("Cambria")], ["Cambria"]);
+
+    expect(faces.metricsFor(ask("Aptos Display")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Aptos Display"), used: ask("Cambria") },
+    ]);
+  });
+
+  // Only the last word goes. A name three words long reaches the family two of them
+  // name and stops there, rather than walking back to the first.
+  it("drops one word and no more", () => {
+    const faces = substitutingMetrics(
+      [measurable("Aptos"), measurable("Aptos Display"), measurable("Cambria")],
+      ["Cambria"],
+    );
+
+    expect(faces.metricsFor(ask("Aptos Display Condensed")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Aptos Display Condensed"), used: ask("Aptos Display") },
+    ]);
+  });
+
+  it("takes the extra space in a name for the whitespace it is", () => {
+    const faces = substitutingMetrics([measurable("Aptos"), measurable("Cambria")], ["Cambria"]);
+
+    expect(faces.metricsFor(ask("  Aptos   Display  ")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("  Aptos   Display  "), used: ask("Aptos") },
+    ]);
+  });
+});
+
 // The last of the three rules an unmapped character meets, and the only one that
 // leaves the face the run states: see `WORD_CHARACTER_FALLBACK_FACES`.
 describe("a character the face it stands in cannot draw", () => {

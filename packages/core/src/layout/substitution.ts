@@ -147,18 +147,52 @@ export type FallbackNames = readonly string[] | ((request: FaceRequest) => reado
 const namesFor = (fallbackNames: FallbackNames, request: FaceRequest): readonly string[] =>
   typeof fallbackNames === "function" ? fallbackNames(request) : fallbackNames;
 
+// The family a face's name begins with, which is that name with its last word
+// dropped: `Aptos Display` is a face of `Aptos` and `Arial Nova` one of `Arial`, the
+// way `Calibri Light` is one of `Calibri`. Null for a name of one word, which is its
+// own family and has nothing to shorten to.
+//
+// A name that shortens to something nothing supplies costs nothing: `Times New
+// Roman` shortens to `Times New`, which names no face, and the request falls through
+// to the fallbacks exactly as it did before.
+function familyOf(name: string): string | null {
+  const words = name.trim().split(/\s+/);
+  const family = words.slice(0, -1).join(" ");
+  return words.length < 2 || family === "" ? null : family;
+}
+
 // What to try, in the order worth trying it. The face the document asked for comes
 // first; then the same face without the style, since a run drawn in its own family
-// at the wrong weight is nearer than the right weight of a stranger; then the
-// fallbacks, each in the style asked for before the style is given up on.
+// at the wrong weight is nearer than the right weight of a stranger; then the family
+// its own name begins with; then the fallbacks, each in the style asked for before
+// the style is given up on.
+//
+// **A face of the family is nearer than a stranger, and the name is what says so.**
+// Measured on 2026-08-14 over `9d343f6d69d7`, whose headings are `Aptos Display`, a
+// face this machine holds nowhere and Word embedded in its own pdf. Stood in by
+// Cambria, whose line is 1.1724 em, each heading came out 23.4pt against Word's 24.7;
+// the four on its first page stole 4.8pt between them, which is room enough for a
+// line Word put on the next page, and from there every page was a paragraph out.
+// Stood in by `Aptos`, which is 1.2207 em and on the machine, that page holds the 24
+// lines Word drew.
 function candidates(
   request: FaceRequest,
   fallbackNames: readonly string[],
 ): readonly FaceRequest[] {
   const plain = { ...request, bold: false, italic: false };
+  const family = familyOf(request.name);
+  const inTheFamily =
+    family === null
+      ? []
+      : [
+          { ...request, name: family },
+          { ...plain, name: family },
+        ];
+
   return [
     request,
     plain,
+    ...inTheFamily,
     ...fallbackNames.map((name) => ({ ...request, name })),
     ...fallbackNames.map((name) => ({ ...plain, name })),
   ];
