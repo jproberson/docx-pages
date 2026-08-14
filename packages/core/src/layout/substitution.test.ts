@@ -246,6 +246,98 @@ describe("the family a face's name begins with", () => {
   });
 });
 
+// **What Word chose, put back after being measured.** A name in Word's own table is
+// resolved to a face the last resort would never have reached: measured over
+// documents naming `JD Sans Pro Medium`, what Word drew matched Calibri within a
+// third of a percent and Cambria, where the last resort sends it, was fifteen times
+// further off.
+// **The face the document itself named, before any guess of ours.** A document states
+// what to draw a face in where the reader has not got it, and `readFaceAlternatives`
+// reads it; this is the rule about where that answer stands in the order.
+describe("the alternative a document states", () => {
+  const asks = (name: string, alternative: string): ReadonlyMap<string, string> =>
+    new Map([[name, alternative]]);
+
+  it("takes the alternative before any fallback", () => {
+    const faces = substitutingMetrics(
+      [measurable("Calibri"), measurable("Cambria")],
+      ["Cambria"],
+      asks("meridian sans", "Calibri"),
+    );
+
+    expect(faces.metricsFor(ask("Meridian Sans")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Meridian Sans"), used: ask("Calibri") },
+    ]);
+  });
+
+  it("keeps the style asked for where the alternative answers in it", () => {
+    const faces = substitutingMetrics(
+      [measurable("Calibri"), measurable("Calibri", { bold: true }), measurable("Cambria")],
+      ["Cambria"],
+      asks("meridian sans", "Calibri"),
+    );
+
+    expect(faces.metricsFor(ask("Meridian Sans", { bold: true })).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Meridian Sans", { bold: true }), used: ask("Calibri", { bold: true }) },
+    ]);
+  });
+
+  // **The case `JD Sans` needs.** A document may offer a face the machine has not got
+  // either, and then the order carries on behind it rather than stopping there.
+  it("carries on where the alternative is itself absent", () => {
+    const faces = substitutingMetrics(
+      [measurable("Cambria")],
+      ["Cambria"],
+      asks("jd sans", "JD Sans Pro Book"),
+    );
+
+    expect(faces.metricsFor(ask("JD Sans")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("JD Sans"), used: ask("Cambria") },
+    ]);
+  });
+
+  // The document stated the alternative; the family is read off the spelling. The
+  // stated one wins.
+  it("takes the alternative over the family the name begins with", () => {
+    const faces = substitutingMetrics(
+      [measurable("Calibri"), measurable("Meridian"), measurable("Cambria")],
+      ["Cambria"],
+      asks("meridian sans", "Calibri"),
+    );
+
+    expect(faces.metricsFor(ask("Meridian Sans")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Meridian Sans"), used: ask("Calibri") },
+    ]);
+  });
+
+  // **The face itself still wins.** An alternative answers where the original cannot.
+  it("leaves the named face alone where the machine holds it", () => {
+    const faces = substitutingMetrics(
+      [measurable("Meridian Sans"), measurable("Calibri")],
+      ["Cambria"],
+      asks("meridian sans", "Calibri"),
+    );
+
+    expect(faces.metricsFor(ask("Meridian Sans")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([]);
+  });
+
+  // A resolver built without a document in front of it, which is most of them, states
+  // no alternatives and behaves exactly as it did before there were any.
+  it("resolves as it always did where no alternative is stated", () => {
+    const faces = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
+
+    expect(faces.metricsFor(ask("Meridian Sans")).kind).toBe("found");
+    expect(faces.substitutions()).toStrictEqual([
+      { requested: ask("Meridian Sans"), used: ask("Cambria") },
+    ]);
+  });
+});
+
 // **How tall the line is, and what is drawn on it, are two questions.** A face
 // states its own ascent and descent whether or not anything can measure a word in
 // it, so where that much is known it is kept and only the widths are borrowed.
@@ -331,13 +423,13 @@ describe("the height of a face that was stood in for", () => {
     });
   });
 
-  // Read off this machine's own copy and off the 151 pdfs Word embedded it into,
-  // both of which state no line gap at all where the table used to state 87.
-  it("leaves Times New Roman no line gap", () => {
+  // Word gives Times New Roman a line gap its files do not state: it stepped 13.68pt
+  // between two 12pt lines where the file alone would give 13.29.
+  it("gives Times New Roman the line gap Word lays it out with", () => {
     const faces = substitutingMetrics([measurable("Cambria")], ["Cambria"]);
 
     expect(faces.metricsFor(ask("Times New Roman"))).toMatchObject({
-      metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 0 },
+      metrics: { unitsPerEm: 2048, ascender: 1825, descender: -443, lineGap: 87 },
     });
   });
 });

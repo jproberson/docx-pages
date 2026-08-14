@@ -59,6 +59,7 @@ const CORE_SURFACE: readonly string[] = [
   "pdfOfDocx",
   "pictureExtension",
   "readColorReference",
+  "readFaceAlternatives",
   "readFaceShapes",
   "readFontFaces",
   "readFontFile",

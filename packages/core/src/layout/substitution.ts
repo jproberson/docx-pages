@@ -163,9 +163,17 @@ function familyOf(name: string): string | null {
 
 // What to try, in the order worth trying it. The face the document asked for comes
 // first; then the same face without the style, since a run drawn in its own family
-// at the wrong weight is nearer than the right weight of a stranger; then the family
-// its own name begins with; then the fallbacks, each in the style asked for before
-// the style is given up on.
+// at the wrong weight is nearer than the right weight of a stranger; then the face
+// the document itself named as the alternative; then the family its own name begins
+// with; then the fallbacks, each in the style asked for before the style is given up
+// on.
+//
+// **The alternative comes before the family because the document stated it and the
+// family is a guess off the spelling.** `readFaceAlternatives` reports what the
+// document said and nothing about what the machine holds, so an alternative naming a
+// face nothing holds either costs one candidate and the list carries on: `JD Sans`
+// offered as `JD Sans Pro Book` is answered by neither, and the family and the
+// fallbacks are still tried behind it.
 //
 // **A face of the family is nearer than a stranger, and the name is what says so.**
 // Measured on 2026-08-14 over `9d343f6d69d7`, whose headings are `Aptos Display`, a
@@ -178,8 +186,17 @@ function familyOf(name: string): string | null {
 function candidates(
   request: FaceRequest,
   fallbackNames: readonly string[],
+  alternatives: ReadonlyMap<string, string>,
 ): readonly FaceRequest[] {
   const plain = { ...request, bold: false, italic: false };
+  const stated = alternatives.get(request.name.trim().toLowerCase());
+  const asTheDocumentSays =
+    stated === undefined
+      ? []
+      : [
+          { ...request, name: stated },
+          { ...plain, name: stated },
+        ];
   const family = familyOf(request.name);
   const inTheFamily =
     family === null
@@ -188,10 +205,10 @@ function candidates(
           { ...request, name: family },
           { ...plain, name: family },
         ];
-
   return [
     request,
     plain,
+    ...asTheDocumentSays,
     ...inTheFamily,
     ...fallbackNames.map((name) => ({ ...request, name })),
     ...fallbackNames.map((name) => ({ ...plain, name })),
@@ -235,6 +252,10 @@ function asTallAsAsked(found: MetricsLookup, asked: MetricsLookup | null): Metri
 export function substitutingMetrics(
   supplied: readonly SuppliedFace[],
   fallbackNames: FallbackNames,
+  // What each face the document names is to be drawn in instead, out of
+  // `readFaceAlternatives`. A resolver built without a document in front of it, which
+  // is most of them, states none and behaves as it did before there were any.
+  alternatives: ReadonlyMap<string, string> = new Map(),
 ): SubstitutingMetrics {
   const stood = new Map<string, Substitution>();
   const characters = new Map<string, FallbackCharacter>();
@@ -242,7 +263,7 @@ export function substitutingMetrics(
   const metricsFor: MetricsResolver = (request) => {
     let asked: MetricsLookup | null = null;
 
-    for (const used of candidates(request, namesFor(fallbackNames, request))) {
+    for (const used of candidates(request, namesFor(fallbackNames, request), alternatives)) {
       const found = lookupFontMetrics(used, supplied);
       asked ??= found;
       if (!measures(found)) continue;

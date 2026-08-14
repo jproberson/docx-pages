@@ -248,7 +248,7 @@ export {
   isAliasedSymbolFace,
 } from "./layout/symbol-aliases.js";
 
-export { readFaceShapes, FONT_TABLE_PART } from "./docx/font-table.js";
+export { readFaceAlternatives, readFaceShapes, FONT_TABLE_PART } from "./docx/font-table.js";
 export type { FaceShape } from "./docx/font-table.js";
 
 export { readMetafilePicture } from "./metafile/picture.js";

@@ -85,3 +85,46 @@ export function readFaceShapes(pkg: DocxPackage): ReadonlyMap<string, FaceShape>
   }
   return shapes;
 }
+
+/**
+ * The face each name the document asks for is to be drawn in instead, where the
+ * machine has no such face, as the document itself states it in `w:altName`.
+ *
+ * **This is the document's own answer and not a guess about the name.** A producer
+ * writes the alternative beside the face because it knows the reader may not hold
+ * the original: the same name is answered differently by different documents, and
+ * `JD Sans` comes back as `JD Sans Pro Book` in some and as `Corbel` in others. So
+ * no table keyed on a face name can stand in for this, and one keyed on the wrong
+ * document is worse than none. Read off the corpus on 2026-08-14: most documents
+ * state at least one, and the alternative is often a face every machine with Word
+ * has.
+ *
+ * **It says nothing about this machine.** Whether the original or the alternative
+ * is to hand is a separate question, asked later by whatever resolves a face; all
+ * this reports is what the document said. An alternative naming a face nothing holds
+ * either is still worth reporting, since the caller has somewhere else to go after
+ * it.
+ *
+ * A name given itself as its own alternative says nothing and is left out: a
+ * producer writes that where it has nothing to offer.
+ *
+ * Keyed by the lowercased name as `readFaceShapes` is, and the value is the
+ * alternative as written, since that is what goes on to be asked for.
+ */
+export function readFaceAlternatives(pkg: DocxPackage): ReadonlyMap<string, string> {
+  if (!pkg.parts.has(FONT_TABLE_PART)) return new Map();
+
+  const alternatives = new Map<string, string>();
+  for (const font of childrenNamed(partXml(pkg, FONT_TABLE_PART), W_NS, "font")) {
+    const name = attribute(font, W_NS, "name");
+    if (name === undefined || normalise(name) === "") continue;
+
+    const stated = childrenNamed(font, W_NS, "altName")
+      .map((each) => attribute(each, W_NS, "val"))
+      .find((value) => value !== undefined && value.trim() !== "");
+    if (stated === undefined || normalise(stated) === normalise(name)) continue;
+
+    alternatives.set(normalise(name), stated.trim());
+  }
+  return alternatives;
+}

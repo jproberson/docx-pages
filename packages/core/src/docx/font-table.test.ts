@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
-import { readFaceShapes } from "./font-table.js";
+import { readFaceAlternatives, readFaceShapes } from "./font-table.js";
 import { openDocx } from "./package.js";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -48,5 +48,69 @@ describe("readFaceShapes", () => {
   it("comes back empty for a document without the part", () => {
     const pkg = openDocx(buildDocx({ "word/document.xml": wordDocument(BODY) }));
     expect(readFaceShapes(pkg).size).toBe(0);
+  });
+});
+
+// **What the document says, not what the machine has.** A producer writes an
+// alternative beside a face because it knows the reader may not hold the original,
+// and the same name is answered differently by different documents: `JD Sans` comes
+// back `JD Sans Pro Book` in some of the corpus and `Corbel` in others.
+describe("readFaceAlternatives", () => {
+  const stated = (name: string, alternative: string): string =>
+    `<w:font w:name="${name}"><w:altName w:val="${alternative}"/><w:family w:val="swiss"/></w:font>`;
+
+  it("reads the alternative a document states beside a face", () => {
+    const shapes = readFaceAlternatives(packageWith(stated("Meridian Sans", "Calibri")));
+
+    expect([...shapes]).toStrictEqual([["meridian sans", "Calibri"]]);
+  });
+
+  // Keyed lowercased as the shapes are, and the value is left as written, since that
+  // is the name that goes on to be asked for.
+  it("keys the name it was asked for and keeps the alternative as written", () => {
+    const shapes = readFaceAlternatives(packageWith(stated("  MERIDIAN Sans  ", "  Calibri  ")));
+
+    expect(shapes.get("meridian sans")).toBe("Calibri");
+  });
+
+  it("reads one for each face that states one, and passes over those that do not", () => {
+    const shapes = readFaceAlternatives(
+      packageWith(
+        `${stated("Meridian Sans", "Calibri")}${CALIBRI}${stated("Meridian Serif", "Cambria")}`,
+      ),
+    );
+
+    expect([...shapes]).toStrictEqual([
+      ["meridian sans", "Calibri"],
+      ["meridian serif", "Cambria"],
+    ]);
+  });
+
+  // A producer writes a face as its own alternative where it has nothing to offer,
+  // which says nothing at all.
+  it("leaves out a face offered as its own alternative", () => {
+    const shapes = readFaceAlternatives(packageWith(stated("Meridian Sans", "meridian sans")));
+
+    expect([...shapes]).toStrictEqual([]);
+  });
+
+  it("leaves out an alternative stated as nothing", () => {
+    const shapes = readFaceAlternatives(packageWith(stated("Meridian Sans", "   ")));
+
+    expect([...shapes]).toStrictEqual([]);
+  });
+
+  // **An alternative nothing holds is still worth reporting**: this says what the
+  // document said, and whoever resolves a face has somewhere else to go after it.
+  it("reports an alternative whatever the machine holds, since it says nothing about that", () => {
+    const shapes = readFaceAlternatives(packageWith(stated("JD Sans", "JD Sans Pro Book")));
+
+    expect(shapes.get("jd sans")).toBe("JD Sans Pro Book");
+  });
+
+  it("comes back empty for a document with no font table at all", () => {
+    const bare = openDocx(buildDocx({ "word/document.xml": wordDocument(BODY) }));
+
+    expect([...readFaceAlternatives(bare)]).toStrictEqual([]);
   });
 });
