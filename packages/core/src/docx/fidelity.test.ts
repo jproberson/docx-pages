@@ -159,33 +159,56 @@ describe("readUnhonoured", () => {
     expect(reportOf(`<w:p><w:r><w:t>plain</w:t></w:r></w:p>`)).toStrictEqual([]);
   });
 
-  // **Read off the top of the deformed ranking on 2026-08-12.** Two documents of one
-  // template lose six of their fourteen pages between them, the worst 61% wrong by the
-  // raster, and both stated no gap at all: their fractions are drawn nowhere and
-  // measured as an empty paragraph, so every equation costs 16pt and the text of it is
-  // missing.
-  it("names an equation, which is a language of its own and read by nothing here", () => {
-    const fraction =
-      `<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">` +
-      `<m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>` +
-      `</m:oMath>`;
+  // The maths namespace, declared once for every equation below.
+  const M_NS = `xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"`;
+  const FRACTION = `<m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>`;
 
-    expect(kinds(reportOf(`<w:p>${fraction}</w:p>`))).toStrictEqual(["equation"]);
+  // **A fraction is set and drawn now**, and the two authored probes hold its geometry
+  // to Word's own pdf over 26 pages. It was named here until 2026-08-14, when it was
+  // still drawn nowhere at all.
+  it("says nothing about a fraction, which is set and drawn", () => {
+    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${FRACTION}</m:oMath></w:p>`))).toStrictEqual([]);
+  });
+
+  it("says nothing about a delimiter either", () => {
+    const round = `<m:d><m:e>${FRACTION}</m:e></m:d>`;
+    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${round}</m:oMath></w:p>`))).toStrictEqual([]);
+  });
+
+  // A superscript is one of the constructs the reader refuses, and a refused equation
+  // is drawn nowhere.
+  it("names an equation the reader refuses", () => {
+    const script = `<m:sSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sup><m:r><m:t>b</m:t></m:r></m:sup></m:sSup>`;
+    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${script}</m:oMath></w:p>`))).toStrictEqual([
+      "equation",
+    ]);
+  });
+
+  // **The break is passed over where the equation has to be set**, so the line it
+  // should have ended runs on and everything below it stands one line too high.
+  it("names an equation whose break the setting drops", () => {
+    const broken = `${FRACTION}<m:r><w:br/><m:t>c</m:t></m:r>`;
+    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${broken}</m:oMath></w:p>`))).toStrictEqual([
+      "equation",
+    ]);
+  });
+
+  // An equation of plain runs is laid along the line like any other text, breaks and
+  // all, so nothing about it is passed over.
+  it("says nothing about a break in an equation of plain runs", () => {
+    const runs = `<m:r><m:t>a</m:t></m:r><m:r><w:br/><m:t>b</m:t></m:r>`;
+    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${runs}</m:oMath></w:p>`))).toStrictEqual([]);
   });
 
   // The wrapper Word writes round an equation standing alone in its paragraph. Naming
   // both would count one equation twice.
-  // The equation here is one this cannot read, since an equation of plain runs is
-  // read now and is no longer a gap at all.
   it("names an equation once where a paragraph holds nothing else", () => {
-    const oMath =
-      `<m:oMath><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num>` +
-      `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath>`;
-    const alone =
-      `<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">` +
-      `${oMath}</m:oMathPara>`;
+    const script = `<m:sSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sup><m:r><m:t>b</m:t></m:r></m:sup></m:sSup>`;
+    const alone = `<m:oMathPara ${M_NS}><m:oMath>${script}</m:oMath></m:oMathPara>`;
+    const report = reportOf(`<w:p>${alone}</w:p>`);
 
-    expect(kinds(reportOf(`<w:p>${alone}</w:p>`))).toStrictEqual(["equation"]);
+    expect(kinds(report)).toStrictEqual(["equation"]);
+    expect(report[0]?.places).toHaveLength(1);
   });
 
   // Kerning and capitals are both laid out now, so a run asking for either is asking

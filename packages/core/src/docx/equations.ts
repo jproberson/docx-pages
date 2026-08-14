@@ -15,9 +15,9 @@ export const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/ma
 // plausible-looking page this project exists to avoid.
 //
 // **Reading a fraction is not setting one.** What this answers is the shape the file
-// states; how tall a fraction stands against the line it is in, where its bar sits and
-// how far a parenthesis stretches are questions only Word can answer, and until it has
-// answered them an equation holding either still draws nothing and still says so.
+// states; how tall one stands against its line, where its bar sits and how far a
+// parenthesis stretches are questions only Word can answer, and `layout/math.ts` holds
+// the answers. Both are set and drawn since 2026-08-14, so the report names neither.
 
 // The face Word sets an equation in. A document states its own in `m:mathFont`, and
 // Word writes that face onto every `m:r`'s `w:rPr` besides, so this answers for a run
@@ -111,20 +111,6 @@ export function readEquation(oMath: XmlElement): Equation {
   return { kind: "read", content };
 }
 
-// The runs of an equation that is nothing but runs, and null for one holding anything
-// that has to be set. **What is read is not yet what is drawn**: a fraction's own
-// geometry is unmeasured, so an equation holding one is still drawn nowhere and the
-// report still names it.
-export function runsAlone(equation: Equation): readonly EquationRun[] | null {
-  if (equation.kind === "refused") return null;
-  const runs: EquationRun[] = [];
-  for (const piece of equation.content) {
-    if (piece.kind !== "run") return null;
-    runs.push(piece);
-  }
-  return runs;
-}
-
 // Whether an equation holds anything that has to be set rather than laid along the
 // line: a fraction or a delimiter, at any depth. An equation of runs alone is drawn
 // where a paragraph's own runs are and needs no geometry at all.
@@ -134,6 +120,23 @@ export function needsSetting(equation: Equation): boolean {
     pieces.some((piece) => {
       if (piece.kind === "fraction") return true;
       if (piece.kind === "delimiter") return true;
+      return false;
+    });
+  return holds(equation.content);
+}
+
+// Whether an equation holds a line break, at any depth. **What answers this is the
+// report rather than the layout**: an equation that has to be set is gathered into one
+// piece by `markedMathOf`, which passes a break over, so a document holding one is
+// named as unhonoured rather than laid out with a line that should have ended running
+// on. An equation of plain runs keeps its breaks like any other run.
+export function holdsABreak(equation: Equation): boolean {
+  if (equation.kind === "refused") return false;
+  const holds = (pieces: readonly EquationPiece[]): boolean =>
+    pieces.some((piece) => {
+      if (piece.kind === "break") return true;
+      if (piece.kind === "fraction") return holds(piece.numerator) || holds(piece.denominator);
+      if (piece.kind === "delimiter") return piece.parts.some(holds);
       return false;
     });
   return holds(equation.content);

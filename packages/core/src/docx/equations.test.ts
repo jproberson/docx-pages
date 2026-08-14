@@ -8,7 +8,7 @@ import {
   mathStyleOf,
   readEquation,
   readMathFont,
-  runsAlone,
+  holdsABreak,
   type Equation,
   type EquationDelimiter,
   type EquationFraction,
@@ -358,25 +358,26 @@ describe("a delimiter", () => {
   });
 });
 
-// What the layout draws where a paragraph's own runs go, and what still needs setting.
-describe("runsAlone", () => {
-  it("answers the runs of an equation that is nothing else", () => {
-    const runs = runsAlone(equationOf(`<m:oMath>${mathRun("a")}${mathRun("b")}</m:oMath>`));
-    expect(runs?.map((run) => run.text)).toStrictEqual(["a", "b"]);
+// Whether an equation carries a line break, which the setting passes over: the report
+// names one that does, and `fidelity.ts` is where that is written down.
+describe("holdsABreak", () => {
+  it("finds a break standing beside a fraction", () => {
+    const broken = `${FRACTION}<m:r><w:br/><m:t>c</m:t></m:r>`;
+    expect(holdsABreak(equationOf(`<m:oMath>${broken}</m:oMath>`))).toBe(true);
   });
 
-  it("answers nothing for an equation holding something that has to be set", () => {
-    expect(runsAlone(equationOf(`<m:oMath>${FRACTION}</m:oMath>`))).toBeNull();
-    const delimited = `<m:d><m:e>${mathRun("iota")}</m:e></m:d>`;
-    expect(runsAlone(equationOf(`<m:oMath>${delimited}</m:oMath>`))).toBeNull();
-    expect(runsAlone(equationOf(`<m:oMath><m:rad/></m:oMath>`))).toBeNull();
-    // A break is read, and where a line ends inside an equation is unmeasured, so it
-    // is not one of the ones drawn where a paragraph's own runs are.
-    expect(runsAlone(equationOf(`<m:oMath><m:r><w:br/></m:r></m:oMath>`))).toBeNull();
+  it("finds one at any depth", () => {
+    const inside =
+      `<m:f><m:num><m:r><w:br/><m:t>a</m:t></m:r></m:num>` +
+      `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>`;
+    expect(holdsABreak(equationOf(`<m:oMath>${inside}</m:oMath>`))).toBe(true);
+    const delimited = `<m:d><m:e><m:r><w:br/><m:t>a</m:t></m:r></m:e></m:d>`;
+    expect(holdsABreak(equationOf(`<m:oMath>${delimited}</m:oMath>`))).toBe(true);
   });
 
-  it("answers no runs for an equation holding nothing, which draws nothing", () => {
-    expect(runsAlone(equationOf(`<m:oMath/>`))).toStrictEqual([]);
+  it("answers nothing for an equation holding none, and for one refused", () => {
+    expect(holdsABreak(equationOf(`<m:oMath>${FRACTION}</m:oMath>`))).toBe(false);
+    expect(holdsABreak(equationOf(`<m:oMath><m:rad/></m:oMath>`))).toBe(false);
   });
 });
 
@@ -485,12 +486,18 @@ describe("what the report says about an equation", () => {
     expect(kindsOf(`<m:oMath><m:rad/></m:oMath>`)).toStrictEqual(["equation"]);
   });
 
-  // **Read is not drawn.** The shape of a fraction and of a delimiter is read now and
-  // the geometry of neither is measured, so the page is still missing them and the
-  // report still says so. This is the line that changes the day the layout sets one.
-  it("names a fraction and a delimiter, whose shape is read and whose height is not", () => {
-    expect(kindsOf(`<m:oMath>${FRACTION}</m:oMath>`)).toStrictEqual(["equation"]);
+  // **Read is drawn now.** The geometry of a fraction and of a delimiter is measured
+  // and the layout sets both, so neither is missing from the page and neither is named.
+  // This was the line that said otherwise until 2026-08-14.
+  it("says nothing about a fraction or a delimiter, which are set", () => {
+    expect(kindsOf(`<m:oMath>${FRACTION}</m:oMath>`)).toStrictEqual([]);
     const delimited = `<m:d><m:e>${mathRun("iota")}</m:e></m:d>`;
-    expect(kindsOf(`<m:oMath>${delimited}</m:oMath>`)).toStrictEqual(["equation"]);
+    expect(kindsOf(`<m:oMath>${delimited}</m:oMath>`)).toStrictEqual([]);
+  });
+
+  // The one thing a set equation still passes over.
+  it("names one whose break the setting drops", () => {
+    const broken = `${FRACTION}<m:r><w:br/><m:t>xi</m:t></m:r>`;
+    expect(kindsOf(`<m:oMath>${broken}</m:oMath>`)).toStrictEqual(["equation"]);
   });
 });

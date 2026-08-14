@@ -2,7 +2,7 @@ import type { MetricsResolver } from "../layout/lines.js";
 import { blockParagraphs, blocksIn } from "./blocks.js";
 import { drawnAsStated } from "./borders.js";
 import { readDrawingContent, type DrawingContent } from "./drawing.js";
-import { MATH_NS, readEquation, runsAlone } from "./equations.js";
+import { holdsABreak, MATH_NS, needsSetting, readEquation } from "./equations.js";
 import { WP_NS } from "./inlines.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { drawablePicture } from "./pictures.js";
@@ -194,18 +194,34 @@ function unhonouredBy(
       : "undrawable-picture";
   }
   // An equation answers for itself, by the same reader the layout uses. **What is named
-  // here is what is not drawn, which is more than what is not read**: the shape of a
-  // fraction and of a delimiter is read, and how tall Word sets one is unmeasured, so
-  // until that is answered an equation holding either draws nothing and is named. An
-  // equation of runs alone needs no setting and is drawn where the paragraph's own runs
-  // are.
+  // here is what is not drawn, which is more than what is not read.**
+  //
+  // **A fraction and a delimiter are set and drawn now, and neither is named any
+  // longer.** Every equation but one of plain runs was named until 2026-08-14, because
+  // how tall Word sets one was unmeasured and one was drawn nowhere at all. The
+  // geometry is measured: over the 26 pages of the two authored probes, every
+  // baseline, bar and bracket agrees with Word's own pdf to within a device unit.
+  // Naming them after that put thirteen corpus documents on the ranking for a gap ten
+  // of them no longer had.
+  //
+  // **Two things are still named.** One is an equation the reader refuses outright,
+  // which is what it answers for the constructs it cannot read. The other is one that
+  // has to be set and holds a line break: `markedMathOf` passes the break over, so the
+  // line it should have ended runs on, and everything below it stands one line too
+  // high. Measured on 2026-08-14 over `d0c3405aafa1`, `fea1dbdfff77` and
+  // `554e562dc5b8`, three documents of one template: their pages agree with Word to
+  // within 0.2pt down to the equation and by 10.3 to 10.7pt below it, which is one
+  // line of the size those runs are set at. **A break in an equation of plain runs is
+  // honoured** like any other run's, and is not named.
   //
   // It is `m:oMath` wherever it stands, and `m:oMathPara` around it where it stands alone
   // in its paragraph, so the inner one answers for both and a paragraph of two equations
   // says so twice.
   if (element.namespace === MATH_NS) {
     if (element.name !== "oMath") return null;
-    return runsAlone(readEquation(element)) === null ? "equation" : null;
+    const equation = readEquation(element);
+    if (equation.kind === "refused") return "equation";
+    return needsSetting(equation) && holdsABreak(equation) ? "equation" : null;
   }
   if (element.namespace !== W_NS) return null;
 
