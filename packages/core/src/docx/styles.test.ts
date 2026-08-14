@@ -375,6 +375,32 @@ describe("resolveParagraphNumbering", () => {
 });
 
 describe("resolveParagraphFrame", () => {
+  // **Word centres an equation with a paragraph to itself and ignores the
+  // paragraph's own w:jc.** Measured over five cases against Word's own pdf.
+  const MATH = `xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"`;
+  const equation = `<m:oMath ${MATH}><m:r><m:t>x</m:t></m:r></m:oMath>`;
+
+  it("centres a paragraph holding an equation and nothing else", () => {
+    expect(resolved(`<w:p>${equation}</w:p>`).frame.alignment).toBe("center");
+  });
+
+  it("centres it however the paragraph is aligned", () => {
+    const body = `<w:p><w:pPr><w:jc w:val="right"/></w:pPr>${equation}</w:p>`;
+    expect(resolved(body).frame.alignment).toBe("center");
+  });
+
+  it("lets the equation's own m:jc move it", () => {
+    const body =
+      `<w:p><m:oMathPara ${MATH}><m:oMathParaPr><m:jc m:val="left"/></m:oMathParaPr>` +
+      `<m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara></w:p>`;
+    expect(resolved(body).frame.alignment).toBe("left");
+  });
+
+  it("leaves a paragraph holding text beside an equation as it is aligned", () => {
+    const body = `<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>a</w:t></w:r>${equation}</w:p>`;
+    expect(resolved(body).frame.alignment).toBe("right");
+  });
+
   it("indents a numbered paragraph the way its level does", () => {
     expect(resolved(numbered()).frame).toMatchObject({
       indentLeftTwips: 720,

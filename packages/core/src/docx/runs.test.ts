@@ -23,6 +23,10 @@ function runsOf(
   return readRuns(paragraph, readStyleTable(pkg));
 }
 
+const NO_FACE = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:rPr><w:sz w:val="24"/></w:rPr></w:style></w:styles>`;
+
 const textOf = (runs: readonly TextRun[]): string =>
   runs
     .flatMap((run) => run.pieces)
@@ -201,6 +205,53 @@ describe("readRuns", () => {
 
   it("reads no runs from an empty spacer paragraph", () => {
     expect(runsOf(`<w:p/>`)).toStrictEqual([]);
+  });
+
+  // **An equation of runs alone is text on the line like any other**, in the math
+  // font and spelled in the Mathematical Alphanumeric block. Anything stacked is
+  // refused whole and draws nothing until there is geometry for it.
+  const MATH = `xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"`;
+
+  it("reads an equation's runs as text on the line", () => {
+    const equation = `<m:oMath ${MATH}><m:r><m:t>bandril</m:t></m:r></m:oMath>`;
+    expect(textOf(runsOf(`<w:p>${equation}</w:p>`))).toBe(
+      "\u{1D44F}\u{1D44E}\u{1D45B}\u{1D451}\u{1D45F}\u{1D456}\u{1D459}",
+    );
+  });
+
+  it("keeps an equation's runs where the paragraph holds them", () => {
+    const equation = `<m:oMath ${MATH}><m:r><m:t>x</m:t></m:r></m:oMath>`;
+    const body =
+      `<w:p><w:r><w:t xml:space="preserve">one </w:t></w:r>${equation}` +
+      `<w:r><w:t xml:space="preserve"> two</w:t></w:r></w:p>`;
+    expect(textOf(runsOf(body))).toBe("one \u{1D465} two");
+  });
+
+  it("spells a run stating m:nor as it is written", () => {
+    const equation = `<m:oMath ${MATH}><m:r><m:rPr><m:nor/></m:rPr><m:t>bandril</m:t></m:r></m:oMath>`;
+    expect(textOf(runsOf(`<w:p>${equation}</w:p>`))).toBe("bandril");
+  });
+
+  it("sets a math run naming no face in the document's math font", () => {
+    const equation = `<m:oMath ${MATH}><m:r><m:t>x</m:t></m:r></m:oMath>`;
+    const mark = runsOf(`<w:p>${equation}</w:p>`, NO_FACE)[0]?.mark;
+    expect(mark?.font).toStrictEqual({ kind: "named", name: "Cambria Math" });
+  });
+
+  // Word draws the letters themselves slanted rather than asking for a slanted face,
+  // which is what the pdf of every style says: nothing is bold or italic anywhere.
+  it("leaves a math run upright and unbolded whatever its style states", () => {
+    const equation = `<m:oMath ${MATH}><m:r><m:rPr><m:sty m:val="bi"/></m:rPr><m:t>x</m:t></m:r></m:oMath>`;
+    const mark = runsOf(`<w:p>${equation}</w:p>`)[0]?.mark;
+    expect(mark?.bold).toBe(false);
+    expect(mark?.italic).toBe(false);
+  });
+
+  it("reads nothing from an equation it cannot lay out", () => {
+    const fraction =
+      `<m:oMath ${MATH}><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num>` +
+      `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath>`;
+    expect(runsOf(`<w:p>${fraction}</w:p>`)).toStrictEqual([]);
   });
 });
 

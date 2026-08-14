@@ -13,6 +13,7 @@ const WPG_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingGrou
 const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 const W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml";
 const WP14_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
+const M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 
 const DOCUMENT_NAMESPACES = [
   `xmlns:w="${W_NS}"`,
@@ -24,6 +25,7 @@ const DOCUMENT_NAMESPACES = [
   `xmlns:mc="${MC_NS}"`,
   `xmlns:w14="${W14_NS}"`,
   `xmlns:wp14="${WP14_NS}"`,
+  `xmlns:m="${M_NS}"`,
   `mc:Ignorable="w14 wp14"`,
 ].join(" ");
 

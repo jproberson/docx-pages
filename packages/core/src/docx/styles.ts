@@ -15,11 +15,12 @@ import {
   type NumberingLevel,
   type NumberingTable,
 } from "./numbering.js";
+import { MATH_NS, readMathFont } from "./equations.js";
 import { paragraphRuns } from "./paragraphs.js";
 import { TWIPS_PER_POINT } from "../layout/units.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
-import { attribute, childrenNamed, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, childrenNamed, descendantsNamed, firstNamed, type XmlElement } from "./xml.js";
 
 export const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
@@ -185,6 +186,9 @@ export type StyleTable = {
   readonly docDefaultsFrame: PartialFrame;
   readonly themeFonts: ReadonlyMap<string, string>;
   readonly numbering: NumberingTable;
+  // What a math run naming no face of its own is set in, which is the settings
+  // part's own say and the only thing an equation needs that a style does not hold.
+  readonly mathFont: string;
 };
 
 const EMPTY: PartialMark = {
@@ -515,6 +519,7 @@ const themeSlot = (reference: string): string =>
 export function readStyleTable(pkg: DocxPackage): StyleTable {
   const themeFonts = readThemeFonts(pkg);
   const numbering = readNumberingTable(pkg);
+  const mathFont = readMathFont(pkg);
   if (!pkg.parts.has(STYLES_PART)) {
     return {
       byId: new Map(),
@@ -523,6 +528,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       docDefaultsFrame: EMPTY_FRAME,
       themeFonts,
       numbering,
+      mathFont,
     };
   }
 
@@ -562,6 +568,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
     ),
     themeFonts,
     numbering,
+    mathFont,
   };
 }
 
@@ -986,6 +993,22 @@ export function styleIdOf(paragraph: Paragraph, table: StyleTable): string | und
 
 // A list level's own indents sit above the style's and below the paragraph's, so
 // a bulleted paragraph is indented without losing an indent it sets itself.
+// **An equation with a paragraph to itself is centred, and the paragraph's own w:jc
+// does not reach it.** Measured 2026-08-13 over five cases: the same equation came
+// out at 287.36 of a body running 36 to 576 whether the paragraph stated nothing,
+// `left` or `right`, and only `m:oMathParaPr/m:jc` moved it, to 36.00. An equation
+// sharing its line with text is not this and is drawn where the flow puts it.
+//
+// The settings part's own `m:mathPr/m:defJc` is not read: no document here states
+// one, and what Word does with it was not measured.
+function displayEquationAlignment(paragraph: Paragraph): ParagraphAlignment | null {
+  const runs = paragraphRuns(paragraph);
+  if (runs.length === 0 || runs.some((run) => run.namespace !== MATH_NS)) return null;
+  const stated = descendantsNamed(paragraph.element, MATH_NS, "jc")[0];
+  const alignment = stated === undefined ? undefined : attribute(stated, MATH_NS, "val");
+  return toAlignment(alignment) ?? "center";
+}
+
 export function resolveParagraphFrame(
   paragraph: Paragraph,
   table: StyleTable,
@@ -1003,7 +1026,7 @@ export function resolveParagraphFrame(
   resolved = mergeFrames(resolved, readFrame(paragraph.element));
 
   return {
-    alignment: resolved.alignment ?? "left",
+    alignment: displayEquationAlignment(paragraph) ?? resolved.alignment ?? "left",
     indentLeftTwips: resolved.indentLeftTwips ?? 0,
     indentRightTwips: resolved.indentRightTwips ?? 0,
     indentFirstLineTwips: resolved.indentFirstLineTwips ?? 0,

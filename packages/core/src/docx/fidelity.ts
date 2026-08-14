@@ -1,6 +1,7 @@
 import { blockParagraphs, blocksIn } from "./blocks.js";
 import { drawnAsStated } from "./borders.js";
 import { readDrawingContent, type DrawingContent } from "./drawing.js";
+import { MATH_NS, readEquation, runsAlone } from "./equations.js";
 import { WP_NS } from "./inlines.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { drawablePicture } from "./pictures.js";
@@ -8,9 +9,6 @@ import { defaultFooterPart, defaultHeaderPart, readRelationships } from "./relat
 import { pageGeometrySignature, W_NS } from "./section.js";
 import { SETTINGS_PART } from "./settings.js";
 import { attribute, type XmlElement } from "./xml.js";
-
-// Where Word writes an equation, which is a language of its own and not a run.
-const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 
 // What this project met in a document and did not honour.
 //
@@ -97,12 +95,13 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A note takes room at the foot of its page, which nothing here keeps for it.
   footnote: "moves-text",
   "column-break": "moves-text",
-  // An equation draws nothing at all here and is measured as though the paragraph
-  // holding it were empty, so the text of it is missing and everything below it on the
-  // page has moved up. Found on 2026-08-12 by reading the top of the deformed ranking:
-  // two documents of one template lose 16pt a page per equation and 6 of their 14 pages
-  // between them cannot be shown, and **neither document stated a single gap** until
-  // this was named.
+  // An equation this cannot read draws nothing at all and is measured as though the
+  // paragraph holding it were empty, so the text of it is missing and everything below
+  // it on the page has moved up. Found on 2026-08-12 by reading the top of the deformed
+  // ranking: two documents of one template lose 16pt a page per equation and 6 of their
+  // 14 pages between them cannot be shown, and **neither document stated a single gap**
+  // until this was named. What is left under the name is the structures `readEquation`
+  // refuses, the fraction above all.
   equation: "moves-text",
   "bar-tab-stop": "changes-paint",
   highlighting: "changes-paint",
@@ -190,11 +189,20 @@ function unhonouredBy(
     const held = resolvePart(content.relationshipId);
     return held === null || drawablePicture(held.part, held.bytes) ? null : "undrawable-picture";
   }
-  // An equation is written in its own namespace and read by nothing here: `m:oMath`
-  // wherever it stands, and `m:oMathPara` around it where it stands alone in its
-  // paragraph, so the inner one answers for both and a paragraph of two equations says
-  // so twice.
-  if (element.namespace === MATH_NS) return element.name === "oMath" ? "equation" : null;
+  // An equation answers for itself, by the same reader the layout uses. **What is named
+  // here is what is not drawn, which is more than what is not read**: the shape of a
+  // fraction and of a delimiter is read, and how tall Word sets one is unmeasured, so
+  // until that is answered an equation holding either draws nothing and is named. An
+  // equation of runs alone needs no setting and is drawn where the paragraph's own runs
+  // are.
+  //
+  // It is `m:oMath` wherever it stands, and `m:oMathPara` around it where it stands alone
+  // in its paragraph, so the inner one answers for both and a paragraph of two equations
+  // says so twice.
+  if (element.namespace === MATH_NS) {
+    if (element.name !== "oMath") return null;
+    return runsAlone(readEquation(element)) === null ? "equation" : null;
+  }
   if (element.namespace !== W_NS) return null;
 
   switch (element.name) {

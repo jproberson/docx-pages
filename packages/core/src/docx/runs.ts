@@ -1,5 +1,7 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
 import { readDrawingTurn } from "./drawing.js";
+import { mathStyleOf, MATH_NS } from "./equations.js";
+import { spelledAsMath } from "./math-letters.js";
 import { WP_NS } from "./inlines.js";
 import { W_NS } from "./section.js";
 import { resolveRuns, type ParagraphMark, type StyleTable } from "./styles.js";
@@ -58,7 +60,8 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
   for (const child of node.children) {
     if (isDetachedContent(child)) continue;
 
-    if (child.namespace === W_NS && child.name === "t") {
+    const isText = (child.namespace === W_NS || child.namespace === MATH_NS) && child.name === "t";
+    if (isText) {
       const text = textOf(child);
       if (text !== "") into.push({ kind: "text", text });
       continue;
@@ -98,10 +101,23 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
   }
 }
 
+// A math run names its own face in its w:rPr wherever Word wrote it, and the
+// document's math font is what one that names none is set in.
+const inTheMathFont = (mark: ParagraphMark, mathFont: string): ParagraphMark =>
+  mark.font.kind === "named" ? mark : { ...mark, font: { kind: "named", name: mathFont } };
+
 export function readRuns(paragraph: Paragraph, styles: StyleTable): readonly TextRun[] {
   return resolveRuns(paragraph, styles).map((marked) => {
     const pieces: RunPiece[] = [];
     collectPieces(marked.run, pieces);
-    return { mark: marked.mark, pieces };
+    if (marked.run.namespace !== MATH_NS) return { mark: marked.mark, pieces };
+
+    const style = mathStyleOf(marked.run);
+    return {
+      mark: inTheMathFont(marked.mark, styles.mathFont),
+      pieces: pieces.map((piece) =>
+        piece.kind === "text" ? { kind: "text", text: spelledAsMath(piece.text, style) } : piece,
+      ),
+    };
   });
 }

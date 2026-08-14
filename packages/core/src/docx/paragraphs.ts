@@ -1,4 +1,5 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
+import { MATH_NS, readEquation, runsAlone } from "./equations.js";
 import { W_NS } from "./section.js";
 import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
 import { descendantsNamed, type XmlElement } from "./xml.js";
@@ -27,10 +28,20 @@ export const paragraphDescendants = (
   name: string,
 ): readonly XmlElement[] => descendantsNamed(paragraph.element, namespace, name);
 
+// An equation stands where the paragraph holds it, so its runs are gathered by the
+// same walk rather than appended after. Only an equation of runs alone is read:
+// anything stacked draws nothing until there is geometry for it, and descending
+// into one would put a fraction's halves on the line side by side.
 function collectNamed(node: XmlElement, name: string, into: XmlElement[]): void {
   for (const child of node.children) {
     if (isDetachedContent(child)) continue;
     if (child.namespace === W_NS && child.name === "p") continue;
+    if (child.namespace === MATH_NS && child.name === "oMath") {
+      if (name === "r") {
+        for (const run of runsAlone(readEquation(child)) ?? []) into.push(run.element);
+      }
+      continue;
+    }
     if (child.namespace === W_NS && child.name === name) into.push(child);
     collectNamed(child, name, into);
   }
@@ -50,7 +61,9 @@ function placesContentInLine(run: XmlElement): boolean {
     if (found) return;
     for (const child of node.children) {
       if (isDetachedContent(child)) continue;
-      const isText = child.namespace === W_NS && LINE_CONTENT.has(child.name);
+      const isText =
+        (child.namespace === W_NS && LINE_CONTENT.has(child.name)) ||
+        (child.namespace === MATH_NS && child.name === "t");
       const isInline = child.namespace === WP_DRAWING_NS && child.name === "inline";
       const isLegacy =
         holdsALegacyPicture(child.namespace, child.name) && inlinePictureOf(child) !== null;

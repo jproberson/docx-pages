@@ -67,8 +67,12 @@ describe("readUnhonoured", () => {
 
   // The wrapper Word writes round an equation standing alone in its paragraph. Naming
   // both would count one equation twice.
+  // The equation here is one this cannot read, since an equation of plain runs is
+  // read now and is no longer a gap at all.
   it("names an equation once where a paragraph holds nothing else", () => {
-    const oMath = `<m:oMath><m:r><m:t>x</m:t></m:r></m:oMath>`;
+    const oMath =
+      `<m:oMath><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num>` +
+      `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath>`;
     const alone =
       `<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">` +
       `${oMath}</m:oMathPara>`;
