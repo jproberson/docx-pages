@@ -10,7 +10,14 @@ import {
   type FontFixture,
 } from "../testing/build-font.js";
 import { readFontFaces, readFontFile, readFontMetrics, readGlyphIndex } from "./font-file.js";
-import { lineHeightPt, type GlyphAdvances, type KerningTable } from "./font-metrics.js";
+import {
+  lineHeightPt,
+  type GlyphAdvances,
+  type InkBox,
+  type InkTable,
+  type KerningTable,
+  type MathTable,
+} from "./font-metrics.js";
 import type { CodeToGlyph } from "./glyphs.js";
 
 const FACE: FontFixture = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
@@ -392,6 +399,266 @@ describe("what a pair of a face's characters moves", () => {
 
     expect(between?.("A".codePointAt(0) ?? 0, "V".codePointAt(0) ?? 0)).toBe(-80);
     expect(buildFace({ name: "Meridian", metrics: METRICS }).kerning).toBeUndefined();
+  });
+});
+
+// A letter's own box is not its line: Word measures a fraction's height off the
+// ink of its halves rather than off the face's ascent, measured on 2026-08-13 over
+// two fractions of one size that came out 2.64pt apart in height for no reason but
+// which letters their halves held.
+describe("what a glyph draws", () => {
+  const BOXES = {
+    A: { left: 20, bottom: 0, right: 640, top: 700 },
+    B: { left: 40, bottom: -10, right: 600, top: 690 },
+  };
+  const DRAWN: FontFixture = { ...FACE, advances: WIDTHS, boxes: BOXES };
+
+  const inkIn = (fixture: FontFixture): InkTable => readFontFile(buildSfnt(fixture)).ink;
+
+  function inkOf(fixture: FontFixture, character: string): InkBox | null {
+    const table = inkIn(fixture);
+    if (table.kind !== "ink") throw new Error(`expected ink, got ${table.reason}`);
+    return table.inkOf(character.codePointAt(0) ?? 0);
+  }
+
+  it("reads the box a TrueType glyph states in its own header", () => {
+    expect(inkOf(DRAWN, "A")).toStrictEqual(BOXES.A);
+    expect(inkOf(DRAWN, "B")).toStrictEqual(BOXES.B);
+  });
+
+  // A space is written as a glyph of no length at all, which is not a fault and
+  // not a box of zero either: it draws nothing.
+  it("answers nothing for a character whose glyph has no outline", () => {
+    expect(inkOf(DRAWN, " ")).toBeNull();
+  });
+
+  it("answers nothing for a character the face does not map", () => {
+    expect(inkOf(DRAWN, "Z")).toBeNull();
+  });
+
+  // A face with more outline in it than a two-byte offset can reach states its
+  // glyph offsets whole rather than in pairs of bytes.
+  it("reads a long loca as well as a short one", () => {
+    expect(inkOf({ ...DRAWN, locaFormat: "long" }, "A")).toStrictEqual(BOXES.A);
+  });
+
+  // The glyphs are numbered from one in code point order, so A is the second of
+  // the three this fixture maps.
+  it("answers for a glyph reached without a character, which is how a variant is", () => {
+    const table = inkIn(DRAWN);
+    expect(table.kind === "ink" && table.inkOfGlyph(2)).toStrictEqual(BOXES.A);
+  });
+
+  it("reports a face carrying no outlines at all", () => {
+    expect(inkIn({ ...FACE, advances: WIDTHS })).toStrictEqual({
+      kind: "unavailable",
+      reason: "outlines-missing",
+    });
+  });
+
+  it("reports a face whose character map cannot be read", () => {
+    expect(inkIn({ ...DRAWN, omit: "cmap" })).toStrictEqual({
+      kind: "unavailable",
+      reason: "cmap-missing",
+    });
+  });
+});
+
+// A PostScript face states no box for a glyph anywhere, so the box is what the
+// outline comes to and the charstring has to be followed to find it.
+describe("what a PostScript outline comes to", () => {
+  // A rectangle, and a curve whose control points stand a quarter above the
+  // highest ink it draws.
+  const OUTLINES: FontFixture = {
+    ...FACE,
+    advances: WIDTHS,
+    outlines: {
+      A: {
+        from: [20, 0],
+        steps: [{ line: [600, 0] }, { line: [0, 700] }, { line: [-600, 0] }],
+      },
+      B: { from: [0, 0], steps: [{ curve: [0, 1000, 1000, 0, 0, -1000] }] },
+    },
+  };
+
+  function inkOf(fixture: FontFixture, character: string): InkBox | null {
+    const table = readFontFile(buildSfnt(fixture)).ink;
+    if (table.kind !== "ink") throw new Error(`expected ink, got ${table.reason}`);
+    return table.inkOf(character.codePointAt(0) ?? 0);
+  }
+
+  it("reads the box a path of lines fills", () => {
+    expect(inkOf(OUTLINES, "A")).toStrictEqual({ left: 20, bottom: 0, right: 620, top: 700 });
+  });
+
+  // The control points reach 1000 and the curve itself reaches 750, which is where
+  // it turns. Taking the control points for the ink would draw the letter a
+  // quarter taller than it is.
+  it("reads a curve at where it turns rather than at where its controls stand", () => {
+    expect(inkOf(OUTLINES, "B")).toStrictEqual({ left: 0, bottom: 0, right: 1000, top: 750 });
+  });
+
+  it("answers nothing for a glyph whose charstring draws nothing", () => {
+    expect(inkOf(OUTLINES, " ")).toBeNull();
+  });
+});
+
+// What a face says about setting mathematics, which is a table all but a handful
+// of faces state nothing of.
+describe("what a face says about setting mathematics", () => {
+  const CONSTANTS = {
+    scriptPercentScaleDown: 73,
+    scriptScriptPercentScaleDown: 60,
+    delimitedSubFormulaMinHeight: 1500,
+    displayOperatorMinHeight: 1250,
+    axisHeight: 250,
+    fractionRuleThickness: 60,
+    fractionNumeratorGapMin: 60,
+    fractionDenominatorGapMin: 60,
+    radicalDegreeBottomRaisePercent: 65,
+  };
+
+  const SETTING: FontFixture = {
+    ...FACE,
+    advances: { "(": 400, A: 660, B: 640 },
+    boxes: {
+      "(": { left: 60, bottom: -200, right: 340, top: 700 },
+      A: { left: 20, bottom: 0, right: 640, top: 700 },
+    },
+    math: {
+      constants: CONSTANTS,
+      minConnectorOverlap: 100,
+      italicCorrections: { A: 40, "(": 0 },
+      tallerVariants: {
+        "(": [
+          { character: "(", measurement: 900 },
+          { character: "A", measurement: 1400 },
+        ],
+      },
+      widerVariants: { A: [{ character: "B", measurement: 1200 }] },
+      tallerPieces: {
+        "(": {
+          italicCorrection: 30,
+          parts: [
+            { character: "B", startConnector: 0, endConnector: 200, fullAdvance: 800 },
+            {
+              character: "A",
+              startConnector: 200,
+              endConnector: 200,
+              fullAdvance: 400,
+              extender: true,
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const mathIn = (fixture: FontFixture): MathTable => readFontFile(buildSfnt(fixture)).math;
+
+  function settingIn(fixture: FontFixture): Extract<MathTable, { kind: "math" }> {
+    const table = mathIn(fixture);
+    if (table.kind !== "math") throw new Error(`expected math, got ${table.reason}`);
+    return table;
+  }
+
+  const codePointOf = (character: string): number => character.codePointAt(0) ?? 0;
+
+  it("reads the constants the table states as a value", () => {
+    const constants = settingIn(SETTING).constants;
+
+    expect(constants.axisHeight).toBe(250);
+    expect(constants.fractionRuleThickness).toBe(60);
+    expect(constants.fractionNumeratorGapMin).toBe(60);
+    expect(constants.fractionDenominatorGapMin).toBe(60);
+  });
+
+  // The four the table states plainly, ahead of the fifty-one it states as a value
+  // and a device, and the one percentage it states after all of them.
+  it("reads the heights and the percentages the table states plainly", () => {
+    const constants = settingIn(SETTING).constants;
+
+    expect(constants.scriptPercentScaleDown).toBe(73);
+    expect(constants.scriptScriptPercentScaleDown).toBe(60);
+    expect(constants.delimitedSubFormulaMinHeight).toBe(1500);
+    expect(constants.displayOperatorMinHeight).toBe(1250);
+    expect(constants.radicalDegreeBottomRaisePercent).toBe(65);
+  });
+
+  it("answers zero for a constant the table leaves at nothing", () => {
+    expect(settingIn(SETTING).constants.overbarRuleThickness).toBe(0);
+  });
+
+  it("reads how far a glyph leans past its own advance", () => {
+    const setting = settingIn(SETTING);
+
+    expect(setting.italicCorrectionOf(codePointOf("A"))).toBe(40);
+    expect(setting.italicCorrectionOf(codePointOf("("))).toBe(0);
+  });
+
+  it("answers nothing for a character the corrections do not cover", () => {
+    expect(settingIn(SETTING).italicCorrectionOf(codePointOf("B"))).toBe(0);
+  });
+
+  // A grown parenthesis is one glyph at a larger size rather than pieces stacked,
+  // measured on 2026-08-13 off Word's pdf: its ink was continuous over 21.60pt.
+  // Each variant comes back resolved, since a variant glyph has no character to
+  // ask the advances or the outlines about.
+  it("reads the taller shapes a character grows through, with what each draws", () => {
+    const variants = settingIn(SETTING).tallerVariantsOf(codePointOf("("));
+
+    expect(variants.map((each) => each.measurement)).toStrictEqual([900, 1400]);
+    expect(variants[0]?.advance).toBe(400);
+    expect(variants[1]?.advance).toBe(660);
+    expect(variants[1]?.ink).toStrictEqual({ left: 20, bottom: 0, right: 640, top: 700 });
+  });
+
+  it("reads the wider shapes apart from the taller ones", () => {
+    const setting = settingIn(SETTING);
+
+    expect(setting.widerVariantsOf(codePointOf("A")).map((each) => each.measurement)).toStrictEqual(
+      [1200],
+    );
+    expect(setting.widerVariantsOf(codePointOf("("))).toStrictEqual([]);
+    expect(setting.tallerVariantsOf(codePointOf("A"))).toStrictEqual([]);
+  });
+
+  // What a character grows through where no one variant reaches far enough: the
+  // pieces are stacked, and the middle one may be repeated to fill what is left.
+  it("reads the pieces a character grows through, and which of them repeats", () => {
+    const pieces = settingIn(SETTING).piecesToGrowTaller(codePointOf("("));
+
+    expect(pieces?.italicCorrection).toBe(30);
+    expect(pieces?.parts.map((part) => part.extender)).toStrictEqual([false, true]);
+    expect(pieces?.parts[0]).toStrictEqual({
+      glyph: 3,
+      startConnector: 0,
+      endConnector: 200,
+      fullAdvance: 800,
+      extender: false,
+      advance: 640,
+      ink: null,
+    });
+    expect(settingIn(SETTING).minConnectorOverlap).toBe(100);
+  });
+
+  it("answers nothing for a character the face grows no other way", () => {
+    expect(settingIn(SETTING).piecesToGrowTaller(codePointOf("A"))).toBeNull();
+  });
+
+  it("reports a face that says nothing about mathematics, which is nearly all of them", () => {
+    expect(mathIn({ ...FACE, advances: WIDTHS })).toStrictEqual({
+      kind: "unavailable",
+      reason: "math-missing",
+    });
+  });
+
+  // Refused rather than half-read, as every other table here is.
+  it("refuses a MATH table whose offsets run past the end of it", () => {
+    expect(mathIn({ ...SETTING, cutFromMath: 24 })).toStrictEqual({
+      kind: "unavailable",
+      reason: "math-malformed",
+    });
   });
 });
 

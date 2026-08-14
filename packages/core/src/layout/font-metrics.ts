@@ -68,6 +68,169 @@ export type KerningTable =
 
 export const NO_KERNING: KerningTable = { kind: "unavailable", reason: "unsupplied" };
 
+// What one glyph actually draws, in font units, measured from the origin its
+// advance starts at and with `top` above the baseline as the face states it. A
+// letter's box is not its line: `l` reaches higher than `r` does, and Word
+// measures a fraction's height off this rather than off the face's own ascent
+// (measured 2026-08-13, two fractions of the same size 2.64pt apart in height for
+// no reason but which letters their halves held).
+export type InkBox = {
+  readonly left: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly top: number;
+};
+
+// Null for a character the face draws nothing for, a space above all, which has
+// an advance and no ink at all.
+export type GlyphInk = (codePoint: number) => InkBox | null;
+
+// The outlines are reached through the same character map the advances are, so
+// every way they can be unavailable is a way ink can be. The rest are its own:
+// a face carrying neither kind of outline, one whose outlines say something this
+// reader cannot follow, and one whose tables run past themselves.
+export type InkUnavailable =
+  AdvancesUnavailable | "outlines-missing" | "outlines-unsupported" | "outlines-malformed";
+
+export type InkTable =
+  | {
+      readonly kind: "ink";
+      readonly inkOf: GlyphInk;
+      // The same answer for a glyph reached without a character, which is how a
+      // math variant is named: the taller parenthesis has no code point at all.
+      readonly inkOfGlyph: (glyph: number) => InkBox | null;
+    }
+  | { readonly kind: "unavailable"; readonly reason: InkUnavailable };
+
+export const NO_INK: InkTable = { kind: "unavailable", reason: "unsupplied" };
+
+// The constants the MATH table states as a value and a device offset, in the
+// order the table writes them. The order is the table's own layout, so this array
+// is what both the reader and a fixture walk, and neither can drift from the
+// other.
+export const MATH_VALUE_CONSTANTS = [
+  "mathLeading",
+  "axisHeight",
+  "accentBaseHeight",
+  "flattenedAccentBaseHeight",
+  "subscriptShiftDown",
+  "subscriptTopMax",
+  "subscriptBaselineDropMin",
+  "superscriptShiftUp",
+  "superscriptShiftUpCramped",
+  "superscriptBottomMin",
+  "superscriptBaselineDropMax",
+  "subSuperscriptGapMin",
+  "superscriptBottomMaxWithSubscript",
+  "spaceAfterScript",
+  "upperLimitGapMin",
+  "upperLimitBaselineRiseMin",
+  "lowerLimitGapMin",
+  "lowerLimitBaselineDropMin",
+  "stackTopShiftUp",
+  "stackTopDisplayStyleShiftUp",
+  "stackBottomShiftDown",
+  "stackBottomDisplayStyleShiftDown",
+  "stackGapMin",
+  "stackDisplayStyleGapMin",
+  "stretchStackTopShiftUp",
+  "stretchStackBottomShiftDown",
+  "stretchStackGapAboveMin",
+  "stretchStackGapBelowMin",
+  "fractionNumeratorShiftUp",
+  "fractionNumeratorDisplayStyleShiftUp",
+  "fractionDenominatorShiftDown",
+  "fractionDenominatorDisplayStyleShiftDown",
+  "fractionNumeratorGapMin",
+  "fractionNumDisplayStyleGapMin",
+  "fractionRuleThickness",
+  "fractionDenominatorGapMin",
+  "fractionDenomDisplayStyleGapMin",
+  "skewedFractionHorizontalGap",
+  "skewedFractionVerticalGap",
+  "overbarVerticalGap",
+  "overbarRuleThickness",
+  "overbarExtraAscender",
+  "underbarVerticalGap",
+  "underbarRuleThickness",
+  "underbarExtraDescender",
+  "radicalVerticalGap",
+  "radicalDisplayStyleVerticalGap",
+  "radicalRuleThickness",
+  "radicalExtraAscender",
+  "radicalKernBeforeDegree",
+  "radicalKernAfterDegree",
+] as const;
+
+export type MathValueConstant = (typeof MATH_VALUE_CONSTANTS)[number];
+
+// Everything the face says about setting mathematics. The value constants are in
+// font units like every other measurement here; the four heights and two
+// percentages the table states plainly are what they say they are, a percentage
+// being a hundredth.
+export type MathConstants = Readonly<Record<MathValueConstant, number>> & {
+  readonly scriptPercentScaleDown: number;
+  readonly scriptScriptPercentScaleDown: number;
+  readonly delimitedSubFormulaMinHeight: number;
+  readonly displayOperatorMinHeight: number;
+  readonly radicalDegreeBottomRaisePercent: number;
+};
+
+// One of the shapes a face keeps for a character that grows, resolved so that a
+// caller never has to go back to the file: `measurement` is how far it reaches
+// along the axis it grows on, which is its height for a parenthesis, and the
+// advance and the ink are the glyph's own.
+//
+// Cambria Math grows a parenthesis through these rather than by stacking pieces:
+// measured 2026-08-13, a grown paren came out of Word's pdf as one glyph with
+// continuous ink 21.60pt tall.
+export type MathVariant = {
+  readonly glyph: number;
+  readonly measurement: number;
+  readonly advance: number;
+  readonly ink: InkBox | null;
+};
+
+// A piece of a shape assembled out of several, for a character that has to grow
+// further than any one of its variants reaches. `extender` is a piece that may be
+// repeated to fill what is left.
+export type MathAssemblyPart = {
+  readonly glyph: number;
+  readonly startConnector: number;
+  readonly endConnector: number;
+  readonly fullAdvance: number;
+  readonly extender: boolean;
+  readonly advance: number;
+  readonly ink: InkBox | null;
+};
+
+export type MathAssembly = {
+  readonly italicCorrection: number;
+  readonly parts: readonly MathAssemblyPart[];
+};
+
+export type MathUnavailable = AdvancesUnavailable | "math-missing" | "math-malformed";
+
+export type MathTable =
+  | {
+      readonly kind: "math";
+      readonly constants: MathConstants;
+      // Zero where the face states none, since a correction nobody stated moves
+      // nothing.
+      readonly italicCorrectionOf: (codePoint: number) => number;
+      // In the order the face keeps them, which is smallest first and usually
+      // starts with the character's own plain glyph.
+      readonly tallerVariantsOf: (codePoint: number) => readonly MathVariant[];
+      readonly widerVariantsOf: (codePoint: number) => readonly MathVariant[];
+      readonly piecesToGrowTaller: (codePoint: number) => MathAssembly | null;
+      readonly piecesToGrowWider: (codePoint: number) => MathAssembly | null;
+      // How far two pieces of an assembly must overlap, in font units.
+      readonly minConnectorOverlap: number;
+    }
+  | { readonly kind: "unavailable"; readonly reason: MathUnavailable };
+
+export const NO_MATH: MathTable = { kind: "unavailable", reason: "unsupplied" };
+
 // Bold and italic are separate files with their own advances, so a face is asked
 // for by style as well as by name.
 export type FaceRequest = {
@@ -138,8 +301,11 @@ export type SuppliedFace = FaceRequest & {
   readonly advances: AdvanceTable;
   // Absent where nothing asked the file for its pairs, which is not the same as a
   // face that states none: a caller that never read them is told nothing rather
-  // than told there is nothing.
+  // than told there is nothing. What each glyph draws and what the face says about
+  // setting mathematics travel the same way.
   readonly kerning?: KerningTable;
+  readonly ink?: InkTable;
+  readonly math?: MathTable;
   // Whether the face draws its letters without serifs, which decides the face Word
   // borrows a character from where this one has no glyph for it: a sans face
   // borrows from Arial and every other face from Times New Roman, measured on
@@ -168,6 +334,8 @@ export type MetricsLookup =
       readonly metrics: FontMetrics;
       readonly advances: AdvanceTable;
       readonly kerning?: KerningTable;
+      readonly ink?: InkTable;
+      readonly math?: MathTable;
       readonly elsewhere?: FaceElsewhere;
     }
   | { readonly kind: "missing"; readonly fontName: string };
@@ -216,6 +384,8 @@ export function lookupFontMetrics(
       metrics: exact.metrics,
       advances: exact.advances,
       ...(exact.kerning === undefined ? {} : { kerning: exact.kerning }),
+      ...(exact.ink === undefined ? {} : { ink: exact.ink }),
+      ...(exact.math === undefined ? {} : { math: exact.math }),
     };
   }
 
@@ -230,10 +400,20 @@ export function lookupFontMetrics(
       metrics: nearest.metrics,
       advances: { kind: "unavailable", reason: "style-unsupplied" },
       // The pairs of the near miss are as much the wrong style's as its widths
-      // are, so they are refused for the same reason.
+      // are, so they are refused for the same reason, and so is the ink each of
+      // its glyphs draws.
       ...(nearest.kerning === undefined
         ? {}
         : { kerning: { kind: "unavailable", reason: "style-unsupplied" } as const }),
+      ...(nearest.ink === undefined
+        ? {}
+        : { ink: { kind: "unavailable", reason: "style-unsupplied" } as const }),
+      // The MATH table goes the same way, and for a reason of its own beyond the
+      // constants: its corrections and its variants are named in the glyphs of the
+      // cut that stated them, and the near miss is another cut.
+      ...(nearest.math === undefined
+        ? {}
+        : { math: { kind: "unavailable", reason: "style-unsupplied" } as const }),
     };
   }
 

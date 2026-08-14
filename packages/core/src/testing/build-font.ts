@@ -1,7 +1,13 @@
 import { zlibSync } from "fflate";
 
 import { readFontFile } from "../layout/font-file.js";
-import type { FontMetrics, SuppliedFace } from "../layout/font-metrics.js";
+import {
+  MATH_VALUE_CONSTANTS,
+  type FontMetrics,
+  type MathConstants,
+  type MathValueConstant,
+  type SuppliedFace,
+} from "../layout/font-metrics.js";
 
 export type FontFixture = {
   readonly unitsPerEm: number;
@@ -66,7 +72,69 @@ export type FontFixture = {
   // Whether the pair lookup is reached through an extension, which is how a real
   // face reaches a subtable further into the file than a two-byte offset can name.
   readonly gposThroughExtension?: boolean;
+  // What each character draws, as the box its outline fills. Written as a
+  // TrueType glyph, which states its box in its own header; a character the
+  // fixture states no box for is written as a glyph of no length, which is how a
+  // face writes a space.
+  readonly boxes?: Readonly<Record<string, InkFixture>>;
+  // Whether `loca` counts in bytes or in pairs of them, which is what a face with
+  // more outline than a two-byte offset can reach has to state.
+  readonly locaFormat?: "short" | "long";
+  // What each character draws, as the path its outline follows. Written as a
+  // PostScript charstring, which states no box at all: the box is what the
+  // outline comes to, and a curve reaches past its own ends.
+  readonly outlines?: Readonly<Record<string, GlyphPath>>;
+  // What the face says about setting mathematics, and how many bytes to cut off
+  // the end of what it says, for a fixture that wants a table whose offsets run
+  // past what is there.
+  readonly math?: MathFixture;
+  readonly cutFromMath?: number;
   readonly omit?: "head" | "hhea" | "cmap" | "hmtx";
+};
+
+export type InkFixture = {
+  readonly left: number;
+  readonly bottom: number;
+  readonly right: number;
+  readonly top: number;
+};
+
+// A move to where the outline starts, and then the lines and curves that close
+// it. A curve states its two control points and where it ends.
+export type GlyphPath = {
+  readonly from: readonly [number, number];
+  readonly steps: readonly GlyphStep[];
+};
+
+export type GlyphStep =
+  | { readonly line: readonly [number, number] }
+  | { readonly curve: readonly [number, number, number, number, number, number] };
+
+export type MathFixture = {
+  readonly constants?: Partial<MathConstants>;
+  readonly italicCorrections?: Readonly<Record<string, number>>;
+  // What each character grows through, as the character whose glyph is drawn and
+  // how far that glyph reaches along the axis it grows on.
+  readonly tallerVariants?: Readonly<Record<string, readonly MathVariantFixture[]>>;
+  readonly widerVariants?: Readonly<Record<string, readonly MathVariantFixture[]>>;
+  readonly tallerPieces?: Readonly<Record<string, MathPiecesFixture>>;
+  readonly minConnectorOverlap?: number;
+};
+
+export type MathVariantFixture = {
+  readonly character: string;
+  readonly measurement: number;
+};
+
+export type MathPiecesFixture = {
+  readonly italicCorrection?: number;
+  readonly parts: readonly {
+    readonly character: string;
+    readonly startConnector: number;
+    readonly endConnector: number;
+    readonly fullAdvance: number;
+    readonly extender?: boolean;
+  }[];
 };
 
 // A pair of the face's characters and what it moves: `{ AV: -80 }` says an A
@@ -105,6 +173,7 @@ const longMetricCount = (fixture: FontFixture, glyphs: readonly Glyph[]): number
   fixture.longMetrics ?? glyphs.length + 1;
 
 const MAC_STYLE_AT = 44;
+const LOCA_FORMAT_AT = 50;
 
 function headTable(fixture: FontFixture): Uint8Array {
   const table = new Uint8Array(HEAD_LENGTH);
@@ -113,7 +182,155 @@ function headTable(fixture: FontFixture): Uint8Array {
   view.setUint32(12, 0x5f0f3cf5);
   view.setUint16(18, fixture.unitsPerEm);
   view.setUint16(MAC_STYLE_AT, (fixture.bold === true ? 1 : 0) | (fixture.italic === true ? 2 : 0));
+  view.setInt16(LOCA_FORMAT_AT, fixture.locaFormat === "long" ? 1 : 0);
   return table;
+}
+
+// A glyph that draws the box it states, as four points around it. Nothing here
+// reads the outline itself, but a header stating a box the outline does not fill
+// is not a glyph any face would write.
+function glyphOutline(box: InkFixture): Uint8Array {
+  const table = new Uint8Array(34);
+  const view = new DataView(table.buffer);
+
+  view.setInt16(0, 1);
+  view.setInt16(2, box.left);
+  view.setInt16(4, box.bottom);
+  view.setInt16(6, box.right);
+  view.setInt16(8, box.top);
+  view.setUint16(10, 3);
+  view.setUint16(12, 0);
+  for (let point = 0; point < 4; point += 1) table[14 + point] = 1;
+
+  const across = [box.left, box.right - box.left, 0, box.left - box.right];
+  const up = [box.bottom, 0, box.top - box.bottom, 0];
+  across.forEach((step, point) => {
+    view.setInt16(18 + point * 2, step);
+  });
+  up.forEach((step, point) => {
+    view.setInt16(26 + point * 2, step);
+  });
+  return table;
+}
+
+function trueTypeOutlines(
+  fixture: FontFixture,
+  glyphs: readonly Glyph[],
+): readonly (readonly [string, Uint8Array])[] {
+  const stated = fixture.boxes ?? {};
+  const drawn: Uint8Array[] = [new Uint8Array(0)];
+  for (const glyph of glyphs) {
+    const box = Object.entries(stated).find(
+      ([character]) => character.codePointAt(0) === glyph.codePoint,
+    )?.[1];
+    drawn.push(box === undefined ? new Uint8Array(0) : glyphOutline(box));
+  }
+
+  const glyf = concat(drawn);
+  const long = fixture.locaFormat === "long";
+  const loca = new Uint8Array((drawn.length + 1) * (long ? 4 : 2));
+  const view = new DataView(loca.buffer);
+
+  let at = 0;
+  drawn.forEach((glyph, index) => {
+    if (long) view.setUint32(index * 4, at);
+    else view.setUint16(index * 2, at / 2);
+    at += glyph.length;
+  });
+  if (long) view.setUint32(drawn.length * 4, at);
+  else view.setUint16(drawn.length * 2, at / 2);
+
+  return [
+    ["loca", loca],
+    ["glyf", glyf],
+  ];
+}
+
+// A charstring writes its numbers before the operator that takes them. Anything
+// that will not fit in one byte is written as the two the format keeps for it.
+function charstringNumber(value: number): Uint8Array {
+  if (value >= -107 && value <= 107) return Uint8Array.from([value + 139]);
+  const written = new Uint8Array(3);
+  written[0] = 28;
+  new DataView(written.buffer).setInt16(1, value);
+  return written;
+}
+
+const R_MOVE_TO = 21;
+const R_LINE_TO = 5;
+const R_CURVE_TO = 8;
+const END_CHAR = 14;
+
+function charstringOf(path: GlyphPath): Uint8Array {
+  const written: Uint8Array[] = [
+    charstringNumber(path.from[0]),
+    charstringNumber(path.from[1]),
+    Uint8Array.from([R_MOVE_TO]),
+  ];
+
+  for (const step of path.steps) {
+    if ("line" in step) {
+      written.push(...step.line.map(charstringNumber), Uint8Array.from([R_LINE_TO]));
+    } else {
+      written.push(...step.curve.map(charstringNumber), Uint8Array.from([R_CURVE_TO]));
+    }
+  }
+
+  written.push(Uint8Array.from([END_CHAR]));
+  return concat(written);
+}
+
+// An index of entries, which is how a PostScript font keeps every list it has.
+function cffIndex(entries: readonly Uint8Array[]): Uint8Array {
+  if (entries.length === 0) return new Uint8Array(2);
+
+  const offsetSize = 4;
+  const header = 3 + (entries.length + 1) * offsetSize;
+  const out = new Uint8Array(header + entries.reduce((sum, each) => sum + each.length, 0));
+  const view = new DataView(out.buffer);
+  view.setUint16(0, entries.length);
+  out[2] = offsetSize;
+
+  let at = 1;
+  entries.forEach((entry, index) => {
+    view.setUint32(3 + index * offsetSize, at);
+    out.set(entry, header + at - 1);
+    at += entry.length;
+  });
+  view.setUint32(3 + entries.length * offsetSize, at);
+  return out;
+}
+
+const CHARSTRINGS_OPERATOR = 17;
+const CFF_HEADER_LENGTH = 4;
+// The dictionary is one thirty-two bit number and the operator it belongs to, so
+// its length is known before the offset inside it is.
+const TOP_DICT_LENGTH = 6;
+
+function cffTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const stated = fixture.outlines ?? {};
+  const charstrings: Uint8Array[] = [Uint8Array.from([END_CHAR])];
+  for (const glyph of glyphs) {
+    const path = Object.entries(stated).find(
+      ([character]) => character.codePointAt(0) === glyph.codePoint,
+    )?.[1];
+    charstrings.push(path === undefined ? Uint8Array.from([END_CHAR]) : charstringOf(path));
+  }
+
+  const header = Uint8Array.from([1, 0, CFF_HEADER_LENGTH, 1]);
+  const names = cffIndex([Uint8Array.from(Array.from("Meridian", (each) => each.charCodeAt(0)))]);
+  const strings = cffIndex([]);
+  const globalSubrs = cffIndex([]);
+  const topIndexLength = 3 + 2 * 4 + TOP_DICT_LENGTH;
+  const charStringsAt =
+    header.length + names.length + topIndexLength + strings.length + globalSubrs.length;
+
+  const dict = new Uint8Array(TOP_DICT_LENGTH);
+  dict[0] = 29;
+  new DataView(dict.buffer).setInt32(1, charStringsAt);
+  dict[5] = CHARSTRINGS_OPERATOR;
+
+  return concat([header, names, cffIndex([dict]), strings, globalSubrs, cffIndex(charstrings)]);
 }
 
 function hheaTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
@@ -655,6 +872,180 @@ function gposTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
     : whole.subarray(0, whole.length - fixture.cutFromGpos);
 }
 
+const MATH_HEADER_LENGTH = 10;
+const MATH_VALUE_LENGTH = 4;
+const MATH_CONSTANTS_LENGTH = 8 + MATH_VALUE_CONSTANTS.length * MATH_VALUE_LENGTH + 2;
+const GLYPH_INFO_LENGTH = 8;
+
+function mathConstantsTable(stated: Partial<MathConstants>): Uint8Array {
+  const table = new Uint8Array(MATH_CONSTANTS_LENGTH);
+  const view = new DataView(table.buffer);
+
+  view.setInt16(0, stated.scriptPercentScaleDown ?? 0);
+  view.setInt16(2, stated.scriptScriptPercentScaleDown ?? 0);
+  view.setUint16(4, stated.delimitedSubFormulaMinHeight ?? 0);
+  view.setUint16(6, stated.displayOperatorMinHeight ?? 0);
+
+  MATH_VALUE_CONSTANTS.forEach((name: MathValueConstant, index) => {
+    view.setInt16(8 + index * MATH_VALUE_LENGTH, stated[name] ?? 0);
+  });
+
+  view.setInt16(MATH_CONSTANTS_LENGTH - 2, stated.radicalDegreeBottomRaisePercent ?? 0);
+  return table;
+}
+
+// A coverage names the glyphs a table answers for, in the order it answers for
+// them, which is why everything written beside one is sorted by glyph.
+function coverageOf(glyphIds: readonly number[]): Uint8Array {
+  const table = new Uint8Array(4 + glyphIds.length * 2);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 1);
+  view.setUint16(2, glyphIds.length);
+  glyphIds.forEach((glyph, index) => {
+    view.setUint16(4 + index * 2, glyph);
+  });
+  return table;
+}
+
+const byGlyph = <T>(
+  stated: Readonly<Record<string, T>>,
+  glyphs: readonly Glyph[],
+): readonly { readonly glyph: number; readonly stated: T }[] =>
+  Object.entries(stated)
+    .map(([character, value]) => ({ glyph: idOf(character.codePointAt(0), glyphs), stated: value }))
+    .sort((left, right) => left.glyph - right.glyph);
+
+function italicCorrectionsTable(
+  stated: Readonly<Record<string, number>>,
+  glyphs: readonly Glyph[],
+): Uint8Array {
+  const corrections = byGlyph(stated, glyphs);
+  const coverage = coverageOf(corrections.map((each) => each.glyph));
+  const header = 4 + corrections.length * MATH_VALUE_LENGTH;
+
+  const table = new Uint8Array(header + coverage.length);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, header);
+  view.setUint16(2, corrections.length);
+  corrections.forEach((each, index) => {
+    view.setInt16(4 + index * MATH_VALUE_LENGTH, each.stated);
+  });
+  table.set(coverage, header);
+  return table;
+}
+
+const ASSEMBLY_PART_LENGTH = 10;
+
+function assemblyTable(pieces: MathPiecesFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const table = new Uint8Array(6 + pieces.parts.length * ASSEMBLY_PART_LENGTH);
+  const view = new DataView(table.buffer);
+  view.setInt16(0, pieces.italicCorrection ?? 0);
+  view.setUint16(4, pieces.parts.length);
+
+  pieces.parts.forEach((part, index) => {
+    const at = 6 + index * ASSEMBLY_PART_LENGTH;
+    view.setUint16(at, idOf(part.character.codePointAt(0), glyphs));
+    view.setUint16(at + 2, part.startConnector);
+    view.setUint16(at + 4, part.endConnector);
+    view.setUint16(at + 6, part.fullAdvance);
+    view.setUint16(at + 8, part.extender === true ? 1 : 0);
+  });
+  return table;
+}
+
+type Growth = {
+  readonly glyph: number;
+  readonly variants: readonly MathVariantFixture[];
+  readonly pieces: MathPiecesFixture | undefined;
+};
+
+function constructionTable(growth: Growth, glyphs: readonly Glyph[]): Uint8Array {
+  const header = 4 + growth.variants.length * 4;
+  const assembly = growth.pieces === undefined ? null : assemblyTable(growth.pieces, glyphs);
+
+  const table = new Uint8Array(header + (assembly?.length ?? 0));
+  const view = new DataView(table.buffer);
+  view.setUint16(0, assembly === null ? 0 : header);
+  view.setUint16(2, growth.variants.length);
+  growth.variants.forEach((variant, index) => {
+    view.setUint16(4 + index * 4, idOf(variant.character.codePointAt(0), glyphs));
+    view.setUint16(6 + index * 4, variant.measurement);
+  });
+  if (assembly !== null) table.set(assembly, header);
+  return table;
+}
+
+function growthOf(
+  variants: Readonly<Record<string, readonly MathVariantFixture[]>> | undefined,
+  pieces: Readonly<Record<string, MathPiecesFixture>> | undefined,
+  glyphs: readonly Glyph[],
+): readonly Growth[] {
+  const characters = [...new Set([...Object.keys(variants ?? {}), ...Object.keys(pieces ?? {})])];
+  return characters
+    .map((character) => ({
+      glyph: idOf(character.codePointAt(0), glyphs),
+      variants: variants?.[character] ?? [],
+      pieces: pieces?.[character],
+    }))
+    .sort((left, right) => left.glyph - right.glyph);
+}
+
+// Every offset inside the variants table counts from the table itself, so the
+// constructions are laid out after the two lists of offsets that name them and
+// the coverages after those.
+function mathVariantsTable(math: MathFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const taller = growthOf(math.tallerVariants, math.tallerPieces, glyphs);
+  const wider = growthOf(math.widerVariants, undefined, glyphs);
+  const constructions = [...taller, ...wider].map((each) => constructionTable(each, glyphs));
+
+  const header = MATH_HEADER_LENGTH + (taller.length + wider.length) * 2;
+  const parts: Uint8Array[] = [];
+  const offsets: number[] = [];
+  let at = header;
+  for (const construction of constructions) {
+    offsets.push(at);
+    parts.push(construction);
+    at += construction.length;
+  }
+
+  const tallCoverage = coverageOf(taller.map((each) => each.glyph));
+  const wideCoverage = coverageOf(wider.map((each) => each.glyph));
+  const tallCoverageAt = at;
+  const wideCoverageAt = at + tallCoverage.length;
+
+  const table = new Uint8Array(header);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, math.minConnectorOverlap ?? 0);
+  view.setUint16(2, taller.length === 0 ? 0 : tallCoverageAt);
+  view.setUint16(4, wider.length === 0 ? 0 : wideCoverageAt);
+  view.setUint16(6, taller.length);
+  view.setUint16(8, wider.length);
+  offsets.forEach((offset, index) => {
+    view.setUint16(MATH_HEADER_LENGTH + index * 2, offset);
+  });
+
+  return concat([table, ...parts, tallCoverage, wideCoverage]);
+}
+
+function mathTable(math: MathFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const constants = mathConstantsTable(math.constants ?? {});
+  const corrections = italicCorrectionsTable(math.italicCorrections ?? {}, glyphs);
+  const glyphInfo = new Uint8Array(GLYPH_INFO_LENGTH + corrections.length);
+  new DataView(glyphInfo.buffer).setUint16(0, GLYPH_INFO_LENGTH);
+  glyphInfo.set(corrections, GLYPH_INFO_LENGTH);
+
+  const variants = mathVariantsTable(math, glyphs);
+
+  const header = new Uint8Array(MATH_HEADER_LENGTH);
+  const view = new DataView(header.buffer);
+  view.setUint16(0, 1);
+  view.setUint16(4, MATH_HEADER_LENGTH);
+  view.setUint16(6, MATH_HEADER_LENGTH + constants.length);
+  view.setUint16(8, MATH_HEADER_LENGTH + constants.length + glyphInfo.length);
+
+  return concat([header, constants, glyphInfo, variants]);
+}
+
 function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array])[] {
   const glyphs = glyphsOf(fixture);
   const tables: (readonly [string, Uint8Array])[] = [
@@ -683,6 +1074,17 @@ function tablesOf(fixture: FontFixture): readonly (readonly [string, Uint8Array]
   }
   if (fixture.gposPairs !== undefined || fixture.gposClassPairs !== undefined) {
     tables.push(["GPOS", gposTable(fixture, glyphs)]);
+  }
+  if (fixture.boxes !== undefined) {
+    tables.push(...trueTypeOutlines(fixture, glyphs));
+  }
+  if (fixture.outlines !== undefined) {
+    tables.push(["CFF ", cffTable(fixture, glyphs)]);
+  }
+  if (fixture.math !== undefined) {
+    const written = mathTable(fixture.math, glyphs);
+    const cut = fixture.cutFromMath ?? 0;
+    tables.push(["MATH", cut === 0 ? written : written.subarray(0, written.length - cut)]);
   }
 
   return tables.filter(([tag]) => tag !== fixture.omit);
