@@ -184,11 +184,20 @@ describe("readUnhonoured", () => {
     ]);
   });
 
-  // **The break is passed over where the equation has to be set**, so the line it
-  // should have ended runs on and everything below it stands one line too high.
-  it("names an equation whose break the setting drops", () => {
+  // A break between the equation's own pieces ends the line and is honoured, measured
+  // by the authored `equation-break-probe` document over nine cases.
+  it("says nothing about a break between the equation's own pieces", () => {
     const broken = `${FRACTION}<m:r><w:br/><m:t>c</m:t></m:r>`;
-    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${broken}</m:oMath></w:p>`))).toStrictEqual([
+    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${broken}</m:oMath></w:p>`))).toStrictEqual([]);
+  });
+
+  // **A break inside a structure is passed over**, since ending the line there would
+  // end it in the middle of a fraction and what Word does with one is unmeasured.
+  it("names an equation whose break stands inside a fraction", () => {
+    const inside =
+      `<m:f><m:num><m:r><w:br/><m:t>a</m:t></m:r></m:num>` +
+      `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>`;
+    expect(kinds(reportOf(`<w:p><m:oMath ${M_NS}>${inside}</m:oMath></w:p>`))).toStrictEqual([
       "equation",
     ]);
   });

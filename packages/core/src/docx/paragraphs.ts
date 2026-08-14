@@ -1,5 +1,5 @@
 import { isDetachedContent, type Paragraph } from "./blocks.js";
-import { MATH_NS, readEquation, runsOf } from "./equations.js";
+import { MATH_NS, readEquation, runElementsOf } from "./equations.js";
 import { W_NS } from "./section.js";
 import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
 import { descendantsNamed, type XmlElement } from "./xml.js";
@@ -35,14 +35,16 @@ export const paragraphDescendants = (
 // safe now is that `readRuns` gathers an equation's runs back into one piece before
 // anything reaches a line, so a half is never a thing a line can see. The runs are
 // wanted here all the same, because a run is marked by the cascade only where the
-// paragraph hands it out, and a half cannot be measured without its mark.
+// paragraph hands it out, and a half cannot be measured without its mark. **A run
+// carrying nothing but a break is one of them**, since the line it ends is measured
+// from that run.
 function collectNamed(node: XmlElement, name: string, into: XmlElement[]): void {
   for (const child of node.children) {
     if (isDetachedContent(child)) continue;
     if (child.namespace === W_NS && child.name === "p") continue;
     if (child.namespace === MATH_NS && child.name === "oMath") {
       if (name === "r") {
-        for (const run of runsOf(readEquation(child))) into.push(run.element);
+        for (const run of runElementsOf(readEquation(child))) into.push(run);
       }
       continue;
     }

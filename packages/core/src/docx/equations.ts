@@ -125,12 +125,14 @@ export function needsSetting(equation: Equation): boolean {
   return holds(equation.content);
 }
 
-// Whether an equation holds a line break, at any depth. **What answers this is the
-// report rather than the layout**: an equation that has to be set is gathered into one
-// piece by `markedMathOf`, which passes a break over, so a document holding one is
-// named as unhonoured rather than laid out with a line that should have ended running
-// on. An equation of plain runs keeps its breaks like any other run.
-export function holdsABreak(equation: Equation): boolean {
+// Whether an equation holds a break somewhere the setting cannot honour it, which is
+// anywhere but between its own pieces. **A break standing in a fraction's half or
+// inside a delimiter would have to end a line in the middle of a structure**, and what
+// Word does with one is unmeasured, so `markedMathOf` passes it over and the report
+// names the document. One standing between the equation's own pieces ends the line like
+// any other break, which `readRuns` honours by handing the pieces either side of it out
+// as equations of their own.
+export function holdsABreakInsideAStructure(equation: Equation): boolean {
   if (equation.kind === "refused") return false;
   const holds = (pieces: readonly EquationPiece[]): boolean =>
     pieces.some((piece) => {
@@ -139,7 +141,11 @@ export function holdsABreak(equation: Equation): boolean {
       if (piece.kind === "delimiter") return piece.parts.some(holds);
       return false;
     });
-  return holds(equation.content);
+  return equation.content.some((piece) => {
+    if (piece.kind === "fraction") return holds(piece.numerator) || holds(piece.denominator);
+    if (piece.kind === "delimiter") return piece.parts.some(holds);
+    return false;
+  });
 }
 
 // Every run an equation holds, at whatever depth it stands, in the order the file
@@ -148,6 +154,26 @@ export function holdsABreak(equation: Equation): boolean {
 // resolved for a run the paragraph hands out and for no other.
 export const runsOf = (equation: Equation): readonly EquationRun[] =>
   equation.kind === "refused" ? [] : runsIn(equation.content);
+
+// Every `m:r` an equation holds, the ones carrying nothing but a break among them, in
+// the order the file writes them. **A break is measured from the run it stands in**, as
+// a run's own break is, so the paragraph has to hand that run out for the cascade to
+// mark it like any other.
+export function runElementsOf(equation: Equation): readonly XmlElement[] {
+  if (equation.kind === "refused") return [];
+  const elements: XmlElement[] = [];
+  const walk = (pieces: readonly EquationPiece[]): void => {
+    for (const piece of pieces) {
+      if (piece.kind === "run" || piece.kind === "break") elements.push(piece.element);
+      else if (piece.kind === "fraction") {
+        walk(piece.numerator);
+        walk(piece.denominator);
+      } else for (const part of piece.parts) walk(part);
+    }
+  };
+  walk(equation.content);
+  return elements;
+}
 
 // The same over a structure rather than a whole equation, which is what a caller
 // asking a fraction or a delimiter what mark it takes is holding.

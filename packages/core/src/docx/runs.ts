@@ -6,6 +6,7 @@ import {
   MATH_NS,
   needsSetting,
   readEquation,
+  runElementsOf,
   runsIn,
   runsOf,
   type Equation,
@@ -241,9 +242,15 @@ function equationsToSet(
   for (const oMath of equationsIn(paragraph.element)) {
     const equation = readEquation(oMath);
     if (!needsSetting(equation)) continue;
+    // **Every element the equation holds is mapped, the runs carrying a break among
+    // them**, so that none is handed out a second time as a run of the paragraph's own.
+    // What answers for the whole of it is the first run with text in it, whose mark is
+    // the face and the size the geometry is set at; a run holding only a break states
+    // neither.
     const first = runsOf(equation)[0];
     if (first === undefined) continue;
-    for (const run of runsOf(equation)) held.set(run.element, { at: first.element, equation });
+    for (const element of runElementsOf(equation))
+      held.set(element, { at: first.element, equation });
   }
   return held;
 }
@@ -318,13 +325,68 @@ export function readRuns(paragraph: Paragraph, styles: StyleTable): readonly Tex
     // Every run of one equation answers with the same piece, emitted where the first
     // of them stands and passed over at the rest.
     if (each.run !== equation.at) continue;
-    const content = markedMathOf(
-      equation.equation.kind === "read" ? equation.equation.content : [],
-      marks,
-      styles.mathFont,
+    runs.push(
+      ...equationRuns(
+        equation.equation.kind === "read" ? equation.equation.content : [],
+        each.mark,
+        marks,
+        styles.mathFont,
+      ),
     );
-    if (content.length > 0) runs.push({ mark: each.mark, pieces: [{ kind: "equation", content }] });
   }
+  return runs;
+}
+
+/**
+ * **A break inside an equation ends the line it stands on, and what follows it is an
+ * equation of its own.** So the pieces either side of one are handed out as separate
+ * equations with an ordinary break between them, and nothing past here has to know the
+ * three came out of one `m:oMath`.
+ *
+ * Measured on 2026-08-14 by the authored `equation-break-probe` document, nine cases
+ * three times each against Word's own pdf. A display fraction alone is 27.36; the same
+ * with a break after it is 42.00, with a break before it 40.08, with a run after the
+ * break 40.08, and with a second fraction after the break 54.48, which is what the same
+ * two equations with an ordinary `w:r` break between them come to as well. So the break
+ * is ordinary on the content side: it ends the line, what follows stands on the next,
+ * and it costs the same wherever in the equation it stands.
+ *
+ * **Which run holds the break is what its own line is measured from**, so it is handed
+ * out under the mark of the `m:r` carrying it rather than under the equation's. The
+ * probe separates that from the mark's line: see `heldOpenPt` in `layout/lines.ts`.
+ *
+ * A break standing inside a fraction's half or a delimiter is not this and is not
+ * honoured: `markedMathOf` passes one over and `fidelity.ts` names the document.
+ */
+function equationRuns(
+  content: readonly EquationPiece[],
+  mark: ParagraphMark,
+  marks: ReadonlyMap<XmlElement, ParagraphMark>,
+  mathFont: string,
+): readonly TextRun[] {
+  const runs: TextRun[] = [];
+  let held: EquationPiece[] = [];
+
+  const flush = (): void => {
+    const marked = markedMathOf(held, marks, mathFont);
+    if (marked.length > 0) runs.push({ mark, pieces: [{ kind: "equation", content: marked }] });
+    held = [];
+  };
+
+  for (const piece of content) {
+    if (piece.kind !== "break") {
+      held.push(piece);
+      continue;
+    }
+    flush();
+    runs.push({
+      mark: marks.get(piece.element) ?? mark,
+      // A break inside an equation that starts a page or a column is refused by the
+      // reader rather than guessed at, so the one that reaches here ends a line only.
+      pieces: [{ kind: "break", endsPage: false, endsColumn: false }],
+    });
+  }
+  flush();
   return runs;
 }
 

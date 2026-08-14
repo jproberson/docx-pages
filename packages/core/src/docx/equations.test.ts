@@ -8,7 +8,7 @@ import {
   mathStyleOf,
   readEquation,
   readMathFont,
-  holdsABreak,
+  holdsABreakInsideAStructure,
   type Equation,
   type EquationDelimiter,
   type EquationFraction,
@@ -358,26 +358,30 @@ describe("a delimiter", () => {
   });
 });
 
-// Whether an equation carries a line break, which the setting passes over: the report
-// names one that does, and `fidelity.ts` is where that is written down.
-describe("holdsABreak", () => {
-  it("finds a break standing beside a fraction", () => {
+// Which breaks the setting can honour and which it cannot, which is what the report is
+// written off: one between the equation's own pieces ends the line, and one inside a
+// structure would have to end it in the middle of a fraction.
+describe("holdsABreakInsideAStructure", () => {
+  it("passes over a break standing between the equation's own pieces", () => {
     const broken = `${FRACTION}<m:r><w:br/><m:t>c</m:t></m:r>`;
-    expect(holdsABreak(equationOf(`<m:oMath>${broken}</m:oMath>`))).toBe(true);
+    expect(holdsABreakInsideAStructure(equationOf(`<m:oMath>${broken}</m:oMath>`))).toBe(false);
   });
 
-  it("finds one at any depth", () => {
+  it("finds one inside a fraction's half", () => {
     const inside =
       `<m:f><m:num><m:r><w:br/><m:t>a</m:t></m:r></m:num>` +
       `<m:den><m:r><m:t>b</m:t></m:r></m:den></m:f>`;
-    expect(holdsABreak(equationOf(`<m:oMath>${inside}</m:oMath>`))).toBe(true);
+    expect(holdsABreakInsideAStructure(equationOf(`<m:oMath>${inside}</m:oMath>`))).toBe(true);
+  });
+
+  it("finds one inside a delimiter", () => {
     const delimited = `<m:d><m:e><m:r><w:br/><m:t>a</m:t></m:r></m:e></m:d>`;
-    expect(holdsABreak(equationOf(`<m:oMath>${delimited}</m:oMath>`))).toBe(true);
+    expect(holdsABreakInsideAStructure(equationOf(`<m:oMath>${delimited}</m:oMath>`))).toBe(true);
   });
 
   it("answers nothing for an equation holding none, and for one refused", () => {
-    expect(holdsABreak(equationOf(`<m:oMath>${FRACTION}</m:oMath>`))).toBe(false);
-    expect(holdsABreak(equationOf(`<m:oMath><m:rad/></m:oMath>`))).toBe(false);
+    expect(holdsABreakInsideAStructure(equationOf(`<m:oMath>${FRACTION}</m:oMath>`))).toBe(false);
+    expect(holdsABreakInsideAStructure(equationOf(`<m:oMath><m:rad/></m:oMath>`))).toBe(false);
   });
 });
 
@@ -495,9 +499,19 @@ describe("what the report says about an equation", () => {
     expect(kindsOf(`<m:oMath>${delimited}</m:oMath>`)).toStrictEqual([]);
   });
 
-  // The one thing a set equation still passes over.
-  it("names one whose break the setting drops", () => {
+  // A break between the equation's own pieces ends the line and is honoured, which the
+  // authored `equation-break-probe` document measured over nine cases.
+  it("says nothing about a break between the equation's own pieces", () => {
     const broken = `${FRACTION}<m:r><w:br/><m:t>xi</m:t></m:r>`;
-    expect(kindsOf(`<m:oMath>${broken}</m:oMath>`)).toStrictEqual(["equation"]);
+    expect(kindsOf(`<m:oMath>${broken}</m:oMath>`)).toStrictEqual([]);
+  });
+
+  // The one thing a set equation still passes over: a break that would have to end a
+  // line in the middle of a structure.
+  it("names one whose break stands inside a fraction", () => {
+    const inside =
+      `<m:f><m:num><m:r><w:br/><m:t>one</m:t></m:r></m:num>` +
+      `<m:den>${mathRun("two")}</m:den></m:f>`;
+    expect(kindsOf(`<m:oMath>${inside}</m:oMath>`)).toStrictEqual(["equation"]);
   });
 });

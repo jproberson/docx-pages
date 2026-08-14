@@ -89,6 +89,18 @@ export type TextLine = {
   // paragraph's last line answers to: measured on 2026-08-11 by the authored
   // `empty-line-size` document. Null on a line no break ends, which is where the
   // mark stands.
+  //
+  // **The line a break ends and the line it opens are held open by different things,
+  // and it is worth keeping them apart**, since a reader meeting the rule above will
+  // take it for both. Measured on 2026-08-14 by the authored `equation-break-probe`
+  // document, whose break stands in an 11pt maths run inside a paragraph whose own
+  // mark is 12pt: a fraction with the break **before** it came out 40.08, which is the
+  // fraction's 27.36 and the break's own run, and the same fraction with the break
+  // **after** it came out 42.00, which is 27.36 and the paragraph's 12pt mark. Setting
+  // that mark to 36pt moved the second to 71.28 and left the break's run where it was,
+  // so the opened line is the mark's whatever the break was written in. That is the
+  // rule above and `emptyLine(null)` already between them, and the probe is what says
+  // a maths run is no exception.
   readonly heldOpenPt: number | null;
 };
 

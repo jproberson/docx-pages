@@ -299,6 +299,67 @@ describe("readRuns", () => {
     expect(delimiter.content.map((each) => each.kind)).toStrictEqual(["fraction"]);
   });
 
+  /**
+   * **A break inside an equation ends the line, and what follows it is an equation of
+   * its own.** Measured on 2026-08-14 by the authored `equation-break-probe` document,
+   * nine cases three times each against Word's own pdf: a display fraction alone is
+   * 27.36pt, the same with a break after it 42.00, with a break before it 40.08, with a
+   * run after the break 40.08, and with a second fraction after it 54.48, which is what
+   * the same two equations with an ordinary `w:r` break between them come to as well.
+   */
+  const BROKEN = `${FRACTION}<m:r><w:br/></m:r>`;
+
+  it("ends the line at a break inside an equation", () => {
+    const runs = runsOf(`<w:p><m:oMath ${MATH}>${BROKEN}</m:oMath></w:p>`);
+
+    expect(runs.flatMap((run) => run.pieces.map((each) => each.kind))).toStrictEqual([
+      "equation",
+      "break",
+    ]);
+  });
+
+  it("hands out what follows the break as an equation of its own", () => {
+    const runs = runsOf(`<w:p><m:oMath ${MATH}>${BROKEN}${FRACTION}</m:oMath></w:p>`);
+
+    expect(runs.flatMap((run) => run.pieces.map((each) => each.kind))).toStrictEqual([
+      "equation",
+      "break",
+      "equation",
+    ]);
+  });
+
+  // A break before anything else opens with the break rather than with an empty
+  // equation, which would be a piece holding nothing to set.
+  it("hands out no equation in front of a break that opens one", () => {
+    const runs = runsOf(`<w:p><m:oMath ${MATH}><m:r><w:br/></m:r>${FRACTION}</m:oMath></w:p>`);
+
+    expect(runs.flatMap((run) => run.pieces.map((each) => each.kind))).toStrictEqual([
+      "break",
+      "equation",
+    ]);
+  });
+
+  // **The break is handed out under the mark of the run carrying it**, since that is
+  // what the line it ends is measured from. See `heldOpenPt` in `layout/lines.ts`.
+  it("carries the break under its own run's mark", () => {
+    const sized = `${FRACTION}<m:r><w:rPr><w:sz w:val="72"/></w:rPr><w:br/></m:r>`;
+    const runs = runsOf(`<w:p><m:oMath ${MATH}>${sized}</m:oMath></w:p>`);
+    const broke = runs.find((run) => run.pieces.some((each) => each.kind === "break"));
+
+    expect(broke?.mark.fontSizePt).toBe(36);
+  });
+
+  // Neither of the two a break can be: it ends a line and nothing else, since the
+  // reader refuses an equation holding one that starts a page or a column.
+  it("ends no page and no column", () => {
+    const runs = runsOf(`<w:p><m:oMath ${MATH}>${BROKEN}</m:oMath></w:p>`);
+    const piece = runs.flatMap((run) => run.pieces).find((each) => each.kind === "break");
+    if (piece?.kind !== "break") throw new Error("no break");
+
+    expect(piece.endsPage).toBe(false);
+    expect(piece.endsColumn).toBe(false);
+  });
+
   // The text either side of an equation is untouched by any of this.
   it("leaves the runs standing beside a fraction where they were", () => {
     const runs = runsOf(

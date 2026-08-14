@@ -2,7 +2,7 @@ import type { MetricsResolver } from "../layout/lines.js";
 import { blockParagraphs, blocksIn } from "./blocks.js";
 import { drawnAsStated } from "./borders.js";
 import { readDrawingContent, type DrawingContent } from "./drawing.js";
-import { holdsABreak, MATH_NS, needsSetting, readEquation } from "./equations.js";
+import { holdsABreakInsideAStructure, MATH_NS, needsSetting, readEquation } from "./equations.js";
 import { WP_NS } from "./inlines.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { drawablePicture } from "./pictures.js";
@@ -206,13 +206,11 @@ function unhonouredBy(
   //
   // **Two things are still named.** One is an equation the reader refuses outright,
   // which is what it answers for the constructs it cannot read. The other is one that
-  // has to be set and holds a line break: `markedMathOf` passes the break over, so the
-  // line it should have ended runs on, and everything below it stands one line too
-  // high. Measured on 2026-08-14 over `d0c3405aafa1`, `fea1dbdfff77` and
-  // `554e562dc5b8`, three documents of one template: their pages agree with Word to
-  // within 0.2pt down to the equation and by 10.3 to 10.7pt below it, which is one
-  // line of the size those runs are set at. **A break in an equation of plain runs is
-  // honoured** like any other run's, and is not named.
+  // has to be set and holds a break **inside a fraction or a delimiter**, where ending
+  // the line would have to end it in the middle of a structure: `markedMathOf` passes
+  // that one over, and what Word does with it is unmeasured. A break standing between
+  // the equation's own pieces was named here until 2026-08-14 and is honoured now, the
+  // authored `equation-break-probe` document having measured it over nine cases.
   //
   // It is `m:oMath` wherever it stands, and `m:oMathPara` around it where it stands alone
   // in its paragraph, so the inner one answers for both and a paragraph of two equations
@@ -221,7 +219,7 @@ function unhonouredBy(
     if (element.name !== "oMath") return null;
     const equation = readEquation(element);
     if (equation.kind === "refused") return "equation";
-    return needsSetting(equation) && holdsABreak(equation) ? "equation" : null;
+    return needsSetting(equation) && holdsABreakInsideAStructure(equation) ? "equation" : null;
   }
   if (element.namespace !== W_NS) return null;
 
