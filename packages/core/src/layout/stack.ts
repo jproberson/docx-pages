@@ -242,10 +242,37 @@ export type UntornRow = {
 // Only an object text wraps round is listed. One wrapping nothing hangs past the
 // foot of the page and moves neither itself nor anything else, which is why the
 // band is what this is read off: a band is made for exactly the wraps that move.
+/**
+ * An object standing in the way of text, as the break pass needs it: how far down the
+ * column it reaches, the paragraph that anchors it, and the band itself.
+ *
+ * **The band is carried so that the break pass can tell whose page it belongs to.**
+ * Measuring is one column with no pages in it, so a band drawn from an object near the
+ * foot of one page goes on keeping text off lines that the break has since moved to
+ * the next: `1bd495dddcb2` opened its second page at 314.25, a band's own right edge,
+ * where Word opens it at the frame's own left. The rule about which page a line lands
+ * on belongs in the break pass, and this is what it will need. **Nothing reads the
+ * band yet.**
+ *
+ * `measureParagraph` already lets go of every object it is standing under when a
+ * paragraph opens a page of its own, which is the same fault caught in the one place
+ * the measure pass can see it.
+ *
+ * When the break pass does use this, it will be able to move a line and not to break
+ * it again: **a line already broken early by a band that turns out to belong to
+ * another page keeps its early break**, since breaking is a measuring question, and
+ * the corpus will price whether that matters.
+ *
+ * Two things to hold on to while writing that. An object hanging past the foot of the
+ * text is drawn up in the drawing pass, so the band here is drawn from where its
+ * anchor put it rather than from where it lands. And the fault has a reverse: a band
+ * whose object lands on a later page covering positions that belong to an earlier one.
+ */
 export type AnchoredObject = {
   readonly topPt: number;
   readonly bottomPt: number;
   readonly anchoredAt: number;
+  readonly band: WrapBand;
 };
 
 export type StackMeasurement =
@@ -443,6 +470,7 @@ function measureBlocks(
           topPt: band.topPt,
           bottomPt: band.bottomPt,
           anchoredAt: paragraph.index,
+          band,
         });
       }
       const measured = measureParagraph(paragraph, context, top, frame, neighbours, {

@@ -684,7 +684,15 @@ describe("breakStack over a row a break may not run through", () => {
 // though drawing it up to the foot of the text would have left its top 22pt below
 // the paragraph's own and 2pt above the foot of its line.
 describe("an object anchored to a paragraph", () => {
-  const anchored = (topPt: number, bottomPt: number) => ({ topPt, bottomPt, anchoredAt: 1 });
+  // The band an object stands in the way with, which these cases ask nothing about:
+  // they are about the room under an object, and the break pass reads a band nowhere
+  // yet.
+  const anchored = (topPt: number, bottomPt: number) => ({
+    topPt,
+    bottomPt,
+    anchoredAt: 1,
+    band: { leftPt: 0, rightPt: 0, topPt, bottomPt },
+  });
 
   // Three paragraphs of one 24pt line each from 100, so the second is anchored at
   // 124 and the foot of its line stands at 148.
