@@ -1386,6 +1386,11 @@ describe("measureStack over a section of more than one column", () => {
       expect(evenedOut(uniform(5), TWO)).toStrictEqual([0, 0, 0, 1, 1]);
     });
 
+    // **Among the fills whose tallest column is the same, the earlier column takes
+    // more.** Seven blocks in three columns come out 3,3,1 at 36pt, and 2,2,3 comes
+    // out at 36pt as well, since the last column takes what is left rather than being
+    // cut at the height the others are evened to. Nothing about the height tells those
+    // two apart, and Word drew the first.
     it("fills the first two of three columns before the last", () => {
       expect(evenedOut(uniform(7), THREE)).toStrictEqual([0, 0, 0, 1, 1, 1, 2]);
     });
@@ -1404,6 +1409,229 @@ describe("measureStack over a section of more than one column", () => {
 
     it("gives a column the one block that is over half the run on its own", () => {
       expect(evenedOut([30, 10, 10], TWO)).toStrictEqual([0, 1, 1]);
+    });
+  });
+
+  // What a divided run costs the page under it, measured on 2026-08-13 by seven authored
+  // cases A to G, each written out three times and each read off Word's own pdf by where
+  // the paragraph under the run came to sit.
+  //
+  // **The run divides so that its tallest column is as short as it can be, the earlier
+  // column taking more where two divisions stand equally tall, and it costs the page that
+  // tallest column.** What follows a break of the run's own is the one thing not divided:
+  // it stays in the column that break opened.
+  //
+  // Every case here is a continuous section, which is what balances a run at all, and
+  // every line is exactly 24pt so a cost is arithmetic.
+  describe("what a divided run costs its page", () => {
+    const THREE_EQUAL: SectionColumns = {
+      count: 3,
+      widthsTwips: [],
+      gapsTwips: [],
+      spaceTwips: 360,
+    };
+    // 108pt at 72 and 234pt at 189, which is the shape of the corpus run this was first
+    // read off.
+    const NARROW_THEN_WIDE: SectionColumns = {
+      count: 2,
+      widthsTwips: [2160, 4680],
+      gapsTwips: [180, 0],
+      spaceTwips: 0,
+    };
+    // 108pt at 72, 234pt at 189 and 58pt at 459.
+    const THREE_UNEQUAL: SectionColumns = {
+      count: 3,
+      widthsTwips: [2160, 4680, 1160],
+      gapsTwips: [180, 720, 0],
+      spaceTwips: 0,
+    };
+
+    const empty = `<w:p><w:pPr>${exactly}</w:pPr></w:p>`;
+    const wrapping = (text: string) =>
+      `<w:p><w:pPr>${exactly}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+    const exactlyTall = (heightPt: number) =>
+      `<w:spacing w:line="${String(heightPt * 20)}" w:lineRule="exact"/>`;
+    const emptyOf = (heightPt: number) => `<w:p><w:pPr>${exactlyTall(heightPt)}</w:pPr></w:p>`;
+    const lineOf = (name: string, heightPt: number) =>
+      `<w:p><w:pPr>${exactlyTall(heightPt)}</w:pPr><w:r><w:t>${name}</w:t></w:r></w:p>`;
+    // Three lines in a 216pt column, one in nothing narrower.
+    const THREE_LINES =
+      "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november";
+
+    // The run, the empty paragraph carrying its section break, and a closer standing
+    // under it in a section of one column. **The closer is the measurement**: where it
+    // came to sit is the whole of what Word's drawing says a run cost, since a column
+    // holding nothing but empty paragraphs is drawn nowhere at all. The break's own
+    // paragraph takes no room, which the authored `section-closer` document settled.
+    const runIn = (paragraphs: readonly string[], columns: SectionColumns) => {
+      const closesAt = paragraphs.length;
+      const body = [...paragraphs, `<w:p><w:pPr>${exactly}</w:pPr></w:p>`, line("closer")];
+      const pkg = openDocx(
+        buildDocx({
+          "word/document.xml": wordDocument(body.join("")),
+          "word/styles.xml": NORMAL,
+        }),
+      );
+      const across = columnsAcross(columns, { leftPt: 72, widthPt: 468 });
+      const result = measureStack({
+        blocks: readBlocks(pkg),
+        styles: readStyleTable(pkg),
+        metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+        part: "word/document.xml",
+        originPt: 36,
+        leftPt: 72,
+        widthPt: 468,
+        bodyHeightPt: LINE_PT * 40,
+        columnsOf: (block) =>
+          block.kind === "paragraph" && block.paragraph.index <= closesAt ? across : [],
+        sectionsClosed: new Map([[closesAt, { opensAPage: false }]]),
+      });
+      if (result.kind !== "measured") throw new Error(result.blocker.kind);
+      const closer = result.boxes.at(-1);
+      if (closer === undefined) throw new Error("expected the closer");
+      return {
+        // The column each block that draws anything landed in, which is all Word's own
+        // drawing can say: a paragraph with nothing in it is drawn nowhere at all, and
+        // only the closer says where it went.
+        drawnIn: result.boxes
+          .slice(0, -1)
+          .flatMap((box) =>
+            box.lines.length === 0
+              ? []
+              : [across.findIndex((column) => column.leftPt === box.lines[0]?.leftPt)],
+          ),
+        costPt: closer.topPt - 36,
+      };
+    };
+
+    // A: four one-line blocks in two columns. Word drew two and two and the run cost 48.
+    it("costs the tallest column, where the blocks divide evenly", () => {
+      const run = runIn([line("a1"), line("a2"), line("a3"), line("a4")], TWO);
+      expect(run.drawnIn).toStrictEqual([0, 0, 1, 1]);
+      expect(run.costPt).toBeCloseTo(48, 9);
+    });
+
+    // B: three lines then three empty paragraphs. Word left the three lines alone in the
+    // first column, the three empties went to the second, and the run cost 72. Its own
+    // 72 and 72 is the shortest the tallest column can be made: keeping an empty
+    // paragraph back would have cost 96.
+    it("divides a run whose blocks are of two sizes at its shortest", () => {
+      const run = runIn([wrapping(THREE_LINES), empty, empty, empty], TWO);
+      expect(run.drawnIn).toStrictEqual([0]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // C: the same with words in place of the empties, which came out at the same 72.
+    // **An empty paragraph balances like any other block**, and B against C says it
+    // twice.
+    it("divides a paragraph with nothing in it like any other block", () => {
+      const run = runIn([wrapping(THREE_LINES), line("c2"), line("c3"), line("c4")], TWO);
+      expect(run.drawnIn).toStrictEqual([0, 1, 1, 1]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // D: five one-line blocks, the second of them empty. Word drew the first three in the
+    // first column: 72 and 48 rather than 48 and 72, which stands exactly as tall, so the
+    // earlier column takes more.
+    it("gives the earlier column the odd block", () => {
+      const run = runIn([line("d1"), empty, line("d3"), line("d4"), line("d5")], TWO);
+      expect(run.drawnIn).toStrictEqual([0, 0, 1, 1]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // E: four one-line blocks in three columns. Word drew 2, 2 and nothing, and the run
+    // cost 48: **a column that receives nothing costs the page nothing.**
+    it("costs nothing for a column that receives nothing", () => {
+      const run = runIn([line("e1"), line("e2"), line("e3"), line("e4")], THREE_EQUAL);
+      expect(run.drawnIn).toStrictEqual([0, 0, 1, 1]);
+      expect(run.costPt).toBeCloseTo(48, 9);
+    });
+
+    // F: columns of 108pt and 234pt, where a block moved into the wider column re-wraps
+    // shorter. Word drew two and two and the run cost 72, the height of the **last**
+    // column, which stands taller than the 48 the first came out at. Cutting every column
+    // at one height can only reach 96 and 48 here, so a fill has to be judged by what it
+    // comes out at.
+    it("costs the last column, where the last column is the taller", () => {
+      const run = runIn(
+        [
+          line("f1"),
+          line("f2"),
+          wrapping("alpha bravo charlie delta echo"),
+          wrapping("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima"),
+        ],
+        NARROW_THEN_WIDE,
+      );
+      expect(run.drawnIn).toStrictEqual([0, 0, 1, 1]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // G: two blocks, a break, three blocks and four empty paragraphs in three columns.
+    // Word drew the two in the first column and the other seven in the second, left the
+    // third empty, and the run cost 168. **What follows the run's last break of its own
+    // stays in the column that break opened**, so the empties stack under it rather than
+    // balancing away into a column of their own as B's did.
+    it("keeps what follows the last break in the column that break opened", () => {
+      const run = runIn(
+        [
+          line("g1"),
+          line("g2"),
+          opensAColumn("g3"),
+          line("g4"),
+          line("g5"),
+          empty,
+          empty,
+          empty,
+          empty,
+        ],
+        THREE_UNEQUAL,
+      );
+      expect(run.drawnIn).toStrictEqual([0, 0, 1, 1, 1]);
+      expect(run.costPt).toBeCloseTo(168, 9);
+    });
+
+    // H: three lines of 24pt then three empty paragraphs of 30pt. Word put the lines in
+    // the first column and the empties in the second, and the run cost **72**, the first
+    // column alone: **a column that draws nothing costs the page nothing, however much it
+    // holds.** The second column stands at 90.
+    it("costs nothing for a column that draws nothing", () => {
+      const run = runIn([wrapping(THREE_LINES), emptyOf(30), emptyOf(30), emptyOf(30)], TWO);
+      expect(run.drawnIn).toStrictEqual([0]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // I: the same with 26pt empties, which came to 72 as well. The second column stands at
+    // 78 here and at 90 in H, and neither is worth anything, so the run is not being
+    // charged some part of what that column holds.
+    it("costs nothing for a column of empty paragraphs whatever they measure", () => {
+      const run = runIn([wrapping(THREE_LINES), emptyOf(26), emptyOf(26), emptyOf(26)], TWO);
+      expect(run.drawnIn).toStrictEqual([0]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // J: the control for H and I. Put a word in each of those three paragraphs and the run
+    // costs 90, the column they stand in, though nothing about where they fall has
+    // changed: Word drew them in the second column at 60, 90 and 120.
+    it("costs the column those same paragraphs stand in once they draw", () => {
+      const run = runIn(
+        [wrapping(THREE_LINES), lineOf("j4", 30), lineOf("j5", 30), lineOf("j6", 30)],
+        TWO,
+      );
+      expect(run.drawnIn).toStrictEqual([0, 1, 1, 1]);
+      expect(run.costPt).toBeCloseTo(90, 9);
+    });
+
+    // K: five one-line blocks in columns of 108pt and 234pt. Word drew three in the narrow
+    // column and two in the wide, so **the run is divided one part in as many columns as
+    // there are and not in proportion to how wide they are**, which would have put two in
+    // the narrow column.
+    it("divides a run of unequal columns one part in as many columns as there are", () => {
+      const run = runIn(
+        [line("k1"), line("k2"), line("k3"), line("k4"), line("k5")],
+        NARROW_THEN_WIDE,
+      );
+      expect(run.drawnIn).toStrictEqual([0, 0, 0, 1, 1]);
+      expect(run.costPt).toBeCloseTo(72, 9);
     });
   });
 });

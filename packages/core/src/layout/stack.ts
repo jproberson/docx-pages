@@ -657,47 +657,140 @@ function fillStretch(
   roomPt: number,
   balanced: boolean,
 ): ColumnFill {
-  const filled = fillColumns(blocks, context, topPt, columns, forced, roomPt);
+  const filled = fillColumns(blocks, context, topPt, columns, forced, roomPt, roomPt);
   if (filled.kind === "blocked" || !filled.whole || !balanced) return filled;
 
-  // Evening the columns out is the same fill asked of the shortest column that still
-  // holds what is left of the run, and the heights worth asking for are the ones its own
-  // blocks make. Nothing taller than the room is worth asking for, since the fill above
-  // already came in under it.
+  // Evening the columns out is the same fill asked of a shorter column, and the heights
+  // worth asking for are the ones the run's own blocks make. Nothing taller than the room
+  // is worth asking for, since the fill above already came in under it.
   const candidates = [...new Set(filled.bottomsPt)]
     .filter((each) => each <= roomPt + EPSILON)
     .sort((one, other) => one - other);
+  let evenest: Filled | null = null;
   for (const candidate of candidates) {
-    const evened = fillColumns(blocks, context, topPt, columns, forced, candidate);
+    const evened = fillColumns(blocks, context, topPt, columns, forced, candidate, roomPt);
     if (evened.kind === "blocked") return evened;
-    // The last column holds whatever is over, so a height every block found a column at
-    // is not yet a height the columns were evened to: the tallest of them has to come in
-    // under it as well.
-    if (!evened.whole || evened.measured.heightPt > candidate + EPSILON) continue;
-    return evened;
+    if (!evened.whole) continue;
+    if (evenest === null || evensBetter(evened, evenest)) evenest = evened;
   }
-  return filled;
+  // A run the room will not hold whole fills what it has and carries the rest into the
+  // columns of the next page, which is what every page of it but the last does.
+  return evenest ?? filled;
 }
 
-type ColumnFill =
-  | { readonly kind: "blocked"; readonly blocker: LayoutBlocker }
-  | {
-      readonly kind: "filled";
-      readonly measured: Extract<StackMeasurement, { readonly kind: "measured" }>;
-      // Whether every block handed in found a column, which is what says a height is
-      // tall enough to be worth evening out at.
-      readonly whole: boolean;
-      // How many of them did, which is where the next page's columns carry on from.
-      readonly consumed: number;
-      // How far below the run's top each block reached, which are the heights a
-      // column could be cut to.
-      readonly bottomsPt: readonly number[];
-    };
+/**
+ * Which of two divisions of a run Word settles on.
+ *
+ * **The tallest column is made as short as it can be, and where two divisions stand
+ * equally tall the earlier column takes more.** Measured on 2026-08-13 by the authored
+ * cases A to K, each read off Word's own pdf by where the paragraph under the run came to
+ * sit: four one-line blocks in two columns cost 48 and not 72, five come out three and two
+ * rather than two and three, and four blocks in three columns leave the third empty.
+ *
+ * **A fill is judged by the height it comes out at and not by the height it was asked
+ * for.** Case F, four blocks in columns of 108pt and 234pt: Word divided it two and two,
+ * its last column coming out at 72 against a first column of 48, where cutting every
+ * column at one height can only reach 96 and 48. A corpus run of 109.35pt and 230.55pt
+ * says the same, its columns coming out 23.8 and 24.3.
+ *
+ * **The division is one part in as many columns as there are, and not in proportion to
+ * how wide they are.** Case K: five one-line blocks in columns of 108pt and 234pt came out
+ * three in the narrow column and two in the wide, where a share of the width would have
+ * put two in the narrow.
+ *
+ * A division is judged by how tall its columns stand and not by what the run then costs
+ * the page, which is a different quantity: see `drawnHeightPt`.
+ */
+function evensBetter(one: Filled, than: Filled): boolean {
+  const tallest = (fill: Filled): number => Math.max(0, ...fill.columnHeightsPt);
+  if (Math.abs(tallest(one) - tallest(than)) > EPSILON) return tallest(one) < tallest(than);
+
+  for (const [at, heightPt] of one.columnHeightsPt.entries()) {
+    const other = than.columnHeightsPt[at] ?? 0;
+    if (Math.abs(heightPt - other) > EPSILON) return heightPt > other;
+  }
+  return false;
+}
+
+/**
+ * What the run costs the page it stands on: **the tallest of its columns up to and
+ * including the last one that draws anything. The columns past that cost nothing,
+ * however much they hold.**
+ *
+ * Measured on 2026-08-13 by the authored cases H and I: three lines of 24pt followed by
+ * three empty paragraphs of 30pt, in two equal columns, put the lines in the first column
+ * and the empties in the second, and the run cost **72**, the first column alone. The same
+ * with 26pt empties cost 72 as well, so the second column's 90 and its 78 were both worth
+ * nothing. **Case J is the control**: put a word in each of those three paragraphs and
+ * they cost 90, drawn in the second column at 60, 90 and 120. The only thing that changed
+ * is that they draw something.
+ *
+ * **A column standing before one that draws is worth its whole height, drawn or not**,
+ * which is what says this is about the columns after the last drawn thing and not about
+ * empty columns anywhere. The corpus run `28ef8aa08b34` carries a stretch of three columns
+ * whose first two hold nothing but empty paragraphs, 28.17 and 27.60, and whose third
+ * draws one line and stands 23.85: Word put the paragraph under it at 28.17, the tallest
+ * of the three.
+ *
+ * **A column that draws anything is measured to the foot of everything in it**, its own
+ * empty paragraphs included. Case G: four empty paragraphs falling in the column that also
+ * drew three blocks counted for their 96, and the run cost 168.
+ *
+ * Case E said the same of a column that receives nothing at all, and B could not tell the
+ * difference, since its empties came to exactly the 72 its drawn column already cost.
+ *
+ * Where no column draws anything the run keeps the room its tallest column takes, which is
+ * what this did before any of it was measured and what nothing has asked Word about.
+ */
+function drawnHeightPt(
+  columnHeightsPt: readonly number[],
+  columnsDrawing: readonly boolean[],
+): number {
+  const lastDrawing = columnsDrawing.lastIndexOf(true);
+  if (lastDrawing < 0) return Math.max(0, ...columnHeightsPt);
+  return Math.max(0, ...columnHeightsPt.slice(0, lastDrawing + 1));
+}
+
+// Whether anything of the paragraph is drawn where it stands: its text, the number a
+// list puts in front of it, or the borders and shading behind it. A paragraph holding
+// none of those is drawn nowhere at all.
+const drawsSomething = (box: ParagraphBox): boolean =>
+  box.lines.length > 0 || box.marker !== null || box.paint !== null;
+
+type Filled = {
+  readonly kind: "filled";
+  readonly measured: Extract<StackMeasurement, { readonly kind: "measured" }>;
+  // Whether every block handed in found a column, which is what says a height is
+  // tall enough to be worth evening out at.
+  readonly whole: boolean;
+  // How many of them did, which is where the next page's columns carry on from.
+  readonly consumed: number;
+  // How far below the run's top each block reached, which are the heights a
+  // column could be cut to.
+  readonly bottomsPt: readonly number[];
+  // How tall each column came out, which is what one fill is judged against another by,
+  // and whether each of them draws anything, which is what says what the run costs.
+  readonly columnHeightsPt: readonly number[];
+  readonly columnsDrawing: readonly boolean[];
+};
+
+type ColumnFill = { readonly kind: "blocked"; readonly blocker: LayoutBlocker } | Filled;
 
 // The blocks dealt into the columns, each column measured in its own frame and every
 // one of them starting at the run's own top. A block that will not fit in the room
 // left opens the next column, and one carrying a break of its own opens one whatever
 // room is left.
+//
+// **The last column takes what is left, up to the room, rather than being cut at the
+// height the others are evened to.** Word's own division of the four-block run read on
+// 2026-08-14 has its last column standing 0.5pt taller than the height the first two were
+// evened to, which no fill cutting every column at that height can reach.
+//
+// **What follows the run's last break of its own stays in the column that break opened.**
+// Measured on 2026-08-13 by the authored case G: two blocks, a break, three blocks and
+// four empty paragraphs in three columns came out two in the first column, the other seven
+// in the second, nothing in the third, and the run as tall as that second column. Once a
+// break has said where the text goes, nothing after it is divided again.
 function fillColumns(
   blocks: readonly Block[],
   context: Context,
@@ -705,38 +798,50 @@ function fillColumns(
   columns: readonly Column[],
   forced: ReadonlySet<number>,
   heightPt: number,
+  roomPt: number,
 ): ColumnFill {
   const blockOf = new Map<number, number>();
   for (const [at, block] of blocks.entries()) {
     for (const paragraph of blockParagraphs([block])) blockOf.set(paragraph.index, at);
   }
+  const lastBreak = forced.size === 0 ? null : Math.max(...forced);
 
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
   const untornRows: UntornRow[] = [];
   const bottomsPt: number[] = [];
-  let tallestPt = 0;
+  const columnHeightsPt: number[] = [];
+  const columnsDrawing: boolean[] = [];
   let from = 0;
 
-  for (const column of columns) {
-    if (from >= blocks.length) break;
+  for (const [at, column] of columns.entries()) {
+    const afterTheLastBreak = lastBreak !== null && from >= lastBreak;
+    if (from >= blocks.length) {
+      columnHeightsPt.push(0);
+      columnsDrawing.push(false);
+      continue;
+    }
     const measured = measureBlocks(blocks.slice(from), context, topPt, column);
     if (measured.kind === "blocked") return measured;
 
-    // **Every column is cut at the room, the last one included.** It used to keep
+    // **No column keeps more than the room its page left.** A column used to keep
     // whatever was over, which is what put the tail of a run below the foot of its page
     // and left `breakStack` to cut inside the run; what is over goes to the next page's
-    // columns instead.
-    const cut = cutColumnAt(measured.boxes, blockOf, forced, topPt, heightPt);
+    // columns instead. The last column is held to the room alone, since it takes what the
+    // columns evened out above it did not, and so is the column the run's last break
+    // opened.
+    const cutAtPt = at === columns.length - 1 || afterTheLastBreak ? roomPt : heightPt;
+    const cut = cutColumnAt(measured.boxes, blockOf, forced, topPt, cutAtPt);
 
     if (cut >= blocks.length) {
       boxes.push(...measured.boxes);
       cells.push(...measured.cells);
       untornRows.push(...measured.untornRows);
       for (const box of measured.boxes) bottomsPt.push(box.topPt + box.heightPt - topPt);
-      tallestPt = Math.max(tallestPt, measured.heightPt);
+      columnHeightsPt.push(measured.heightPt);
+      columnsDrawing.push(measured.boxes.some(drawsSomething));
       from = blocks.length;
-      break;
+      continue;
     }
 
     const kept = measureBlocks(blocks.slice(from, cut), context, topPt, column);
@@ -745,7 +850,8 @@ function fillColumns(
     cells.push(...kept.cells);
     untornRows.push(...kept.untornRows);
     for (const box of measured.boxes) bottomsPt.push(box.topPt + box.heightPt - topPt);
-    tallestPt = Math.max(tallestPt, kept.heightPt);
+    columnHeightsPt.push(kept.heightPt);
+    columnsDrawing.push(kept.boxes.some(drawsSomething));
     from = cut;
   }
 
@@ -757,11 +863,13 @@ function fillColumns(
       cells,
       untornRows,
       anchoredObjects: [],
-      heightPt: tallestPt,
+      heightPt: drawnHeightPt(columnHeightsPt, columnsDrawing),
     },
     whole: from >= blocks.length,
     consumed: from,
     bottomsPt,
+    columnHeightsPt,
+    columnsDrawing,
   };
 }
 
