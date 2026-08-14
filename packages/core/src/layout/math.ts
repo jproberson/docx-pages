@@ -78,6 +78,20 @@ export type MathBox = {
   readonly widthPt: number;
   readonly ascentPt: number;
   readonly descentPt: number;
+  /**
+   * How far in from each of its sides a delimiter round this box may stand.
+   *
+   * **A fraction advances by its whole box and a delimiter round it sits against its
+   * bar**, which is the one place the two lengths part company. Measured on
+   * 2026-08-14 off Word's own pdf, over four delimiters at 11pt: the opening's own
+   * advance ends at 290.51 in every one of them, which is where the numerator starts
+   * and 1.08 inside the box the fraction advances by. The same 1.08 came back round a
+   * shallow fraction and round a fraction of a fraction.
+   *
+   * Nought for anything else. A run is its own advance and a delimiter round a
+   * delimiter is unmeasured, so neither offers a bracket any room.
+   */
+  readonly insetPt: number;
 };
 
 export type PlacedMathBox = MathBox & {
@@ -183,6 +197,7 @@ export function fractionBox(request: FractionRequest): FractionBox {
     widthPt,
     ascentPt: shiftUpPt + numerator.ascentPt,
     descentPt: shiftDownPt + denominator.descentPt,
+    insetPt: besidePt,
     numerator: { ...numerator, leftPt: centred(numerator), baselinePt: shiftUpPt },
     denominator: { ...denominator, leftPt: centred(denominator), baselinePt: -shiftDownPt },
     bar: { leftPt: besidePt, widthPt: barWidthPt, topPt: barTopPt, thicknessPt },
@@ -279,9 +294,15 @@ export function delimiterBox(request: DelimiterRequest): DelimiterBox {
     return placed;
   };
 
+  // **A bracket stands inside whatever room its content keeps outside its own ink**,
+  // which for a fraction is the 1.08pt at 11pt its box holds past its bar. So the
+  // opening is drawn up against that ink rather than against the box, and the closing
+  // begins before the box ends. A content that keeps no such room is untouched.
   const drawnOpening = place(opening);
+  if (drawnOpening !== null) leftPt -= content.insetPt;
   const contentLeftPt = leftPt;
   leftPt += content.widthPt;
+  if (closing !== null) leftPt -= content.insetPt;
   const drawnClosing = place(closing);
   const placedContent = { ...content, leftPt: contentLeftPt, baselinePt: 0 };
   const grownShort =
@@ -299,6 +320,9 @@ export function delimiterBox(request: DelimiterRequest): DelimiterBox {
     widthPt: leftPt,
     ascentPt: Math.max(...standing.map((each) => each.baselinePt + each.ascentPt)),
     descentPt: Math.max(...standing.map((each) => each.descentPt - each.baselinePt)),
+    // A bracket is drawn to its own edge, so a bracket round this one has nothing to
+    // stand inside of.
+    insetPt: 0,
     opening: drawnOpening,
     closing: drawnClosing,
     content: placedContent,
@@ -327,6 +351,7 @@ function asOrdinaryText(codePoint: number, sizePt: number, face: MathFace): Draw
   return {
     variant: null,
     grown: false,
+    insetPt: 0,
     widthPt: (face.advanceOf(codePoint) ?? 0) * scale,
     ascentPt: ink === null ? 0 : ink.top * scale,
     descentPt: ink === null ? 0 : belowPt(ink.bottom, scale),
@@ -379,6 +404,7 @@ function hungOnTheAxis(
     return {
       variant: chosen,
       grown,
+      insetPt: 0,
       widthPt: chosen.advance * scale,
       ascentPt: 0,
       descentPt: 0,
@@ -389,6 +415,7 @@ function hungOnTheAxis(
   return {
     variant: chosen,
     grown,
+    insetPt: 0,
     widthPt: chosen.advance * scale,
     ascentPt: ink.top * scale,
     descentPt: belowPt(ink.bottom, scale),
@@ -435,6 +462,9 @@ export function textBox(text: string, sizePt: number, face: MathFace): MathBox {
     widthPt: advance * scale,
     ascentPt: (top ?? 0) * scale,
     descentPt: belowPt(bottom ?? 0, scale),
+    // A run is its own advance: the letters reach its edges and a bracket round it
+    // has nowhere to stand but outside them.
+    insetPt: 0,
   };
 }
 
@@ -645,7 +675,12 @@ function rowOf(pieces: readonly SetMath[]): MathBox {
     ascentPt = Math.max(ascentPt, piece.box.ascentPt);
     descentPt = Math.max(descentPt, piece.box.descentPt);
   }
-  return { widthPt, ascentPt, descentPt };
+  // **Only a row that is one thing offers a bracket any room**, since the room is
+  // kept by that thing and a row of several has something else at its edges. What a
+  // delimiter round a fraction beside a run does is unmeasured, and nought there is
+  // what the delimiter did before this was read at all.
+  const only = pieces.length === 1 ? pieces[0] : undefined;
+  return { widthPt, ascentPt, descentPt, insetPt: only?.box.insetPt ?? 0 };
 }
 
 export type SetMathRequest = {

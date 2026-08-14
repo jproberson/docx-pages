@@ -95,13 +95,15 @@ describe("a run of glyphs named by number", () => {
     const page = pageWith([STRETCHED]);
     const drawables = drawablesOf(layoutOf(page), page);
 
-    // Everything but the baseline, which lands on the device grid like any other
-    // drawn line: 200pt is 833 units and a third, so it is drawn at 199.92.
+    // Everything but the two the device grid takes: the baseline, as any other drawn
+    // line, and the size, as any other drawn run. 200pt is 833 units and a third, so
+    // it is drawn at 199.92, and 11pt is 45 and five sixths, so it is set at 11.04.
     expect(drawables).toStrictEqual([
       {
         kind: "glyphs",
         key: "glyphs-0",
         ...STRETCHED,
+        sizePt: 11.04,
         glyphs: [{ ...(STRETCHED.glyphs[0] ?? {}), baselinePt: 199.92 }],
       },
     ]);
@@ -663,7 +665,7 @@ const half = (text: string): SetMath => ({
   text,
   mark: MATH_MARK,
   sizePt: 7.92,
-  box: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0 },
+  box: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0, insetPt: 0 },
 });
 
 const SET_FRACTION: SetMath = {
@@ -673,8 +675,23 @@ const SET_FRACTION: SetMath = {
     widthPt: 20.96,
     ascentPt: 8,
     descentPt: 5,
-    numerator: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0, leftPt: 0.23, baselinePt: 5.02 },
-    denominator: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0, leftPt: 0.23, baselinePt: -5.6 },
+    insetPt: 0.23,
+    numerator: {
+      widthPt: 20.5,
+      ascentPt: 5.6,
+      descentPt: 0,
+      insetPt: 0,
+      leftPt: 0.23,
+      baselinePt: 5.02,
+    },
+    denominator: {
+      widthPt: 20.5,
+      ascentPt: 5.6,
+      descentPt: 0,
+      insetPt: 0,
+      leftPt: 0.23,
+      baselinePt: -5.6,
+    },
     bar: { leftPt: 0, widthPt: 20.96, topPt: 3.1, thicknessPt: 0.7223 },
   },
   numerator: [half("gralm")],
@@ -821,7 +838,9 @@ describe("a set equation reaching the page", () => {
         kind: "glyphs",
         key: "e-0",
         face: { name: "Meridian Math", bold: false, italic: false },
-        sizePt: 11,
+        // Set on the device grid as a run of text is: 11pt is 45 and five sixths of a
+        // unit, and Word sets it at 46, which is 11.04.
+        sizePt: 11.04,
         color: "#000000",
         // The equation's own reach, since a piece states no ink of its own.
         ascentPt: 8,

@@ -145,6 +145,8 @@ const halfOf = (sizePt: number, widthPt: number, top = ASCENDER, bottom = DESCEN
   widthPt,
   ascentPt: inPoints(top, sizePt),
   descentPt: -inPoints(bottom, sizePt),
+  // A half is text, and text reaches its own edges.
+  insetPt: 0,
 });
 
 // `gralm` over `presk`, which is the fraction of every case but one, at the widths Word
@@ -510,13 +512,43 @@ describe("a delimiter", () => {
     expectAsWordDrewIt(box.opening?.widthPt ?? 0, 4.582);
   });
 
-  it("lays the content between the two of them", () => {
+  /**
+   * **A bracket stands against the content's ink, not against the box it advances
+   * by**, which for a fraction are 1.08pt apart at 11pt.
+   *
+   * Measured on 2026-08-14 off Word's own pdf, over the four delimiters of the two
+   * probes: page 10's grown parenthesis is drawn at 285.12 and advances 5.39, page
+   * 12's ungrown one at 285.84 advancing 4.67, and **both end at 290.51**, which is
+   * where the numerator starts. The bar begins at 290.40 and the box the fraction
+   * advances by at 289.32, a whole point further left again. The shallow fraction and
+   * the fraction of a fraction in the second probe give the same 1.08 to within a
+   * fifth of a point.
+   */
+  it("lays a bracket against the content's ink rather than against its box", () => {
     const box = round(fraction, true);
     expect(box.opening?.leftPt).toBe(0);
-    expect(box.content.leftPt).toBe(box.opening?.widthPt);
-    expect(box.closing?.leftPt).toBe((box.opening?.widthPt ?? 0) + fraction.widthPt);
+    expect(box.content.leftPt + fraction.insetPt).toBeCloseTo(box.opening?.widthPt ?? 0, 10);
+    expect(box.closing?.leftPt).toBeCloseTo(
+      box.content.leftPt + fraction.widthPt - fraction.insetPt,
+      10,
+    );
     expect(box.widthPt).toBeCloseTo(
-      (box.opening?.widthPt ?? 0) + fraction.widthPt + (box.closing?.widthPt ?? 0),
+      (box.opening?.widthPt ?? 0) +
+        fraction.widthPt +
+        (box.closing?.widthPt ?? 0) -
+        2 * fraction.insetPt,
+      10,
+    );
+  });
+
+  // A run keeps no room outside its own letters, so a bracket round one stands where
+  // it always did.
+  it("lays the content flush where it keeps no room of its own", () => {
+    const run = halfOf(ELEVEN, 30.817, ASCENDER, NUMERATOR_DESCENDER);
+    const box = round(run, true);
+    expect(box.content.leftPt).toBe(box.opening?.widthPt);
+    expect(box.widthPt).toBeCloseTo(
+      (box.opening?.widthPt ?? 0) + run.widthPt + (box.closing?.widthPt ?? 0),
       10,
     );
   });
@@ -548,7 +580,7 @@ describe("a delimiter", () => {
   // units. Nothing here draws one, so the tallest rung stands in and the box says it
   // was drawn short.
   it("says so where the content stands taller than the whole ladder", () => {
-    const box = round({ widthPt: 20, ascentPt: 40, descentPt: 30 }, true);
+    const box = round({ widthPt: 20, ascentPt: 40, descentPt: 30, insetPt: 0 }, true);
     expect(box.grownShort).toBe(true);
     expect(box.opening?.variant?.measurement).toBe(8881);
   });
@@ -582,6 +614,7 @@ describe("the box a run of an equation covers", () => {
       widthPt: 0,
       ascentPt: 0,
       descentPt: 0,
+      insetPt: 0,
     });
   });
 });

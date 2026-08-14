@@ -145,13 +145,14 @@ function filedAway(fonts: ReturnType<typeof pdfFonts>, objects: ReturnType<typeo
 }
 
 describe("a glyph the drawing names by number", () => {
-  // The baseline lands on the device grid before it reaches here, which
-  // `drawables.ts` does once for everything a page draws: 200pt down the page is
-  // 833 units and a third, so what is drawn is 199.92 and the flip of it is 592.08.
+  // The baseline and the size both land on the device grid before they reach here,
+  // which `drawables.ts` does once for everything a page draws: 200pt down the page
+  // is 833 units and a third, so what is drawn is 199.92 and the flip of it is
+  // 592.08, and 22pt is 91 and two thirds of a unit, so it is set at 22.08.
   it("is shown as its own two bytes, at the place the layout put it", () => {
     const { drawn } = streamOf([GROWN]);
 
-    expect(drawn).toContain("/F0 22 Tf");
+    expect(drawn).toContain("/F0 22.08 Tf");
     expect(drawn).toContain("1 0 0 1 100 592.08 Tm");
     expect(drawn).toContain("<0001> Tj");
   });
@@ -247,8 +248,12 @@ describe("a glyph the drawing names by number", () => {
     const { fonts, objects } = streamOf([GROWN]);
     const { text } = filedAway(fonts, objects);
 
-    // 11pt drawn at 22pt is half the em, which is 500 thousandths of it.
-    expect(text).toContain("/W [1 [500]]");
+    // **The advance is the layout's and the size is the grid's**, and the width
+    // written is the first divided by the second: 11pt of advance at the 22.08 the
+    // glyph is set at is 498 thousandths of that em. So a glyph run still advances
+    // by what the layout measured, however the size moved to reach the grid, which
+    // is what Word does for a run of text with a `TJ` nudge.
+    expect(text).toContain("/W [1 [498]]");
   });
 
   // The plain `(` of this face advances 400 units. The stretched one is drawn at
@@ -283,7 +288,7 @@ describe("a glyph the drawing names by number", () => {
     const { text, streams } = filedAway(fonts, objects);
 
     expect(drawn).toContain("<0002> Tj");
-    expect(text).toContain("/W [2 [500]]");
+    expect(text).toContain("/W [2 [498]]");
     expect(streams.some((each) => each.includes("<0002>"))).toBe(false);
   });
 
@@ -299,7 +304,7 @@ describe("a glyph the drawing names by number", () => {
     // are here: the stretched shape at the width it was drawn, and the letter at
     // the width its own character advances.
     expect(face.resource).toBe("F0");
-    expect(text).toContain("/W [1 [500 660]]");
+    expect(text).toContain("/W [1 [498 660]]");
   });
 });
 
@@ -336,7 +341,7 @@ const half = (text: string): SetMath => ({
   text,
   mark: EQUATION_MARK,
   sizePt: 7.92,
-  box: { widthPt: 5.2, ascentPt: 5.6, descentPt: 0 },
+  box: { widthPt: 5.2, ascentPt: 5.6, descentPt: 0, insetPt: 0 },
 });
 
 const SET_FRACTION: SetMath = {
@@ -346,8 +351,23 @@ const SET_FRACTION: SetMath = {
     widthPt: 5.2,
     ascentPt: 8,
     descentPt: 5,
-    numerator: { widthPt: 5.2, ascentPt: 5.6, descentPt: 0, leftPt: 0, baselinePt: 5.02 },
-    denominator: { widthPt: 5.2, ascentPt: 5.6, descentPt: 0, leftPt: 1.35, baselinePt: -5.6 },
+    insetPt: 0,
+    numerator: {
+      widthPt: 5.2,
+      ascentPt: 5.6,
+      descentPt: 0,
+      insetPt: 0,
+      leftPt: 0,
+      baselinePt: 5.02,
+    },
+    denominator: {
+      widthPt: 5.2,
+      ascentPt: 5.6,
+      descentPt: 0,
+      insetPt: 0,
+      leftPt: 1.35,
+      baselinePt: -5.6,
+    },
     bar: { leftPt: 0, widthPt: 20.96, topPt: 3.1, thicknessPt: 0.7223 },
   },
   numerator: [half("A")],
@@ -437,6 +457,7 @@ describe("a fraction reaching the page", () => {
         widthPt: 11,
         ascentPt: 14,
         descentPt: 7.6,
+        insetPt: 0,
         opening: {
           codePoint: 0x28,
           variant: { glyph: OPENING_GLYPH, measurement: 4047, advance: 500, ink: null },
@@ -444,11 +465,12 @@ describe("a fraction reaching the page", () => {
           widthPt: 11,
           ascentPt: 14,
           descentPt: 7.6,
+          insetPt: 0,
           leftPt: 0,
           baselinePt: 0,
         },
         closing: null,
-        content: { widthPt: 0, ascentPt: 0, descentPt: 0, leftPt: 11, baselinePt: 0 },
+        content: { widthPt: 0, ascentPt: 0, descentPt: 0, insetPt: 0, leftPt: 11, baselinePt: 0 },
         setAsASubFormula: true,
         grownShort: false,
       },
@@ -472,7 +494,7 @@ describe("a fraction reaching the page", () => {
     };
     const { drawn } = streamOf([], [SUPPLIED], [{ ...EQUATION_BOX, lines: [line] }]);
 
-    expect(drawn).toContain("/F0 22 Tf");
+    expect(drawn).toContain("/F0 22.08 Tf");
     expect(drawn).toContain("1 0 0 1 290.5 691.92 Tm");
     expect(drawn).toContain("<0001> Tj");
   });

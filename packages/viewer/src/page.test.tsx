@@ -655,7 +655,10 @@ describe("Page meeting a glyph it cannot draw", () => {
 // letter.
 const OUTLINED = {
   ...GROWN,
-  sizePt: 1000,
+  // A thousand and two hundredths: a size that is already a whole number of device
+  // units, since the drawing puts the size on that grid as it puts the baseline, and
+  // a size that had to move would leave every number below unreadable.
+  sizePt: 1200,
   glyphs: [
     {
       ...(GROWN.glyphs[0] ?? { glyph: 0, leftPt: 0, baselinePt: 0, advancePt: 0, standsFor: null }),
@@ -702,8 +705,10 @@ describe("Page drawing a glyph from the face's own outline", () => {
   it("puts the outline where the glyph stands, the right way up", () => {
     const html = markup(withOutlines());
 
-    expect(html).toContain("M 0 14 L 10 14");
-    expect(html).toContain("Q 20 9 10 4");
+    // The outline is stated in the face's own units and scaled by the size the run
+    // is set at, which is 1.2 here: a thousandth of the em drawn at 1200pt.
+    expect(html).toContain("M 0 14 L 12 14");
+    expect(html).toContain("Q 24 8 12 2");
   });
 
   it("fills it in the colour the run states", () => {
@@ -788,7 +793,7 @@ const half = (text: string) => ({
   text,
   mark: MARK,
   sizePt: 7.92,
-  box: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0 },
+  box: { widthPt: 20.5, ascentPt: 5.6, descentPt: 0, insetPt: 0 },
 });
 
 const EQUATION_BOX: ParagraphBox = {
@@ -822,10 +827,12 @@ const EQUATION_BOX: ParagraphBox = {
                   widthPt: 20.96,
                   ascentPt: 8,
                   descentPt: 5,
+                  insetPt: 0,
                   numerator: {
                     widthPt: 20.5,
                     ascentPt: 5.6,
                     descentPt: 0,
+                    insetPt: 0,
                     leftPt: 0,
                     baselinePt: 5.02,
                   },
@@ -833,6 +840,7 @@ const EQUATION_BOX: ParagraphBox = {
                     widthPt: 20.5,
                     ascentPt: 5.6,
                     descentPt: 0,
+                    insetPt: 0,
                     leftPt: 1.35,
                     baselinePt: -5.6,
                   },

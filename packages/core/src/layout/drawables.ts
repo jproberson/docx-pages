@@ -97,6 +97,38 @@ function shownText(mark: ParagraphMark, text: string, options: DrawingOptions): 
   return aliasedSymbolText(mark.font.name, text) ?? text;
 }
 
+/**
+ * A run's mark as it is drawn: the colour resolved, and the size on the same device
+ * grid the baseline lands on.
+ *
+ * **Word sets every run at a whole number of device units.** Measured on 2026-08-14
+ * over Word's own pdf of 138 authored documents: 10748 of 10748 drawn items, 100.00%.
+ * Word writes the size into the text matrix rather than into `Tf`, as `50 0 0 50 x y
+ * Tm` with `/TT2 1 Tf`, and those 50 units are the 12pt the document stated; an 11pt
+ * run comes out at 46 units, which is 11.04, and a 20pt one at 83, which is 19.92.
+ * The sizes Word drew across those documents are 12, 24, 7.92, 11.04, 13.92, 10.56,
+ * 8.4, 19.92, 48, 12.96, and every one of them is `round(stated / 0.24) * 0.24`.
+ *
+ * **The advances do not follow the size, and that is why this is a drawing rule.**
+ * Word writes the glyphs of a run in a `TJ` array and nudges each one back by a few
+ * thousandths, so the run still advances by the exact sum of the face's integer
+ * advances at the size the document stated: an 11pt run measured 36.94 by that sum
+ * moved 36.96 and not the 37.07 the drawn size would give. So the layout goes on
+ * measuring at the stated size, and only what is drawn lands here.
+ *
+ * **What that costs us.** The viewer holds a run to the width it was measured at, so
+ * there it costs nothing. The pdf writer shows a run in one `Tj` and does not, so
+ * inside a run its glyphs advance by the drawn size: a third of a percent of that
+ * run's own width, which is 0.13pt at the end of a 37pt run and nothing at its
+ * start, since every run is written at the place layout put it. Closing that is
+ * `runWidthMadeUpBy` reaching the pdf writer, the way Word closes it with `TJ`.
+ */
+const drawnMark = (mark: ParagraphMark): ParagraphMark => ({
+  ...mark,
+  fontSizePt: onTheDeviceGrid(mark.fontSizePt),
+  color: drawnColor(mark.color),
+});
+
 // A line as it is drawn. Both edges land on the grid and the height is what lies
 // between them, so what is painted behind a line keeps the line's own foot instead
 // of drifting a step off it.
@@ -114,7 +146,7 @@ function drawnLine(line: PlacedLine, options: DrawingOptions): PlacedLine {
           ? {
               ...segment,
               text: shownText(segment.mark, segment.text, options),
-              mark: { ...segment.mark, color: drawnColor(segment.mark.color) },
+              mark: drawnMark(segment.mark),
             }
           : segment,
       ),
@@ -146,7 +178,7 @@ const drawnBoxes = (
             ...box.marker,
             baselinePt: onTheDeviceGrid(box.marker.baselinePt),
             text: shownText(box.marker.mark, box.marker.text, options),
-            mark: { ...box.marker.mark, color: drawnColor(box.marker.mark.color) },
+            mark: drawnMark(box.marker.mark),
           },
     lines: box.lines.map((line) => drawnLine(line, options)),
   }));
@@ -383,8 +415,7 @@ export type SetEquation = {
  * drawing what the other cannot is worse than neither drawing it.
  */
 const markOfPiece = (mark: ParagraphMark, sizePt: number): ParagraphMark => ({
-  ...mark,
-  fontSizePt: sizePt,
+  ...drawnMark({ ...mark, fontSizePt: sizePt }),
   characterSpacingPt: 0,
   characterScale: 1,
   raisePt: 0,
@@ -528,7 +559,7 @@ function drawableOfPieces(
           kind: "glyphs",
           key,
           face: faceAskedFor(head.mark),
-          sizePt: head.sizePt,
+          sizePt: onTheDeviceGrid(head.sizePt),
           color: drawnColor(head.mark.color),
           // The equation's own reach, which is the nearest thing to the glyph's ink
           // that gets this far: what a backend that cannot draw the shape shows the
@@ -990,6 +1021,9 @@ const glyphLayers = (page: PageDrawing): readonly Drawable[] =>
       kind: "glyphs" as const,
       key: `glyphs-${String(at)}`,
       ...run,
+      // The size lands on the grid as a run of text's does: a stretched delimiter is
+      // text, and Word set every one of them at a whole number of units.
+      sizePt: onTheDeviceGrid(run.sizePt),
       glyphs: run.glyphs.map((glyph) => ({
         ...glyph,
         baselinePt: onTheDeviceGrid(glyph.baselinePt),
