@@ -1,4 +1,4 @@
-import { readAnchors, type FloatingAnchor } from "../docx/anchors.js";
+import { NO_EFFECT, readAnchors, type FloatingAnchor } from "../docx/anchors.js";
 import { readInlines } from "../docx/inlines.js";
 import { pictureBulletOf, wearingPictureBullet } from "../docx/picture-bullets.js";
 import { blockParagraphs, readBlocks, type Block } from "../docx/blocks.js";
@@ -404,19 +404,35 @@ function drawnUpToTheFoot(float: PlacedFloat, lineFootPt: number, frame: FloatFr
   return topPt >= float.topPt ? float : { ...float, topPt };
 }
 
-// Text stays off the part of an object its wrap covers by the distances its
-// anchor asks for; an object wrapped top and bottom takes the whole width of the
-// page with it.
+/**
+ * Text stays off the part of an object its wrap covers by the distances its anchor
+ * asks for; an object wrapped top and bottom takes the whole width of the page with
+ * it.
+ *
+ * **The distances are held off what the object is drawn as, not off what it measures**:
+ * an effect extent is Word's own record of how far past its extent a drawing reaches,
+ * and text is kept off that as well. Measured off two reference pages, whose lines
+ * Word draws exactly that much further out than this did without it: a square text
+ * box whose anchor states an effect extent of 1.0pt on the right opens the line beside
+ * it at 291.00 against the 290.00 of its extent and its 9pt, and one stating 0.75 in
+ * another document opens it at 303.00 against 302.25. Both boxes state an outline of
+ * half a point, so it is the extent Word writes and not the outline it draws.
+ *
+ * Only the right of an object has been measured, since that is the side a line ends
+ * up beside in both. The other three are written here as the same rule, which is what
+ * the field means, and `effect-extent-probe` is what would settle them.
+ */
 function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
   const { area, distances, wrap } = float.anchor;
+  const effect = float.anchor.effect ?? NO_EFFECT;
   const spansPage = wrap === "topAndBottom";
   const outline = spansPage ? undefined : outlineOf(float);
   const leftPt = spansPage
     ? 0
-    : float.leftPt + float.widthPt * area.left - emuToPoints(distances.leftEmu);
+    : float.leftPt + float.widthPt * area.left - emuToPoints(distances.leftEmu + effect.leftEmu);
   const rightPt = spansPage
     ? twipsToPoints(frame.page.widthTwips)
-    : float.leftPt + float.widthPt * area.right + emuToPoints(distances.rightEmu);
+    : float.leftPt + float.widthPt * area.right + emuToPoints(distances.rightEmu + effect.rightEmu);
   const side = spansPage ? undefined : sideOf(float, leftPt, rightPt, frame);
 
   const framedBottomPt = float.topPt + float.heightPt * area.bottom;
@@ -424,10 +440,10 @@ function bandFor(float: PlacedFloat, frame: FloatFrame): WrapBand {
   return {
     leftPt,
     rightPt,
-    topPt: float.topPt + float.heightPt * area.top - emuToPoints(distances.topEmu),
+    topPt: float.topPt + float.heightPt * area.top - emuToPoints(distances.topEmu + effect.topEmu),
     bottomPt:
       Math.max(framedBottomPt, overflowingTextBottomPt(float, frame) ?? framedBottomPt) +
-      emuToPoints(distances.bottomEmu),
+      emuToPoints(distances.bottomEmu + effect.bottomEmu),
     ...(side === undefined ? {} : { side }),
     ...(outline === undefined ? {} : { outline }),
     ...(wrap === "tight" || wrap === "through" ? { outlined: true } : {}),

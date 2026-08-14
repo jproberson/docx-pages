@@ -70,6 +70,12 @@ export type FloatingAnchor = {
   readonly side: WrapSide;
   readonly area: WrapArea;
   readonly distances: WrapDistances;
+  // How far past its own extent the object is drawn, which Word writes down for it:
+  // the half of an outline that falls outside the edge, and whatever a shadow or a
+  // glow adds. **Text is kept off this as well as off the extent**, and the anchor's
+  // distances are held off the whole of the two. An anchor built by hand rather than
+  // read out of a document states none, and overhangs nothing.
+  readonly effect?: WrapDistances;
   readonly behindDoc: boolean;
   readonly relativeHeight: number;
 };
@@ -172,6 +178,20 @@ const numberAttribute = (element: XmlElement, name: string, fallback: number): n
   return Number.isFinite(value) ? value : fallback;
 };
 
+export const NO_EFFECT: WrapDistances = { topEmu: 0, rightEmu: 0, bottomEmu: 0, leftEmu: 0 };
+
+// An effect extent is written with a letter a side, and a drawing that overhangs
+// nothing writes it out as four noughts rather than leaving it out.
+const effectOf = (element: XmlElement | null): WrapDistances =>
+  element === null
+    ? NO_EFFECT
+    : {
+        topEmu: numberAttribute(element, "t", 0),
+        rightEmu: numberAttribute(element, "r", 0),
+        bottomEmu: numberAttribute(element, "b", 0),
+        leftEmu: numberAttribute(element, "l", 0),
+      };
+
 export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
   return paragraphOwnDrawings(paragraph, [{ namespace: WP_NS, name: "anchor" }]).map((anchor) => {
     const extent = firstNamed(anchor, WP_NS, "extent");
@@ -197,6 +217,7 @@ export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
         bottomEmu: numberAttribute(anchor, "distB", 0),
         leftEmu: numberAttribute(anchor, "distL", 0),
       },
+      effect: effectOf(firstNamed(anchor, WP_NS, "effectExtent")),
       behindDoc: attribute(anchor, "", "behindDoc") === "1",
       relativeHeight: numberAttribute(anchor, "relativeHeight", 0),
     };

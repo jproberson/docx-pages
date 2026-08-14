@@ -165,12 +165,19 @@ const boxAnchor = (options: {
   readonly lines: number;
   readonly bottomInsetPt?: number;
   readonly word?: string;
+  readonly effectRightPt?: number;
+  readonly effectTopPt?: number;
+  // Where the box stands, which is against the frame's left at the page's second line
+  // unless a case wants it elsewhere.
+  readonly leftPt?: number;
+  readonly topPt?: number;
 }): string =>
   `<w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}" xmlns:wps="${WPS_NS}"
      behindDoc="0" relativeHeight="5" distT="0" distB="0" distL="114300" distR="114300">
-     <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
-     <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(24)}</wp:posOffset></wp:positionV>
+     <wp:positionH relativeFrom="column"><wp:posOffset>${emu((options.leftPt ?? 36) - 36)}</wp:posOffset></wp:positionH>
+     <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu((options.topPt ?? 60) - 36)}</wp:posOffset></wp:positionV>
      <wp:extent cx="${emu(options.widthPt)}" cy="${emu(options.heightPt)}"/>
+     <wp:effectExtent l="0" t="${emu(options.effectTopPt ?? 0)}" r="${emu(options.effectRightPt ?? 0)}" b="0"/>
      ${options.wrap}
      <wp:docPr id="1" name="Box"/>
      <a:graphic><a:graphicData uri="${WPS_NS}"><wps:wsp>
@@ -276,5 +283,50 @@ describe("what a wrapping box keeps text off", () => {
     expect(
       opensAtPt(boxAnchor({ wrap: TIGHT, widthPt: 300, heightPt: 200, lines: 1, word: "tick" })),
     ).toBe(BESIDE_A_WIDE_BOX_PT);
+  });
+});
+
+// **Text is kept off what a drawing is drawn as, not off what it measures.** Word
+// writes down how far past its own extent a drawing reaches, and the two reference
+// pages that state one put their lines exactly that much further out than this did
+// without it: 1.00pt in one and 0.75 in another, both beside a square text box whose
+// outline is stated at half a point, so it is the number Word writes and not the
+// outline it draws. `effect-extent-probe` then put every edge to Word on 2026-08-15,
+// three repeats each, and it grows the band on all of them: the two below across the
+// page, and, down it, a box whose top stops a quarter of a point below a line breaks
+// that line stating half a point over itself and leaves it alone stating none.
+describe("what a drawing reaching past its own extent keeps text off", () => {
+  it("keeps it off a whole point of effect", () => {
+    expect(
+      opensAtPt(
+        boxAnchor({ wrap: SQUARE, widthPt: 120, heightPt: 200, lines: 1, effectRightPt: 1 }),
+      ),
+    ).toBe(BESIDE_THE_BOX_PT + 1);
+  });
+
+  it("keeps it off three quarters of one", () => {
+    expect(
+      opensAtPt(
+        boxAnchor({ wrap: SQUARE, widthPt: 120, heightPt: 200, lines: 1, effectRightPt: 0.75 }),
+      ),
+    ).toBe(BESIDE_THE_BOX_PT + 0.75);
+  });
+});
+
+// The pair that settles the edges a band reaches a line by rather than narrows it
+// with. Word was asked it with the box against the right of the frame, where the
+// answer is whether the line broke; here the same box stands against the left, where
+// the answer is where the line opens, and the geometry it turns on is the same: a
+// quarter of a point of daylight, and half a point of effect to cross it.
+describe("what a drawing reaching past its top keeps text off", () => {
+  const below = (effectTopPt: number): string =>
+    boxAnchor({ wrap: SQUARE, widthPt: 120, heightPt: 200, lines: 1, topPt: 132.25, effectTopPt });
+
+  it("leaves a line alone where the box stops a quarter of a point below it", () => {
+    expect(opensAtPt(below(0))).toBe(THE_FRAME_PT);
+  });
+
+  it("keeps it off a box stating half a point over its own top", () => {
+    expect(opensAtPt(below(0.5))).toBe(BESIDE_THE_BOX_PT);
   });
 });

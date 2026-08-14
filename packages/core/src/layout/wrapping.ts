@@ -152,28 +152,37 @@ const crosses = (band: WrapBand, topPt: number, bottomPt: number): boolean =>
     : band.topPt < bottomPt - EPSILON && band.bottomPt > topPt + EPSILON;
 
 /**
- * **Fourteen authored cases say the outline half of that is wrong, and two real pages
- * say it is right. Nothing found so far tells them apart, so it stands as measured
- * and this is written down instead of acted on.**
+ * **Twenty-four authored cases say the outline half of that is wrong, and two real
+ * pages say it is right. Nothing found so far tells them apart, so it stands as
+ * measured and this is written down instead of acted on.**
  *
- * The fourteen were asked of Word on 2026-08-14, three repeats each, over a line
- * standing 108 to 132 in a frame of 36 to 576 beside a band 120pt wide against the
- * right of it, held 9pt off, so a line it reaches is narrowed rather than moved. A
- * band whose top reaches the last 1, 2, 4 or 8pt of the line, and one whose foot
- * reaches the first 1, 2, 4 or 8pt, wrapped to an outline and wrapped to a frame; a
- * text box and a picture, in front of the text and behind it; a square wrap behind
- * the text. **Word narrowed the line in all fourteen**, and the reading above says it
- * should have left eight of them alone. Two controls standing 40pt clear of the line
- * came back whole, so the cases were read right.
+ * All of them were asked of Word on 2026-08-14, three repeats each, over a line ruled
+ * exactly 24pt standing 108 to 132 in a frame of 36 to 576, beside a band 120pt wide
+ * and 20pt tall against the right of it, held 9pt off, so a line it reaches is
+ * narrowed rather than moved. **Word narrowed the line in every one of the
+ * twenty-four**, and this project narrows four of them.
  *
- * Every text box in those cases is 20pt tall and holds a line ruled exactly 24pt, so
+ * Ten sweep one band through the line (`wrap-edge-probe`): a band whose top reaches
+ * the last 1, 2, 4 or 8pt of it and one whose foot reaches the first 1, 2, 4 or 8pt,
+ * wrapped to an outline, and two more wrapped to a frame. This project narrows the
+ * two framed ones and leaves the eight outlined ones where they are.
+ *
+ * The other fourteen (`behind-text-wrap-probe`) all graze by 2pt and ask what the
+ * object is and where it stands: a text box and a picture, in front of the text and
+ * behind it, grazed by the foot of the band and by its top; a square wrap either way;
+ * a `wrapNone` box covering the same ground; an object standing past either edge of
+ * the frame. This project narrows the two square ones and leaves twelve where they
+ * are. Two controls standing 40pt clear of the line came back whole from Word, so the
+ * cases were read right.
+ *
+ * Every text box in both probes is 20pt tall and holds a line ruled exactly 24pt, so
  * by the rule since measured and built in `bandFor`, that a tight wrap follows a text
- * that has run out of its box, their bands stood 4pt lower than the cases meant: the
- * four asking after the foot of a band reached 5, 6, 8 and 12pt of the line rather
- * than 1, 2, 4 and 8. The four asking after the top of one are as stated, since a
- * text starts where its box does, and so are the four put to a picture, which holds
- * no text to run out of. **A picture reaching 2pt of a line's head still narrowed
- * it**, so the fitting rule moves the numbers and settles nothing here.
+ * that has run out of its box, their bands stand 4pt lower than the cases meant. Every
+ * case grazed by the foot of a band grazes by 4pt more than it says: the ten's four
+ * reach 5, 6, 8 and 12pt, and the fourteen's five reach 6. A case grazed by the top of
+ * a band is as stated, since a text starts where its box does, and so is every case
+ * put to a picture. **A picture reaching 2pt of a line's head still narrowed it**, so
+ * the fitting rule moves the numbers and settles nothing here.
  *
  * Reference `d` is the counter-example, over the same geometry. Its line's own place
  * is 600.52; Word draws it at 736.95, eight steps of its own 17.09pt height down,
@@ -191,7 +200,8 @@ const crosses = (band: WrapBand, topPt: number, bottomPt: number): boolean =>
  * in, the page's margins, its header, its footer, the faces, the settings, the other
  * objects on the page, and the paragraphs above. Cut `d` down to any one of those and
  * Word still answers as `d`; rebuild the same three objects at the same offsets from
- * the same paragraph on the same page and it answers as the fourteen.
+ * the same paragraph on the same page, in a document written here, and Word moves the
+ * line one step down rather than the eight `d`'s takes.
  */
 
 // Where a line refused its place looks next: past a frame it falls to the edge that
