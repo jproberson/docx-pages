@@ -10,6 +10,7 @@ import {
   WORD_FALLBACK_FACES,
   type PdfFont,
   type SubstitutingMetrics,
+  readFaceAlternatives,
 } from "@docx-pages/core";
 import { facesUsed } from "@docx-pages/core/internal";
 
@@ -193,8 +194,12 @@ export async function ourWrittenPages(
   id: string,
   workspace: Workspace,
 ): Promise<OurPages> {
-  const measuring = substitutingMetrics(corpusFaces(), WORD_FALLBACK_FACES);
   const pkg = openDocx(bytes);
+  const measuring = substitutingMetrics(
+    corpusFaces(),
+    WORD_FALLBACK_FACES,
+    readFaceAlternatives(pkg),
+  );
   const laid = layOutDocument(pkg, measuring);
   if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
 

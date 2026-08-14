@@ -10,6 +10,7 @@ import {
   isDocxPagesError,
   WORD_FALLBACK_FACES,
   type SuppliedFace,
+  readFaceAlternatives,
 } from "@docx-pages/core";
 
 import { corpusFaces } from "./faces.js";
@@ -137,9 +138,14 @@ type Placement = {
 };
 
 function laidOut(bytes: Uint8Array, faces: readonly SuppliedFace[]): Placement {
-  const measuring = substitutingMetrics(faces, WORD_FALLBACK_FACES);
+  // **The document's own alternatives are part of how a face is stood in**, so the
+  // resolver is made after the package is opened. A package that will not open at
+  // all leaves it holding none, which is what it held before this was read.
+  let measuring = substitutingMetrics(faces, WORD_FALLBACK_FACES);
   try {
-    const laid = layOutDocument(openDocx(bytes), measuring);
+    const pkg = openDocx(bytes);
+    measuring = substitutingMetrics(faces, WORD_FALLBACK_FACES, readFaceAlternatives(pkg));
+    const laid = layOutDocument(pkg, measuring);
     const facesStoodIn = measuring.substitutions().length;
     if (laid.kind !== "laid-out") {
       return { outcome: { kind: "blocked", detail: laid.blocker.kind }, pages: null, facesStoodIn };

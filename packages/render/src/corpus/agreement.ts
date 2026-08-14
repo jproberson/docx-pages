@@ -7,6 +7,7 @@ import {
   openDocx,
   substitutingMetrics,
   WORD_FALLBACK_FACES,
+  readFaceAlternatives,
 } from "@docx-pages/core";
 
 import { agreementWith } from "../pdf/agreement.js";
@@ -93,9 +94,14 @@ export async function agreementOf(bytes: Uint8Array, id: string): Promise<Agreed
   const drawnPath = renderedPath(id);
   if (!existsSync(drawnPath)) return empty(id, "not drawn", "no pdf of Word's");
 
-  const measuring = substitutingMetrics(corpusFaces(), WORD_FALLBACK_FACES);
   try {
     const pkg = openDocx(bytes);
+    // The document's own alternatives are part of how a face is stood in.
+    const measuring = substitutingMetrics(
+      corpusFaces(),
+      WORD_FALLBACK_FACES,
+      readFaceAlternatives(pkg),
+    );
     const laid = layOutDocument(pkg, measuring);
     if (laid.kind !== "laid-out") return empty(id, "blocked", laid.blocker.kind);
 

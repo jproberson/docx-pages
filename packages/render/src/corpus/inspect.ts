@@ -8,6 +8,7 @@ import {
   WORD_FALLBACK_FACES,
   type LaidOutDocument,
   type LaidOutPage,
+  readFaceAlternatives,
 } from "@docx-pages/core";
 import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
 import { corpusFaces } from "./faces.js";
@@ -104,8 +105,14 @@ async function main(): Promise<void> {
     const id = identityOf(bytes);
     if (id !== wanted) continue;
 
-    const measuring = substitutingMetrics(corpusFaces(), WORD_FALLBACK_FACES);
-    const laid = layOutDocument(openDocx(bytes), measuring);
+    const pkg = openDocx(bytes);
+    // The document's own alternatives are part of how a face is stood in.
+    const measuring = substitutingMetrics(
+      corpusFaces(),
+      WORD_FALLBACK_FACES,
+      readFaceAlternatives(pkg),
+    );
+    const laid = layOutDocument(pkg, measuring);
     if (laid.kind !== "laid-out") {
       process.stdout.write(`blocked: ${laid.blocker.kind}\n`);
       return;

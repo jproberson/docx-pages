@@ -6,6 +6,7 @@ import {
   openDocx,
   substitutingMetrics,
   WORD_FALLBACK_FACES,
+  readFaceAlternatives,
 } from "@docx-pages/core";
 import { imageResolver } from "@docx-pages/viewer";
 
@@ -131,8 +132,13 @@ async function eachOfOurPages(
   workspace: Workspace,
   take: (page: RasterImage) => void,
 ): Promise<Omit<OurPages, "pages">> {
-  const measuring = substitutingMetrics(corpusFaces(), WORD_FALLBACK_FACES);
   const pkg = openDocx(bytes);
+  // The document's own alternatives are part of how a face is stood in.
+  const measuring = substitutingMetrics(
+    corpusFaces(),
+    WORD_FALLBACK_FACES,
+    readFaceAlternatives(pkg),
+  );
   const laid = layOutDocument(pkg, measuring);
   if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
 
