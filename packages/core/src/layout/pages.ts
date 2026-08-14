@@ -61,6 +61,26 @@ type Opening = {
 // something that can never stand with it, the second of the chain stayed where the
 // first move put it, mid page, with room below it to move into and nothing to gain
 // by it.
+/**
+ * **A page break's own line never has to fit.** Whatever room the page has left, the
+ * line the break runs off the end of stays where the stack put it, and the break ends
+ * the page all the same, so what follows opens the next one.
+ *
+ * Measured on 2026-08-15 by `break-foot-probe`, seven cases and three repeats each,
+ * over a body running 36 to 756 filled to 660: a break's line with room for it twice
+ * over, one ending exactly at the foot, one a twip short of it, one short by half its
+ * own height, one left a single twip of room against a line of 24, and an ordinary
+ * 10pt line left 8 points, which is the shape two corpus documents have. **Word left
+ * every one of them at the foot of the page it started on**, where this project gave
+ * four of the seven a page of their own.
+ *
+ * A paragraph closing a section is left as it was, since none of the seven asked
+ * about one and the page a section opens keeps its own room above itself.
+ */
+const carriesABreak = (box: ParagraphBox, at: number): boolean =>
+  box.lines[at + 1]?.startsPage === true ||
+  (at === box.lines.length - 1 && box.endsPage && !box.endsPageAtASection);
+
 export function breakStack(input: BreakStackInput): readonly PageStack[] {
   const moved = new Set<number>();
   for (;;) {
@@ -234,7 +254,7 @@ function breakOnce(
         // whatever room was left below, and widow control has no say in where a break
         // the document asked for falls.
         const asked = line.startsPage;
-        if (!asked && !overflows(line.topPt, line.fittingHeightPt)) {
+        if (!asked && (carriesABreak(box, at) || !overflows(line.topPt, line.fittingHeightPt))) {
           at += 1;
           continue;
         }
