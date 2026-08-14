@@ -683,6 +683,10 @@ function measureStory(
  * resolver that stands them in is taken whole rather than as its function, and
  * what it stood in for goes into the same list as everything else. A plain
  * resolver stands in for nothing and reports nothing.
+ *
+ * The resolver goes to the reading of the package as well, since a metafile is
+ * played against the faces it selects and a picture that will not play is one this
+ * draws nothing for.
  */
 export function layOutDocument(
   pkg: DocxPackage,
@@ -1128,7 +1132,10 @@ export function layOutDocument(
     page,
     unhonoured: withMissingGlyphs(
       withFallbackCharacters(
-        withSubstitutedFaces(readUnhonoured(pkg), faces === null ? [] : faces.substitutions()),
+        withSubstitutedFaces(
+          readUnhonoured(pkg, metricsFor),
+          faces === null ? [] : faces.substitutions(),
+        ),
         faces === null ? [] : faces.fallbackCharacters(),
       ),
       faces === null ? [] : (faces.missingGlyphs?.() ?? []),

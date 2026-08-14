@@ -1,3 +1,5 @@
+import type { MetricsResolver } from "../layout/lines.js";
+import { readMetafilePicture } from "../metafile/picture.js";
 import { readMetafileBitmap } from "../metafile/wmf.js";
 
 // The picture formats this project can put on a page, which is what a browser has
@@ -28,13 +30,30 @@ export function pictureExtension(part: string): string {
   return dot === -1 ? "" : part.slice(dot + 1).toLowerCase();
 }
 
-// Whether a part holding a picture is one anything here can draw. A WMF is drawn
-// only where the bitmap it blits can be read out of it, which is what its own bytes
-// say and not what its name does, so one is asked for where they are to hand.
-export function drawablePicture(part: string, bytes?: Uint8Array): boolean {
+// Whether a part holding a picture is one anything here can draw. Neither metafile
+// answers by its name: a WMF is drawn where the bitmap it blits can be read out of
+// it, and an EMF where the records it holds play, so the bytes are asked for where
+// they are to hand.
+//
+// **Playing an EMF needs the faces**, since one selecting a face nothing can supply
+// metrics for is refused whole at its first run of text, and the ones met in the
+// wild write text. So a caller with no resolver cannot ask, and the picture is taken
+// on trust rather than named on a guess: put a resolver that finds nothing to the
+// corpus and most of the metafiles it names are metafiles that play. What is left
+// named with the machine's own faces is one that refuses on its own records, which
+// is a metafile blitting a bitmap.
+export function drawablePicture(
+  part: string,
+  bytes?: Uint8Array,
+  metricsFor?: MetricsResolver,
+): boolean {
   const extension = pictureExtension(part);
   if (extension === OLD_METAFILE_EXTENSION) {
     return bytes !== undefined && readMetafileBitmap(bytes) !== null;
   }
-  return PICTURE_MEDIA_TYPES.has(extension) || extension === METAFILE_EXTENSION;
+  if (extension === METAFILE_EXTENSION) {
+    if (metricsFor === undefined) return true;
+    return bytes !== undefined && readMetafilePicture(bytes, metricsFor) !== null;
+  }
+  return PICTURE_MEDIA_TYPES.has(extension);
 }

@@ -1,3 +1,4 @@
+import type { MetricsResolver } from "../layout/lines.js";
 import { blockParagraphs, blocksIn } from "./blocks.js";
 import { drawnAsStated } from "./borders.js";
 import { readDrawingContent, type DrawingContent } from "./drawing.js";
@@ -21,6 +22,11 @@ import { attribute, type XmlElement } from "./xml.js";
 // This reads the document rather than watching the layout, so it says what is in
 // the file, not what the layout would have done with it. The two are kept together
 // by the suites: a feature that stops being ignored has to leave this list.
+//
+// **A metafile is the one thing in the file that does not answer for itself.**
+// Whether it draws is whether it plays, and playing it needs the faces this machine
+// has, so a caller holding a resolver hands one over and a caller reading the
+// package alone gets the answer the package can give (see `drawablePicture`).
 
 // How much of the page an entry puts in doubt. Text that moved is a page that
 // cannot be trusted anywhere below it; paint that changed is wrong only where it
@@ -108,9 +114,15 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // part, so its room is held and nothing is drawn in it. The box it fits in is not
   // a fallback, since a path that rules a page fits a box the size of the page.
   "custom-geometry": "changes-paint",
-  // A picture in a format nothing here decodes, WMF being what Word writes beside
-  // the metafile this project plays: its room is held and it is marked rather than
-  // drawn.
+  // A picture nothing here draws: one in a format nothing decodes, WMF being what
+  // Word writes beside the metafile this project plays, or a metafile the player
+  // refuses. Its room is held and it is marked rather than drawn.
+  //
+  // A refused metafile is the quieter of the two and the reason the picture is put
+  // to the player at all. A format nothing decodes is named by its own name, so the
+  // report could always see it; a metafile that will not play is named by nothing
+  // in the package, and a document holding one drew a blank rectangle and reported
+  // no gap of any kind.
   "undrawable-picture": "changes-paint",
   "approximated-border": "changes-paint",
   // A document asking for one header on its even pages and another on its odd ones
@@ -140,7 +152,7 @@ function toggled(element: XmlElement): boolean {
 // Which part a drawing's picture is held in, and what that part holds. Reading a
 // part the package does not carry is a broken package rather than a feature passed
 // over, so nothing is said about one. **The bytes are wanted as well as the name**,
-// since whether a WMF can be drawn is what the bitmap inside it says.
+// since whether a metafile can be drawn is what is recorded inside it.
 type PartResolver = (relationshipId: string) => {
   readonly part: string;
   readonly bytes: Uint8Array | undefined;
@@ -166,6 +178,7 @@ function unhonouredBy(
   parent: XmlElement | null,
   paragraph: XmlElement | null,
   resolvePart: PartResolver,
+  metricsFor: MetricsResolver | undefined,
 ): UnhonouredKind | null {
   // A drawing answers for itself, by the same reader the layout uses: whatever
   // that cannot make a picture or a shape of is drawn nowhere, and a picture is
@@ -176,7 +189,9 @@ function unhonouredBy(
     if (drawsACustomPath(content)) return "custom-geometry";
     if (content.kind !== "picture") return null;
     const held = resolvePart(content.relationshipId);
-    return held === null || drawablePicture(held.part, held.bytes) ? null : "undrawable-picture";
+    return held === null || drawablePicture(held.part, held.bytes, metricsFor)
+      ? null
+      : "undrawable-picture";
   }
   // An equation answers for itself, by the same reader the layout uses. **What is named
   // here is what is not drawn, which is more than what is not read**: the shape of a
@@ -316,7 +331,20 @@ function borderPattern(element: XmlElement, parent: XmlElement | null): Unhonour
 
 type Found = { readonly kind: UnhonouredKind; readonly place: UnhonouredPlace };
 
-export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
+/**
+ * What the document asks for and does not get.
+ *
+ * The faces are the one thing this cannot read out of the package, and it needs
+ * them for one answer alone: a metafile draws what it plays, and it plays against
+ * the metrics of the faces it selects. A caller laying the document out holds a
+ * resolver already and hands it over. One asking what a document holds before any
+ * face is to hand may leave it out, and its metafiles are taken on trust while
+ * everything else in the list still answers.
+ */
+export function readUnhonoured(
+  pkg: DocxPackage,
+  metricsFor?: MetricsResolver,
+): readonly Unhonoured[] {
   const found: Found[] = [];
   const parts = [MAIN_DOCUMENT_PART, defaultHeaderPart(pkg), defaultFooterPart(pkg)].filter(
     (part): part is string => part !== null && pkg.parts.has(part),
@@ -334,6 +362,7 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
       part,
       paragraphs,
       found,
+      metricsFor,
       resolvePart: (relationshipId) => {
         const held = relationships.get(relationshipId)?.part;
         return held === undefined ? null : { part: held, bytes: pkg.parts.get(held) };
@@ -354,6 +383,7 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
         part: STYLES_PART,
         paragraphs: new Map(),
         found,
+        metricsFor,
         resolvePart: () => null,
       });
     }
@@ -364,6 +394,7 @@ export function readUnhonoured(pkg: DocxPackage): readonly Unhonoured[] {
       part: SETTINGS_PART,
       paragraphs: new Map(),
       found,
+      metricsFor,
       resolvePart: () => null,
     });
   }
@@ -443,11 +474,13 @@ const STYLES_PART = "word/styles.xml";
 const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 // What one part of the package answers with: where a paragraph met in it is
-// numbered, where a drawing's picture is held, and what has been met so far.
+// numbered, where a drawing's picture is held, which faces are to hand to play a
+// metafile with, and what has been met so far.
 type Reading = {
   readonly part: string;
   readonly paragraphs: ReadonlyMap<XmlElement, number>;
   readonly resolvePart: PartResolver;
+  readonly metricsFor: MetricsResolver | undefined;
   readonly found: Found[];
 };
 
@@ -462,7 +495,7 @@ function walk(
 ): void {
   for (const child of node.children) {
     const standing = reading.paragraphs.has(child) ? child : paragraph;
-    const kind = unhonouredBy(child, node, standing, reading.resolvePart);
+    const kind = unhonouredBy(child, node, standing, reading.resolvePart, reading.metricsFor);
     const index = reading.paragraphs.get(child) ?? paragraphIndex;
     if (kind !== null) {
       reading.found.push({ kind, place: { part: reading.part, paragraphIndex: index } });

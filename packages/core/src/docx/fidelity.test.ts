@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDocx, wordDocument, WORDPROCESSING_NS } from "../testing/build-docx.js";
+import { lookupFontMetrics } from "../layout/font-metrics.js";
+import type { MetricsResolver } from "../layout/lines.js";
+import {
+  buildDocx,
+  wordDocument,
+  WORDPROCESSING_NS,
+  type DocxPart,
+} from "../testing/build-docx.js";
+import {
+  buildMetafile,
+  metafileFont,
+  metafileHeader,
+  metafileRecord,
+  metafileText,
+} from "../testing/build-metafile.js";
+import { EMR } from "../metafile/records.js";
 import {
   readUnhonoured,
   withFallbackCharacters,
@@ -16,13 +31,84 @@ const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-const reportOf = (body: string, parts: Readonly<Record<string, string>> = {}) =>
+const reportOf = (
+  body: string,
+  parts: Readonly<Record<string, DocxPart>> = {},
+  metricsFor?: MetricsResolver,
+) =>
   readUnhonoured(
     openDocx(buildDocx({ "word/document.xml": wordDocument(`${body}${SECTION}`), ...parts })),
+    metricsFor,
   );
 
 const kinds = (report: readonly Unhonoured[]): readonly string[] =>
   report.map((entry) => entry.kind);
+
+const metricsFor: MetricsResolver = (request) => lookupFontMetrics(request);
+
+// One drawing, holding the picture the part named answers for, and the bytes of
+// that part where a fixture states them: what the report can say about a picture
+// is sometimes its name and sometimes what is inside it.
+const pictureReport = (
+  target: string,
+  bytes?: Uint8Array,
+  faces?: MetricsResolver,
+): readonly string[] => {
+  const rels = `<?xml version="1.0"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rId9" Type="${R_NS}/image" Target="${target}"/></Relationships>`;
+  const body = `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}" xmlns:a="${A_NS}">
+    <wp:extent cx="914400" cy="914400"/>
+    <a:graphic><a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">
+      <pic:blipFill><a:blip r:embed="rId9" xmlns:r="${R_NS}"/></pic:blipFill>
+    </pic:pic></a:graphicData></a:graphic>
+  </wp:inline></w:drawing></w:r></w:p>`;
+  const parts: Record<string, DocxPart> = { "word/_rels/document.xml.rels": rels };
+  if (bytes !== undefined) parts[`word/${target}`] = bytes;
+  return kinds(reportOf(body, parts, faces));
+};
+
+// Half a page across at 1920 pixels over 309mm, which is what the metafiles this
+// was measured against were recorded at.
+const METAFILE_FRAME = { frameWidth: 6196, frameHeight: 4286 };
+
+const PATCOPY = 0x00f00021;
+const SOLID = 0;
+
+// A block of the selected brush and a line of text, which is what a metafile that
+// plays draws: it is the text half that cannot be drawn without a face.
+const METAFILE_PLAYED = buildMetafile([
+  metafileHeader(METAFILE_FRAME),
+  metafileRecord(EMR.createBrushIndirect, [1, SOLID, 0x00b0f0, 0]),
+  metafileRecord(EMR.selectObject, [1]),
+  // prettier-ignore
+  metafileRecord(EMR.bitBlt, [
+    0, 0, 0, 0,
+    3, 5, 40, 20,
+    PATCOPY,
+    0, 0,
+    0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0,
+  ]),
+  metafileFont({ handle: 7, name: "Calibri", heightUnits: -22 }),
+  metafileRecord(EMR.selectObject, [7]),
+  metafileText({ xUnits: 10, yUnits: 30, text: "vell" }),
+]);
+
+// The same picture, blitting a bitmap out of itself. The player knows no such
+// record and refuses the whole file rather than drawing part of it, which is how
+// the one metafile in the wild that comes out blank is refused.
+const STRETCH_DIBITS = 81;
+
+const METAFILE_REFUSED = buildMetafile([
+  metafileHeader(METAFILE_FRAME),
+  metafileRecord(EMR.createBrushIndirect, [1, SOLID, 0x00b0f0, 0]),
+  metafileRecord(EMR.selectObject, [1]),
+  metafileRecord(STRETCH_DIBITS, [0, 0, 0, 0, 0, 0, 886, 528]),
+  metafileFont({ handle: 7, name: "Calibri", heightUnits: -22 }),
+  metafileRecord(EMR.selectObject, [7]),
+  metafileText({ xUnits: 10, yUnits: 30, text: "vell" }),
+]);
 
 // The same document with a header of its own, which is what the last section still
 // answers for on every page.
@@ -211,21 +297,40 @@ describe("readUnhonoured", () => {
   });
 
   it("names a picture held in a format nothing here decodes, and not one it draws", () => {
-    const picture = (target: string) => {
-      const rels = `<?xml version="1.0"?>
-        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-          <Relationship Id="rId9" Type="${R_NS}/image" Target="${target}"/></Relationships>`;
-      const body = `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}" xmlns:a="${A_NS}">
-        <wp:extent cx="914400" cy="914400"/>
-        <a:graphic><a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">
-          <pic:blipFill><a:blip r:embed="rId9" xmlns:r="${R_NS}"/></pic:blipFill>
-        </pic:pic></a:graphicData></a:graphic>
-      </wp:inline></w:drawing></w:r></w:p>`;
-      return kinds(reportOf(body, { "word/_rels/document.xml.rels": rels }));
-    };
-    expect(picture("media/chart.wmf")).toStrictEqual(["undrawable-picture"]);
-    expect(picture("media/logo.png")).toStrictEqual([]);
-    expect(picture("media/logo.emf")).toStrictEqual([]);
+    expect(pictureReport("media/chart.wmf")).toStrictEqual(["undrawable-picture"]);
+    expect(pictureReport("media/logo.png")).toStrictEqual([]);
+    expect(pictureReport("media/logo.emf")).toStrictEqual([]);
+  });
+
+  // A metafile is drawn by playing it, so the report plays it, and playing needs the
+  // faces: both fixtures write a line of text, which is where a metafile refuses
+  // when the face it selects cannot be measured.
+  it("names a metafile the player refuses, and not one it plays", () => {
+    expect(pictureReport("media/blank.emf", METAFILE_REFUSED, metricsFor)).toStrictEqual([
+      "undrawable-picture",
+    ]);
+    expect(pictureReport("media/drawn.emf", METAFILE_PLAYED, metricsFor)).toStrictEqual([]);
+  });
+
+  // A caller reading the package before any face is to hand cannot play anything, and
+  // a guess either way is worse than the answer the package can give: **a resolver
+  // that finds nothing names metafiles that in fact play**, since the first run of
+  // text in one refuses on a face it cannot measure.
+  it("takes a metafile on trust where no faces are to hand", () => {
+    expect(pictureReport("media/blank.emf", METAFILE_REFUSED)).toStrictEqual([]);
+  });
+
+  // Which is not the same as being wrong about it. On a machine whose fonts cannot
+  // answer for the face a metafile selects, that metafile draws nothing, and saying
+  // so is the honest report for that machine rather than a fault in this.
+  it("names a metafile whose face nothing on hand can measure", () => {
+    const answersForNothing: MetricsResolver = (request) => ({
+      kind: "missing",
+      fontName: request.name,
+    });
+    expect(pictureReport("media/drawn.emf", METAFILE_PLAYED, answersForNothing)).toStrictEqual([
+      "undrawable-picture",
+    ]);
   });
 
   it("reads the styles and the settings as well as the flow", () => {
