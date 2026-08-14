@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { openDocx } from "../docx/package.js";
-import { buildDocx, WORDPROCESSING_NS } from "../testing/build-docx.js";
+import { buildDocx, wordDocument, WORDPROCESSING_NS } from "../testing/build-docx.js";
 import { buildFace } from "../testing/build-font.js";
 import { bestEffortMetrics, type FaceDefaults } from "./best-effort.js";
 import { layOutDocument, type LaidOutDocument } from "./document.js";
@@ -125,5 +125,156 @@ describe("where a page hangs its header", () => {
 
     expect(laid.pages[0]?.headerTopPt).toBe(36);
     expect(laid.pages[1]?.headerTopPt).toBe(36);
+  });
+});
+
+// **A tight wrap keeps text off what a box holds as well as off the box.** Every case
+// below was put to Word on 2026-08-14 by `text-box-band-probe`, three repeats each,
+// and the answer is what it said. The page is the same one every time: a line ruled
+// exactly 24pt standing 108 to 132 beside a box whose frame opens at 60, and the box
+// stands against the left of the frame so the answer is where the line opens rather
+// than whether it broke. Word breaks that line in every case but one, and the one is
+// what the rule turns on.
+const TIGHT = `<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon>
+  <wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/>
+  <wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>`;
+
+const SQUARE = `<wp:wrapSquare wrapText="bothSides"/>`;
+
+const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+
+const emu = (points: number): string => String(Math.round(points * 12700));
+
+const EXACTLY_A_LINE = `<w:spacing w:before="0" w:after="0" w:line="480" w:lineRule="exact"/>`;
+
+const held = (lines: number, word: string): string =>
+  Array.from(
+    { length: lines },
+    () => `<w:p><w:pPr>${EXACTLY_A_LINE}</w:pPr><w:r><w:t>${word}</w:t></w:r></w:p>`,
+  ).join("");
+
+// A box standing where the page's second line does, keeping its own text off the
+// frame's left. Word is told the box's own size and never asked to fit it.
+const boxAnchor = (options: {
+  readonly wrap: string;
+  readonly widthPt: number;
+  readonly heightPt: number;
+  readonly lines: number;
+  readonly bottomInsetPt?: number;
+  readonly word?: string;
+}): string =>
+  `<w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}" xmlns:wps="${WPS_NS}"
+     behindDoc="0" relativeHeight="5" distT="0" distB="0" distL="114300" distR="114300">
+     <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
+     <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(24)}</wp:posOffset></wp:positionV>
+     <wp:extent cx="${emu(options.widthPt)}" cy="${emu(options.heightPt)}"/>
+     ${options.wrap}
+     <wp:docPr id="1" name="Box"/>
+     <a:graphic><a:graphicData uri="${WPS_NS}"><wps:wsp>
+       <wps:spPr><a:prstGeom prst="rect"/></wps:spPr>
+       <wps:txbx><w:txbxContent>${held(options.lines, options.word ?? "boxwording")}</w:txbxContent></wps:txbx>
+       <wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="${emu(options.bottomInsetPt ?? 0)}"><a:noAutofit/></wps:bodyPr>
+     </wps:wsp></a:graphicData></a:graphic>
+   </wp:anchor></w:drawing></w:r>`;
+
+const pictureAnchor = (heightPt: number): string =>
+  `<w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}" xmlns:pic="${PIC_NS}"
+     behindDoc="0" relativeHeight="5" distT="0" distB="0" distL="114300" distR="114300">
+     <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
+     <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(24)}</wp:posOffset></wp:positionV>
+     <wp:extent cx="${emu(120)}" cy="${emu(heightPt)}"/>
+     ${TIGHT}
+     <wp:docPr id="1" name="Picture"/>
+     <a:graphic><a:graphicData uri="${PIC_NS}"><pic:pic><pic:blipFill/>
+       <pic:spPr><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic>
+   </wp:anchor></w:drawing></w:r>`;
+
+// Where the fourth line of the page opens, which is the whole answer: 36 is the
+// frame's own left, and anything else is the band's right edge and the 9pt the anchor
+// holds text off by.
+function opensAtPt(anchored: string): number {
+  const line = (word: string, at: number): string =>
+    `<w:p><w:pPr>${EXACTLY_A_LINE}</w:pPr>${at === 0 ? anchored : ""}<w:r><w:t>${word}</w:t></w:r></w:p>`;
+  const body =
+    [line("one", 0), line("two", 1), line("three", 2), line("four", 3)].join("") +
+    `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720"/></w:sectPr>`;
+
+  const laid = layOutDocument(
+    openDocx(buildDocx({ "word/document.xml": wordDocument(body) })),
+    bestEffortMetrics([], DEFAULTS),
+  );
+  if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+  const asked = laid.pages[0]?.body[3]?.lines[0];
+  if (asked === undefined) throw new Error("expected a fourth line");
+  return asked.leftPt;
+}
+
+const BESIDE_THE_BOX_PT = 165;
+const BESIDE_A_WIDE_BOX_PT = 345;
+const THE_FRAME_PT = 36;
+
+describe("what a wrapping box keeps text off", () => {
+  it("keeps it off the whole of a box whose text stops short of the foot", () => {
+    expect(opensAtPt(boxAnchor({ wrap: TIGHT, widthPt: 120, heightPt: 200, lines: 1 }))).toBe(
+      BESIDE_THE_BOX_PT,
+    );
+  });
+
+  it("keeps it off a box whose text stops exactly where the line starts", () => {
+    expect(opensAtPt(boxAnchor({ wrap: TIGHT, widthPt: 120, heightPt: 200, lines: 2 }))).toBe(
+      BESIDE_THE_BOX_PT,
+    );
+  });
+
+  it("keeps it off a box whose text covers the line outright", () => {
+    expect(opensAtPt(boxAnchor({ wrap: TIGHT, widthPt: 120, heightPt: 200, lines: 3 }))).toBe(
+      BESIDE_THE_BOX_PT,
+    );
+  });
+
+  // The case the rule turns on: 48pt of box holding 96pt of text, and the line stands
+  // below the box and inside the text.
+  it("keeps it off the text of a box the text has run out of", () => {
+    expect(opensAtPt(boxAnchor({ wrap: TIGHT, widthPt: 120, heightPt: 48, lines: 4 }))).toBe(
+      BESIDE_THE_BOX_PT,
+    );
+  });
+
+  it("keeps it off a box holding room under its own text", () => {
+    expect(
+      opensAtPt(
+        boxAnchor({ wrap: TIGHT, widthPt: 120, heightPt: 200, lines: 1, bottomInsetPt: 30 }),
+      ),
+    ).toBe(BESIDE_THE_BOX_PT);
+  });
+
+  // A square wrap is the box and nothing else, in both directions: the same pair of
+  // boxes answers the same as the tight one above and the opposite below.
+  it("keeps it off the whole of a square box whose text stops short", () => {
+    expect(opensAtPt(boxAnchor({ wrap: SQUARE, widthPt: 120, heightPt: 200, lines: 1 }))).toBe(
+      BESIDE_THE_BOX_PT,
+    );
+  });
+
+  it("leaves a line under a square box the text has run out of", () => {
+    expect(opensAtPt(boxAnchor({ wrap: SQUARE, widthPt: 120, heightPt: 48, lines: 4 }))).toBe(
+      THE_FRAME_PT,
+    );
+  });
+
+  it("keeps it off a picture, which holds no text to run out of", () => {
+    expect(opensAtPt(pictureAnchor(200))).toBe(BESIDE_THE_BOX_PT);
+  });
+
+  // And nothing follows the text across the page: a box far wider than what it holds
+  // keeps its own width.
+  it("keeps it off the width of a box whose text is narrower than it", () => {
+    expect(
+      opensAtPt(boxAnchor({ wrap: TIGHT, widthPt: 300, heightPt: 200, lines: 1, word: "tick" })),
+    ).toBe(BESIDE_A_WIDE_BOX_PT);
   });
 });

@@ -166,6 +166,15 @@ const crosses = (band: WrapBand, topPt: number, bottomPt: number): boolean =>
  * should have left eight of them alone. Two controls standing 40pt clear of the line
  * came back whole, so the cases were read right.
  *
+ * Every text box in those cases is 20pt tall and holds a line ruled exactly 24pt, so
+ * by the rule since measured and built in `bandFor`, that a tight wrap follows a text
+ * that has run out of its box, their bands stood 4pt lower than the cases meant: the
+ * four asking after the foot of a band reached 5, 6, 8 and 12pt of the line rather
+ * than 1, 2, 4 and 8. The four asking after the top of one are as stated, since a
+ * text starts where its box does, and so are the four put to a picture, which holds
+ * no text to run out of. **A picture reaching 2pt of a line's head still narrowed
+ * it**, so the fitting rule moves the numbers and settles nothing here.
+ *
  * Reference `d` is the counter-example, over the same geometry. Its line's own place
  * is 600.52; Word draws it at 736.95, eight steps of its own 17.09pt height down,
  * with the tight band's foot at 739.19 standing 2.04pt into it and the line running
