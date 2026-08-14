@@ -46,8 +46,13 @@ export type DocumentProps = {
   readonly className?: string;
 };
 
+// A page as this draws it: what the layout states today, and the glyph runs
+// `drawables.ts` reads off it. Named through the drawable rather than imported,
+// since the shape belongs to the layout and only the drawable is published.
+type GlyphRun = Omit<Extract<Drawable, { kind: "glyphs" }>, "kind" | "key">;
+
 export type PageProps = DocumentProps & {
-  readonly page: LaidOutPage;
+  readonly page: LaidOutPage & { readonly glyphRuns?: readonly GlyphRun[] };
 };
 
 // The document names the face it was authored in; whatever the page can actually
@@ -57,6 +62,7 @@ const DEFAULT_FALLBACK_FONTS = "sans-serif";
 const pt = (value: number): string => `${String(value)}pt`;
 
 type ObjectDrawable = Extract<Drawable, { kind: "object" }>;
+type GlyphsDrawable = Extract<Drawable, { kind: "glyphs" }>;
 
 // An object turned after it was drawn is turned about the middle of the box it
 // stands in, which is where a css transform turns an element by default.
@@ -391,6 +397,55 @@ function frame(drawable: ObjectDrawable, kind: string, frames: FrameStyle): Reac
   );
 }
 
+/**
+ * Glyphs the drawing named by number, which this cannot draw.
+ *
+ * **A browser addresses a face by character and by nothing else.** There is no
+ * css, and no attribute of an svg `text`, that asks for glyph 3436 of a family;
+ * the page names the face and the browser picks the glyph, which is the whole
+ * arrangement. The one way round it would be the outlines themselves, and the
+ * viewer holds no font file: it names families and lets the machine find them.
+ *
+ * So the room is marked and nothing is drawn in it. **Not the character the glyph
+ * stands for**, which `drawables.ts` states beside it and says plainly is not what
+ * to draw instead: a stretched parenthesis drawn as a plain one is the right
+ * character at the wrong height, and a page that looks finished and is wrong is
+ * worse than one visibly missing a piece.
+ */
+function glyphLayer(drawable: GlyphsDrawable, frames: FrameStyle): ReactElement {
+  const leftPt = Math.min(...drawable.glyphs.map((each) => each.leftPt));
+  const rightPt = Math.max(...drawable.glyphs.map((each) => each.leftPt + each.advancePt));
+  const baselines = drawable.glyphs.map((each) => each.baselinePt);
+  const topPt = Math.min(...baselines) - drawable.ascentPt;
+  const heightPt = Math.max(...baselines) + drawable.descentPt - topPt;
+  const widthPt = rightPt - leftPt;
+
+  return (
+    <svg
+      key={drawable.key}
+      style={{ position: "absolute", left: pt(leftPt), top: pt(topPt) }}
+      width={pt(widthPt)}
+      height={pt(heightPt)}
+      viewBox={`0 0 ${String(widthPt)} ${String(heightPt)}`}
+      data-kind="undrawn-glyphs"
+      data-glyphs={drawable.glyphs.map((each) => each.glyph).join(" ")}
+    >
+      {frames === "outlined" ? (
+        <rect
+          x={0}
+          y={0}
+          width={widthPt}
+          height={heightPt}
+          fill="none"
+          stroke="currentColor"
+          strokeDasharray="3 3"
+          strokeWidth={0.5}
+        />
+      ) : null}
+    </svg>
+  );
+}
+
 const familyOf = (mark: ParagraphMark, fallback: string): string =>
   mark.font.kind === "named" ? `"${mark.font.name}", ${fallback}` : fallback;
 
@@ -709,6 +764,7 @@ export function Page(props: PageProps): ReactElement {
         if (drawable.kind === "text") {
           return [textLayer(drawable, widthPt, heightPt, fallbackFonts, aliasSymbolFaces)];
         }
+        if (drawable.kind === "glyphs") return [glyphLayer(drawable, frames)];
         return renderObject(drawable, imageUrl, frames, fallbackFonts);
       })}
     </div>

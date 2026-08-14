@@ -1,4 +1,5 @@
 import type { ParagraphMark } from "../docx/styles.js";
+import type { Drawable } from "../layout/drawables.js";
 import type { ParagraphBox, ParagraphMarker, PlacedLine } from "../layout/stack.js";
 import { aliasedSymbolText } from "../layout/symbol-aliases.js";
 
@@ -141,6 +142,40 @@ export function markerText(out: Content, options: TextOptions, marker: Paragraph
     marker.baselinePt,
     marker.widthPt,
   );
+}
+
+/**
+ * Glyphs the drawing named by number rather than by character.
+ *
+ * Written exactly as text is, since that is what they are: the face is the one the
+ * page already embeds, addressed by glyph as everything else in this file is, so a
+ * shape with no character costs the same two bytes as a letter.
+ *
+ * Each glyph is written at the place layout put it rather than let run on from the
+ * one before, as every run here is. The spacing and the scale are stated rather
+ * than left as the last run set them: a stretched delimiter takes neither, and a
+ * page whose previous run asked for either would otherwise carry it into this.
+ */
+export function drawnGlyphs(
+  out: Content,
+  options: TextOptions,
+  drawable: Extract<Drawable, { kind: "glyphs" }>,
+): void {
+  if (drawable.glyphs.length === 0) return;
+
+  const face = options.fonts.faceFor(drawable.face);
+
+  out.fillColor(drawable.color);
+  out.beginText();
+  out.font(face.resource, drawable.sizePt);
+  out.characterSpacing(0);
+  out.characterScale(1);
+
+  for (const glyph of drawable.glyphs) {
+    out.textPosition(glyph.leftPt, upFromTop(options.page, glyph.baselinePt));
+    out.showGlyphs(face.glyphNamed(glyph, drawable.sizePt));
+  }
+  out.endText();
 }
 
 export function textOfBoxes(

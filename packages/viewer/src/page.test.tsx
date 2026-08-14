@@ -585,3 +585,58 @@ describe("Page drawing a list number", () => {
     expect(html).not.toContain('x="102"');
   });
 });
+
+// A glyph the drawing names by number, which is the one thing a page can ask for
+// that a browser cannot draw: css names a face and the browser picks the glyph,
+// and no attribute of an svg `text` asks for glyph 3436 of a family.
+const GROWN = {
+  face: { name: "Meridian Math", bold: false, italic: false },
+  sizePt: 22,
+  color: "112233",
+  ascentPt: 14,
+  descentPt: 7.5,
+  glyphs: [{ glyph: 3436, leftPt: 100, baselinePt: 200, advancePt: 11, standsFor: "(" }],
+};
+
+// The runs hang off the page, which the layout will state for itself once the
+// seam that lays an equation out is built; a page carrying none draws none.
+const withGlyphs = (): LaidOutDocument => {
+  const layout = layoutWith([]);
+  const page = { ...firstPage(layout), glyphRuns: [GROWN] };
+  return { ...layout, pages: [page] };
+};
+
+describe("Page meeting a glyph it cannot draw", () => {
+  it("marks the room the glyphs take and says which they were", () => {
+    const html = markup(withGlyphs());
+
+    expect(html).toContain('data-kind="undrawn-glyphs"');
+    expect(html).toContain('data-glyphs="3436"');
+  });
+
+  // **Not the character it stands for.** A stretched parenthesis drawn as a plain
+  // one is the right character at the wrong height, which is a page that looks
+  // finished and is wrong.
+  it("draws nothing in that room, the character the glyph stands for least of all", () => {
+    const html = markup(withGlyphs());
+
+    expect(html).not.toContain(">(<");
+    expect(html).not.toContain("Meridian Math");
+  });
+
+  // The ink the layout stated, which is what says where the shape would have been:
+  // 11pt of advance across, and the ascent and the descent about the baseline.
+  it("puts the mark where the glyphs would have stood", () => {
+    const html = markup(withGlyphs());
+
+    expect(html).toContain("left:100pt");
+    expect(html).toContain("top:186pt");
+    expect(html).toContain('width="11pt"');
+    expect(html).toContain('height="21.5pt"');
+  });
+
+  it("outlines the room only where the page is asked to outline what it cannot draw", () => {
+    expect(markup(withGlyphs(), { frames: "outlined" })).toContain('stroke-dasharray="3 3"');
+    expect(markup(withGlyphs())).not.toContain('stroke-dasharray="3 3"');
+  });
+});

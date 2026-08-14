@@ -1,8 +1,8 @@
 import { strToU8 } from "fflate";
 
 import { DocxPagesError } from "../errors.js";
-import type { LaidOutDocument, LaidOutPage } from "../layout/document.js";
-import { drawablesOf } from "../layout/drawables.js";
+import type { LaidOutDocument } from "../layout/document.js";
+import { drawablesOf, type PageDrawing } from "../layout/drawables.js";
 
 import { formatPdfNumber } from "./objects.js";
 import { pdfPageOf, turnedAboutInPdf, upFromTop, type PdfPage } from "./coordinates.js";
@@ -10,7 +10,7 @@ import type { PdfFonts } from "./fonts.js";
 import type { PdfImages } from "./images.js";
 import { paintedObject, type ObjectDrawable } from "./objects-paint.js";
 import { paintLayer } from "./paint.js";
-import { textOfBoxes, type TextOptions } from "./text.js";
+import { drawnGlyphs, textOfBoxes, type TextOptions } from "./text.js";
 
 // A page's drawing, as the operators a pdf writes it in.
 //
@@ -309,7 +309,7 @@ function drawUnturnedObject(
  */
 export function contentOf(
   layout: LaidOutDocument,
-  page: LaidOutPage,
+  page: PageDrawing,
   options: ContentOptions,
 ): PageContent {
   const pdfPage = pdfPageOf(page.geometry);
@@ -357,6 +357,9 @@ export function contentOf(
         out.restore();
         break;
       }
+      case "glyphs":
+        drawnGlyphs(out, text, drawable);
+        break;
       case "paint":
         paintLayer(out, pdfPage, drawable.cells, drawable.paragraphs, drawable.highlights);
         break;

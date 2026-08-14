@@ -76,12 +76,26 @@ export type PdfUnderline = {
   readonly thicknessPt: number;
 };
 
+// A glyph asked for by number rather than by character, and what it takes to write
+// it: how wide it was drawn, since a glyph with no character has no advance
+// anything here could look up, and what it stands for, so the text stays readable.
+export type PdfGlyph = {
+  readonly glyph: number;
+  readonly advancePt: number;
+  readonly standsFor: string | null;
+};
+
 export type PdfFace = {
   readonly resource: string;
   // The glyphs a string is drawn as, two bytes to each, which is what an
   // Identity-H encoding takes. Every one is recorded, so that the widths and the
   // reverse map written afterwards cover exactly what was drawn.
   readonly glyphsFor: (text: string) => Uint8Array;
+  // The same two bytes for a glyph the drawing named by number. **This is the only
+  // way to draw a shape with no character**, and writing by glyph is what makes it
+  // cost nothing: the face is already embedded whole and addressed by glyph, so a
+  // stretched parenthesis is two bytes like any letter.
+  readonly glyphNamed: (glyph: PdfGlyph, fontSizePt: number) => Uint8Array;
   // Null for a face stating no `post` table, which nothing can be invented for.
   readonly underlineAt: (fontSizePt: number) => PdfUnderline | null;
 };
@@ -105,8 +119,13 @@ type Used = {
   readonly underline: UnderlineMetrics | null;
   readonly italicAngle: number;
   // What the face was asked to draw, by glyph. The character is kept beside it for
-  // the reverse map, which is what lets the text be selected and searched.
-  readonly drawn: Map<number, number>;
+  // the reverse map, which is what lets the text be selected and searched, and is
+  // null for a glyph the drawing named by number and could put no character to.
+  readonly drawn: Map<number, number | null>;
+  // What a glyph named by number was drawn at, in glyph space. Kept apart from the
+  // characters because that is the one width nothing here can look up afterwards:
+  // the advance table answers by character and this glyph has none.
+  readonly statedWidths: Map<number, number>;
 };
 
 function openFace(font: PdfFont, resource: string): Used {
@@ -130,6 +149,7 @@ function openFace(font: PdfFont, resource: string): Used {
     underline: read.underline,
     italicAngle: read.italicAngle,
     drawn: new Map(),
+    statedWidths: new Map(),
   };
 }
 
@@ -163,6 +183,7 @@ export function pdfFonts(fonts: readonly PdfFont[]): PdfFonts {
     return {
       resource: opened.resource,
       glyphsFor: (text) => glyphsOf(opened, text),
+      glyphNamed: (named, fontSizePt) => glyphNumbered(opened, named, fontSizePt),
       underlineAt: (fontSizePt) => {
         const { underline, metrics } = opened;
         if (underline === null) return null;
@@ -202,6 +223,32 @@ function glyphsOf(face: Used, text: string): Uint8Array {
     view.setUint16(at * 2, glyph);
   });
 
+  return out;
+}
+
+/**
+ * One glyph the drawing named by number, as the two bytes that show it.
+ *
+ * The width is recorded as it is written rather than looked up afterwards: the
+ * advance table answers by character, and the whole point of naming a glyph is
+ * that it has none. Glyph space is a thousandth of the em, so a width in points
+ * over the size it was drawn at is that width already, whatever the face's own
+ * units per em are.
+ *
+ * The character it stands for is recorded beside it, and a glyph standing for
+ * nothing is written into the file all the same: it is drawn either way, and only
+ * the selectable text is the poorer for it.
+ */
+function glyphNumbered(face: Used, named: PdfGlyph, fontSizePt: number): Uint8Array {
+  const codePoint = named.standsFor === null ? null : (named.standsFor.codePointAt(0) ?? null);
+  face.drawn.set(named.glyph, codePoint);
+  face.statedWidths.set(
+    named.glyph,
+    fontSizePt <= 0 ? 0 : Math.round((named.advancePt / fontSizePt) * GLYPH_UNITS),
+  );
+
+  const out = new Uint8Array(2);
+  new DataView(out.buffer).setUint16(0, named.glyph);
   return out;
 }
 
@@ -310,10 +357,15 @@ function widthsOf(face: Used): PdfValue {
 
 // What the glyph advances, in glyph space. Asked at the character it was drawn
 // for, which is how the advance table answers, so the width written is the very
-// one the line was measured with.
+// one the line was measured with. A glyph named by number states its own width as
+// it is drawn, and that stands ahead of anything a character could answer: the
+// stretched shape is not the plain one's width.
 function widthOf(face: Used, glyph: number): number {
+  const stated = face.statedWidths.get(glyph);
+  if (stated !== undefined) return stated;
+
   const codePoint = face.drawn.get(glyph);
-  const advance = codePoint === undefined ? null : face.advanceFor(codePoint);
+  const advance = codePoint === undefined || codePoint === null ? null : face.advanceFor(codePoint);
   return advance === null ? 0 : scaled(advance, face.metrics);
 }
 
@@ -357,11 +409,18 @@ function utf16Of(codePoint: number): string {
  *
  * Without this a page drawn under Identity-H holds no text at all as far as a
  * reader is concerned: the glyph numbers are the face's own and mean nothing.
+ *
+ * A glyph named by number is mapped to the character it stands for, so a stretched
+ * parenthesis reads back as a parenthesis. **Word's own pdf does not do this**: its
+ * grown delimiters came back out of the text layer as `.` and `/`, the glyphs its
+ * subset happened to number there. Agreeing with Word about where the ink goes is
+ * the point of this project; agreeing about what its subset forgot is not.
  */
 function toUnicodeOf(objects: PdfObjects, face: Used): PdfReference {
   const entries = [...face.drawn.entries()]
+    .filter(([, codePoint]) => codePoint !== null)
     .sort(([one], [other]) => one - other)
-    .map(([glyph, codePoint]) => `<${hex(glyph, 4)}> <${utf16Of(codePoint)}>`);
+    .map(([glyph, codePoint]) => `<${hex(glyph, 4)}> <${utf16Of(codePoint ?? 0)}>`);
 
   let body = CMAP_HEAD;
   for (let at = 0; at < entries.length; at += BLOCK) {

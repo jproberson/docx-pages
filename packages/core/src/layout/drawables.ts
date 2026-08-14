@@ -1,6 +1,7 @@
 import type { DrawingFlip } from "../docx/drawing.js";
 import type { LaidOutDocument, LaidOutPage } from "./document.js";
 import type { PlacedContent, PlacedFloat } from "./floats.js";
+import type { FaceRequest } from "./font-metrics.js";
 import type { PlacedInline } from "./inlines.js";
 import type { ParagraphBox, ParagraphPaint, PlacedCell } from "./stack.js";
 import { turnedAbout } from "./turns.js";
@@ -26,6 +27,51 @@ export type HighlightPaint = {
   readonly widthPt: number;
   readonly heightPt: number;
   readonly color: string;
+};
+
+/**
+ * One glyph of a face, named by its number in that face rather than by a
+ * character.
+ *
+ * **The only way to ask for a shape that has no character.** The parenthesis Word
+ * stretches round a fraction is the fourth taller variant of `(` in Cambria Math,
+ * a glyph in no character map at all: measured on 2026-08-13 off Word's own pdf,
+ * where it came back 21.60pt of continuous ink, and read out of the face's own
+ * MATH table, which names it as glyph 3436 and states it reaches 4047 units.
+ *
+ * Everything else on a page is asked for in characters, and this is the one thing
+ * that cannot be.
+ */
+export type DrawnGlyph = {
+  readonly glyph: number;
+  readonly leftPt: number;
+  readonly baselinePt: number;
+  // What the glyph advances at the size it is drawn, which the face's own metrics
+  // state and the layout measured with. It comes with the glyph because a glyph
+  // with no character has no advance anything else here could look up: an advance
+  // table answers by character.
+  readonly advancePt: number;
+  // The character the glyph stands for, where it stands for one, so that a reader
+  // of the page can still select and search the text. **It is not what to draw
+  // instead.** A stretched parenthesis drawn as a plain one is the right character
+  // at the wrong height, which is a page that looks finished and is wrong; a
+  // backend that cannot name a glyph draws nothing and says so.
+  readonly standsFor: string | null;
+};
+
+// A stretch of glyphs of one face at one size, which is what the layout hands over
+// for a shape it could not name in characters.
+export type PlacedGlyphs = {
+  readonly face: FaceRequest;
+  readonly sizePt: number;
+  // Six hex digits, as every other colour reaching a backend is.
+  readonly color: string;
+  // How far the glyphs reach above and below their baseline, which is the ink they
+  // draw rather than the face's own ascent: it is what a backend that cannot draw
+  // them shows the room of, and what a caller cutting the page to a box measures.
+  readonly ascentPt: number;
+  readonly descentPt: number;
+  readonly glyphs: readonly DrawnGlyph[];
 };
 
 export type Drawable =
@@ -56,6 +102,10 @@ export type Drawable =
       // rectangle. Text a story flowed down the page is never turned.
       readonly turnDegrees: number;
     }
+  // Glyphs named by number, drawn where the text of the story is drawn: they are
+  // text, and what stands over them and under them is what stands over and under
+  // any other text.
+  | ({ readonly kind: "glyphs"; readonly key: string } & PlacedGlyphs)
   // Everything drawn behind the text of a story: the cells of its tables and the
   // fills and borders its paragraphs ask for. One layer holds them all, since they
   // are drawn in the page's own coordinates and nothing stands between them.
@@ -317,7 +367,26 @@ function paintedParagraphs(boxes: readonly ParagraphBox[]): readonly PaintedPara
   );
 }
 
-export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonly Drawable[] {
+/**
+ * A page as this reads it: everything the layout states today, and the glyph runs
+ * it will state.
+ *
+ * **The field is named here rather than on `LaidOutPage`** because the layout that
+ * fills it is being built beside this, and a page carrying none draws none. The
+ * day it moves onto the page proper, this line goes and nothing else changes.
+ */
+export type PageDrawing = LaidOutPage & {
+  readonly glyphRuns?: readonly PlacedGlyphs[];
+};
+
+// A run holding no glyph at all draws nothing, so it is left out rather than
+// handed to a backend to skip.
+const glyphLayers = (page: PageDrawing): readonly Drawable[] =>
+  (page.glyphRuns ?? [])
+    .filter((run) => run.glyphs.length > 0)
+    .map((run, at) => ({ kind: "glyphs" as const, key: `glyphs-${String(at)}`, ...run }));
+
+export function drawablesOf(layout: LaidOutDocument, page: PageDrawing): readonly Drawable[] {
   const inlines = [...page.headerInlines, ...page.inlines, ...page.footerInlines].flatMap(
     (inline, at) => fromInline(inline, `inline-${String(at)}`),
   );
@@ -351,6 +420,7 @@ export function drawablesOf(layout: LaidOutDocument, page: LaidOutPage): readonl
     ...stacked(behind, "behind"),
     ...paintLayer(cells, flowed, "paint"),
     ...text,
+    ...glyphLayers(page),
     ...inlines,
     ...stacked(inFront, "float"),
   ];
