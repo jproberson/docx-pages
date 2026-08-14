@@ -60,6 +60,17 @@ const AT_ONCE = 4;
 // their worst page **exactly** as Word drew it, cell for cell, and the tail thins
 // out immediately after: 14 more under a tenth of a percent, 7 more under a fifth.
 // Two percent was letting 72 documents through that are saying something real.
+//
+// **This number is not `raster/floor.ts`'s, and on 2026-08-14 the two stopped
+// meaning the same thing.** That tool measures what is still wrong on the eight
+// documents this project calls right, which is now 0.45% over the seven that report
+// no gap, with 12 of their 15 pages exactly equal and the worst single page 2.52%.
+// Every cell of it is a fault of ours rather than a cost of rasterising, so it is
+// not a threshold anything may be forgiven by: screening the corpus at it would
+// forgive a whole known fault on every one of the 715. The screen stays where the
+// corpus's own distribution puts it, which the same sweep still bears out: of 600
+// clean documents 444 draw their worst page exactly, 460 are under a tenth of a
+// percent, and 471 under this fifth of one.
 const FLOOR = 0.002;
 
 const share = (count: number, of: number): string =>
