@@ -1410,6 +1410,76 @@ describe("measureStack over a section of more than one column", () => {
     it("gives a column the one block that is over half the run on its own", () => {
       expect(evenedOut([30, 10, 10], TWO)).toStrictEqual([0, 1, 1]);
     });
+
+    /**
+     * **A run that states a break of its own is not evened out at all.**
+     *
+     * Measured on 2026-08-17 by the authored `column-room-probe` document, cases G to K,
+     * three repeats each and every one read off Word's own pdf. The same six blocks that
+     * come out three and three where the document states nothing come out **2 and 4** with
+     * a break after the second and **4 and 2** with a break after the fourth; eight blocks
+     * over three columns with a break after the second come out **2 and 6, the third
+     * column empty**. Word takes the document at its word and evens nothing.
+     *
+     * Evening them anyway is what put a corpus template's first column of eleven lines
+     * into three, and everything under it onto the wrong page.
+     */
+    const brokenAt = (heights: readonly number[], breakAfter: number) => {
+      return heights
+        .map((each, at) =>
+          at === breakAfter
+            ? `<w:p><w:pPr><w:spacing w:line="${String(each * 20)}" w:lineRule="exact"/></w:pPr>` +
+              `<w:r><w:br w:type="column"/><w:t>p${String(at)}</w:t></w:r></w:p>`
+            : tall(`p${String(at)}`, each),
+        )
+        .join("");
+    };
+
+    const dividedByABreak = (
+      heights: readonly number[],
+      breakAfter: number,
+      columns: SectionColumns,
+    ) => {
+      const pkg = openDocx(
+        buildDocx({
+          "word/document.xml": wordDocument(brokenAt(heights, breakAfter)),
+          "word/styles.xml": NORMAL,
+        }),
+      );
+      const across = columnsAcross(columns, { leftPt: 72, widthPt: 468 });
+      const result = measureStack({
+        blocks: readBlocks(pkg),
+        styles: readStyleTable(pkg),
+        metricsFor: (request) => lookupFontMetrics(request, [ARIAL]),
+        part: "word/document.xml",
+        originPt: 36,
+        leftPt: 72,
+        widthPt: 468,
+        bodyHeightPt: LINE_PT * 40,
+        columnsOf: () => across,
+        sectionsClosed: new Map([[heights.length - 1, { opensAPage: false }]]),
+      });
+      if (result.kind !== "measured") throw new Error(result.blocker.kind);
+      return result.boxes.map((box) =>
+        across.findIndex((column) => column.leftPt === box.lines[0]?.leftPt),
+      );
+    };
+
+    it("takes a break after the second of six at its word rather than evening out", () => {
+      expect(dividedByABreak(uniform(6), 2, TWO)).toStrictEqual([0, 0, 1, 1, 1, 1]);
+    });
+
+    it("takes a break after the fourth of six the same way", () => {
+      expect(dividedByABreak(uniform(6), 4, TWO)).toStrictEqual([0, 0, 0, 0, 1, 1]);
+    });
+
+    it("leaves the third column empty where the break says everything else is the second's", () => {
+      expect(dividedByABreak(uniform(8), 2, THREE)).toStrictEqual([0, 0, 1, 1, 1, 1, 1, 1]);
+    });
+
+    it("evens the same six out where the document states no break", () => {
+      expect(evenedOut(uniform(6), TWO)).toStrictEqual([0, 0, 0, 1, 1, 1]);
+    });
   });
 
   // What a divided run costs the page under it, measured on 2026-08-13 by seven authored

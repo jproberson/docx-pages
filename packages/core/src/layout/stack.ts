@@ -688,6 +688,16 @@ function fillStretch(
   const filled = fillColumns(blocks, context, topPt, columns, forced, roomPt, roomPt);
   if (filled.kind === "blocked" || !filled.whole || !balanced) return filled;
 
+  // **A run that states a break of its own is not evened out at all.** The document has
+  // said where its columns divide, and Word takes it at its word: measured on 2026-08-17
+  // by `column-room-probe`, five cases three times each, against the same six blocks that
+  // come out three and three where nothing is stated. Six with a break after the second
+  // come out **2 and 4**, with a break after the fourth **4 and 2**, and eight over three
+  // columns with a break after the second come out **2 and 6 with the third column
+  // empty**. Evening those out is what put a corpus template's eleven lines of a first
+  // column into three, and everything under them on the wrong page.
+  if (forced.size > 0) return filled;
+
   // Evening the columns out is the same fill asked of a shorter column, and the heights
   // worth asking for are the ones the run's own blocks make. Nothing taller than the room
   // is worth asking for, since the fill above already came in under it.
