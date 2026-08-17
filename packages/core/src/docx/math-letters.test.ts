@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { drawsFromAMathAlphabet, spelledAsMath } from "./math-letters.js";
+import { drawnAsALetterOrDigit, spelledAsMath } from "./math-letters.js";
 
 // Every case is what Word drew, read straight out of its own pdf: one string spelled
 // six times over, once for each style, and the pdf's own mapping back to characters.
@@ -86,15 +86,18 @@ describe("spelledAsMath", () => {
   });
 });
 
-describe("drawsFromAMathAlphabet", () => {
-  it("holds for the letters Word spells a maths run in", () => {
-    expect(drawsFromAMathAlphabet(0x1d44e)).toBe(true);
-    expect(drawsFromAMathAlphabet(0x210e)).toBe(true);
+describe("drawnAsALetterOrDigit", () => {
+  it("holds for the letters Word spells a maths run in, and for a digit and a plain letter", () => {
+    for (const codePoint of [0x1d44e, 0x210e, 0x31, 0x61, 0x5a]) {
+      expect(drawnAsALetterOrDigit(codePoint)).toBe(true);
+    }
   });
 
-  it("does not hold for what is drawn as itself", () => {
-    for (const codePoint of [0x20, 0x2d, 0x2212, 0x3d, 0x61, 0x31]) {
-      expect(drawsFromAMathAlphabet(codePoint)).toBe(false);
+  // Case O against case P: these are the characters `𝑎`'s correction survived in front
+  // of, where the digit of case P closed it.
+  it("does not hold for what a correction stands in front of", () => {
+    for (const codePoint of [0x20, 0x2212, 0x3d, 0x28, 0x29, 0x2f, 0x2c]) {
+      expect(drawnAsALetterOrDigit(codePoint)).toBe(false);
     }
   });
 });

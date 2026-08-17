@@ -8,7 +8,7 @@ import type {
   MathTable,
   MathVariant,
 } from "./font-metrics.js";
-import { drawsFromAMathAlphabet } from "../docx/math-letters.js";
+import { drawnAsALetterOrDigit } from "../docx/math-letters.js";
 import type { ParagraphMark } from "../docx/styles.js";
 
 // Where a fraction and a delimiter are set, measured against Word on 2026-08-13 over
@@ -35,8 +35,8 @@ export type MathFace = {
   readonly constants: MathConstants;
   readonly advanceOf: (codePoint: number) => number | null;
   // How far past its own advance a character's ink leans, which Word leaves room for
-  // wherever the character after it is not out of the same alphabet. Nought for a
-  // character the face states none for.
+  // wherever a letter or a digit does not follow it. Nought for a character the face
+  // states none for.
   readonly italicCorrectionOf: (codePoint: number) => number;
   readonly inkOf: GlyphInk;
   readonly inkOfGlyph: (glyph: number) => InkBox | null;
@@ -736,31 +736,58 @@ function rowOf(pieces: readonly SetMath[]): MathBox {
  * the em is exact, and nothing is near the 569 a relation asks. The face supplies the
  * italic correction and nothing else, so which characters are operations and which are
  * relations is this project's own table below.
+ *
+ * **A third spacing was found on 2026-08-16**, when `equation-spacing-probe` asked
+ * about twenty-five more cases the same way: punctuation takes **3/18 of the em**,
+ * 1.8333pt at 11, which is neither of the two above. Every character in the table
+ * below is one of those cases, read off Word's own pdf.
  */
 const BINARY_OPERATOR_EM = 4 / 18;
 const RELATION_EM = 5 / 18;
+const PUNCTUATION_EM = 3 / 18;
 
-// **Only three characters are measured**, and the rest of what a document may hold is
-// ordinary until Word has answered for it: a plus, a division sign, an inequality and
-// everything else stands here unspaced rather than spaced by a guess.
-// `equation-spacing-probe` is what asks about them.
-//
-// A hyphen is not here because a maths run never keeps one: `spelledAsMath` draws it as
-// the minus, which is what Word drew.
-const OPERATORS: ReadonlyMap<number, "binary" | "relation"> = new Map([
-  [0x2212, "binary"],
-  [0x00d7, "binary"],
-  [0x003d, "relation"],
+/**
+ * What Word spaces, measured on 2026-08-14 and 2026-08-16 and nothing else.
+ *
+ * Every row is a case of `equation-spacing-probe` or of `equation-content-probe`, read
+ * against the control `𝑎𝑏`, which advances 12.300pt at 11pt in Cambria Math: an
+ * operation costs 4.889 more, a relation 6.111 and punctuation 1.834.
+ *
+ * **What Word left ordinary is worth as much as what it spaced.** A solidus came back
+ * at exactly its own advance, and so did a bracket round a letter, so neither is here.
+ *
+ * **A greater than and a greater than or equal to were not asked**, and are not here for
+ * that reason alone: the four inequalities that were asked are all relations, and the
+ * mirror of a measured character is still a guess. They are the first thing to add to
+ * the probe.
+ *
+ * A hyphen is not here because a maths run never keeps one: `spelledAsMath` draws it as
+ * the minus, which is what Word drew.
+ */
+const OPERATORS: ReadonlyMap<number, Exclude<AtomClass, "ordinary">> = new Map([
+  [0x2212, "binary"], // minus
+  [0x002b, "binary"], // plus
+  [0x00d7, "binary"], // multiplication sign
+  [0x00f7, "binary"], // division sign
+  [0x22c5, "binary"], // dot operator
+  [0x003d, "relation"], // equals
+  [0x003c, "relation"], // less than
+  [0x2264, "relation"], // less than or equal to
+  [0x2260, "relation"], // not equal to
+  [0x2248, "relation"], // approximately equal to
+  [0x002c, "punctuation"], // comma
+  [0x002e, "punctuation"], // full stop
+  [0x003a, "punctuation"], // colon
 ]);
 
 // What a piece of a row is spaced as. **A character that operates on what stands either
-// side of it is only an operation where something does stand there**: a minus opening a
-// row is the sign of what follows it and takes no room of its own, and neither does one
-// standing after another operator. That is TeX's own rule, and the spacings above being
-// TeX's own to the thousandth is the reason to keep its company; **it is unmeasured**,
-// and it is the way round that leaves a row Word has not answered for exactly as wide
-// as it was before any of this was built.
-type AtomClass = "ordinary" | "binary" | "relation";
+// side of it is only an operation where something stands before it**: a minus opening a
+// row is the sign of what follows it and takes no room, and neither does one standing
+// after a relation. Measured by cases R, S and T: `−𝑏` and `𝑎=−𝑏` came back at their
+// own advances, and `𝑎−` came back 2.444 wider than its own, **which is the operation's
+// left gap and says Word looks only leftwards to decide**. TeX demotes an operation at
+// either end of a row, and this is where the two part company.
+type AtomClass = "ordinary" | "binary" | "relation" | "punctuation";
 
 type RowItem =
   | {
@@ -781,12 +808,12 @@ const statedClassOf = (text: string): AtomClass => {
   return OPERATORS.get(characters[0]?.codePointAt(0) ?? 0) ?? "ordinary";
 };
 
-// A row's pieces cut where anything can stand between two characters: at every operator,
+// A row's pieces cut wherever a gap can fall: at every character the table above names,
 // which the file writes in the middle of an `m:t` as readily as in an `m:r` of its own,
-// and where the letters give way to something they are not drawn beside. **The second
-// cut is what the case written with spaces in the file settles**: Word left `a`'s
-// correction in front of the space it drew, so a correction falls between two characters
-// of one run and not only between one run and the next.
+// and after the last of any run of letters and digits. **The second cut is what the
+// bracket case settles**: Word left `𝑎`'s correction in front of the `(` it drew and in
+// front of the space of `𝑎 − 𝑏`, so a correction falls between two characters of one run
+// and not only between one run and the next.
 function rowItemsOf(pieces: readonly MarkedMath[]): readonly RowItem[] {
   const items: RowItem[] = [];
   for (const piece of pieces) {
@@ -796,7 +823,6 @@ function rowItemsOf(pieces: readonly MarkedMath[]): readonly RowItem[] {
     }
 
     let held = "";
-    let heldAlphabet = false;
     const flush = (): void => {
       if (held !== "")
         items.push({ kind: "text", text: held, mark: piece.mark, stated: "ordinary" });
@@ -806,14 +832,11 @@ function rowItemsOf(pieces: readonly MarkedMath[]): readonly RowItem[] {
     for (const character of piece.text) {
       const codePoint = character.codePointAt(0) ?? 0;
       const stated = statedClassOf(character);
-      if (stated !== "ordinary") {
+      if (stated !== "ordinary" || !drawnAsALetterOrDigit(codePoint)) {
         flush();
         items.push({ kind: "text", text: character, mark: piece.mark, stated });
         continue;
       }
-      const alphabet = drawsFromAMathAlphabet(codePoint);
-      if (held !== "" && alphabet !== heldAlphabet) flush();
-      heldAlphabet = alphabet;
       held += character;
     }
     flush();
@@ -821,17 +844,15 @@ function rowItemsOf(pieces: readonly MarkedMath[]): readonly RowItem[] {
   return items;
 }
 
-// An operation with nothing to operate on is ordinary: one opening a row, one closing
-// it, and one standing beside another operator or a relation.
+// An operation with nothing to operate on is ordinary: one opening a row, and one
+// standing after a relation or after another operation. **One closing a row is still an
+// operation**, which case S measured and TeX does not do.
 function atomClassesOf(items: readonly RowItem[]): readonly AtomClass[] {
   const classes = items.map((each) => each.stated);
   return classes.map((each, at) => {
     if (each !== "binary") return each;
     const before = classes[at - 1];
-    const after = classes[at + 1];
-    if (before === undefined || after === undefined) return "ordinary";
-    if (before !== "ordinary" || after === "relation") return "ordinary";
-    return each;
+    return before === "ordinary" ? each : "ordinary";
   });
 }
 
@@ -839,6 +860,14 @@ const lastCodePointOf = (text: string): number | null =>
   Array.from(text).at(-1)?.codePointAt(0) ?? null;
 
 const firstCodePointOf = (text: string): number | null => text.codePointAt(0) ?? null;
+
+// Whether what follows the punctuation is what the cases put after it, which was a
+// letter every time.
+const spacedAsPunctuation = (right: RowItem | undefined): boolean => {
+  if (right === undefined || right.kind !== "text") return false;
+  const next = firstCodePointOf(right.text);
+  return next !== null && drawnAsALetterOrDigit(next);
+};
 
 // What Word leaves between one piece of a row and the next, or after the last of them.
 // The two terms are independent: the correction closes the lean of the character before
@@ -858,12 +887,8 @@ function gapAfterPt(
   if (left.kind === "text") {
     const last = lastCodePointOf(left.text);
     const next = right?.kind === "text" ? firstCodePointOf(right.text) : null;
-    const alongsideItsOwn =
-      last !== null &&
-      next !== null &&
-      drawsFromAMathAlphabet(last) &&
-      drawsFromAMathAlphabet(next);
-    if (last !== null && !alongsideItsOwn) {
+    const closedByWhatFollows = next !== null && drawnAsALetterOrDigit(next);
+    if (last !== null && !closedByWhatFollows) {
       gapPt += (face.italicCorrectionOf(last) * sizePt) / face.unitsPerEm;
     }
   }
@@ -872,6 +897,21 @@ function gapAfterPt(
   if (right !== undefined && !between.every((each) => each === "relation")) {
     if (between.includes("binary")) gapPt += BINARY_OPERATOR_EM * sizePt;
     else if (between.includes("relation")) gapPt += RELATION_EM * sizePt;
+    // Punctuation is spaced on one side, and the case measures a total rather than a
+    // side: `𝑎,𝑏` came back 1.834 wider than its own advances, which says one gap of
+    // 3/18 and not two of anything. It is put after the punctuation because that is
+    // where TeX puts it, and because a comma opening a row is not what a document holds.
+    //
+    // **Only where a letter or a digit follows, which is the whole of what was asked.**
+    // Every case put punctuation between two letters, and the two corpus documents that
+    // hold a stop inside an equation both write it with a space after it, which is a
+    // configuration Word has answered nothing about: spacing those cost each of them
+    // three cells on 2026-08-16 and taking the extrapolation back out gave them back.
+    // `equation-spacing-probe` should ask about a stop before a space and about a
+    // decimal point between two digits before this widens.
+    else if (classes[at] === "punctuation" && spacedAsPunctuation(right)) {
+      gapPt += PUNCTUATION_EM * sizePt;
+    }
   }
   return gapPt;
 }

@@ -55,11 +55,31 @@ const ITALIC_H = 0x210e;
 // which alphabet the letters come out of and a hyphen is not a letter.
 const DRAWN_AS: ReadonlyMap<number, number> = new Map([[0x2d, 0x2212]]);
 
-// Whether Word draws this character out of one of the alphabets above, which is what
-// the maths spacing asks to know either side of a gap: **the italic correction of a
-// character stands unless the character after it comes out of the same alphabet.**
-export const drawsFromAMathAlphabet = (codePoint: number): boolean =>
-  codePoint === ITALIC_H || within(codePoint, 0x1d400, 0x1d7ff);
+/**
+ * Whether Word draws this character as a letter or a digit, which is the whole of what
+ * the spacing in `layout/math.ts` asks of a character on the far side of a gap:
+ * **the italic correction of a character stands unless a letter or a digit follows it.**
+ *
+ * Measured 2026-08-16 by `equation-spacing-probe`, cases O and P against the control.
+ * `𝑎2` came out of Word's own pdf at 12.219pt, which is the two advances and nothing
+ * else, where the face states `𝑎` a correction of 50 units and Word had left that
+ * correction in front of an operator, a space and the end of a row. `𝑎(𝑏)` came out at
+ * 21.699, which is the four advances and **both** corrections, so a bracket is not what
+ * closes one and a digit is.
+ *
+ * Three readings fitted the six cases before those two: that the correction stands
+ * unless the character after it comes out of one of the alphabets above, unless it is
+ * one the face states a correction of its own for, or unless nothing at all stands
+ * between the two. **Case P refutes the first two and case O the third**: the face
+ * states no correction for a digit or for a bracket, and the two are told apart by
+ * nothing but being a digit and not being one.
+ */
+export const drawnAsALetterOrDigit = (codePoint: number): boolean =>
+  codePoint === ITALIC_H ||
+  within(codePoint, 0x1d400, 0x1d7ff) ||
+  within(codePoint, 0x30, 0x39) ||
+  within(codePoint, 0x41, 0x5a) ||
+  within(codePoint, 0x61, 0x7a);
 
 const within = (codePoint: number, first: number, last: number): boolean =>
   codePoint >= first && codePoint <= last;

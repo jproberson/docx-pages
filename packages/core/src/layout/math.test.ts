@@ -895,7 +895,15 @@ describe("setMath choosing the setting", () => {
  * since none of these asks a question about a height.
  */
 describe("the spacing Word puts round an operator", () => {
-  const ADVANCES = { "𝑎": 1141, "𝑏": 1104, "𝑐": 942, "𝑑": 1187, "−": 1530, "×": 1463, "=": 1530, " ": 451 }; // prettier-ignore
+  // Cambria Math's own, read off the file on 2026-08-14 and 2026-08-16. The face states
+  // a correction for the four letters and for none of the rest.
+  const ADVANCES = {
+    "𝑎": 1141, "𝑏": 1104, "𝑐": 942, "𝑑": 1187,
+    "−": 1530, "+": 1530, "×": 1463, "÷": 1530, "⋅": 578,
+    "=": 1530, "<": 1534, "≤": 1534, "≠": 1530, "≈": 1507,
+    ",": 420, ".": 420, ":": 540,
+    "/": 1004, "(": 850, ")": 850, "2": 1134, " ": 451,
+  }; // prettier-ignore
   const CORRECTIONS = { "𝑎": 50, "𝑏": 45, "𝑐": 65, "𝑑": 65 };
 
   const SPACED = faceHolding({
@@ -979,13 +987,65 @@ describe("the spacing Word puts round an operator", () => {
     expect(rowPt("𝑎𝑏")).toBeCloseTo(((1141 + 1104 + 45) * STATED) / UNITS_PER_EM, 6);
   });
 
-  // **An operation with nothing to operate on takes no room**, which is TeX's rule and
-  // is unmeasured here: what it protects is the sign of a negative number, which no case
-  // of the probe holds. It leaves such a row exactly as wide as it was before any of
-  // this was built.
-  it("spaces no operator that opens or closes a row", () => {
-    expect(rowPt("−𝑏")).toBeCloseTo(((1530 + 1104 + 45) * STATED) / UNITS_PER_EM, 6);
-    expect(rowPt("𝑎−")).toBeCloseTo(((1141 + 1530 + 50) * STATED) / UNITS_PER_EM, 6);
+  /**
+   * The twenty cases of `equation-spacing-probe`, read out of Word's own pdf on
+   * 2026-08-16, three repeats each. **Every number here is what Word laid the row out
+   * as**, read off the left edge of a numerator it centred on 306.00, and every one of
+   * them falls out of the rules above and the face's own advances to a thousandth.
+   *
+   * The row Word drew is what the case holds, so a case that disagrees names the rule it
+   * disagrees with and no arithmetic of this file's own stands in between.
+   */
+  const asWordDrewTheRow = (text: string, rowPt_: number): void => {
+    expect(rowPt(text)).toBeCloseTo(rowPt_, 2);
+  };
+
+  it("spaces a plus, a division sign and a dot operator as operations", () => {
+    asWordDrewTheRow("𝑎+𝑏", 25.675);
+    asWordDrewTheRow("𝑎÷𝑏", 25.675);
+    asWordDrewTheRow("𝑎⋅𝑏", 20.561);
+  });
+
+  it("spaces the four inequalities asked as relations", () => {
+    asWordDrewTheRow("𝑎<𝑏", 26.919);
+    asWordDrewTheRow("𝑎≤𝑏", 26.919);
+    asWordDrewTheRow("𝑎≠𝑏", 26.897);
+    asWordDrewTheRow("𝑎≈𝑏", 26.774);
+  });
+
+  // Neither of the two spacings above: 1.834 at 11pt is 3/18 of the em, where an
+  // operation is 4/18 either side and a relation 5/18.
+  it("gives punctuation a third spacing of its own", () => {
+    asWordDrewTheRow("𝑎,𝑏", 16.658);
+    asWordDrewTheRow("𝑎.𝑏", 16.658);
+    asWordDrewTheRow("𝑎:𝑏", 17.302);
+  });
+
+  // **What Word left alone is a measurement too.** Both of these came back at their own
+  // advances and their corrections, so neither character is in the table.
+  it("leaves a solidus and a bracket unspaced", () => {
+    asWordDrewTheRow("𝑎/𝑏", 17.961);
+    asWordDrewTheRow("𝑎(𝑏)", 21.699);
+  });
+
+  // **A letter or a digit is what closes a correction, and nothing else is.** `𝑎2` is
+  // the two advances with `𝑎`'s 50 units nowhere in it; `2𝑎` keeps the same 50 at the
+  // end of the row; and `𝑎(𝑏)` above keeps both letters' corrections in front of a
+  // bracket, which the face states no correction for any more than it does for a digit.
+  it("closes a correction with a digit and not with a bracket", () => {
+    asWordDrewTheRow("𝑎2", 12.219);
+    asWordDrewTheRow("2𝑎", 12.488);
+  });
+
+  // **An operation opening a row is the sign of what follows it and takes nothing**, and
+  // so is one standing after a relation, which is the configuration a real document is
+  // full of. **One closing a row keeps its left gap**, where TeX demotes it: `𝑎−` came
+  // back 2.444 wider than its own advances, which is one 4/18 and not two. So Word looks
+  // leftwards to decide and TeX looks both ways.
+  it("spaces an operation that closes a row and not one that opens it", () => {
+    asWordDrewTheRow("−𝑏", 14.389);
+    asWordDrewTheRow("𝑎−", 17.059);
+    asWordDrewTheRow("𝑎=−𝑏", 35.115);
   });
 
   // Case L, the same expression in a numerator: Word filled a bar 25.680 wide, which is
