@@ -236,7 +236,22 @@ function breakOnce(
     // one with lines is judged by its lines: the room it keeps below itself hangs
     // past the foot of the page rather than moving it on.
     if (box.lines.length === 0) {
-      if (overflows(box.topPt, box.contentBottomPt - box.topPt)) {
+      // **One keeping no room at all opens no page**, however far past the foot the
+      // paragraph above it left its top. The only paragraph that keeps none is one
+      // carrying a section's own `w:sectPr` and nothing else, and Word draws it at the
+      // foot of the page its section ends on: measured on 2026-08-16 by the authored
+      // `section-geometry-probe` document, case F, three times over, where 12pt of space
+      // under the last filler leaves the closer standing 9.8pt past the foot. Word keeps
+      // it on that page and opens the next for the section that follows.
+      //
+      // **What it costs to open one is the geometry of the page.** A page opened here
+      // keeps the body of the section the paragraph belongs to, which for a closer is
+      // the section ending rather than the one beginning, and the break the next
+      // paragraph asks for is then swallowed by `leave` because the page it would open
+      // is already at its top. A landscape section closing into a portrait one drew the
+      // portrait pages landscape that way, and a real document lost a page to it.
+      const roomPt = box.contentBottomPt - box.topPt;
+      if (roomPt > 0 && overflows(box.topPt, roomPt)) {
         shiftPt = box.topPt - opens.topPt - box.resumesUnderPt;
         open(opens, box.index);
       }
