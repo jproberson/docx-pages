@@ -9,6 +9,7 @@ import {
   fractionBox,
   mathFace,
   mathLeadingPt,
+  mathRowOf,
   scriptSizePt,
   setMath,
   textBox,
@@ -875,5 +876,144 @@ describe("setMath choosing the setting", () => {
     if (held?.kind !== "delimiter") throw new Error("no delimiter");
 
     expectAsWordDrewIt(apart(held.content[0]), 15.84);
+  });
+});
+
+/**
+ * **Word spaces its operators, and the case is read off the left edge rather than off
+ * the row.**
+ *
+ * Cases F to L of `equation-content-probe`, three repeats each, read out of Word's own
+ * pdf on 2026-08-14. Every one of them stands alone in its paragraph, so Word centres it
+ * on the body's own centre of 306.00 and **twice the distance from the left edge Word
+ * drew to that centre is what the row advanced by**. That reading is exact where the
+ * row's own reported width is not: it stops at the last letter's ink and leaves out the
+ * correction standing after it.
+ *
+ * The face here carries Cambria Math's own advances and italic corrections for the
+ * seven characters the cases hold, read off the file on 2026-08-14. The ink is invented,
+ * since none of these asks a question about a height.
+ */
+describe("the spacing Word puts round an operator", () => {
+  const ADVANCES = { "𝑎": 1141, "𝑏": 1104, "𝑐": 942, "𝑑": 1187, "−": 1530, "×": 1463, "=": 1530, " ": 451 }; // prettier-ignore
+  const CORRECTIONS = { "𝑎": 50, "𝑏": 45, "𝑐": 65, "𝑑": 65 };
+
+  const SPACED = faceHolding({
+    cmapFormat: 12,
+    advances: ADVANCES,
+    boxes: Object.fromEntries(
+      Object.entries(ADVANCES).map(([character, advance]) => [
+        character,
+        { left: 0, bottom: 0, right: advance, top: X_HEIGHT },
+      ]),
+    ),
+    math: { constants: CAMBRIA_MATH, italicCorrections: CORRECTIONS },
+  });
+
+  const STATED = 11;
+
+  const MARK: ParagraphMark = {
+    font: { kind: "named", name: "Cambria Math" },
+    fontSizePt: STATED,
+    bold: false,
+    italic: true,
+    underline: false,
+    raisePt: 0,
+    lineSizePt: STATED,
+    lineRaisePt: 0,
+    color: null,
+    characterSpacingPt: 0,
+    characterScale: 1,
+    kernFromHalfPoints: null,
+    highlight: null,
+    capitals: "none",
+  };
+
+  const set = (pieces: readonly MarkedMath[]): readonly SetMath[] => {
+    const setting = setMath(pieces, {
+      sizePt: STATED,
+      halfSizePt: STATED,
+      setting: "display",
+      face: SPACED,
+      measure: (text, _mark, sizePt) => textBox(text, sizePt, SPACED),
+    });
+    if (setting === null) throw new Error("nothing was set");
+    return setting;
+  };
+
+  const rowPt = (text: string): number =>
+    mathRowOf(set([{ kind: "run", text, mark: MARK }])).widthPt;
+
+  // Word's own left edges, and the row each of them says was laid out: 306.00 less the
+  // edge, twice over. The last decimal is the pdf's own and not a rule, so a case holds
+  // to the hundredth.
+  const asWordLaidItOut = (actual: number, leftPt: number): void => {
+    expect(actual).toBeCloseTo(2 * (306 - leftPt), 2);
+  };
+
+  it("advances two letters by their own advances and the correction after the last", () => {
+    asWordLaidItOut(rowPt("𝑎𝑏"), 299.85);
+  });
+
+  it("leaves 4/18 of the em on each side of an operation", () => {
+    asWordLaidItOut(rowPt("𝑎−𝑏"), 293.163);
+    asWordLaidItOut(rowPt("𝑎×𝑏"), 293.342);
+  });
+
+  it("leaves 5/18 of the em on each side of a relation", () => {
+    asWordLaidItOut(rowPt("𝑎=𝑏"), 292.551);
+  });
+
+  // Case K against case G: the same expression with a space either side of the operator
+  // in the file came out exactly two space advances wider, so Word's own spacing stands
+  // on top of the file's rather than instead of it.
+  it("stands on top of the spaces the file states", () => {
+    asWordLaidItOut(rowPt("𝑎 − 𝑏"), 290.74);
+    expect(rowPt("𝑎 − 𝑏") - rowPt("𝑎−𝑏")).toBeCloseTo((2 * 451 * STATED) / UNITS_PER_EM, 6);
+  });
+
+  // The italic correction is the face's own for the character standing before the gap,
+  // which is why `ab` and `cd` differ by more than their advances: 45 units against 65.
+  it("takes the correction from the character it stands after", () => {
+    expect(rowPt("𝑐𝑑")).toBeCloseTo(((942 + 1187 + 65) * STATED) / UNITS_PER_EM, 6);
+    expect(rowPt("𝑎𝑏")).toBeCloseTo(((1141 + 1104 + 45) * STATED) / UNITS_PER_EM, 6);
+  });
+
+  // **An operation with nothing to operate on takes no room**, which is TeX's rule and
+  // is unmeasured here: what it protects is the sign of a negative number, which no case
+  // of the probe holds. It leaves such a row exactly as wide as it was before any of
+  // this was built.
+  it("spaces no operator that opens or closes a row", () => {
+    expect(rowPt("−𝑏")).toBeCloseTo(((1530 + 1104 + 45) * STATED) / UNITS_PER_EM, 6);
+    expect(rowPt("𝑎−")).toBeCloseTo(((1141 + 1530 + 50) * STATED) / UNITS_PER_EM, 6);
+  });
+
+  // Case L, the same expression in a numerator: Word filled a bar 25.680 wide, which is
+  // the row above snapped onto its own 0.24 grid.
+  it("spans a fraction's bar with the half the spacing widened", () => {
+    const fraction = set([
+      {
+        kind: "fraction",
+        mark: MARK,
+        numerator: [{ kind: "run", text: "𝑎−𝑏", mark: MARK }],
+        denominator: [{ kind: "run", text: "𝑐𝑑", mark: MARK }],
+      },
+    ])[0];
+    if (fraction?.kind !== "fraction") throw new Error("no fraction");
+    expectAsWordDrewIt(fraction.box.bar.widthPt, 25.68);
+  });
+
+  // A gap is room and nothing else: the letters either side of it are drawn where the
+  // row puts them, and nothing at all is drawn in between.
+  it("draws nothing for the room it leaves", () => {
+    const drawn = mathPrimitivesOf(set([{ kind: "run", text: "𝑎−𝑏", mark: MARK }]), {
+      leftPt: 0,
+      baselinePt: 0,
+    });
+    expect(drawn.map((each) => each.kind)).toStrictEqual(["text", "text", "text"]);
+    expect(drawn[1]?.leftPt).toBeCloseTo(
+      ((1141 + 50) * STATED) / UNITS_PER_EM + (4 / 18) * STATED,
+      6,
+    );
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { spelledAsMath } from "./math-letters.js";
+import { drawsFromAMathAlphabet, spelledAsMath } from "./math-letters.js";
 
 // Every case is what Word drew, read straight out of its own pdf: one string spelled
 // six times over, once for each style, and the pdf's own mapping back to characters.
@@ -70,5 +70,31 @@ describe("spelledAsMath", () => {
 
   it("leaves alone a character no alphabet holds", () => {
     expect(spelledAsMath(" +=(", "italic")).toBe(" +=(");
+  });
+
+  // Cases G and H of `equation-content-probe`: two letters with a hyphen between them
+  // and the same two with a minus came out of Word's own pdf as the same string and the
+  // same width, 25.454pt, though the face advances the two characters 680 units apart.
+  it("draws a hyphen as a minus", () => {
+    expect(points(spelledAsMath("a-b", "italic"))).toEqual(["1d44e", "2212", "1d44f"]);
+    expect(points(spelledAsMath("-", "plain"))).toEqual(["2212"]);
+    expect(points(spelledAsMath("-", "bold"))).toEqual(["2212"]);
+  });
+
+  it("leaves the hyphen of a run stating m:nor alone", () => {
+    expect(spelledAsMath("a-b", null)).toBe("a-b");
+  });
+});
+
+describe("drawsFromAMathAlphabet", () => {
+  it("holds for the letters Word spells a maths run in", () => {
+    expect(drawsFromAMathAlphabet(0x1d44e)).toBe(true);
+    expect(drawsFromAMathAlphabet(0x210e)).toBe(true);
+  });
+
+  it("does not hold for what is drawn as itself", () => {
+    for (const codePoint of [0x20, 0x2d, 0x2212, 0x3d, 0x61, 0x31]) {
+      expect(drawsFromAMathAlphabet(codePoint)).toBe(false);
+    }
   });
 });

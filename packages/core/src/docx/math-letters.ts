@@ -42,6 +42,25 @@ const ALPHABETS: Readonly<Record<Exclude<MathStyle, "plain">, Alphabet>> = {
 // the offset says it is.
 const ITALIC_H = 0x210e;
 
+// **Word draws a hyphen in a maths run as a minus sign**, which is the same class of
+// rule as the alphabet above: the character the file states is not the character Word
+// draws. Measured 2026-08-14 by `equation-content-probe`, cases G and H, three repeats
+// each: two letters with a hyphen between them and the same two with a minus came back
+// out of Word's own pdf as the same string, `𝑎 − 𝑏`, drawn 25.454pt wide in both. The
+// two characters are nothing alike in the face, 680 units against 1530, so a hyphen
+// drawn as itself is 4.57pt short of what Word laid out at 11pt.
+//
+// A run stating `m:nor` is ordinary text and keeps its hyphen; the substitution is
+// unmeasured for the other three styles, and stands for them because the style decides
+// which alphabet the letters come out of and a hyphen is not a letter.
+const DRAWN_AS: ReadonlyMap<number, number> = new Map([[0x2d, 0x2212]]);
+
+// Whether Word draws this character out of one of the alphabets above, which is what
+// the maths spacing asks to know either side of a gap: **the italic correction of a
+// character stands unless the character after it comes out of the same alphabet.**
+export const drawsFromAMathAlphabet = (codePoint: number): boolean =>
+  codePoint === ITALIC_H || within(codePoint, 0x1d400, 0x1d7ff);
+
 const within = (codePoint: number, first: number, last: number): boolean =>
   codePoint >= first && codePoint <= last;
 
@@ -61,14 +80,19 @@ function mappedTo(codePoint: number, alphabet: Alphabet, style: MathStyle): numb
   return codePoint;
 }
 
-// What a math run spells once the style has had its say. `plain` and a run stating
-// `m:nor` are drawn as they are written, which is the whole of what those two mean.
+// What a math run spells once the style has had its say. `plain` keeps the letters it
+// is written in, which is the whole of what that style means, and a run stating `m:nor`
+// is not a maths run at all: it is drawn exactly as it is written.
 export function spelledAsMath(text: string, style: MathStyle | null): string {
-  if (style === null || style === "plain") return text;
-  const alphabet = ALPHABETS[style];
+  if (style === null) return text;
+  const alphabet = style === "plain" ? null : ALPHABETS[style];
   let spelled = "";
   for (const character of text) {
-    spelled += String.fromCodePoint(mappedTo(character.codePointAt(0) ?? 0, alphabet, style));
+    const codePoint = character.codePointAt(0) ?? 0;
+    const drawn = DRAWN_AS.get(codePoint);
+    if (drawn !== undefined) spelled += String.fromCodePoint(drawn);
+    else if (alphabet === null) spelled += character;
+    else spelled += String.fromCodePoint(mappedTo(codePoint, alphabet, style));
   }
   return spelled;
 }

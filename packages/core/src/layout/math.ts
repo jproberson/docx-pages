@@ -8,6 +8,7 @@ import type {
   MathTable,
   MathVariant,
 } from "./font-metrics.js";
+import { drawsFromAMathAlphabet } from "../docx/math-letters.js";
 import type { ParagraphMark } from "../docx/styles.js";
 
 // Where a fraction and a delimiter are set, measured against Word on 2026-08-13 over
@@ -33,6 +34,10 @@ export type MathFace = {
   readonly unitsPerEm: number;
   readonly constants: MathConstants;
   readonly advanceOf: (codePoint: number) => number | null;
+  // How far past its own advance a character's ink leans, which Word leaves room for
+  // wherever the character after it is not out of the same alphabet. Nought for a
+  // character the face states none for.
+  readonly italicCorrectionOf: (codePoint: number) => number;
   readonly inkOf: GlyphInk;
   readonly inkOfGlyph: (glyph: number) => InkBox | null;
   // In the order the face keeps them, smallest first, the character's own plain glyph
@@ -57,6 +62,7 @@ export function mathFace(read: {
     unitsPerEm: read.metrics.unitsPerEm,
     constants: math.constants,
     advanceOf: advances.advanceFor,
+    italicCorrectionOf: math.italicCorrectionOf,
     inkOf: ink.inkOf,
     inkOfGlyph: ink.inkOfGlyph,
     tallerVariantsOf: math.tallerVariantsOf,
@@ -533,7 +539,12 @@ export type SetMath =
       readonly sizePt: number;
       readonly box: DelimiterBox;
       readonly content: readonly SetMath[];
-    };
+    }
+  // Room Word leaves between two pieces and draws nothing in: the spacing round an
+  // operator and the italic correction of the character before it. It is a piece of the
+  // row rather than part of a neighbour's box, so that a fraction's bar still spans its
+  // own halves and a delimiter still stands against its own content.
+  | { readonly kind: "gap"; readonly box: MathBox };
 
 export type MathOrigin = {
   readonly leftPt: number;
@@ -565,6 +576,9 @@ export function mathPrimitivesOf(
 const widthOfSet = (piece: SetMath): number => piece.box.widthPt;
 
 function primitivesInto(piece: SetMath, at: MathOrigin, into: MathPrimitive[]): void {
+  // A gap is room and nothing else: the row advances by it and nobody draws it.
+  if (piece.kind === "gap") return;
+
   if (piece.kind === "run") {
     into.push({
       kind: "text",
@@ -683,6 +697,190 @@ function rowOf(pieces: readonly SetMath[]): MathBox {
   return { widthPt, ascentPt, descentPt, insetPt: only?.box.insetPt ?? 0 };
 }
 
+/**
+ * **Word spaces an equation in eighteenths of the em, and the face states none of it.**
+ *
+ * Measured 2026-08-14 by `equation-content-probe`, cases F to L, three repeats each,
+ * against Word's own pdf. Each case is two math-italic letters with one character
+ * between them, alone in its paragraph, so Word centres it on the body's own centre of
+ * 306.00 and the left edge it drew says what the whole row advanced by. At 11pt in
+ * Cambria Math, where `a` advances 1141 units, `b` 1104, the minus and the equals 1530,
+ * the multiplication sign 1463 and a space 451:
+ *
+ * | case | Word drew it at | which is the row less |
+ * | --- | --- | --- |
+ * | `ab` | 299.850 | 12.299 |
+ * | `a-b` and `a−b` | 293.163 | 25.675 |
+ * | `a×b` | 293.342 | 25.315 |
+ * | `a=b` | 292.551 | 26.897 |
+ * | `a - b`, spaces in the file | 290.740 | 30.519 |
+ *
+ * **Every one of the five falls out to a thousandth of a point** of the letters' own
+ * advances and three terms:
+ *
+ * - **4/18 of the em on each side of an operation**, 2.4444pt at 11;
+ * - **5/18 on each side of a relation**, 3.0556pt, and the equals against the minus
+ *   differs by exactly 2/18 of the em, which is what says the unit is eighteenths;
+ * - **the italic correction the face states for the character before the gap**, 50
+ *   units for `a` and 45 for `b`, and nothing at all between two letters: `ab` is the
+ *   two advances and `b`'s own correction and no more.
+ *
+ * Word's spacing **stands on top of the file's own spaces** rather than instead of
+ * them: the case written with a space either side came out exactly two space advances
+ * wider than the one without. It also draws each gap as a space character of its own,
+ * which is why the row Word wrote for `a-b` holds five characters and not three.
+ *
+ * **The MATH table states none of this.** All fifty-odd of Cambria Math's constants
+ * were read and printed: the nearest to the 455 units 4/18 of the em asks for is
+ * `superscriptBaselineDropMax` at 460, which misses Word's left edge by 0.028pt where
+ * the em is exact, and nothing is near the 569 a relation asks. The face supplies the
+ * italic correction and nothing else, so which characters are operations and which are
+ * relations is this project's own table below.
+ */
+const BINARY_OPERATOR_EM = 4 / 18;
+const RELATION_EM = 5 / 18;
+
+// **Only three characters are measured**, and the rest of what a document may hold is
+// ordinary until Word has answered for it: a plus, a division sign, an inequality and
+// everything else stands here unspaced rather than spaced by a guess.
+// `equation-spacing-probe` is what asks about them.
+//
+// A hyphen is not here because a maths run never keeps one: `spelledAsMath` draws it as
+// the minus, which is what Word drew.
+const OPERATORS: ReadonlyMap<number, "binary" | "relation"> = new Map([
+  [0x2212, "binary"],
+  [0x00d7, "binary"],
+  [0x003d, "relation"],
+]);
+
+// What a piece of a row is spaced as. **A character that operates on what stands either
+// side of it is only an operation where something does stand there**: a minus opening a
+// row is the sign of what follows it and takes no room of its own, and neither does one
+// standing after another operator. That is TeX's own rule, and the spacings above being
+// TeX's own to the thousandth is the reason to keep its company; **it is unmeasured**,
+// and it is the way round that leaves a row Word has not answered for exactly as wide
+// as it was before any of this was built.
+type AtomClass = "ordinary" | "binary" | "relation";
+
+type RowItem =
+  | {
+      readonly kind: "text";
+      readonly text: string;
+      readonly mark: ParagraphMark;
+      readonly stated: AtomClass;
+    }
+  | {
+      readonly kind: "structure";
+      readonly piece: Exclude<MarkedMath, { readonly kind: "run" }>;
+      readonly stated: AtomClass;
+    };
+
+const statedClassOf = (text: string): AtomClass => {
+  const characters = Array.from(text);
+  if (characters.length !== 1) return "ordinary";
+  return OPERATORS.get(characters[0]?.codePointAt(0) ?? 0) ?? "ordinary";
+};
+
+// A row's pieces cut where anything can stand between two characters: at every operator,
+// which the file writes in the middle of an `m:t` as readily as in an `m:r` of its own,
+// and where the letters give way to something they are not drawn beside. **The second
+// cut is what the case written with spaces in the file settles**: Word left `a`'s
+// correction in front of the space it drew, so a correction falls between two characters
+// of one run and not only between one run and the next.
+function rowItemsOf(pieces: readonly MarkedMath[]): readonly RowItem[] {
+  const items: RowItem[] = [];
+  for (const piece of pieces) {
+    if (piece.kind !== "run") {
+      items.push({ kind: "structure", piece, stated: "ordinary" });
+      continue;
+    }
+
+    let held = "";
+    let heldAlphabet = false;
+    const flush = (): void => {
+      if (held !== "")
+        items.push({ kind: "text", text: held, mark: piece.mark, stated: "ordinary" });
+      held = "";
+    };
+
+    for (const character of piece.text) {
+      const codePoint = character.codePointAt(0) ?? 0;
+      const stated = statedClassOf(character);
+      if (stated !== "ordinary") {
+        flush();
+        items.push({ kind: "text", text: character, mark: piece.mark, stated });
+        continue;
+      }
+      const alphabet = drawsFromAMathAlphabet(codePoint);
+      if (held !== "" && alphabet !== heldAlphabet) flush();
+      heldAlphabet = alphabet;
+      held += character;
+    }
+    flush();
+  }
+  return items;
+}
+
+// An operation with nothing to operate on is ordinary: one opening a row, one closing
+// it, and one standing beside another operator or a relation.
+function atomClassesOf(items: readonly RowItem[]): readonly AtomClass[] {
+  const classes = items.map((each) => each.stated);
+  return classes.map((each, at) => {
+    if (each !== "binary") return each;
+    const before = classes[at - 1];
+    const after = classes[at + 1];
+    if (before === undefined || after === undefined) return "ordinary";
+    if (before !== "ordinary" || after === "relation") return "ordinary";
+    return each;
+  });
+}
+
+const lastCodePointOf = (text: string): number | null =>
+  Array.from(text).at(-1)?.codePointAt(0) ?? null;
+
+const firstCodePointOf = (text: string): number | null => text.codePointAt(0) ?? null;
+
+// What Word leaves between one piece of a row and the next, or after the last of them.
+// The two terms are independent: the correction closes the lean of the character before
+// the gap, the spacing is what the two atoms either side ask for.
+function gapAfterPt(
+  items: readonly RowItem[],
+  classes: readonly AtomClass[],
+  at: number,
+  sizePt: number,
+  face: MathFace,
+): number {
+  const left = items[at];
+  const right = items[at + 1];
+  if (left === undefined) return 0;
+
+  let gapPt = 0;
+  if (left.kind === "text") {
+    const last = lastCodePointOf(left.text);
+    const next = right?.kind === "text" ? firstCodePointOf(right.text) : null;
+    const alongsideItsOwn =
+      last !== null &&
+      next !== null &&
+      drawsFromAMathAlphabet(last) &&
+      drawsFromAMathAlphabet(next);
+    if (last !== null && !alongsideItsOwn) {
+      gapPt += (face.italicCorrectionOf(last) * sizePt) / face.unitsPerEm;
+    }
+  }
+
+  const between = [classes[at], classes[at + 1]];
+  if (right !== undefined && !between.every((each) => each === "relation")) {
+    if (between.includes("binary")) gapPt += BINARY_OPERATOR_EM * sizePt;
+    else if (between.includes("relation")) gapPt += RELATION_EM * sizePt;
+  }
+  return gapPt;
+}
+
+const gapOf = (widthPt: number): SetMath => ({
+  kind: "gap",
+  box: { widthPt, ascentPt: 0, descentPt: 0, insetPt: 0 },
+});
+
 export type SetMathRequest = {
   // The size the equation itself is set at, which is not always the size its halves
   // are drawn at: see `scriptSizePt`.
@@ -704,68 +902,71 @@ export function setMath(
   pieces: readonly MarkedMath[],
   request: SetMathRequest,
 ): readonly SetMath[] | null {
+  const items = rowItemsOf(pieces);
+  const classes = atomClassesOf(items);
   const set: SetMath[] = [];
 
-  for (const piece of pieces) {
-    if (piece.kind === "run") {
-      const box = request.measure(piece.text, piece.mark, request.halfSizePt);
-      if (box === null) return null;
-      set.push({
-        kind: "run",
-        text: piece.text,
-        mark: piece.mark,
-        sizePt: request.halfSizePt,
-        box,
-      });
-      continue;
-    }
-
-    if (piece.kind === "fraction") {
-      // **A fraction standing inside another is set in the text constants**, whatever
-      // the one round it was set in: measured over the nested pair, where the inner
-      // fraction's two baselines stood 12.24pt apart at 11pt against the outer pair's
-      // 15.84, which is the text shifts of 1200 and 1030 against the display ones of
-      // 1550 and 1370. A delimiter passes the setting through untouched: the fraction
-      // inside one, alone in its paragraph, was drawn in display like any other.
-      const inside = { ...request, setting: "text" as const };
-      const numerator = setMath(piece.numerator, inside);
-      const denominator = setMath(piece.denominator, inside);
-      if (numerator === null || denominator === null) return null;
-      set.push({
-        kind: "fraction",
-        mark: piece.mark,
-        box: fractionBox({
-          numerator: rowOf(numerator),
-          denominator: rowOf(denominator),
-          sizePt: request.sizePt,
-          setting: request.setting,
-          face: request.face,
-        }),
-        numerator,
-        denominator,
-      });
-      continue;
-    }
-
-    const content = setMath(piece.content, request);
-    if (content === null) return null;
-    set.push({
-      kind: "delimiter",
-      mark: piece.mark,
-      sizePt: request.sizePt,
-      box: delimiterBox({
-        opening: piece.opening,
-        closing: piece.closing,
-        content: rowOf(content),
-        sizePt: request.sizePt,
-        grows: piece.grows,
-        face: request.face,
-      }),
-      content,
-    });
+  for (const [at, item] of items.entries()) {
+    const placed = setItem(item, request);
+    if (placed === null) return null;
+    set.push(placed);
+    const gapPt = gapAfterPt(items, classes, at, request.halfSizePt, request.face);
+    if (gapPt > 0) set.push(gapOf(gapPt));
   }
 
   return set;
+}
+
+function setItem(item: RowItem, request: SetMathRequest): SetMath | null {
+  if (item.kind === "text") {
+    const box = request.measure(item.text, item.mark, request.halfSizePt);
+    if (box === null) return null;
+    return { kind: "run", text: item.text, mark: item.mark, sizePt: request.halfSizePt, box };
+  }
+
+  const piece = item.piece;
+  if (piece.kind === "fraction") {
+    // **A fraction standing inside another is set in the text constants**, whatever
+    // the one round it was set in: measured over the nested pair, where the inner
+    // fraction's two baselines stood 12.24pt apart at 11pt against the outer pair's
+    // 15.84, which is the text shifts of 1200 and 1030 against the display ones of
+    // 1550 and 1370. A delimiter passes the setting through untouched: the fraction
+    // inside one, alone in its paragraph, was drawn in display like any other.
+    const inside = { ...request, setting: "text" as const };
+    const numerator = setMath(piece.numerator, inside);
+    const denominator = setMath(piece.denominator, inside);
+    if (numerator === null || denominator === null) return null;
+    return {
+      kind: "fraction",
+      mark: piece.mark,
+      box: fractionBox({
+        numerator: rowOf(numerator),
+        denominator: rowOf(denominator),
+        sizePt: request.sizePt,
+        setting: request.setting,
+        face: request.face,
+      }),
+      numerator,
+      denominator,
+    };
+  }
+
+  const content = setMath(piece.content, request);
+  if (content === null) return null;
+  return {
+    kind: "delimiter",
+    mark: piece.mark,
+    sizePt: request.sizePt,
+    box: delimiterBox({
+      opening: piece.opening,
+      closing: piece.closing,
+      content: rowOf(content),
+      sizePt: request.sizePt,
+      grows: piece.grows,
+      face: request.face,
+    }),
+    content,
+  };
 }
 
 // The whole of what a set equation takes on the line it stands on.
