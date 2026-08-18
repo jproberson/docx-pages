@@ -9,6 +9,7 @@ import { drawablePicture } from "./pictures.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "./relationships.js";
 import { pageGeometrySignature, W_NS } from "./section.js";
 import { SETTINGS_PART } from "./settings.js";
+import { undrawnLegacyDrawings } from "./vml.js";
 import { attribute, type XmlElement } from "./xml.js";
 
 // What this project met in a document and did not honour.
@@ -66,6 +67,8 @@ export type UnhonouredKind =
   | "unknown-drawing"
   | "custom-geometry"
   | "undrawable-picture"
+  | "legacy-text-box"
+  | "legacy-drawing"
   | "approximated-border"
   | "alternate-first-or-even-page"
   | "substituted-face"
@@ -144,6 +147,32 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // in the package, and a document holding one drew a blank rectangle and reported
   // no gap of any kind.
   "undrawable-picture": "changes-paint",
+  /**
+   * **A text box written in the old form is text drawn nowhere at all.** Only a
+   * DrawingML shape's `wps:txbx` is laid out in a frame of its own; a `v:textbox`
+   * reaches no frame, no line and no page, so every word in it is missing and the
+   * page cannot be trusted where it stood. It is the largest of these rows, 20 of
+   * the 718 documents and 68 boxes between them.
+   *
+   * A text box standing in the line rather than out of it costs the room as well as
+   * the words, since a `w:pict` the reader makes no picture of is passed over whole
+   * and its line is short by the width it states.
+   */
+  "legacy-text-box": "moves-text",
+  /**
+   * Every other drawing in the old form that nothing here draws: a `v:line`, which
+   * is a hairline, a `v:rect` or a `v:shape` that names no picture, a `v:group`,
+   * and a picture positioned out of the flow. Its room is held by nothing and
+   * nothing is drawn where it stood, which is what the raster sees and the line
+   * score does not.
+   *
+   * **The inline shape in this row is the loose end.** One document of the 718
+   * states a `v:rect` in the line with no picture in it, and that one takes its
+   * line's room with it, which is movement rather than paint. What Word draws for
+   * it is unmeasured, it is one document and one shape, and the row is named for
+   * what the rest of it loses.
+   */
+  "legacy-drawing": "changes-paint",
   "approximated-border": "changes-paint",
   // A document asking for one header on its even pages and another on its odd ones
   // draws the odd one everywhere, and a header of another height moves every line
@@ -244,6 +273,13 @@ function unhonouredBy(
   if (element.namespace !== W_NS) return null;
 
   switch (element.name) {
+    // The old drawing form answers for itself, by the same reader the layout uses:
+    // whatever `undrawnLegacyDrawings` hands back is what stands in the file and is
+    // drawn nowhere. Both containers are asked, since the picture inside them is
+    // the same picture and so is everything round it.
+    case "pict":
+    case "object":
+      return legacyDrawingUnread(element);
     case "gridSpan":
     case "vMerge":
       return "merged-cells";
@@ -317,6 +353,24 @@ function unhonouredBy(
     default:
       return null;
   }
+}
+
+// What a `w:pict` or a `w:object` states that nothing draws, in one answer for the
+// whole container: a `w:pict` holds one drawing and a group of thirty shapes is one
+// drawing, so a document says this once a `w:pict` rather than once a shape.
+//
+// **Three things a VML shape can be are not gaps and are not counted here.** The
+// picture standing in the line is read and drawn, in either container; the
+// `mc:Fallback` twin of a DrawingML shape is the copy Word itself ignores, and the
+// walk drops it before anything looks inside; and a `w:txbxContent` under a
+// DrawingML shape is laid out in its own frame. Counting the corpus without
+// dropping the first two said a `v:line` was in 289 documents where 9 hold one.
+//
+// Text is worth more than paint, so a container holding both answers for the text.
+function legacyDrawingUnread(pict: XmlElement): UnhonouredKind | null {
+  const undrawn = undrawnLegacyDrawings(pict);
+  if (undrawn.length === 0) return null;
+  return undrawn.some((each) => each.holdsText) ? "legacy-text-box" : "legacy-drawing";
 }
 
 // Whether the paragraph holding a break has drawn anything before it. Word's own

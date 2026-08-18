@@ -30,6 +30,9 @@ const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDr
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
+const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+const V_NS = "urn:schemas-microsoft-com:vml";
 
 const reportOf = (
   body: string,
@@ -432,6 +435,90 @@ describe("readUnhonoured", () => {
       <w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/></w:r></w:p>`;
     expect(kinds(reportOf(anchored))).toStrictEqual(["comment"]);
     expect(kinds(reportOf(`<w:p><w:r><w:t>a</w:t></w:r></w:p>`))).toStrictEqual([]);
+  });
+
+  // The drawing form Word wrote before DrawingML. The picture standing in the line
+  // is read and drawn in either container; everything else in the form is drawn
+  // nowhere at all, and until this was named a document could lose half its
+  // furniture and report nothing.
+  //
+  // **The census behind these rows was parsed rather than grepped**, and the two
+  // shapes that had to be dropped before a VML shape counted as a gap are the two
+  // pinned below: the `mc:Fallback` twin of a DrawingML shape, and a text box laid
+  // out in its own frame.
+  describe("a drawing in the old form", () => {
+    const pict = (inner: string, holder = "pict") =>
+      `<w:p><w:r><w:${holder} xmlns:v="${V_NS}" xmlns:r="${R_NS}">${inner}` +
+      `</w:${holder}></w:r></w:p>`;
+    const picture = (style: string) =>
+      `<v:shape type="#_x0000_t75" style="${style}"><v:imagedata r:id="rId9"/></v:shape>`;
+    const textBox = (style: string) =>
+      `<v:shape style="${style}"><v:textbox><w:txbxContent>` +
+      `<w:p><w:r><w:t>boxed</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape>`;
+
+    it("says nothing about the picture either container puts on the line", () => {
+      expect(reportOf(pict(picture("width:180pt;height:90pt")))).toStrictEqual([]);
+      expect(reportOf(pict(picture("width:180pt;height:90pt"), "object"))).toStrictEqual([]);
+    });
+
+    it("says nothing about the shape type a picture names, which draws nothing itself", () => {
+      const shapeType = `<v:shapetype id="_x0000_t75"><v:stroke joinstyle="miter"/></v:shapetype>`;
+      expect(reportOf(pict(shapeType + picture("width:36pt;height:36pt")))).toStrictEqual([]);
+    });
+
+    it("names a text box, whose words reach no frame, no line and no page", () => {
+      expect(
+        kinds(reportOf(pict(textBox("position:absolute;width:180pt;height:90pt")))),
+      ).toStrictEqual(["legacy-text-box"]);
+    });
+
+    it("names a line, a shape naming no picture, and a picture out of the flow", () => {
+      const line = `<v:line style="position:absolute" from="0,0" to="180pt,0"/>`;
+      const rule = `<v:rect style="width:180pt;height:1.5pt"/>`;
+      const floating = picture("position:absolute;width:180pt;height:90pt");
+      expect(kinds(reportOf(pict(line)))).toStrictEqual(["legacy-drawing"]);
+      expect(kinds(reportOf(pict(rule)))).toStrictEqual(["legacy-drawing"]);
+      expect(kinds(reportOf(pict(floating)))).toStrictEqual(["legacy-drawing"]);
+    });
+
+    // Word draws a group as one drawing and the census counted one, so a group of
+    // shapes is one place rather than one a shape.
+    it("names a group once, whatever it holds", () => {
+      const group = `<v:group style="position:absolute;width:180pt;height:90pt">
+        ${picture("width:36pt;height:36pt")}<v:line from="0,0" to="36pt,0"/>
+        <v:rect style="width:36pt;height:36pt"/></v:group>`;
+      expect(reportOf(pict(group))).toStrictEqual([
+        {
+          kind: "legacy-drawing",
+          effect: "changes-paint",
+          places: [{ part: "word/document.xml", paragraphIndex: 0 }],
+        },
+      ]);
+    });
+
+    // Text is worth more than paint, so a container holding both answers for the text.
+    it("names the text where a group holds a text box beside a line", () => {
+      const group = `<v:group style="position:absolute;width:180pt;height:90pt">
+        <v:line from="0,0" to="36pt,0"/>${textBox("width:36pt;height:36pt")}</v:group>`;
+      expect(kinds(reportOf(pict(group)))).toStrictEqual(["legacy-text-box"]);
+    });
+
+    // The copy Word itself ignores, beside a DrawingML shape already read from
+    // `mc:Choice`. Counting these as gaps is what said a `v:line` was in 289 corpus
+    // documents where 9 hold one.
+    it("says nothing about the fallback twin of a shape read from mc:Choice", () => {
+      const shape = `<w:drawing><wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}">
+        <wp:extent cx="914400" cy="914400"/>
+        <a:graphic><a:graphicData><wps:wsp xmlns:wps="${WPS_NS}"><wps:txbx><w:txbxContent>
+          <w:p><w:r><w:t>boxed</w:t></w:r></w:p>
+        </w:txbxContent></wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing>`;
+      const body = `<w:p><w:r><mc:AlternateContent xmlns:mc="${MC_NS}">
+        <mc:Choice Requires="wps">${shape}</mc:Choice>
+        <mc:Fallback><w:pict xmlns:v="${V_NS}">
+          ${textBox("position:absolute;width:180pt;height:90pt")}
+        </w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>`;
+      expect(reportOf(body)).toStrictEqual([]);
+    });
   });
 
   it("gathers every place a kind was met into the one entry", () => {

@@ -32,6 +32,8 @@ const FEATURE_OF: Readonly<Record<string, string>> = {
   footnote: "notes",
   "undrawable-picture": "picture",
   "unknown-drawing": "drawings",
+  "legacy-text-box": "legacy-drawings",
+  "legacy-drawing": "legacy-drawings",
   "approximated-border": "paragraph-borders",
 };
 

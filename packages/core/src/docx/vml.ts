@@ -16,8 +16,9 @@ import { attribute, type XmlElement } from "./xml.js";
 //
 // **Only the picture standing in the run's own line is read here.** A VML shape
 // carrying `position:absolute` is out of flow like a `wp:anchor`, and one holding
-// a `v:textbox` rather than a picture is a text box; neither is answered for yet.
-// The `mc:Fallback` twin of a DrawingML shape never reaches this at all, since the
+// a `v:textbox` rather than a picture is a text box; neither is drawn yet, and
+// `undrawnLegacyDrawings` is what the fidelity report names them by. The
+// `mc:Fallback` twin of a DrawingML shape never reaches this at all, since the
 // blocks drop it before anything looks inside.
 //
 // Measured over the 718: every inline VML picture in the corpus states its width
@@ -109,6 +110,15 @@ function imageOf(node: XmlElement): XmlElement | null {
 export const holdsALegacyPicture = (namespace: string | null, name: string): boolean =>
   namespace === W_NS && (name === "pict" || name === "object");
 
+// The picture a shape puts on the line, or null where it puts none there: one of
+// the shapes that draw no picture at all, one out of the flow, or one naming no
+// picture.
+function pictureInLine(shape: XmlElement): XmlElement | null {
+  if (shape.namespace !== V_NS || !PICTURE_SHAPES.has(shape.name)) return null;
+  if (isPositioned(shape)) return null;
+  return imageOf(shape);
+}
+
 /**
  * The picture a `w:pict` or a `w:object` puts on the line, or null where it puts
  * none there: an empty one, a shape that is not a picture, or one positioned out
@@ -117,10 +127,8 @@ export const holdsALegacyPicture = (namespace: string | null, name: string): boo
 export function inlinePictureOf(pict: XmlElement): VmlPicture | null {
   for (const child of pict.children) {
     if (isDetachedContent(child)) continue;
-    if (child.namespace !== V_NS || !PICTURE_SHAPES.has(child.name)) continue;
-    if (isPositioned(child)) continue;
 
-    const imagedata = imageOf(child);
+    const imagedata = pictureInLine(child);
     if (imagedata === null) continue;
 
     return {
@@ -131,4 +139,50 @@ export function inlinePictureOf(pict: XmlElement): VmlPicture | null {
     };
   }
   return null;
+}
+
+// A drawing written in the old form that nothing here draws. Whether it holds text
+// is the whole of what is asked about it, since text drawn nowhere is a different
+// fault from a line drawn nowhere.
+export type UndrawnLegacyDrawing = {
+  readonly holdsText: boolean;
+};
+
+// A `v:shapetype` is the definition a shape names in its `type` attribute and draws
+// nothing of its own, so it is not one of the drawings.
+const DEFINES_RATHER_THAN_DRAWS = new Set(["shapetype"]);
+
+// Whether a shape, or anything grouped inside it, holds a text box. What the text
+// box says is passed over here as it is everywhere else: what is asked is whether
+// the shape has text at all.
+function holdsATextBox(shape: XmlElement): boolean {
+  if (shape.namespace === V_NS && shape.name === "textbox") return true;
+  return shape.children.some((child) => !isDetachedContent(child) && holdsATextBox(child));
+}
+
+/**
+ * What a `w:pict` or a `w:object` holds that nothing here draws.
+ *
+ * **One entry a drawing rather than one a shape**: a `v:group` answers once for
+ * everything inside it, which is both how Word draws it and how the corpus was
+ * counted. The picture on the line is left out, since that one is read and drawn,
+ * and so is the `mc:Fallback` twin of a DrawingML shape, which never reaches here.
+ */
+export function undrawnLegacyDrawings(pict: XmlElement): readonly UndrawnLegacyDrawing[] {
+  const undrawn: UndrawnLegacyDrawing[] = [];
+  let drawnAlready = false;
+
+  for (const child of pict.children) {
+    if (isDetachedContent(child) || child.namespace !== V_NS) continue;
+    if (DEFINES_RATHER_THAN_DRAWS.has(child.name)) continue;
+    // The reader draws the first picture standing in the line and nothing after it,
+    // so a second one is as undrawn as a shape is.
+    if (!drawnAlready && pictureInLine(child) !== null) {
+      drawnAlready = true;
+      continue;
+    }
+    undrawn.push({ holdsText: holdsATextBox(child) });
+  }
+
+  return undrawn;
 }
