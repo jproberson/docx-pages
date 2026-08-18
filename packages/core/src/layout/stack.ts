@@ -52,6 +52,7 @@ import {
   justifyLine,
   measureText,
   type LineFlow,
+  type LineFlowStart,
   type MeasureFailure,
   type MetricsResolver,
   type TextLine,
@@ -283,6 +284,9 @@ export type StackMeasurement =
       readonly untornRows: readonly UntornRow[];
       readonly anchoredObjects: readonly AnchoredObject[];
       readonly heightPt: number;
+      // What is left of the last paragraph where a column was asked to keep only the
+      // first of its lines, which the column after it breaks again at its own width.
+      readonly rest?: LineFlow | null;
     }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
 
@@ -395,6 +399,7 @@ function measureBlocks(
   context: Context,
   originPt: number,
   storyFrame: Frame,
+  division: Division = WHOLE,
 ): StackMeasurement {
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
@@ -412,6 +417,14 @@ function measureBlocks(
   // past: a column run is measured whole, since every column of it starts at the
   // same top and the run is as tall as the tallest.
   let laidOutTo = -1;
+  // A column takes up the paragraph its own first block began and cuts the last of
+  // them wherever its room ran out, so a division stands at the two ends of the run
+  // of blocks and nowhere between.
+  const dividing = (at: number): Division => ({
+    resume: at === 0 ? division.resume : null,
+    keepLines: at === blocks.length - 1 ? division.keepLines : null,
+  });
+  let rest: LineFlow | null = null;
 
   for (const [at, block] of blocks.entries()) {
     if (at <= laidOutTo) continue;
@@ -473,16 +486,21 @@ function measureBlocks(
           band,
         });
       }
-      const measured = measureParagraph(paragraph, context, top, frame, neighbours, {
-        bands,
-        ahead: [],
-        anchorTopPt,
-      });
+      const measured = measureParagraph(
+        paragraph,
+        context,
+        top,
+        frame,
+        neighbours,
+        { bands, ahead: [], anchorTopPt },
+        dividing(at),
+      );
       if (measured.kind === "blocked") return measured;
 
       standing = bands;
       anchoredAtPt = null;
       let box = measured.box;
+      rest = measured.rest;
 
       // Where the anchor rounds down, the object the next paragraph holds stands
       // over the foot of this one, whose last line is then blocked and falls past
@@ -490,14 +508,19 @@ function measureBlocks(
       // line had is left empty.
       const ahead = lookedAhead(neighbours.below, top + box.heightPt, context);
       if (ahead.length > 0) {
-        const again = measureParagraph(paragraph, context, top, frame, neighbours, {
-          bands,
-          ahead,
-          anchorTopPt,
-        });
+        const again = measureParagraph(
+          paragraph,
+          context,
+          top,
+          frame,
+          neighbours,
+          { bands, ahead, anchorTopPt },
+          dividing(at),
+        );
         if (again.kind === "blocked") return again;
         anchoredAtPt = top + box.heightPt;
         box = again.box;
+        rest = again.rest;
       }
 
       boxes.push(box);
@@ -540,6 +563,7 @@ function measureBlocks(
     untornRows,
     anchoredObjects,
     heightPt: top - originPt,
+    rest,
   };
 }
 
@@ -624,6 +648,10 @@ function measureColumnRun(
   let from = 0;
   let stretchTopPt = topPt;
   let roomPt = roomLeftPt;
+  // The paragraph the columns of the page above were cut through, which the first
+  // column of this page carries on: Word tears a run across a page inside a paragraph
+  // as readily as between two of them.
+  let carried: LineFlow | null = null;
 
   // The walk always moves on, since a column keeps whatever block it opens with however
   // tall that is, so a stretch that swallows nothing cannot happen.
@@ -638,10 +666,13 @@ function measureColumnRun(
       forcedHere,
       roomPt,
       balanced,
+      carried,
     );
     if (stretch.kind === "blocked") return stretch;
 
-    boxes.push(...stretch.measured.boxes);
+    boxes.push(
+      ...(stretchTopPt === topPt ? stretch.measured.boxes : takenUpUnder(stretch, stretchTopPt)),
+    );
     cells.push(...stretch.measured.cells);
     untornRows.push(...stretch.measured.untornRows);
 
@@ -664,9 +695,35 @@ function measureColumnRun(
     // 2026-08-12: seventy lines in two columns filled both columns of their page outright
     // and the last ten went on to the first column of the next.
     from += stretch.consumed;
+    carried = stretch.rest;
     stretchTopPt += roomPt;
     roomPt = pageHeightPt;
   }
+}
+
+/**
+ * The stretch of a run that carries on at the top of the next page, with the room the
+ * paragraph opening it asks for above itself put back.
+ *
+ * **A page a run carries on to opens at the run and not at a paragraph.** A page an
+ * ordinary break opens leaves the space above the paragraph behind, since it opens at
+ * that paragraph's first line, and `breakStack` reads every page that way. A run torn
+ * across a page has its columns' own top at the top of the body, so the space the first
+ * paragraph asks for stands under it and is drawn.
+ *
+ * Read on 2026-08-17 off `395ea6c2f664`, whose run crosses onto its second page: Word
+ * draws the first line of that page 4.8pt below the body's top, which is exactly the
+ * space that paragraph asks for, and this drew it on the top itself. Only the box the
+ * page opens at is answered for, which is the first of the stretch: no other box of it
+ * can reach the foot of the page above, since a column keeps no more than the room.
+ */
+function takenUpUnder(stretch: Filled, stretchTopPt: number): readonly ParagraphBox[] {
+  const boxes = stretch.measured.boxes;
+  const first = boxes[0];
+  if (first === undefined) return boxes;
+  const underPt = (first.lines[0]?.topPt ?? first.topPt) - stretchTopPt;
+  if (underPt <= EPSILON) return boxes;
+  return [{ ...first, resumesUnderPt: first.resumesUnderPt + underPt }, ...boxes.slice(1)];
 }
 
 // One page's worth of a column run: the blocks the room held, dealt into the columns, and
@@ -684,8 +741,9 @@ function fillStretch(
   forced: ReadonlySet<number>,
   roomPt: number,
   balanced: boolean,
+  resume: LineFlow | null,
 ): ColumnFill {
-  const filled = fillColumns(blocks, context, topPt, columns, forced, roomPt, roomPt);
+  const filled = fillColumns(blocks, context, topPt, columns, forced, roomPt, roomPt, resume);
   if (filled.kind === "blocked" || !filled.whole || !balanced) return filled;
 
   // **A run that states a break of its own is not evened out at all.** The document has
@@ -706,7 +764,7 @@ function fillStretch(
     .sort((one, other) => one - other);
   let evenest: Filled | null = null;
   for (const candidate of candidates) {
-    const evened = fillColumns(blocks, context, topPt, columns, forced, candidate, roomPt);
+    const evened = fillColumns(blocks, context, topPt, columns, forced, candidate, roomPt, resume);
     if (evened.kind === "blocked") return evened;
     if (!evened.whole) continue;
     if (evenest === null || evensBetter(evened, evenest)) evenest = evened;
@@ -803,6 +861,9 @@ type Filled = {
   readonly whole: boolean;
   // How many of them did, which is where the next page's columns carry on from.
   readonly consumed: number;
+  // What is left of the paragraph the last column cut, which the columns of the next
+  // page take up.
+  readonly rest: LineFlow | null;
   // How far below the run's top each block reached, which are the heights a
   // column could be cut to.
   readonly bottomsPt: readonly number[];
@@ -837,12 +898,16 @@ function fillColumns(
   forced: ReadonlySet<number>,
   heightPt: number,
   roomPt: number,
+  resume: LineFlow | null,
 ): ColumnFill {
   const blockOf = new Map<number, number>();
   for (const [at, block] of blocks.entries()) {
     for (const paragraph of blockParagraphs([block])) blockOf.set(paragraph.index, at);
   }
   const lastBreak = forced.size === 0 ? null : Math.max(...forced);
+  // Only a paragraph is cut between two columns. A table is torn at a row and a row at
+  // a line, which is a rule about pages that nothing has asked Word about for columns.
+  const divides = (at: number): boolean => blocks[at]?.kind === "paragraph";
 
   const boxes: ParagraphBox[] = [];
   const cells: PlacedCell[] = [];
@@ -851,6 +916,9 @@ function fillColumns(
   const columnHeightsPt: number[] = [];
   const columnsDrawing: boolean[] = [];
   let from = 0;
+  // What the column above left of the paragraph the run carries on with, which the
+  // column being filled breaks again at its own width.
+  let carried = resume;
 
   for (const [at, column] of columns.entries()) {
     const afterTheLastBreak = lastBreak !== null && from >= lastBreak;
@@ -859,7 +927,10 @@ function fillColumns(
       columnsDrawing.push(false);
       continue;
     }
-    const measured = measureBlocks(blocks.slice(from), context, topPt, column);
+    const measured = measureBlocks(blocks.slice(from), context, topPt, column, {
+      resume: carried,
+      keepLines: null,
+    });
     if (measured.kind === "blocked") return measured;
 
     // **No column keeps more than the room its page left.** A column used to keep
@@ -869,28 +940,48 @@ function fillColumns(
     // columns evened out above it did not, and so is the column the run's last break
     // opened.
     const cutAtPt = at === columns.length - 1 || afterTheLastBreak ? roomPt : heightPt;
-    const cut = cutColumnAt(measured.boxes, blockOf, forced, topPt, cutAtPt);
+    const cut = cutColumnAt(
+      measured.boxes,
+      blockOf,
+      forced,
+      divides,
+      topPt,
+      cutAtPt,
+      cutAtPt >= roomPt - EPSILON,
+    );
+    for (const box of measured.boxes) reachesOf(box, topPt, bottomsPt);
 
-    if (cut >= blocks.length) {
+    if (cut.at >= blocks.length) {
       boxes.push(...measured.boxes);
       cells.push(...measured.cells);
       untornRows.push(...measured.untornRows);
-      for (const box of measured.boxes) bottomsPt.push(box.topPt + box.heightPt - topPt);
       columnHeightsPt.push(measured.heightPt);
       columnsDrawing.push(measured.boxes.some(drawsSomething));
       from = blocks.length;
+      carried = null;
       continue;
     }
 
-    const kept = measureBlocks(blocks.slice(from, cut), context, topPt, column);
+    // The paragraph the cut runs through is measured with this column, which keeps the
+    // lines it had room for, and stays where the next column takes up.
+    const upTo = cut.keepLines === null ? cut.at : cut.at + 1;
+    const kept = measureBlocks(blocks.slice(from, upTo), context, topPt, column, {
+      resume: carried,
+      keepLines: cut.keepLines,
+    });
     if (kept.kind === "blocked") return kept;
     boxes.push(...kept.boxes);
     cells.push(...kept.cells);
     untornRows.push(...kept.untornRows);
-    for (const box of measured.boxes) bottomsPt.push(box.topPt + box.heightPt - topPt);
-    columnHeightsPt.push(kept.heightPt + nearSideOfABreak(measured.boxes, blockOf, forced, cut));
+    // A column ending inside a paragraph leaves no break's line behind it: the break
+    // that paragraph carries is what opened this column, and was answered for there.
+    columnHeightsPt.push(
+      kept.heightPt +
+        (cut.keepLines === null ? nearSideOfABreak(measured.boxes, blockOf, forced, cut.at) : 0),
+    );
     columnsDrawing.push(kept.boxes.some(drawsSomething));
-    from = cut;
+    from = cut.at;
+    carried = kept.rest ?? null;
   }
 
   return {
@@ -905,10 +996,20 @@ function fillColumns(
     },
     whole: from >= blocks.length,
     consumed: from,
+    rest: carried,
     bottomsPt,
     columnHeightsPt,
     columnsDrawing,
   };
+}
+
+// How far below the run's top a block reaches, and how far each of its lines does: the
+// heights a column could be cut at, which are places inside a paragraph as well as
+// between two of them.
+function reachesOf(box: ParagraphBox, topPt: number, into: number[]): void {
+  into.push(box.topPt + box.heightPt - topPt);
+  if (box.lines.length < 2) return;
+  for (const line of box.lines) into.push(line.topPt + line.fittingHeightPt - topPt);
 }
 
 /**
@@ -942,27 +1043,88 @@ function nearSideOfABreak(
   return box.lines[0]?.heightPt ?? box.heightPt;
 }
 
+// Where a column ends: the first block of the run that belongs in the next one, and,
+// where the cut falls inside a paragraph, how many of that paragraph's lines this
+// column keeps.
+type ColumnCut = {
+  readonly at: number;
+  readonly keepLines: number | null;
+};
+
+const WHOLE_COLUMN: ColumnCut = { at: Number.POSITIVE_INFINITY, keepLines: null };
+
 // The first block of the run that belongs in the next column: the one carrying a
-// break of its own, or the one whose foot passed the height the column was given.
-// The block a column opens with always stays, however tall it is, since a column
-// that carries nothing forward never ends.
+// break of its own, or the one whose foot passed the height the column was given. A
+// paragraph the room ran out inside is cut at the last of its lines that fitted rather
+// than moved whole; a block the column opens with and cannot cut stays there however
+// tall it is, since a column that carries it forward whole never ends.
 function cutColumnAt(
   boxes: readonly ParagraphBox[],
   blockOf: ReadonlyMap<number, number>,
   forced: ReadonlySet<number>,
+  divides: (at: number) => boolean,
   topPt: number,
   heightPt: number,
-): number {
+  askedForByTheRoom: boolean,
+): ColumnCut {
   let opened: number | null = null;
   for (const box of boxes) {
     const place = blockOf.get(box.index);
     if (place === undefined) continue;
     if (opened === null) opened = place;
+    if (place !== opened && forced.has(place)) return { at: place, keepLines: null };
+    if (box.topPt + box.heightPt <= topPt + heightPt + EPSILON) continue;
+
+    const kept = divides(place)
+      ? linesKeptOf(box, topPt + heightPt, place === opened, askedForByTheRoom)
+      : null;
+    if (kept !== null) return { at: place, keepLines: kept };
     if (place === opened) continue;
-    if (forced.has(place)) return place;
-    if (box.topPt + box.heightPt > topPt + heightPt + EPSILON) return place;
+    return { at: place, keepLines: null };
   }
-  return Number.POSITIVE_INFINITY;
+  return WHOLE_COLUMN;
+}
+
+/**
+ * How many of a paragraph's lines stand inside the column, where that is a cut and not the
+ * whole paragraph either way.
+ *
+ * Nothing where every line fits and only the room the paragraph keeps under itself passed
+ * the foot, and nothing where not even the first line does, unless the column opens with
+ * it and has nowhere to send it.
+ *
+ * **A cut made to even a run out leaves at least two lines behind it; one the room forces
+ * leaves whatever it had room for.** Read on 2026-08-17 off three corpus documents:
+ *
+ * - `8010f77cdeee` divides a run whose fifth block is two lines. Cut between them the
+ *   columns stand 82.9 and 88.0, and left whole they stand 97.6 and 73.4. **Word draws the
+ *   taller**, so it will not leave one line of a paragraph at the foot of a column to even
+ *   the run out, even where doing so would make the run shorter.
+ * - `395ea6c2f664` divides a three-line paragraph **two and one**, standing 81.8 and 102.8
+ *   against the 107.4 and 77.2 it comes to whole, and Word draws the cut one. So it is the
+ *   near side of the cut that has to hold two lines and not the far side.
+ * - `52342f52bfb1` ends a column of its first page with **one line** of the paragraph its
+ *   next page carries on. That column ran out of page rather than being evened to a
+ *   height, which is the difference: a run torn across a page takes what the room holds.
+ */
+function linesKeptOf(
+  box: ParagraphBox,
+  footPt: number,
+  opensTheColumn: boolean,
+  askedForByTheRoom: boolean,
+): number | null {
+  if (box.lines.length < 2) return null;
+  let kept = 0;
+  for (const line of box.lines) {
+    if (line.topPt + line.fittingHeightPt > footPt + EPSILON) break;
+    kept += 1;
+  }
+  if (kept >= box.lines.length) return null;
+  if (kept >= 2) return kept;
+  if (!askedForByTheRoom) return null;
+  // A column with room for less than a line of the paragraph it opens with keeps a line
+  // of it all the same, since a column that carries the whole of it forward never ends.
+  return kept === 1 || opensTheColumn ? 1 : null;
 }
 
 // Where a paragraph carries a break asking for the next column. Every one of the 25
@@ -1648,8 +1810,34 @@ function seatingOffset(align: CellVerticalAlign, roomPt: number, cellHeightPt: n
 }
 
 type ParagraphMeasurement =
-  | { readonly kind: "measured"; readonly box: ParagraphBox }
+  | { readonly kind: "measured"; readonly box: ParagraphBox; readonly rest: LineFlow | null }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker };
+
+/**
+ * A paragraph a column run cut between two of its columns: where the column takes it up,
+ * and how many of its lines that column keeps.
+ *
+ * **Word cuts a paragraph across a column boundary and breaks what is left again at the
+ * width of the column it lands in.** Read on 2026-08-17 off two drawings of
+ * `52342f52bfb1`, whose page one ends a 58.1pt column with the first line of a paragraph
+ * and lays the rest of it out at page two's 115.75pt column, where it comes to two lines
+ * rather than the three it takes here. The line widths either side of the cut agree with
+ * Word to a tenth of a point. `column-room-probe` cases E and F say the same of an
+ * authored document: a paragraph of twelve words in a 109pt column before a 231pt one
+ * comes out two lines and one, and the run takes the 48pt its tallest column stands.
+ *
+ * **A piece is not a paragraph.** The room the paragraph asks for above itself stands
+ * above the first piece and the room below it under the last, its number is drawn in
+ * front of the piece holding its first line, and its mark sits at the end of the piece
+ * holding its last. That is the same division `partOf` makes where a page break runs
+ * through a paragraph, which is the one this has to agree with.
+ */
+type Division = {
+  readonly resume: LineFlow | null;
+  readonly keepLines: number | null;
+};
+
+const WHOLE: Division = { resume: null, keepLines: null };
 
 // What stands either side of the paragraph in the same run of blocks, which is
 // all "don't add space between paragraphs of the same style" asks about.
@@ -1683,6 +1871,7 @@ function measureParagraph(
   frame: Frame,
   neighbours: Neighbours,
   standing: Standing,
+  division: Division,
 ): ParagraphMeasurement {
   const paragraphMark = resolveParagraphMark(paragraph, context.styles, context.inTable);
   const marks: readonly ParagraphMark[] = [
@@ -1711,26 +1900,39 @@ function measureParagraph(
   const paragraphFrame = resolveParagraphFrame(paragraph, context.styles, context.inTable);
   const runs = flowing(readRuns(paragraph, context.styles), context.inCell, context.inColumn);
   const insets = insetsOf(paragraphFrame);
-  const number = context.numbers.get(paragraph.index);
-  const sectionClose = context.sectionsClosed?.get(paragraph.index);
+  const resumed = division.resume !== null;
+  // A number stands in front of the paragraph's first line, which is in the column
+  // this piece was cut from.
+  const number = resumed ? undefined : context.numbers.get(paragraph.index);
+  // The break a section carries is the paragraph's own end, so it belongs to the piece
+  // holding that end and not to one a column cut short of it.
+  const sectionClose =
+    division.keepLines === null ? context.sectionsClosed?.get(paragraph.index) : undefined;
   const widthPt =
     context.wraps === false
       ? Number.POSITIVE_INFINITY
       : frame.widthPt - insets.leftPt - insets.rightPt;
 
-  const breaking = beginLines({
-    runs,
-    metricsFor: context.metricsFor,
-    // A justified line may take a word it has not the room for, so where a line
-    // breaks depends on how it is aligned and on how old the document is.
-    justified: paragraphFrame.alignment === "justify" && squeezesAJustifiedLine(context.settings),
-    tabs: {
-      stopsPt: tabStopsPt(paragraphFrame),
-      originPt: insets.leftPt,
-      firstLineOriginPt: number === undefined ? insets.leftPt + insets.firstLinePt : insets.leftPt,
-      defaultStopPt: twipsToPoints(context.settings.defaultTabStopTwips),
-    },
-  });
+  // A piece the column above cut off is broken again from where that column left it,
+  // and the text behind it was measured once already when the paragraph first flowed.
+  const breaking: LineFlowStart =
+    division.resume !== null
+      ? { kind: "flow", flow: division.resume }
+      : beginLines({
+          runs,
+          metricsFor: context.metricsFor,
+          // A justified line may take a word it has not the room for, so where a line
+          // breaks depends on how it is aligned and on how old the document is.
+          justified:
+            paragraphFrame.alignment === "justify" && squeezesAJustifiedLine(context.settings),
+          tabs: {
+            stopsPt: tabStopsPt(paragraphFrame),
+            originPt: insets.leftPt,
+            firstLineOriginPt:
+              number === undefined ? insets.leftPt + insets.firstLinePt : insets.leftPt,
+            defaultStopPt: twipsToPoints(context.settings.defaultTabStopTwips),
+          },
+        });
 
   if (breaking.kind === "unmeasurable") {
     return {
@@ -1750,19 +1952,22 @@ function measureParagraph(
 
   return {
     kind: "measured",
-    box: layOutParagraph(paragraph.index, breaking.flow, {
+    ...layOutParagraph(paragraph.index, breaking.flow, {
       topPt,
       anchorTopPt: standing.anchorTopPt,
       markHeightPt: markHeight,
       markWidthPt: widthOfMark(paragraphMark, context.metricsFor),
       frame,
       paragraphFrame,
-      spacing: spacingPt(paragraph, paragraphFrame, context, neighbours),
+      spacing: roomEitherSideOf(
+        spacingPt(paragraph, paragraphFrame, context, neighbours),
+        division,
+      ),
       paint: paintOf(paragraphFrame, context, neighbours, {
         leftPt: frame.leftPt + insets.leftPt,
         rightPt: frame.leftPt + frame.widthPt - insets.rightPt,
       }),
-      startsPage: !context.inCell && paragraphFrame.pageBreakBefore,
+      startsPage: !resumed && !context.inCell && paragraphFrame.pageBreakBefore,
       endsPageAtASection: sectionClose?.opensAPage === true,
       closesASection: sectionClose !== undefined,
       closesACellUnderATable: neighbours.closesACellUnderATable,
@@ -1789,9 +1994,20 @@ function measureParagraph(
       // of nothing took nine from the number's own place. Room measured from the
       // left indent would have given all four of them six.
       firstLineRoomPt: firstLineRoomOf(measured, widthPt, frame, insets),
+      resumed,
+      keepLines: division.keepLines,
     }),
   };
 }
+
+// **The room a paragraph asks for above and below itself stands at its own two ends
+// and not at a cut a column made in it.** The same reading `partOf` takes of a page
+// break running through a paragraph, whose pieces keep the space before at the first
+// and the space after at the last.
+const roomEitherSideOf = (spacing: Spacing, division: Division): Spacing => ({
+  beforePt: division.resume === null ? spacing.beforePt : 0,
+  afterPt: division.keepLines === null ? spacing.afterPt : 0,
+});
 
 // Word ignores a page break inside a cell outright: the text either side of one
 // comes out on the same line and the row stands where it always did. Dropping the
@@ -2091,15 +2307,31 @@ type LayOutParagraphInput = {
   // refuses to wrap leaves unbounded.
   readonly roomPt: number;
   readonly firstLineRoomPt: number;
+  // Whether the column above cut the paragraph in two and this is the second piece
+  // of it, and how many lines this piece keeps before the column below takes over.
+  readonly resumed: boolean;
+  readonly keepLines: number | null;
 };
 
 // A paragraph with text is as tall as the lines its runs measured to: Word does
 // not let the paragraph mark raise a line it shares with a run, however much
 // bigger the mark is. An empty paragraph is the mark's height alone.
-function layOutParagraph(index: number, flow: LineFlow, input: LayOutParagraphInput): ParagraphBox {
+function layOutParagraph(
+  index: number,
+  flow: LineFlow,
+  input: LayOutParagraphInput,
+): LaidParagraph {
   const across = acrossOf(input);
-  return droppedPast(layOutWholeParagraph(index, flow, input), input, across);
+  const laid = layOutWholeParagraph(index, flow, input);
+  return { box: droppedPast(laid.box, input, across), rest: laid.rest };
 }
+
+// The paragraph as it stands, and what a column that kept only the first of its lines
+// left for the column after it.
+type LaidParagraph = {
+  readonly box: ParagraphBox;
+  readonly rest: LineFlow | null;
+};
 
 const acrossOf = (input: LayOutParagraphInput): Span => {
   const insets = insetsOf(input.paragraphFrame);
@@ -2188,7 +2420,7 @@ function layOutWholeParagraph(
   index: number,
   flow: LineFlow,
   input: LayOutParagraphInput,
-): ParagraphBox {
+): LaidParagraph {
   const { paragraphFrame, frame, number, paint } = input;
   const insets = insetsOf(paragraphFrame);
   const { beforePt, afterPt } = input.spacing;
@@ -2199,6 +2431,10 @@ function layOutWholeParagraph(
   const brokenByItsText = layOutLines(flow, input);
   const laid = brokenByItsText.lines;
   const endsPage = brokenByItsText.endsPage || input.endsPageAtASection;
+  const laidWith = (box: ParagraphBox): LaidParagraph => ({ box, rest: brokenByItsText.rest });
+  // What a paragraph holds is held by the piece of it carrying its end, which is the
+  // reading `partOf` takes of a page break running through one.
+  const keepNext = input.keepLines === null && paragraphFrame.keepNext;
 
   // A paragraph whose whole content is the section break it carries is not laid
   // out at all: it takes no room and holds nothing back. Measured on 2026-08-07 by
@@ -2219,7 +2455,7 @@ function layOutWholeParagraph(
   // cell after ordinary text keeps its line too, so what empties this one is the
   // table above it and not the cell it ends.
   if (laid.length === 0 && (input.closesASection || input.closesACellUnderATable)) {
-    return {
+    return laidWith({
       index,
       topPt: input.topPt,
       anchorTopPt: input.anchorTopPt,
@@ -2230,14 +2466,14 @@ function layOutWholeParagraph(
       contentBottomPt: input.topPt,
       resumesUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
-      keepNext: paragraphFrame.keepNext,
+      keepNext,
       startsPage: input.startsPage,
       endsPage,
       endsPageAtASection: input.endsPageAtASection,
       contentWidthPt: 0,
       clipTo: null,
       paint: null,
-    };
+    });
   }
 
   // An empty paragraph is a line like any other as far as objects are concerned:
@@ -2268,7 +2504,7 @@ function layOutWholeParagraph(
       fitMark,
     );
 
-    return {
+    return laidWith({
       index,
       topPt: input.topPt,
       anchorTopPt: input.anchorTopPt,
@@ -2279,14 +2515,14 @@ function layOutWholeParagraph(
       contentBottomPt: slot.topPt + height.heightPt,
       resumesUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
-      keepNext: paragraphFrame.keepNext,
+      keepNext,
       startsPage: input.startsPage,
       endsPage,
       endsPageAtASection: input.endsPageAtASection,
       contentWidthPt: slot.leftPt - frame.leftPt + input.markWidthPt,
       clipTo: null,
       paint,
-    };
+    });
   }
 
   const placed = laid.map((each, at) => {
@@ -2313,7 +2549,7 @@ function layOutWholeParagraph(
   const last = laid[laid.length - 1];
   const bottomPt = last === undefined ? input.topPt : last.slot.topPt + last.height.heightPt;
 
-  return {
+  return laidWith({
     index,
     topPt: input.topPt,
     anchorTopPt: input.anchorTopPt,
@@ -2324,7 +2560,7 @@ function layOutWholeParagraph(
     contentBottomPt: bottomPt,
     resumesUnderPt: 0,
     widowControl: paragraphFrame.widowControl,
-    keepNext: paragraphFrame.keepNext,
+    keepNext,
     startsPage: input.startsPage,
     endsPage,
     endsPageAtASection: input.endsPageAtASection,
@@ -2334,7 +2570,7 @@ function layOutWholeParagraph(
     ),
     clipTo: null,
     paint,
-  };
+  });
 }
 
 // A line as it came out of the paragraph's text and where it ended up, before
@@ -2351,6 +2587,9 @@ type LaidLine = {
 type LaidLines = {
   readonly lines: readonly LaidLine[];
   readonly endsPage: boolean;
+  // What the paragraph has left where a column kept only the first of its lines,
+  // which the next column breaks again at its own width.
+  readonly rest: LineFlow | null;
 };
 
 // How many goes a line gets at settling on a height. A line broken again at a
@@ -2372,18 +2611,21 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
 
   for (;;) {
     const at = laid.length;
-    const roomPt = at === 0 ? input.firstLineRoomPt : input.roomPt;
-    const firstLinePt = at === 0 ? insets.firstLinePt : 0;
+    // A piece of a paragraph the column above began has no first line of its own:
+    // the indent, the room and the number all stood in the column it was cut from.
+    const opens = at === 0 && !input.resumed;
+    const roomPt = opens ? input.firstLineRoomPt : input.roomPt;
+    const firstLinePt = opens ? insets.firstLinePt : 0;
     // The number takes the first line's own start, so the text after it begins
     // wherever the number's suffix moved on to.
     const startPt =
-      at === 0 && number !== null ? number.textStartPt : frame.leftPt + insets.leftPt + firstLinePt;
+      opens && number !== null ? number.textStartPt : frame.leftPt + insets.leftPt + firstLinePt;
     const endPt = frame.leftPt + frame.widthPt - insets.rightPt;
 
     const leastPt = rest.leastPt;
     const startsPage = rest.startsPage;
     let taken = rest.next(roomPt);
-    if (taken === null) return { lines: laid, endsPage: startsPage };
+    if (taken === null) return { lines: laid, endsPage: startsPage, rest: null };
 
     // Only the first line has room asked for above it; the rest follow the line
     // before them.
@@ -2416,6 +2658,10 @@ function layOutLines(flow: LineFlow, input: LayOutParagraphInput): LaidLines {
     }
 
     laid.push({ line: taken.line, slot, height, startsPage });
+    // The column asked for only so many lines, and what is left of the paragraph goes
+    // to the column after it, which breaks it again at its own width. A paragraph
+    // ends nowhere here, so it holds no page back either.
+    if (laid.length === input.keepLines) return { lines: laid, endsPage: false, rest: taken.rest };
     rest = taken.rest;
     top = slot.topPt + height.heightPt;
   }

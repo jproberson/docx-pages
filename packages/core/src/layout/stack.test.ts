@@ -138,6 +138,7 @@ describe("measureStack", () => {
       untornRows: [],
       anchoredObjects: [],
       heightPt: 0,
+      rest: null,
     });
   });
 });
@@ -1573,9 +1574,20 @@ describe("measureStack over a section of more than one column", () => {
               ? []
               : [across.findIndex((column) => column.leftPt === box.lines[0]?.leftPt)],
           ),
+        // How many lines each column drew, which is what a run cut inside a paragraph
+        // has to be read by: its two pieces are one block standing in two columns.
+        linesIn: across.map((column) =>
+          result.boxes
+            .slice(0, -1)
+            .filter((box) => box.lines[0]?.leftPt === column.leftPt)
+            .reduce((lines, box) => lines + box.lines.length, 0),
+        ),
         costPt: closer.topPt - 36,
       };
     };
+
+    // Twelve words of five letters: four lines in the 108pt column, two in the 234pt one.
+    const TWELVE_WORDS = Array.from({ length: 12 }, () => "aaaaa").join(" ");
 
     // A: four one-line blocks in two columns. Word drew two and two and the run cost 48.
     it("costs the tallest column, where the blocks divide evenly", () => {
@@ -1637,6 +1649,48 @@ describe("measureStack over a section of more than one column", () => {
       );
       expect(run.drawnIn).toStrictEqual([0, 0, 1, 1]);
       expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // **A cut made to even a run out leaves at least two lines behind it, and Word takes
+    // the taller run rather than one that leaves a single line.** A one-line block, a
+    // two-line block and another one-line block stand 48 and 48 with the middle block cut
+    // between its lines and 72 and 24 left whole. `8010f77cdeee` is the reading: its run
+    // stands 82.9 and 88.0 cut and 97.6 and 73.4 whole, and Word drew it whole.
+    it("will not leave one line of a paragraph at the foot of a column to even a run", () => {
+      const run = runIn([line("h1"), wrapping(TWELVE_WORDS), line("h3")], TWO);
+      expect(run.linesIn).toStrictEqual([3, 1]);
+      expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // `column-room-probe` case F, read off Word's own pdf on 2026-08-17: twelve words
+    // alone in a 109pt column before a 231pt one came out **two lines and one**, and the
+    // run took the 48 its tallest column stands. Nothing but a cut inside the paragraph
+    // reaches that, since whole it is four lines in the narrow column or two in the wide.
+    it("cuts a paragraph between two columns and breaks the rest at the width it lands in", () => {
+      const run = runIn([wrapping(TWELVE_WORDS)], NARROW_THEN_WIDE);
+      expect(run.linesIn).toStrictEqual([2, 1]);
+      expect(run.costPt).toBeCloseTo(48, 9);
+    });
+
+    // `column-room-probe` case E, the shape of the corpus template that refused two
+    // builds: two one-line blocks and two of twelve words in the same two columns came out
+    // **four lines and three**, and the run took 96. Undivided it can only stand two and
+    // four, which is as tall and puts more in the last column.
+    it("cuts the paragraph the division falls inside and lays the rest out again", () => {
+      const run = runIn(
+        [line("e1"), line("e2"), wrapping(TWELVE_WORDS), wrapping(TWELVE_WORDS)],
+        NARROW_THEN_WIDE,
+      );
+      expect(run.linesIn).toStrictEqual([4, 3]);
+      expect(run.costPt).toBeCloseTo(96, 9);
+    });
+
+    // A cut paragraph is one paragraph drawn in two places, as one a page break runs
+    // through is: the number a list puts in front of it stands over the piece holding its
+    // first line, and its two pieces answer to the one index.
+    it("draws a cut paragraph as one paragraph in two places", () => {
+      const run = runIn([wrapping(TWELVE_WORDS)], NARROW_THEN_WIDE);
+      expect(run.drawnIn).toStrictEqual([0, 1]);
     });
 
     // G: two blocks, a break, three blocks and four empty paragraphs in three columns.
