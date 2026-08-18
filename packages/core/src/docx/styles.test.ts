@@ -8,8 +8,9 @@ import {
   resolveParagraphMark,
   resolveParagraphNumbering,
   resolveRuns,
+  resolveTableInsets,
 } from "./styles.js";
-import { readParagraphs } from "./blocks.js";
+import { DEFAULT_TABLE_INSETS, readParagraphs } from "./blocks.js";
 
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
@@ -589,5 +590,99 @@ describe("a paragraph inside a table", () => {
   it("takes the table style's spacing over the document's defaults inside one", () => {
     expect(frameIn("TableGrid").spaceAfterTwips).toBe(0);
     expect(frameIn("TableGrid").lineTwips).toBe(240);
+  });
+});
+
+describe("resolveTableInsets", () => {
+  const NOTHING = {
+    indentTwips: 0,
+    leftTwips: null,
+    rightTwips: null,
+    topTwips: null,
+    bottomTwips: null,
+  };
+
+  const tableOf = (inner: string) =>
+    readStyleTable(
+      openDocx(
+        buildDocx({
+          "word/styles.xml": styles(inner),
+          "word/document.xml": wordDocument("<w:p/>"),
+        }),
+      ),
+    );
+
+  const tableStyle = (id: string, margins: string, basedOn = "") =>
+    `<w:style w:type="table" w:styleId="${id}">` +
+    (basedOn === "" ? "" : `<w:basedOn w:val="${basedOn}"/>`) +
+    `<w:tblPr>${margins}</w:tblPr></w:style>`;
+
+  const NO_MARGINS = `<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+    <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>`;
+
+  it("stands Word's own margin behind a document with no table style at all", () => {
+    expect(resolveTableInsets(tableOf(NORMAL), null, NOTHING)).toStrictEqual(DEFAULT_TABLE_INSETS);
+  });
+
+  // A style stating nought is stating a margin, and the whole of the fault this was
+  // built for is that Word's own 108 was standing in front of one.
+  it("takes a margin of nought a table style states", () => {
+    const table = tableOf(NORMAL + tableStyle("Grid", NO_MARGINS));
+    expect(resolveTableInsets(table, "Grid", NOTHING)).toStrictEqual({
+      indentTwips: 0,
+      leftTwips: 0,
+      rightTwips: 0,
+      topTwips: 0,
+      bottomTwips: 0,
+    });
+  });
+
+  it("walks the chain, and lets a style stand in front of the one it is based on", () => {
+    const wide = `<w:tblCellMar><w:left w:w="288" w:type="dxa"/></w:tblCellMar>`;
+    const table = tableOf(
+      NORMAL + tableStyle("Base", NO_MARGINS) + tableStyle("Grid", wide, "Base"),
+    );
+    const resolved = resolveTableInsets(table, "Grid", NOTHING);
+    expect(resolved.leftTwips).toBe(288);
+    expect(resolved.rightTwips).toBe(0);
+  });
+
+  it("lets what the table states stand in front of every style", () => {
+    const table = tableOf(NORMAL + tableStyle("Grid", NO_MARGINS));
+    const stated = { ...NOTHING, indentTwips: -5, leftTwips: 216 };
+    const resolved = resolveTableInsets(table, "Grid", stated);
+    expect(resolved.leftTwips).toBe(216);
+    expect(resolved.rightTwips).toBe(0);
+    expect(resolved.indentTwips).toBe(-5);
+  });
+
+  // **Measured over the corpus rather than left out.** Taking a style's top and
+  // bottom as well grew every row of two documents by 5pt at each end and broke
+  // their pages early: `c81e5b6f3818` came out 31.7pt low on its eighth page with
+  // every left still agreeing to a tenth. Ten documents improve without them and
+  // none is worse.
+  it("leaves the top and the bottom to the table's own, whatever the style says", () => {
+    const held = `<w:tblCellMar><w:top w:w="288" w:type="dxa"/><w:bottom w:w="288" w:type="dxa"/>
+      <w:left w:w="288" w:type="dxa"/></w:tblCellMar>`;
+    const table = tableOf(NORMAL + tableStyle("Grid", held));
+    const resolved = resolveTableInsets(table, "Grid", NOTHING);
+    expect(resolved.leftTwips).toBe(288);
+    expect(resolved.topTwips).toBe(DEFAULT_TABLE_INSETS.topTwips);
+    expect(resolved.bottomTwips).toBe(DEFAULT_TABLE_INSETS.bottomTwips);
+  });
+
+  it("still takes the top and the bottom the table states itself", () => {
+    const table = tableOf(NORMAL + tableStyle("Grid", NO_MARGINS));
+    const resolved = resolveTableInsets(table, "Grid", { ...NOTHING, topTwips: 288 });
+    expect(resolved.topTwips).toBe(288);
+  });
+
+  it("falls back on Word's own margin per side, not per table", () => {
+    const left = `<w:tblCellMar><w:left w:w="0" w:type="dxa"/></w:tblCellMar>`;
+    const table = tableOf(NORMAL + tableStyle("Grid", left));
+    const resolved = resolveTableInsets(table, "Grid", NOTHING);
+    expect(resolved.leftTwips).toBe(0);
+    expect(resolved.rightTwips).toBe(DEFAULT_TABLE_INSETS.rightTwips);
+    expect(resolved.topTwips).toBe(DEFAULT_TABLE_INSETS.topTwips);
   });
 });

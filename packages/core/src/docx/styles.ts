@@ -1,4 +1,10 @@
-import type { Paragraph } from "./blocks.js";
+import {
+  DEFAULT_TABLE_INSETS,
+  statedTableInsets,
+  type Paragraph,
+  type StatedTableInsets,
+  type TableInsets,
+} from "./blocks.js";
 import {
   readBorders,
   readShading,
@@ -186,6 +192,9 @@ type StyleDefinition = {
   readonly frame: PartialFrame;
   readonly numbering: PartialNumbering;
   readonly tableBorders: TableBorders;
+  // What a table style holds its cells' content off their walls by, each side left
+  // out where the style states none.
+  readonly tableInsets: StatedTableInsets;
   // Empty for everything that is not a table style, and for a table style that
   // formats every cell alike.
   readonly conditional: ReadonlyMap<string, ConditionalFormat>;
@@ -616,6 +625,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       frame: readFrame(style),
       numbering: readNumbering(style),
       tableBorders: readTableBorders(firstNamed(style, W_NS, "tblPr")),
+      tableInsets: statedTableInsets(firstNamed(style, W_NS, "tblPr")),
       conditional: readConditionalFormats(style, themeFonts),
       rowBandSize: bandSizeOf(style, "tblStyleRowBandSize"),
       columnBandSize: bandSizeOf(style, "tblStyleColBandSize"),
@@ -1008,6 +1018,82 @@ export function resolveTableBorders(table: StyleTable, styleId: string | null): 
   }
   return resolved;
 }
+
+/**
+ * What a table holds its cells' content off their walls by: what the table itself
+ * states, then what its style chain states, then Word's own eighth of an inch.
+ *
+ * **A style stating a margin of nought is stating one.** Read on 2026-08-18 off a
+ * corpus document whose table names `Table Grid`, based on a `TableNormal` the
+ * document defines itself with all four margins at 0: Word draws the text of every
+ * cell at the cell's own left edge, and this drew it 5.4pt in, which is the built-in
+ * 108 twips standing where the style had already answered. The arithmetic closes to
+ * a tenth: the cell begins at 346.2, its paragraph states `w:ind w:left="407"`, and
+ * Word draws the line at 366.43 against 346.2 + 20.35.
+ *
+ * **The built-in default is the last resort and not the default.** A document with
+ * no table styles at all reaches it, which is what every authored document does and
+ * why they state their margins by hand.
+ *
+ * **Only the left and the right are taken from a style, and that is measured rather
+ * than left out.** Taking all four was tried first and priced over the 47 corpus
+ * documents whose tables leave their margins to a style: seven improved by about
+ * half, three more improved, and **two came apart**, `c81e5b6f3818` from 10 wrong
+ * cells to 6379 and `be3c786f733a` from 456 to 10865. Read on the page, both are the
+ * same thing: their styles state 100 twips on all four sides, every one of their
+ * rows grew 5pt at the head and 5pt at the foot, and their pages then broke early.
+ * `c81e5b6f3818` page 8 came out **31.7pt low with every left still agreeing to a
+ * tenth** and two of Word's page 7 lines pushed onto it, which is a height and not a
+ * width. Leaving the top and the bottom to the table's own gives ten better, none
+ * worse, and 1601 fewer wrong cells over the 47.
+ *
+ * **What that does not settle is why.** Both documents are written by a producer
+ * that spells its twips with a decimal point, `w:w="100.0"`; refusing a measurement
+ * written that way was the first reading tried and the corpus refuted it outright,
+ * 13 documents worse and 133620 wrong cells against 77768, so Word plainly reads
+ * `100.0` as 100. Whether Word takes no top margin from a style at all, or takes one
+ * and spends it somewhere this project does not, is unmeasured: it wants an authored
+ * document of a styled table asked of Word directly.
+ */
+export function resolveTableInsets(
+  table: StyleTable,
+  styleId: string | null,
+  stated: StatedTableInsets,
+): TableInsets {
+  // The chain arrives with the style a style is based on in front of it, so each
+  // one stands over what it was based on, and the table stands over all of them.
+  let inherited = NO_TABLE_INSETS_STATED;
+  for (const style of styleChain(table, styleId ?? undefined)) {
+    inherited = {
+      indentTwips: 0,
+      leftTwips: style.tableInsets.leftTwips ?? inherited.leftTwips,
+      rightTwips: style.tableInsets.rightTwips ?? inherited.rightTwips,
+      // **A style's top and bottom margins are not taken**, which is measured and
+      // not a simplification: see the note over this function.
+      topTwips: null,
+      bottomTwips: null,
+    };
+  }
+
+  const side = (name: "leftTwips" | "rightTwips" | "topTwips" | "bottomTwips"): number =>
+    stated[name] ?? inherited[name] ?? DEFAULT_TABLE_INSETS[name];
+
+  return {
+    indentTwips: stated.indentTwips,
+    leftTwips: side("leftTwips"),
+    rightTwips: side("rightTwips"),
+    topTwips: side("topTwips"),
+    bottomTwips: side("bottomTwips"),
+  };
+}
+
+const NO_TABLE_INSETS_STATED: StatedTableInsets = {
+  indentTwips: 0,
+  leftTwips: null,
+  rightTwips: null,
+  topTwips: null,
+  bottomTwips: null,
+};
 
 // A side stated as `nil` is an answer like any other, so what a table states
 // stands in front of its style even where it asks for no line at all.

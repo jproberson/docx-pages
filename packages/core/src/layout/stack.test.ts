@@ -487,6 +487,55 @@ describe("measureStack over tables", () => {
     expect(boxes[0]?.lines[0]?.leftPt).toBeCloseTo(72 + 5.4, 9);
   });
 
+  // **A table takes its cell margins off its style where it states none itself, and
+  // a style stating nought is stating one.** Read on 2026-08-18 off a corpus
+  // document whose table names `Table Grid`, based on a `TableNormal` the document
+  // defines itself with all four margins at 0: Word draws the text of every cell at
+  // the cell's own edge, and this drew it 5.4pt in, which is Word's own eighth of an
+  // inch standing where the style had already answered. **The built-in margin is the
+  // last resort and not the default**, which is why a document with no table style
+  // at all still gets it, and why every authored document states its own.
+  describe("the cell margins a table takes off its style", () => {
+    const styles = (definitions: string) =>
+      `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+          <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr></w:style>
+        ${definitions}</w:styles>`;
+
+    const tableStyle = (id: string, margins: string, basedOn = "") =>
+      `<w:style w:type="table" w:styleId="${id}">${basedOn === "" ? "" : `<w:basedOn w:val="${basedOn}"/>`}
+        <w:tblPr>${margins}</w:tblPr></w:style>`;
+
+    const noMargins = `<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+      <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>`;
+
+    const leftOf = (stylesXml: string, tableProperties = `<w:tblStyle w:val="Grid"/>`) => {
+      const body =
+        `<w:tbl><w:tblPr>${tableProperties}</w:tblPr>` +
+        `<w:tr>${cell(`<w:p><w:r><w:t>aaaa</w:t></w:r></w:p>`)}</w:tr></w:tbl>`;
+      return boxesOf(body, stylesXml, 468, MODERN)[0]?.lines[0]?.leftPt;
+    };
+
+    it("takes a margin of nought its style states, where it states none itself", () => {
+      expect(leftOf(styles(tableStyle("Grid", noMargins)))).toBeCloseTo(72, 9);
+    });
+
+    it("walks the chain to the style its own style is based on", () => {
+      const chain = tableStyle("Base", noMargins) + tableStyle("Grid", "", "Base");
+      expect(leftOf(styles(chain))).toBeCloseTo(72, 9);
+    });
+
+    it("lets what the table states stand in front of what its style states", () => {
+      const stated = `<w:tblStyle w:val="Grid"/><w:tblCellMar><w:left w:w="216" w:type="dxa"/></w:tblCellMar>`;
+      expect(leftOf(styles(tableStyle("Grid", noMargins)), stated)).toBeCloseTo(72 + 10.8, 9);
+    });
+
+    it("keeps Word's own margin where neither the table nor any style states one", () => {
+      expect(leftOf(styles(tableStyle("Grid", "")))).toBeCloseTo(72 + 5.4, 9);
+      expect(leftOf(NORMAL, "")).toBeCloseTo(72 + 5.4, 9);
+    });
+  });
+
   it("indents a table by what it asks for, and takes the margin it asks for", () => {
     const properties =
       `<w:tblPr><w:tblInd w:w="-100" w:type="dxa"/>` +

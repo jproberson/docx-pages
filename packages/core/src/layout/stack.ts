@@ -37,6 +37,7 @@ import {
   resolveRunMarks,
   resolveBandSizes,
   resolveTableBorders,
+  resolveTableInsets,
   styleIdOf,
   type CellPosition,
   type InTable,
@@ -1378,6 +1379,7 @@ function measureTable(
     block.rows.map((row) => row.cells.map((cell) => cell.borders)),
     mergeTableBorders(resolveTableBorders(context.styles, block.styleId), block.borders),
   );
+  const insets = resolveTableInsets(context.styles, block.styleId, block.statedInsets);
 
   const first = borders[0] ?? [];
   const last = borders[borders.length - 1] ?? [];
@@ -1397,11 +1399,11 @@ function measureTable(
   const openingCell = block.rows[0]?.cells[0];
   const insetPt =
     measuresTheIndentToTheText(context.settings) && !context.inCell && openingCell !== undefined
-      ? -leftMarginOf(openingCell, block.insets, first[0]?.drawn ?? NO_BORDERS)
+      ? -leftMarginOf(openingCell, insets, first[0]?.drawn ?? NO_BORDERS)
       : outerLeftPt;
 
   const rowFrame = {
-    leftPt: frame.leftPt + twipsToPoints(block.insets.indentTwips) + insetPt,
+    leftPt: frame.leftPt + twipsToPoints(insets.indentTwips) + insetPt,
     widthPt: frame.widthPt,
   };
 
@@ -1421,7 +1423,7 @@ function measureTable(
   const measured: MeasuredCell[][] = [];
   const margins: RowMargins[] = [];
   for (const [at, row] of block.rows.entries()) {
-    const of = measureRowCells(row, plans[at] ?? [], borders[at] ?? [], inTable, block.insets);
+    const of = measureRowCells(row, plans[at] ?? [], borders[at] ?? [], inTable, insets);
     if (of.kind === "blocked") return of;
     measured.push([...of.cells]);
     margins.push(of.margins);

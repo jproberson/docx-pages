@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
-import { readBlocks, DEFAULT_TABLE_INSETS, type Block } from "./blocks.js";
+import { readBlocks, type Block } from "./blocks.js";
 import { openDocx } from "./package.js";
 import { paragraphText } from "./paragraphs.js";
 
@@ -63,10 +63,18 @@ describe("readBlocks", () => {
     expect(block.rows[0]?.cells.map((each) => each.verticalAlign)).toStrictEqual(["top", "center"]);
   });
 
-  it("holds a cell's content off its edges by Word's own margin when the table is silent", () => {
+  // What the table itself says and nothing more: a margin it leaves out is left
+  // for the style chain to answer and for Word's own to stand behind that.
+  it("states no margin at all for a table that asks for none", () => {
     const [block] = blocksOf(table(row(cell(para("in")))));
     if (block?.kind !== "table") throw new Error("expected a table");
-    expect(block.insets).toStrictEqual(DEFAULT_TABLE_INSETS);
+    expect(block.statedInsets).toStrictEqual({
+      indentTwips: 0,
+      leftTwips: null,
+      rightTwips: null,
+      topTwips: null,
+      bottomTwips: null,
+    });
   });
 
   it("reads the margins and the indent a table asks for", () => {
@@ -76,12 +84,12 @@ describe("readBlocks", () => {
       `</w:tblPr>`;
     const [block] = blocksOf(`<w:tbl>${properties}${row(cell(para("in")))}</w:tbl>`);
     if (block?.kind !== "table") throw new Error("expected a table");
-    expect(block.insets).toStrictEqual({
+    expect(block.statedInsets).toStrictEqual({
       indentTwips: -5,
       leftTwips: 72,
       rightTwips: 0,
-      topTwips: 0,
-      bottomTwips: 0,
+      topTwips: null,
+      bottomTwips: null,
     });
   });
 
@@ -115,12 +123,14 @@ describe("readBlocks", () => {
     expect(block.rows[0]?.height).toBeNull();
   });
 
-  it("keeps Word's margin for a side the table leaves out", () => {
+  // A stated nought is an answer, and a side left out is not one: telling the two
+  // apart is the whole reason this stops short of Word's own margin.
+  it("tells a margin stated as nought from a side the table leaves out", () => {
     const properties = `<w:tblPr><w:tblCellMar><w:left w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
     const [block] = blocksOf(`<w:tbl>${properties}${row(cell(para("in")))}</w:tbl>`);
     if (block?.kind !== "table") throw new Error("expected a table");
-    expect(block.insets.leftTwips).toBe(0);
-    expect(block.insets.rightTwips).toBe(DEFAULT_TABLE_INSETS.rightTwips);
+    expect(block.statedInsets.leftTwips).toBe(0);
+    expect(block.statedInsets.rightTwips).toBeNull();
   });
 
   it("reads a table nested inside a cell as its own block", () => {

@@ -71,9 +71,21 @@ export type TableInsets = {
   readonly bottomTwips: number;
 };
 
-// What Word leaves at each side of a cell when the table asks for nothing: an
-// eighth of an inch either side, which is the whole of the offset a bulleted list
-// inside a table starts at, and nothing above or below.
+// The same as the file states it, each margin left out where the table's own
+// `w:tblPr` names none. **A margin the table does not state is not the default
+// yet**: its style may state one, and only where nothing in that cascade does
+// either does Word's own stand.
+export type StatedTableInsets = {
+  readonly indentTwips: number;
+  readonly leftTwips: number | null;
+  readonly rightTwips: number | null;
+  readonly topTwips: number | null;
+  readonly bottomTwips: number | null;
+};
+
+// What Word leaves at each side of a cell when neither the table nor its style
+// asks for anything: an eighth of an inch either side, which is the whole of the
+// offset a bulleted list inside a table starts at, and nothing above or below.
 export const DEFAULT_TABLE_INSETS: TableInsets = {
   indentTwips: 0,
   leftTwips: 108,
@@ -134,10 +146,10 @@ export type Block =
       readonly rows: readonly TableRow[];
       // Empty where the table declares no grid of its own.
       readonly gridTwips: readonly number[];
-      readonly insets: TableInsets;
+      readonly statedInsets: StatedTableInsets;
       readonly borders: TableBorders;
-      // The table style the borders above stand in front of, which the styles
-      // rather than the blocks can look up.
+      // The table style the borders and the margins above stand in front of, which
+      // the styles rather than the blocks can look up.
       readonly styleId: string | null;
       // Null in a table that flows with the text, which is all but ten of the 966.
       readonly positioning: TablePositioning | null;
@@ -196,7 +208,7 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
     kind: "table",
     rows,
     gridTwips: gridColumns(element),
-    insets: tableInsets(element),
+    statedInsets: statedTableInsets(properties),
     borders: readTableBorders(properties),
     styleId: style === null ? null : (attribute(style, W_NS, "val") ?? null),
     positioning: tablePositioning(properties),
@@ -329,21 +341,22 @@ function twipsIn(element: XmlElement | null): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-function tableInsets(element: XmlElement): TableInsets {
-  const properties = firstNamed(element, W_NS, "tblPr");
-  if (properties === null) return DEFAULT_TABLE_INSETS;
-
-  const margins = firstNamed(properties, W_NS, "tblCellMar");
+// What the table itself says, and nothing of what its style says. **A margin left
+// out here is left out rather than defaulted**, since the style chain is read
+// before Word's own eighth of an inch stands: `resolveTableInsets` finishes this.
+export function statedTableInsets(properties: XmlElement | null): StatedTableInsets {
+  const margins = properties === null ? null : firstNamed(properties, W_NS, "tblCellMar");
   const margin = (side: string): number | null =>
     margins === null ? null : twipsIn(firstNamed(margins, W_NS, side));
 
   return {
     indentTwips:
-      twipsIn(firstNamed(properties, W_NS, "tblInd")) ?? DEFAULT_TABLE_INSETS.indentTwips,
-    leftTwips: margin("left") ?? DEFAULT_TABLE_INSETS.leftTwips,
-    rightTwips: margin("right") ?? DEFAULT_TABLE_INSETS.rightTwips,
-    topTwips: margin("top") ?? DEFAULT_TABLE_INSETS.topTwips,
-    bottomTwips: margin("bottom") ?? DEFAULT_TABLE_INSETS.bottomTwips,
+      (properties === null ? null : twipsIn(firstNamed(properties, W_NS, "tblInd"))) ??
+      DEFAULT_TABLE_INSETS.indentTwips,
+    leftTwips: margin("left"),
+    rightTwips: margin("right"),
+    topTwips: margin("top"),
+    bottomTwips: margin("bottom"),
   };
 }
 
