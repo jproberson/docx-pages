@@ -466,10 +466,22 @@ describe("readUnhonoured", () => {
       expect(reportOf(pict(shapeType + picture("width:36pt;height:36pt")))).toStrictEqual([]);
     });
 
-    it("names a text box, whose words reach no frame, no line and no page", () => {
-      expect(
-        kinds(reportOf(pict(textBox("position:absolute;width:180pt;height:90pt")))),
-      ).toStrictEqual(["legacy-text-box"]);
+    // A box out of the flow, sized in a unit this knows and placed by an offset it
+    // can name, is laid out in its own frame and drawn since 2026-08-18, so there is
+    // nothing left to name about it.
+    const PLACED = "position:absolute;margin-left:36pt;margin-top:14pt;width:180pt;height:90pt";
+
+    it("says nothing about a text box it reads and draws", () => {
+      expect(reportOf(pict(textBox(PLACED)))).toStrictEqual([]);
+    });
+
+    it("names a text box whose place or size it cannot read", () => {
+      // A size stated as a share of something else, which Word has not been asked
+      // about, and one standing in the line, which the corpus does not hold.
+      const shared = `${PLACED};mso-width-percent:400`;
+      const inTheLine = "width:180pt;height:90pt";
+      expect(kinds(reportOf(pict(textBox(shared))))).toStrictEqual(["legacy-text-box"]);
+      expect(kinds(reportOf(pict(textBox(inTheLine))))).toStrictEqual(["legacy-text-box"]);
     });
 
     it("names a line, a shape naming no picture, and a picture out of the flow", () => {
@@ -494,6 +506,15 @@ describe("readUnhonoured", () => {
           places: [{ part: "word/document.xml", paragraphIndex: 0 }],
         },
       ]);
+    });
+
+    // **A group half read is still drawn**, so what it leaves out is what is left to
+    // name: the line here is drawn nowhere and the box beside it is laid out.
+    it("names what a group leaves undrawn, and not the box in it that is drawn", () => {
+      const held = `<v:group style="position:absolute;margin-left:0;margin-top:0;width:612pt;height:71.2pt"
+        coordorigin="0,0" coordsize="12240,1424"><v:line from="0,0" to="100,0"/>
+        ${textBox("position:absolute;top:0;width:12240;height:1424")}</v:group>`;
+      expect(kinds(reportOf(pict(held)))).toStrictEqual(["legacy-drawing"]);
     });
 
     // Text is worth more than paint, so a container holding both answers for the text.

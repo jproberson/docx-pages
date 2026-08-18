@@ -7,6 +7,8 @@ import {
   type DrawingFlip,
 } from "./drawing.js";
 import { paragraphOwnDrawings } from "./paragraphs.js";
+import { W_NS } from "./section.js";
+import { legacyAnchoredDrawingsIn } from "./vml.js";
 import { attribute, firstNamed, type XmlElement } from "./xml.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
@@ -192,7 +194,48 @@ const effectOf = (element: XmlElement | null): WrapDistances =>
         leftEmu: numberAttribute(element, "l", 0),
       };
 
+// The containers the old form writes a floating drawing inside, which the walk asks
+// about by name exactly as it asks for a `wp:anchor`.
+const LEGACY_CONTAINERS = [
+  { namespace: W_NS, name: "pict" },
+  { namespace: W_NS, name: "object" },
+];
+
+/**
+ * The drawings the old form hangs out of the flow, read into the same anchor as a
+ * `wp:anchor` so that one set of placement rules answers for both.
+ *
+ * **A text box written this way reached no frame, no line and no page until this
+ * was built**: 20 corpus documents hold 70 of them and every word in one was drawn
+ * nowhere at all, while the report named the loss and nothing answered it. What
+ * this reads and what it still passes over is `readLegacyDrawing`'s answer, and the
+ * fidelity report asks the very same function, so a box drawn here stops being
+ * named there in the same breath.
+ */
+function legacyAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
+  return paragraphOwnDrawings(paragraph, LEGACY_CONTAINERS).flatMap((pict) =>
+    legacyAnchoredDrawingsIn(pict).map((drawing): FloatingAnchor => ({
+      paragraphIndex: paragraph.index,
+      ...drawing,
+      // Neither a turn nor a flip is read off a VML shape yet, and no positioned
+      // text box in the corpus states one.
+      turnDegrees: 0,
+      flip: { horizontal: false, vertical: false },
+      // See `legacyAnchoredDrawingsIn`: what the old form says about wrapping is
+      // not carried across, so nothing here moves a line of the flow.
+      wrap: "none",
+      side: "bothSides",
+      area: WHOLE_FRAME,
+      effect: NO_EFFECT,
+    })),
+  );
+}
+
 export function readAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
+  return [...drawingMlAnchors(paragraph), ...legacyAnchors(paragraph)];
+}
+
+function drawingMlAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
   return paragraphOwnDrawings(paragraph, [{ namespace: WP_NS, name: "anchor" }]).map((anchor) => {
     const extent = firstNamed(anchor, WP_NS, "extent");
     const docPr = firstNamed(anchor, WP_NS, "docPr");
