@@ -290,6 +290,24 @@ describe("the paint a shape carries", () => {
     expect(found?.color).toBeNull();
   });
 
+  // An outline filled with a colour stated at no opacity is the other way a file
+  // writes a line it does not want drawn, and it still takes its width.
+  it("reads an outline stated fully transparent the same as one that paints nothing", () => {
+    const found = shapePaint(
+      `<a:ln w="1778"><a:solidFill><a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr>
+       </a:solidFill></a:ln>`,
+    ).outline;
+    expect(found?.widthPt).toBeCloseTo(0.14, 2);
+    expect(found?.color).toBeNull();
+  });
+
+  it("reads no fill from a shape whose fill is stated fully transparent", () => {
+    expect(
+      shapePaint(`<a:solidFill><a:srgbClr val="4472C4"><a:alpha val="0"/></a:srgbClr>
+        </a:solidFill>`).fill,
+    ).toBeNull();
+  });
+
   it("tells a line apart from every other preset, which are all rectangles here", () => {
     expect(shapePaint(`<a:prstGeom prst="line"><a:avLst/></a:prstGeom>`).geometry).toBe("line");
     expect(shapePaint(`<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`).geometry).toBe(

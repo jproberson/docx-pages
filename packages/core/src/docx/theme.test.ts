@@ -72,6 +72,32 @@ describe("readColorReference", () => {
   it("reads nothing from a fill that names no colour it can resolve", () => {
     expect(readColorReference(fill(`<a:gradFill/>`))).toBeNull();
   });
+
+  // A colour stated at no opacity at all is one Word puts no ink down for, and a
+  // corpus document writes its full-width rules exactly this way.
+  it("reads nothing from a colour stated fully transparent", () => {
+    expect(
+      readColorReference(fill(`<a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr>`)),
+    ).toBeNull();
+    expect(
+      readColorReference(fill(`<a:schemeClr val="bg1"><a:alpha val="0"/></a:schemeClr>`)),
+    ).toBeNull();
+  });
+
+  // Only nought is answered for. Two colours in the whole corpus stand part way,
+  // and drawing them opaque is what this did before and keeps doing.
+  it("draws every other alpha opaque, the full one included", () => {
+    expect(
+      readColorReference(fill(`<a:srgbClr val="4472C4"><a:alpha val="100000"/></a:srgbClr>`)),
+    ).toStrictEqual({
+      base: { kind: "literal", hex: "4472C4" },
+      luminanceScale: 1,
+      luminanceOffset: 0,
+    });
+    expect(
+      readColorReference(fill(`<a:srgbClr val="4472C4"><a:alpha val="40000"/></a:srgbClr>`))?.base,
+    ).toStrictEqual({ kind: "literal", hex: "4472C4" });
+  });
 });
 
 describe("themeColor", () => {

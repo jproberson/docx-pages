@@ -100,13 +100,29 @@ function baseOf(color: XmlElement): ColorReference["base"] | null {
   }
 }
 
-// The colour a fill or an outline is given, which is the first colour element it
-// holds. An element that names no readable colour reads as none at all.
+/**
+ * The colour a fill or an outline is given, which is the first colour element it
+ * holds. An element that names no readable colour reads as none at all.
+ *
+ * **A colour stated fully transparent names none.** `a:alpha` is a share of
+ * opacity, and a fill or an outline stated at nought is one Word puts no ink down
+ * for: a corpus document draws two full-width rectangles whose line is
+ * `<a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr>`, and Word's own pdf
+ * draws neither of them where this drew a black hairline across the head of the
+ * page and another near its foot.
+ *
+ * **Nothing here draws a colour half way, and the corpus says it need not.** Read
+ * on 2026-08-18 over the flow parts of all 718: 13 of them state an alpha of
+ * nought, 29 times inside an `a:ln` and 45 in a fill. Of every other alpha those
+ * parts state, 124 are the full 100000 and **two** are anything else at all. So
+ * nought is answered for and every other alpha is drawn opaque, exactly as before.
+ */
 export function readColorReference(container: XmlElement): ColorReference | null {
   for (const child of container.children) {
     if (child.namespace !== A_NS) continue;
     const base = baseOf(child);
     if (base === null) continue;
+    if (fraction(child, "alpha", 1) === 0) return null;
     return {
       base,
       luminanceScale: fraction(child, "lumMod", 1),

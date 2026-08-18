@@ -296,6 +296,16 @@ const pictureXml = (fill: string) =>
      </a:graphicData></a:graphic></wp:anchor>`,
   );
 
+const WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
+
+const shapeXml = (shapeProperties: string) =>
+  anchorXml({ h: offsetH(0), v: offsetV(0) }).replace(
+    "</wp:anchor>",
+    `<a:graphic xmlns:a="${A_NS}"><a:graphicData><wps:wsp xmlns:wps="${WPS_NS}">
+       <wps:spPr>${shapeProperties}</wps:spPr></wps:wsp>
+     </a:graphicData></a:graphic></wp:anchor>`,
+  );
+
 const placeResolving = (body: string, resolvePart: (id: string) => string | null) =>
   placeFloat({
     anchor: firstAnchor(body),
@@ -329,6 +339,42 @@ describe("placeFloat content", () => {
   it("carries a shape through as a frame with nothing to fetch", () => {
     const placed = placeResolving(anchorXml({ h: offsetH(0), v: offsetV(0) }), () => null);
     expect(placed.content).toStrictEqual({ kind: "unknown" });
+  });
+
+  // **A line stated fully transparent has to reach the page as no line at all.**
+  // A corpus document anchors two full-width rectangles whose only paint is an
+  // `a:ln` filled with black at `alpha="0"`; Word's own pdf draws neither, and
+  // this drew a black hairline across the head of its second page and another
+  // near the foot. The colour reader answers for it, and this is where the answer
+  // has to arrive.
+  describe("a shape's paint", () => {
+    const paintOf = (shapeProperties: string) => {
+      const placed = placeResolving(shapeXml(shapeProperties), () => null);
+      if (placed.content.kind !== "shape") throw new Error("expected a shape");
+      return placed.content.paint;
+    };
+
+    const line = (color: string) => `<a:ln w="1778"><a:solidFill>${color}</a:solidFill></a:ln>`;
+
+    it("draws no outline for a line stated at no opacity", () => {
+      expect(
+        paintOf(line(`<a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr>`)).outline,
+      ).toBeNull();
+    });
+
+    it("draws no fill for one stated at no opacity", () => {
+      expect(
+        paintOf(`<a:solidFill><a:srgbClr val="4472C4"><a:alpha val="0"/></a:srgbClr></a:solidFill>`)
+          .fillColor,
+      ).toBeNull();
+    });
+
+    it("still draws the same line where the file states an opacity at all", () => {
+      expect(paintOf(line(`<a:srgbClr val="000000"/>`)).outline).toStrictEqual({
+        color: "#000000",
+        widthPt: 0.14,
+      });
+    });
   });
 });
 
