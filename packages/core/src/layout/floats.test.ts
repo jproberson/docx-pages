@@ -7,7 +7,7 @@ import type { SectionGeometry } from "../docx/section.js";
 import { DEFAULT_SETTINGS } from "../docx/settings.js";
 import { NO_THEME } from "../docx/theme.js";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
-import { placeFloat, UNPAINTED } from "./floats.js";
+import { placeFloat, UNPAINTED, type CellFrame } from "./floats.js";
 
 const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -35,8 +35,10 @@ const anchorXml = (options: {
   wrap?: string;
   distances?: boolean;
   flip?: string;
+  inCell?: string;
 }) => `<w:p><w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}"
-  behindDoc="0" relativeHeight="5" ${options.distances === true ? DISTANCES : ""}>
+  behindDoc="0" relativeHeight="5" ${options.inCell === undefined ? "" : `layoutInCell="${options.inCell}"`}
+  ${options.distances === true ? DISTANCES : ""}>
   <wp:extent cx="${String(options.cx ?? 2286000)}" cy="${String(options.cy ?? 904240)}"/>
   ${options.wrap ?? "<wp:wrapNone/>"}
   <wp:docPr id="1" name="Logo"/>
@@ -84,7 +86,12 @@ const firstAnchor = (body: string): FloatingAnchor => {
 // declares the compatibility mode that leaves an object where the flow put it.
 const MODERN = { ...DEFAULT_SETTINGS, compatibilityMode: 15 };
 
-const place = (body: string, paragraphTopPt: number, bodyTopPt = 36) =>
+const place = (
+  body: string,
+  paragraphTopPt: number,
+  bodyTopPt = 36,
+  cell: CellFrame | null = null,
+) =>
   placeFloat({
     anchor: firstAnchor(body),
     page: LETTER,
@@ -94,6 +101,7 @@ const place = (body: string, paragraphTopPt: number, bodyTopPt = 36) =>
     resolvePart: () => null,
     theme: NO_THEME,
     settings: MODERN,
+    cell,
   });
 
 describe("readAnchors", () => {
@@ -394,5 +402,83 @@ describe("a flipped object", () => {
 
   it("says a drawing stating nothing was flipped neither way", () => {
     expect(flipOf("")).toStrictEqual({ horizontal: false, vertical: false });
+  });
+});
+
+// Word measures an object anchored in a table cell from the cell's own left,
+// whatever origin the object names. Read on 2026-08-18 off Word's own pdf: see the
+// note on `horizontalBand`.
+describe("an object anchored inside a table cell", () => {
+  const CELL: CellFrame = { leftPt: 340.6, widthPt: 115.9 };
+  const inch = 914400;
+
+  it("reads the cell out of the anchor, and takes it as on where nothing is said", () => {
+    const stated = (inCell: string | null) =>
+      firstAnchor(
+        anchorXml(
+          inCell === null
+            ? { h: offsetH(0), v: offsetV(0) }
+            : { h: offsetH(0), v: offsetV(0), inCell },
+        ),
+      ).inTheCell;
+    expect(stated("1")).toBe(true);
+    expect(stated(null)).toBe(true);
+    expect(stated("0")).toBe(false);
+    expect(stated("false")).toBe(false);
+  });
+
+  it("measures a page-relative offset from the cell's left", () => {
+    const float = place(
+      anchorXml({ h: offsetH(inch, "page"), v: offsetV(0), inCell: "1" }),
+      100,
+      36,
+      CELL,
+    );
+    expect(float.leftPt).toBeCloseTo(340.6 + 72, 6);
+  });
+
+  it("measures a column-relative offset from the same cell", () => {
+    const float = place(
+      anchorXml({ h: offsetH(inch, "column"), v: offsetV(0), inCell: "1" }),
+      100,
+      36,
+      CELL,
+    );
+    expect(float.leftPt).toBeCloseTo(340.6 + 72, 6);
+  });
+
+  it("aligns against the cell's own width rather than the page's", () => {
+    const float = place(
+      anchorXml({ h: alignH("right", "page"), v: offsetV(0), cx: 914400, inCell: "1" }),
+      100,
+      36,
+      CELL,
+    );
+    expect(float.leftPt).toBeCloseTo(340.6 + 115.9 - 72, 6);
+  });
+
+  it("leaves the vertical where the paragraph put it", () => {
+    const float = place(
+      anchorXml({ h: offsetH(inch, "page"), v: offsetV(inch), inCell: "1" }),
+      100,
+      36,
+      CELL,
+    );
+    expect(float.topPt).toBeCloseTo(172, 6);
+  });
+
+  it("measures from the page again where the object refuses the cell", () => {
+    const float = place(
+      anchorXml({ h: offsetH(inch, "page"), v: offsetV(0), inCell: "0" }),
+      100,
+      36,
+      CELL,
+    );
+    expect(float.leftPt).toBeCloseTo(72, 6);
+  });
+
+  it("measures from the page where the paragraph stands in no cell at all", () => {
+    const float = place(anchorXml({ h: offsetH(inch, "page"), v: offsetV(0), inCell: "1" }), 100);
+    expect(float.leftPt).toBeCloseTo(72, 6);
   });
 });

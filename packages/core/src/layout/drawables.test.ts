@@ -361,6 +361,7 @@ describe("where a page's ink lands", () => {
         heightPt: 20.3,
         fillColor: "eeeeee",
         borders: NO_BORDERS,
+        holds: [],
       },
       {
         leftPt: 36,
@@ -369,6 +370,7 @@ describe("where a page's ink lands", () => {
         heightPt: 20.3,
         fillColor: "dddddd",
         borders: NO_BORDERS,
+        holds: [],
       },
     ];
     const painted = paintIn(bodyPage([], cells)).painted;
@@ -394,6 +396,7 @@ describe("where a page's ink lands", () => {
           heightPt: 20.3,
           fillColor: "eeeeee",
           borders: NO_BORDERS,
+          holds: [],
         },
       ],
     );
@@ -428,6 +431,7 @@ describe("text inside a shape", () => {
           distances: { topEmu: 0, rightEmu: 0, bottomEmu: 0, leftEmu: 0 },
           behindDoc: false,
           relativeHeight: 1,
+          inTheCell: false,
         },
         content: {
           kind: "text-box",

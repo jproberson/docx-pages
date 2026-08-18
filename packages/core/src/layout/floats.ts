@@ -93,11 +93,40 @@ export type PlaceFloatInput = {
   // What the object turned out to be, for one that sizes itself to its content.
   // An aligned object lands on its own size, so this decides where it goes.
   readonly sizePt?: FloatSize;
+  // The cell the anchoring paragraph stands in, or null outside a table.
+  readonly cell?: CellFrame | null;
+};
+
+// How far across the page a table cell reaches. This is the cell itself and not
+// the room its text has: the margin holding that text off the wall is no part of
+// what an object anchored in the cell is measured from.
+export type CellFrame = {
+  readonly leftPt: number;
+  readonly widthPt: number;
 };
 
 type Band = { readonly startPt: number; readonly extentPt: number };
 
-function horizontalBand(page: SectionGeometry, from: AnchorOrigin): Band {
+/**
+ * How far across the page an object anchored in a cell is measured, which is the
+ * cell and not the page whatever origin the object names.
+ *
+ * **Measured on 2026-08-18 off Word's own pdf, on both of the origins the corpus
+ * states.** `c8ca0c3c8292` and `2c1289b95c31` hold four pictures anchored
+ * `relativeFrom="page"` in the two cells of a floating table's last row, and Word
+ * draws them 340.80, 340.76, 456.16 and 456.18 right of where a page-relative
+ * offset puts them: two numbers, one a cell, and 115.40 apart, which is the first
+ * cell's own width off the table grid to a hundredth. `7eaa70746b70` holds three
+ * groups anchored `relativeFrom="column"` in two cells of two rows, and Word draws
+ * all three at their cell's left plus the stated offset, out by a constant 0.23
+ * that is this project's own reading of where the table starts.
+ *
+ * Nothing states `margin` or `character` inside a cell, and nothing states a
+ * horizontal `paragraph` or `line` there either, so the rule is written once for
+ * every origin rather than split where no document could say which way.
+ */
+function horizontalBand(page: SectionGeometry, from: AnchorOrigin, cell: CellFrame | null): Band {
+  if (cell !== null) return { startPt: cell.leftPt, extentPt: cell.widthPt };
   const left = twipsToPoints(page.margin.leftTwips);
   const right = twipsToPoints(page.margin.rightTwips);
   const width = twipsToPoints(page.widthTwips);
@@ -211,12 +240,21 @@ export function placeFloat(input: PlaceFloatInput): PlacedFloat {
   const settings = input.settings ?? DEFAULT_SETTINGS;
   const widthPt = input.sizePt?.widthPt ?? emuToPoints(anchor.widthEmu);
   const heightPt = input.sizePt?.heightPt ?? emuToPoints(anchor.heightEmu);
+  // **Only the horizontal is moved.** 91 of the 92 anchors the corpus states inside
+  // a cell measure their vertical from the paragraph or the line, which stands in
+  // the cell already; the one that does not is a text box aligned to the foot of the
+  // page in a footer, and what the cell does to that is unmeasured.
+  const cell = anchor.inTheCell ? (input.cell ?? null) : null;
 
   return {
     anchor,
     flip: anchor.flip,
     content: resolveContent(anchor.content, input.resolvePart, input.theme),
-    leftPt: resolve(anchor.horizontal, horizontalBand(input.page, anchor.horizontal.from), widthPt),
+    leftPt: resolve(
+      anchor.horizontal,
+      horizontalBand(input.page, anchor.horizontal.from, cell),
+      widthPt,
+    ),
     topPt: onTheTwip(
       resolve(anchor.vertical, verticalBand(input, anchor.vertical.from), heightPt),
       settings,

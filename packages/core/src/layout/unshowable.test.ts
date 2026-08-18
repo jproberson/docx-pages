@@ -120,6 +120,7 @@ const floatOf = (content: PlacedContent): PlacedFloat => ({
     distances: { topEmu: 0, rightEmu: 0, bottomEmu: 0, leftEmu: 0 },
     behindDoc: false,
     relativeHeight: 0,
+    inTheCell: false,
   },
   content,
   leftPt: 0,

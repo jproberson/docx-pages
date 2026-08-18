@@ -96,6 +96,7 @@ const cellAt = (topPt: number, heightPt: number) => ({
   heightPt,
   fillColor: null,
   borders: { top: null, left: null, bottom: null, right: null },
+  holds: [],
 });
 
 const linesOn = (

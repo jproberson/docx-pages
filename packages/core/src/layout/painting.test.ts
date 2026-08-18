@@ -19,6 +19,7 @@ const cellWith = (borders: Partial<Borders>, fillColor: string | null = null): P
   heightPt: 20,
   fillColor,
   borders: { ...NO_BORDERS, ...borders },
+  holds: [],
 });
 
 describe("paintOfCell", () => {

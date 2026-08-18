@@ -46,6 +46,7 @@ import { columnsAcross } from "./columns.js";
 import { anchorLineFootPt, breakStack, type PageBody, type PageStack } from "./pages.js";
 import {
   placeFloat,
+  type CellFrame,
   type FloatSize,
   type PartResolver,
   type PlacedContent,
@@ -303,6 +304,21 @@ type FloatFrame = {
   // The foot of the text an object is drawn up to when it hangs past it, or null in
   // a story nothing is pulled up in. Only the body has one.
   readonly bottomPt: number | null;
+  // Which cell each of the story's paragraphs stands in, since an object anchored
+  // in one is placed against the cell rather than against the page. Answers null
+  // where the story has not been laid out yet, which is what measuring a cell's own
+  // bands does: `measureRowCells` gives a cell no bands at all, so nothing asks.
+  readonly cellOf: (paragraphIndex: number) => CellFrame | null;
+};
+
+const NO_CELLS = (): null => null;
+
+const cellsHolding = (cells: readonly PlacedCell[]): ((index: number) => CellFrame | null) => {
+  const found = new Map<number, CellFrame>();
+  for (const cell of cells)
+    for (const index of cell.holds)
+      found.set(index, { leftPt: cell.leftPt, widthPt: cell.widthPt });
+  return (index) => found.get(index) ?? null;
 };
 
 // "Resize shape to fit text": the box is as tall as its text, and as wide as it
@@ -372,6 +388,7 @@ const placeFloatIn = (
       theme: frame.theme,
       settings: frame.settings,
       sizePt: fittedSizePt(anchor, frame),
+      cell: frame.cellOf(anchor.paragraphIndex),
     }),
     lineFootPt,
     frame,
@@ -782,6 +799,7 @@ export function layOutDocument(
     columnTopPt: number,
     marginTopPt: number,
     bottomPt: number | null = null,
+    cells?: readonly PlacedCell[],
   ): FloatFrame => ({
     page,
     styles,
@@ -792,6 +810,7 @@ export function layOutDocument(
     columnTopPt,
     marginTopPt,
     bottomPt,
+    cellOf: cells === undefined ? NO_CELLS : cellsHolding(cells),
   });
 
   // **A page draws its own section's header and footer, and the page a section
@@ -1080,14 +1099,14 @@ export function layOutDocument(
       : drawingsFor(
           story.blocks,
           boxesOf(story.boxes),
-          floatFrame(story.part, columnTopPt, bodyTopPt),
+          floatFrame(story.part, columnTopPt, bodyTopPt, null, story.cells),
         );
 
   const bodyDrawings = pageBoxes(broken).map((boxOf) =>
     drawingsFor(
       bodyBlocks,
       boxOf,
-      floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt, bodyBottomPt),
+      floatFrame(MAIN_DOCUMENT_PART, bodyTopPt, bodyTopPt, bodyBottomPt, bodyStack.cells),
     ),
   );
 

@@ -80,6 +80,22 @@ export type FloatingAnchor = {
   readonly effect?: WrapDistances;
   readonly behindDoc: boolean;
   readonly relativeHeight: number;
+  /**
+   * Whether a cell the object is anchored in is the frame it is placed against,
+   * rather than the page.
+   *
+   * **Word measures every horizontal origin from the cell's own left**, page and
+   * column alike. Read on 2026-08-18 off Word's own pdf over three documents:
+   * `c8ca0c3c8292` and `2c1289b95c31` draw four page-relative pictures 340.80,
+   * 340.76, 456.16 and 456.18 from where this project put them, and those two
+   * offsets are the two cells' own lefts, whose grid widths differ by exactly the
+   * 115.40 between them; `7eaa70746b70` draws three column-relative groups at its
+   * two cells' lefts, all three within a quarter of a point of a constant that is
+   * the table's own left rather than the rule.
+   *
+   * Every one of the 92 anchors the corpus states inside a cell states this on.
+   */
+  readonly inTheCell: boolean;
 };
 
 const ORIGINS: readonly AnchorOrigin[] = [
@@ -174,6 +190,10 @@ function readWrapping(anchor: XmlElement, flip: DrawingFlip): Wrapping {
   return { mode: "none", side: "bothSides", area: WHOLE_FRAME };
 }
 
+// Word's own default is on, so an attribute left out states the cell rather than
+// the page. Every corpus anchor inside a cell writes it out all the same.
+const statedOn = (raw: string | undefined): boolean => raw !== "0" && raw !== "false";
+
 const numberAttribute = (element: XmlElement, name: string, fallback: number): number => {
   const raw = attribute(element, "", name);
   const value = raw === undefined ? Number.NaN : Number(raw);
@@ -223,6 +243,9 @@ function legacyAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
       flip: { horizontal: false, vertical: false },
       // See `legacyAnchoredDrawingsIn`: what the old form says about wrapping is
       // not carried across, so nothing here moves a line of the flow.
+      // What the old form says about a cell (`o:allowincell`) is not read either,
+      // and no corpus document positions a VML shape inside one.
+      inTheCell: false,
       wrap: "none",
       side: "bothSides",
       area: WHOLE_FRAME,
@@ -263,6 +286,7 @@ function drawingMlAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
       effect: effectOf(firstNamed(anchor, WP_NS, "effectExtent")),
       behindDoc: attribute(anchor, "", "behindDoc") === "1",
       relativeHeight: numberAttribute(anchor, "relativeHeight", 0),
+      inTheCell: statedOn(attribute(anchor, "", "layoutInCell")),
     };
   });
 }

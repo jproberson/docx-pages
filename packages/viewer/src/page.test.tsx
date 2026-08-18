@@ -137,6 +137,7 @@ const float = (content: PlacedContent, options: { behindDoc?: boolean; height?: 
     distances: { topEmu: 0, rightEmu: 0, bottomEmu: 0, leftEmu: 0 },
     behindDoc: options.behindDoc ?? false,
     relativeHeight: options.height ?? 0,
+    inTheCell: false,
   },
   content,
   leftPt: 100,
@@ -534,6 +535,7 @@ const CELL: PlacedCell = {
     bottom: null,
     right: { style: "dashed", widthPt: 1, color: null, spacePt: 0 },
   },
+  holds: [],
 };
 
 describe("Page drawing a table's own lines", () => {

@@ -468,3 +468,100 @@ describe("a paragraph held to the one after it", () => {
     ]);
   });
 });
+
+// **An object anchored in a table cell is placed from the cell's own left**, which
+// is what `layoutInCell` says and what Word does with every horizontal origin.
+// Measured on 2026-08-18 off Word's own pdf over three corpus documents; the note
+// on `horizontalBand` holds the readings. This asks the layout the question the
+// unit tests in `floats.test.ts` ask the placement: that the cell a paragraph
+// stands in reaches the object it anchors at all.
+describe("an object a table cell holds", () => {
+  const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+  const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+
+  const anchored = (name: string, offsetEmu: number, layoutInCell: string) =>
+    `<w:p><w:r><w:drawing><wp:anchor xmlns:wp="${WP_NS}" xmlns:a="${A_NS}"` +
+    ` behindDoc="0" relativeHeight="1" layoutInCell="${layoutInCell}">` +
+    `<wp:extent cx="457200" cy="457200"/><wp:wrapNone/>` +
+    `<wp:docPr id="1" name="${name}"/>` +
+    `<wp:positionH relativeFrom="page"><wp:posOffset>${String(offsetEmu)}</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>` +
+    `<a:graphic><a:graphicData/></a:graphic>` +
+    `</wp:anchor></w:drawing></w:r></w:p>`;
+
+  // An authored table declares no style, so it is held off its own walls by
+  // nothing unless it says so.
+  const cell = (widthTwips: number, held: string) =>
+    `<w:tc><w:tcPr><w:tcW w:w="${String(widthTwips)}" w:type="dxa"/></w:tcPr>${held}</w:tc>`;
+
+  const laidOutWith = (layoutInCell: string): LaidOutDocument => {
+    const body =
+      `<w:tbl>` +
+      `<w:tblPr><w:tblCellMar>` +
+      `<w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>` +
+      `<w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>` +
+      `</w:tblCellMar></w:tblPr>` +
+      `<w:tblGrid><w:gridCol w:w="2880"/><w:gridCol w:w="2880"/></w:tblGrid>` +
+      `<w:tr>` +
+      cell(2880, anchored("near", 914400, layoutInCell)) +
+      cell(2880, anchored("far", 914400, layoutInCell)) +
+      `</w:tr></w:tbl>` +
+      section(720, 432, false);
+    const bytes = buildDocx({ "word/document.xml": wordDocument(body) });
+    const laid = layOutDocument(openDocx(bytes), bestEffortMetrics([], DEFAULTS));
+    if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+    return laid;
+  };
+
+  const leftOf = (laid: LaidOutDocument, name: string): number => {
+    const found = laid.pages[0]?.floats.find((float) => float.anchor.name === name);
+    if (found === undefined) throw new Error(`no float named ${name}`);
+    return found.leftPt;
+  };
+
+  it("places each one from the left of the cell it stands in", () => {
+    const laid = laidOutWith("1");
+    const cells = laid.pages[0]?.cells ?? [];
+    expect(cells.map((each) => each.leftPt)).toStrictEqual([36, 180]);
+    expect(leftOf(laid, "near")).toBeCloseTo(36 + 72, 6);
+    expect(leftOf(laid, "far")).toBeCloseTo(180 + 72, 6);
+  });
+
+  it("piles both on the page's own left where they refuse the cell", () => {
+    const laid = laidOutWith("0");
+    expect(leftOf(laid, "near")).toBeCloseTo(72, 6);
+    expect(leftOf(laid, "far")).toBeCloseTo(72, 6);
+  });
+
+  // A paragraph inside a table inside a cell belongs to the inner cell, and the
+  // outer one has to let go of it or the object is placed a whole column too far
+  // left.
+  it("takes the innermost cell where one table stands inside another", () => {
+    const inner =
+      `<w:tbl>` +
+      `<w:tblPr><w:tblCellMar>` +
+      `<w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>` +
+      `<w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>` +
+      `</w:tblCellMar></w:tblPr>` +
+      `<w:tblGrid><w:gridCol w:w="1440"/><w:gridCol w:w="1440"/></w:tblGrid>` +
+      `<w:tr>` +
+      cell(1440, `<w:p/>`) +
+      cell(1440, anchored("deep", 914400, "1")) +
+      `</w:tr></w:tbl>`;
+    const body =
+      `<w:tbl>` +
+      `<w:tblPr><w:tblCellMar>` +
+      `<w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>` +
+      `<w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>` +
+      `</w:tblCellMar></w:tblPr>` +
+      `<w:tblGrid><w:gridCol w:w="2880"/><w:gridCol w:w="2880"/></w:tblGrid>` +
+      `<w:tr>${cell(2880, `<w:p/>`)}${cell(2880, `${inner}<w:p/>`)}</w:tr>` +
+      `</w:tbl>` +
+      section(720, 432, false);
+    const bytes = buildDocx({ "word/document.xml": wordDocument(body) });
+    const laid = layOutDocument(openDocx(bytes), bestEffortMetrics([], DEFAULTS));
+    if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+    // The outer cell opens at 180 and the inner table's second cell 72 further on.
+    expect(leftOf(laid, "deep")).toBeCloseTo(180 + 72 + 72, 6);
+  });
+});

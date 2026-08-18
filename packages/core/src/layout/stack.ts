@@ -221,6 +221,10 @@ export type PlacedCell = {
   readonly heightPt: number;
   readonly fillColor: string | null;
   readonly borders: Borders;
+  // The paragraphs laid out in this cell itself, which is how an object anchored
+  // in one finds the frame Word places it against. A paragraph inside a table
+  // inside this cell belongs to that table's cell and not to this one.
+  readonly holds: readonly number[];
 };
 
 // A row a page break is not allowed to run through, which moves whole to the page
@@ -1712,6 +1716,7 @@ function placeRows(
           topPt: inner.topPt + offset,
           bottomPt: inner.bottomPt + offset,
         });
+      const nested = new Set(cell.inner.flatMap((inner) => inner.holds));
       cells.push({
         leftPt: cell.leftPt,
         topPt: rowTopPt,
@@ -1719,6 +1724,7 @@ function placeRows(
         heightPt: heldToPt,
         fillColor: cell.fillColor,
         borders: cell.borders,
+        holds: cell.boxes.map((box) => box.index).filter((index) => !nested.has(index)),
       });
     }
 
