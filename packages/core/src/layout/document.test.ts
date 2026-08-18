@@ -335,3 +335,55 @@ describe("what a drawing reaching past its top keeps text off", () => {
     expect(opensAtPt(below(0.5))).toBe(BESIDE_THE_BOX_PT);
   });
 });
+
+// **A column run is measured against the room its own page left it**, and finding that
+// room takes a pass of the pages and one more to see that the pass changed nothing.
+// Without the confirming pass a document of one run never settles and is measured as
+// though its run stood at the top of a page, so its columns run past the foot and the
+// break pass spills what is over into the next page in the order the text was written
+// rather than into columns. Read off `c8ca0c3c8292` on 2026-08-18, whose second page came
+// out 27.6pt low that way.
+describe("a column run standing partway down a page", () => {
+  const EXACT = `<w:spacing w:before="0" w:after="0" w:line="480" w:lineRule="exact"/>`;
+  const line = (text: string) => `<w:p><w:pPr>${EXACT}</w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  const closes = (text: string, columns: string) =>
+    `<w:p><w:pPr>${EXACT}<w:sectPr><w:type w:val="continuous"/>` +
+    `<w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720"` +
+    ` w:footer="720" w:gutter="0"/>${columns}</w:sectPr></w:pPr>` +
+    `<w:r><w:t>${text}</w:t></w:r></w:p>`;
+
+  // The body runs 36 to 756. Twenty lines of 24 fill it to 516, which leaves the run
+  // 240pt of its page: ten lines a column, twenty of its thirty blocks. The ten left
+  // over open the next page, five in each of its columns.
+  const laid = (): LaidOutDocument => {
+    const fillers = Array.from({ length: 19 }, (_, at) => line(`f${String(at)}`)).join("");
+    const run = Array.from({ length: 29 }, (_, at) => line(`r${String(at)}`)).join("");
+    const bytes = buildDocx({
+      "word/document.xml": wordDocument(
+        // The fillers close a section of their own, since a `w:sectPr` describes the
+        // section ending with the paragraph carrying it and one hung on the run's last
+        // block would put the fillers in the run.
+        fillers + closes("f19", "") + run + closes("r29", `<w:cols w:num="2" w:space="720"/>`),
+      ),
+    });
+    const result = layOutDocument(openDocx(bytes), bestEffortMetrics([], DEFAULTS));
+    if (result.kind !== "laid-out") throw new Error(`blocked: ${result.blocker.kind}`);
+    return result;
+  };
+
+  it("fills its columns to the foot of the page it opened on and no further", () => {
+    const page = laid().pages[0];
+    const feet = (page?.body ?? []).map((box) => box.topPt + box.heightPt);
+    expect(Math.max(0, ...feet)).toBeLessThanOrEqual(756);
+  });
+
+  it("carries what the room would not hold into the next page rather than past the foot", () => {
+    const pages = laid().pages;
+    // Ten of the run's thirty blocks are over: the room its page left it is 240, which is
+    // ten lines a column, and the twenty that fit stand in two columns of 516 to 756.
+    expect(pages).toHaveLength(2);
+    expect(pages[0]?.body.filter((box) => box.topPt >= 516)).toHaveLength(20);
+    expect(pages[1]?.body[0]?.topPt).toBe(36);
+  });
+});

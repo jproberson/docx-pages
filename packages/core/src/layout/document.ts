@@ -999,9 +999,20 @@ export function layOutDocument(
   if (bodyStack.kind === "blocked") return { kind: "blocked", blocker: bodyStack.blocker };
   let broken = breakBody(bodyStack);
 
-  // One pass a run at the most, and a document with no column run in it takes none.
+  // One pass a run, and one more to see that the last of them changed nothing. A document
+  // with no column run in it takes none.
+  //
+  // **The confirming pass was missing and the whole chase was thrown away without it.**
+  // A pass asks the pages what room each run really had, and where that differs from what
+  // the run was measured against it measures again; it is the pass after that which sees
+  // the two agree. Bounded by the number of runs, a document of one run spends its only
+  // pass measuring and never gets to look, so `settled` stays false and the answer is
+  // dropped for the one that assumes every run stands at the top of a page. Found on
+  // 2026-08-18 through `c8ca0c3c8292`, whose single run is measured against a full page of
+  // room, overflows the foot of its first page by three paragraphs and leaves `breakStack`
+  // to spill them onto the second in the order they were written rather than in columns.
   let settled = runsOpeningAt.length === 0;
-  for (let pass = 0; pass < runsOpeningAt.length; pass += 1) {
+  for (let pass = 0; pass <= runsOpeningAt.length; pass += 1) {
     const found = roomLeftFor(broken);
     if (asked(found) === asked(roomForRun)) {
       settled = true;
