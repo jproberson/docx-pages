@@ -521,6 +521,20 @@ describe("breakStack over paragraphs held to the one after them", () => {
     ]);
   });
 
+  // **The paragraph it holds need not overflow at its own start to have been
+  // carried off the page.** Read off `bd42bfc93fdf`, whose ninth page Word opens
+  // with two headings this project left at the foot of the eighth: the paragraph
+  // they hold has its first line inside the page by a quarter of a point and its
+  // second past the foot, so widow control takes the whole of it forward and
+  // nothing ever overflows where it starts.
+  it("follows a paragraph widow control carried forward whole", () => {
+    const boxes = holding(stack([[10], [10], [10, 10]], 100, true), 1);
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 135 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
+    expect(pages.map(linesOn)).toStrictEqual([[1], [1, 2]]);
+  });
+
   it("moves nothing for the last paragraph of the story, which holds nothing", () => {
     const boxes = holding(stack([[10], [10]]), 1);
     const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 115 });

@@ -164,8 +164,15 @@ function breakOnce(
   let brokenAtASection = false;
   // The first paragraph this pass found parted from the one it holds.
   let split: number | null = null;
+  // The paragraph above the one being placed, which is the one a paragraph
+  // beginning on a page of its own has been parted from.
+  let above: ParagraphBox | undefined;
 
   for (const [place, box] of input.boxes.entries()) {
+    // Where this paragraph started, and how much that page already held, which is
+    // what says afterwards whether any of the paragraph landed on it.
+    const startedOn = pages.length - 1;
+    const heldBefore = pages[startedOn]?.length ?? 0;
     // What a page this paragraph opens keeps for the body, which is its own
     // section's and not the page it may be standing at the foot of.
     const opens = bodyOf(box, opened[opened.length - 1]?.openedBy ?? null);
@@ -289,18 +296,39 @@ function breakOnce(
       put(partOf(box, from, box.lines.length, shiftPt));
     }
 
-    // Where the page break falls between this paragraph and the next: either the
-    // next one overflows the page, or it is one already being carried forward and
-    // this one is not going with it, which is how a chain is walked back a
-    // paragraph at a time.
-    const next = input.boxes[place + 1];
-    const partsHere =
-      next !== undefined &&
-      ((moved.has(next.index) && !moved.has(box.index)) || overflowsAtItsStart(next, overflows));
+    /**
+     * Where the page break falls between this paragraph and the one above it.
+     *
+     * **The break is asked rather than predicted.** This used to ask whether the
+     * paragraph's own first line overflowed, which is a guess at what the walk
+     * above was about to do and was wrong wherever anything but that line moved
+     * it: `bd42bfc93fdf` holds two headings the page had room for and a paragraph
+     * whose first line fitted by a quarter of a point and whose second did not, so
+     * widow control carried the whole paragraph forward and the first line never
+     * overflowed anything. The rule saw nothing to hold and left the headings at
+     * the foot of the page, 55.7pt of them, where Word opens the next page with
+     * them.
+     *
+     * So the question is the one the placing has already answered: **did any of
+     * this paragraph land on the page it started on?** A page opened while it was
+     * being placed, with nothing of its own left behind, is a paragraph that begins
+     * on a page of its own however it got there, and that covers a break of its
+     * own, a row or an object moving it, an empty paragraph opening a page, and a
+     * cut inside it that kept no lines back, without naming any of them.
+     */
+    const beganOnAPageOfItsOwn =
+      pages.length - 1 > startedOn && (pages[startedOn]?.length ?? 0) === heldBefore;
 
-    if (split === null && !moved.has(box.index) && partsHere && holdsAcross(box, next)) {
-      split = box.index;
+    if (
+      split === null &&
+      above !== undefined &&
+      beganOnAPageOfItsOwn &&
+      !moved.has(above.index) &&
+      holdsAcross(above, box)
+    ) {
+      split = above.index;
     }
+    above = box;
   }
 
   return {
@@ -348,18 +376,6 @@ export const anchorLineFootPt = (box: ParagraphBox): number => {
 function holdsAcross(box: ParagraphBox, next: ParagraphBox | undefined): boolean {
   if (!box.keepNext || box.endsPage) return false;
   return next !== undefined && !next.startsPage && next.lines[0]?.startsPage !== true;
-}
-
-// A paragraph begins where its first line does, and one with nothing in it where
-// the room its mark stands in does.
-function overflowsAtItsStart(
-  box: ParagraphBox,
-  overflows: (topPt: number, heightPt: number) => boolean,
-): boolean {
-  const first = box.lines[0];
-  return first === undefined
-    ? overflows(box.topPt, box.contentBottomPt - box.topPt)
-    : overflows(first.topPt, first.fittingHeightPt);
 }
 
 // A cell is cut by the pages the text broke into rather than breaking them: the

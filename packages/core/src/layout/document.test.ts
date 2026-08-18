@@ -387,3 +387,84 @@ describe("a column run standing partway down a page", () => {
     expect(pages[1]?.body[0]?.topPt).toBe(36);
   });
 });
+
+/**
+ * **A paragraph held to the one after it has to notice every way that one can be
+ * carried onto the next page**, and the way the corpus turned on is widow control.
+ *
+ * `bd42bfc93fdf` opens its ninth page with two headings this project left at the
+ * foot of the eighth, 55.7pt of them. Both resolve `w:keepNext`, neither ends a
+ * page, and the paragraph they hold does not start one. What the rule missed is
+ * that this paragraph's **first line fitted by a quarter of a point** and its
+ * second did not, so widow control carried the whole of it forward: nothing ever
+ * overflowed at its start, which is the only thing the rule was looking at.
+ */
+describe("a paragraph held to the one after it", () => {
+  // Twenty point text on this face makes a twenty point line, and a page keeping
+  // 36 to 108 holds three of them with twelve points to spare.
+  const STYLES = `<?xml version="1.0"?>
+    <w:styles xmlns:w="${WORDPROCESSING_NS}"><w:docDefaults><w:rPrDefault><w:rPr>
+      <w:rFonts w:ascii="Twin Sans" w:hAnsi="Twin Sans"/><w:sz w:val="40"/>
+    </w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;
+
+  const SHORT_PAGE =
+    `<w:sectPr><w:pgSz w:w="12240" w:h="2880"/>` +
+    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"` +
+    ` w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
+
+  const held = (keepNext: boolean) =>
+    `<w:p><w:pPr>${keepNext ? "<w:keepNext/>" : ""}<w:widowControl/></w:pPr>` +
+    `<w:r><w:t>held</w:t></w:r></w:p>`;
+
+  // Eight words of six letters take two lines of a 540pt frame: seven fit on the
+  // first with ten points left, and the eighth cannot.
+  const WRAPS_TO_TWO = `<w:p><w:pPr><w:widowControl/></w:pPr><w:r><w:t>${Array.from(
+    { length: 8 },
+    () => "aaaaaa",
+  ).join(" ")}</w:t></w:r></w:p>`;
+
+  const filler = (text: string) =>
+    `<w:p><w:pPr><w:widowControl/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
+
+  const laidOutHolding = (keepNext: boolean, after: string, above = ""): LaidOutDocument => {
+    const body = filler("first") + above + held(keepNext) + after + SHORT_PAGE;
+    const bytes = buildDocx({
+      "word/document.xml": wordDocument(body),
+      "word/styles.xml": STYLES,
+    });
+    const laid = layOutDocument(openDocx(bytes), bestEffortMetrics([], DEFAULTS));
+    if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+    return laid;
+  };
+
+  const indexesOn = (laid: LaidOutDocument): readonly (readonly number[])[] =>
+    laid.pages.map((page) => page.body.map((box) => box.index));
+
+  it("stands the case up: the held paragraph's first line fits and its second does not", () => {
+    const laid = laidOutHolding(false, WRAPS_TO_TWO);
+    expect(laid.bodyTopPt).toBe(36);
+    expect(laid.bodyBottomPt).toBe(108);
+    // Two lines, standing 76 to 96 inside the page and 96 to 116 past its foot,
+    // so the first fits and only the second overflows.
+    expect(laid.pages[1]?.body[0]?.lines).toHaveLength(2);
+  });
+
+  // The fault itself. Word opens the second page with the heading and the
+  // paragraph it holds, where this left the heading behind.
+  it("follows the paragraph widow control carried forward whole", () => {
+    expect(indexesOn(laidOutHolding(true, WRAPS_TO_TWO))).toStrictEqual([[0], [1, 2]]);
+  });
+
+  it("leaves the paragraph where it is when it holds nothing", () => {
+    expect(indexesOn(laidOutHolding(false, WRAPS_TO_TWO))).toStrictEqual([[0, 1], [2]]);
+  });
+
+  // The case that always worked, kept so the new reading is held to it as well:
+  // one more filler above puts the held paragraph's own first line past the foot.
+  it("still follows one whose very first line overflows", () => {
+    expect(indexesOn(laidOutHolding(true, WRAPS_TO_TWO, filler("more")))).toStrictEqual([
+      [0, 1],
+      [2, 3],
+    ]);
+  });
+});
