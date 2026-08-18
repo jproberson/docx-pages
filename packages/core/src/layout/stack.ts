@@ -1058,6 +1058,13 @@ const WHOLE_COLUMN: ColumnCut = { at: Number.POSITIVE_INFINITY, keepLines: null 
 // paragraph the room ran out inside is cut at the last of its lines that fitted rather
 // than moved whole; a block the column opens with and cannot cut stays there however
 // tall it is, since a column that carries it forward whole never ends.
+//
+// **A foot is what the paragraph draws, and not the room it keeps under itself**, which
+// is the rule `breakStack` already holds a page to. `2c1289b95c31` ends the second column
+// of its first page with an empty paragraph standing 13.80 in a column with 15.92 left,
+// which asks for 3.15 more after itself: judged whole it passed the foot by a point and
+// went to the next page, taking its anchored drawing with it and leaving every line of
+// that page 7pt low.
 function cutColumnAt(
   boxes: readonly ParagraphBox[],
   blockOf: ReadonlyMap<number, number>,
@@ -1073,7 +1080,7 @@ function cutColumnAt(
     if (place === undefined) continue;
     if (opened === null) opened = place;
     if (place !== opened && forced.has(place)) return { at: place, keepLines: null };
-    if (box.topPt + box.heightPt <= topPt + heightPt + EPSILON) continue;
+    if (box.contentBottomPt <= topPt + heightPt + EPSILON) continue;
 
     const kept = divides(place)
       ? linesKeptOf(box, topPt + heightPt, place === opened, askedForByTheRoom)
@@ -1121,6 +1128,14 @@ function linesKeptOf(
   }
   if (kept >= box.lines.length) return null;
   if (kept >= 2) return kept;
+  // **A paragraph that opens the column is cut all the same**, since the line the rule
+  // would send forward is the only thing the column has: refusing the cut leaves the
+  // column empty and the run undivided. `2c1289b95c31` ends its two-column section with
+  // one paragraph of two lines and Word draws them side by side, one to a column, where
+  // `8010f77cdeee` had blocks above its cut paragraph and Word moved that paragraph whole
+  // rather than leave a line of it behind. Neither document asks for widow control, so
+  // this is Word's own arithmetic and not `w:widowControl`.
+  if (kept === 1 && opensTheColumn) return 1;
   if (!askedForByTheRoom) return null;
   // A column with room for less than a line of the paragraph it opens with keeps a line
   // of it all the same, since a column that carries the whole of it forward never ends.
