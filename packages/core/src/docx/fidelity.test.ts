@@ -423,6 +423,17 @@ describe("readUnhonoured", () => {
     ).toStrictEqual(["hidden-text", "keep-lines-together"]);
   });
 
+  // Three of the 718 corpus documents hold a comment, and Word prints one by keeping a
+  // markup column down the side of the paper and scaling the whole page to stand beside
+  // it, which moves every drawn thing on it. Whether it prints markup at all is Word's
+  // own setting rather than the document's, so this is named and not built.
+  it("names a comment anchored in the text, and not a part left behind by a deleted one", () => {
+    const anchored = `<w:p><w:commentRangeStart w:id="0"/><w:r><w:t>a</w:t></w:r>
+      <w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/></w:r></w:p>`;
+    expect(kinds(reportOf(anchored))).toStrictEqual(["comment"]);
+    expect(kinds(reportOf(`<w:p><w:r><w:t>a</w:t></w:r></w:p>`))).toStrictEqual([]);
+  });
+
   it("gathers every place a kind was met into the one entry", () => {
     const hidden = `<w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>a</w:t></w:r></w:p>`;
     const [entry] = reportOf(hidden + hidden);

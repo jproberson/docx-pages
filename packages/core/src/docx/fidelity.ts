@@ -54,6 +54,7 @@ export type UnhonouredKind =
   | "merged-cells"
   | "table-style-conditional-formatting"
   | "keep-lines-together"
+  | "comment"
   | "hidden-text"
   | "automatic-hyphenation"
   | "right-to-left"
@@ -88,6 +89,25 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // unshaded and one lined by its style moves the text under it.
   "table-style-conditional-formatting": "moves-text",
   "keep-lines-together": "moves-text",
+  /**
+   * **A comment moves the whole page, and how far is not the document's to say.**
+   * Word printing a commented document keeps a markup column down the side of the
+   * paper, draws a balloon in it for every comment, and **scales the whole page down**
+   * to stand beside it. Read on 2026-08-18 off `d823aa8de433` and `d9beefb8b7c4`,
+   * whose every drawn thing, text, rules, logo and pictures alike, comes out of Word
+   * smaller than this draws it and shifted with it, and whose balloons this draws
+   * nothing of.
+   *
+   * **It is named rather than built, and the reason is that the file does not state
+   * it.** Whether markup is printed at all is Word's own setting and not the
+   * document's, so a page drawn to agree with one export would disagree with the next
+   * from the same file. What can honestly be said is that the document holds comments
+   * and that this drew the page as though it held none, which is what this says.
+   *
+   * Three of the 718 hold one, and they are two of the worst seven pages in the corpus:
+   * 65.4% and 39.7% of their worst page, 30.9% of their cells between the three.
+   */
+  comment: "moves-text",
   // Hidden text is measured and drawn here as any other run, so it takes room
   // Word gives it none of.
   "hidden-text": "moves-text",
@@ -231,6 +251,11 @@ function unhonouredBy(
       return conditionalFormattingUnread(element);
     case "keepLines":
       return toggled(element) ? "keep-lines-together" : null;
+    // The anchor in the text rather than the part beside it: a `word/comments.xml`
+    // left behind by a comment that has since been deleted names nothing, and every
+    // one of the three corpus documents holding comments anchors every one of them.
+    case "commentReference":
+      return "comment";
     // Kerning was built on 2026-08-13, in the pairs the face itself states, and
     // capitals the same day: every letter at the run's own size under `w:caps`, or a
     // small capital at four fifths of it rounded to the nearest half point.
