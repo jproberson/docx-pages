@@ -241,10 +241,10 @@ function legacyAnchors(paragraph: Paragraph): readonly FloatingAnchor[] {
     legacyAnchoredDrawingsIn(pict).map((drawing): FloatingAnchor => ({
       paragraphIndex: paragraph.index,
       ...drawing,
-      // Neither a turn nor a flip is read off a VML shape yet, and no positioned
-      // text box in the corpus states one.
+      // No turn is read off a VML shape yet, and no positioned text box in the
+      // corpus states one. The flip is the drawing's own: a box states none, and a
+      // line states which of its box's two diagonals it runs along.
       turnDegrees: 0,
-      flip: { horizontal: false, vertical: false },
       // See `legacyAnchoredDrawingsIn`: what the old form says about wrapping is
       // not carried across, so nothing here moves a line of the flow.
       // What the old form says about a cell (`o:allowincell`) is not read either,

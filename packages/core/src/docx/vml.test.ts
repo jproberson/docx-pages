@@ -245,6 +245,66 @@ describe("readAnchors over a drawing in the old form", () => {
     });
   });
 
+  /**
+   * **A `v:line` states no offset and no size**: its two ends are where it stands,
+   * in the same space a `margin-left` is measured in, and the box it is drawn in is
+   * the one they span. All nine in the corpus are written exactly so, which is why
+   * every one of them was drawn nowhere until 2026-08-19.
+   */
+  describe("a line out of the flow", () => {
+    const line = (attributes: string) =>
+      `<v:line style="position:absolute;mso-position-horizontal:absolute;` +
+      `mso-position-horizontal-relative:text;mso-position-vertical:absolute;` +
+      `mso-position-vertical-relative:text" ${attributes}/>`;
+
+    it("stands in the box its two ends span, and is stroked rather than filled in", () => {
+      const anchor = only(anchorsOf(held(line(`from="134pt,128pt" to="430pt,131pt"`))));
+
+      expect(points(anchor.widthEmu)).toBeCloseTo(296, 6);
+      expect(points(anchor.heightEmu)).toBeCloseTo(3, 6);
+      expect(anchor.horizontal).toStrictEqual({
+        kind: "offset",
+        from: "column",
+        offsetEmu: Math.round(134 * EMU_PER_POINT),
+      });
+      expect(anchor.vertical).toStrictEqual({
+        kind: "offset",
+        from: "paragraph",
+        offsetEmu: Math.round(128 * EMU_PER_POINT),
+      });
+      if (anchor.content.kind !== "shape") throw new Error("not a shape");
+      expect(anchor.content.paint.geometry).toBe("line");
+      expect(anchor.content.paint.outline?.color?.base).toStrictEqual({
+        kind: "literal",
+        hex: "000000",
+      });
+    });
+
+    // Which of the box's two diagonals the line runs along is the order of its own
+    // ends, turned over again by whatever the style's `flip` says. Eight of the nine
+    // in the corpus state `flip:y` beside coordinates that already run down, and
+    // what Word makes of the two together cannot be seen on any of them: every one
+    // spans 0.6pt or less down over 300pt or more across.
+    it("runs along the diagonal its ends put it on", () => {
+      const down = only(anchorsOf(held(line(`from="0,0" to="90pt,30pt"`))));
+      const up = only(anchorsOf(held(line(`from="0,30pt" to="90pt,0"`))));
+      const turned = `from="0,0" to="90pt,30pt" `;
+
+      expect(down.flip).toStrictEqual({ horizontal: false, vertical: false });
+      expect(up.flip).toStrictEqual({ horizontal: false, vertical: true });
+      expect(up.vertical).toStrictEqual({ kind: "offset", from: "paragraph", offsetEmu: 0 });
+      expect(
+        only(anchorsOf(held(line(turned).replace("position:absolute", "position:absolute;flip:y"))))
+          .flip,
+      ).toStrictEqual({ horizontal: false, vertical: true });
+    });
+
+    it("is refused where either end is stated in a unit this cannot read", () => {
+      expect(anchorsOf(held(line(`from="0,0" to="90em,30pt"`)))).toStrictEqual([]);
+      expect(anchorsOf(held(line(`from="0,0"`)))).toStrictEqual([]);
+    });
+  });
+
   describe("what it refuses, so that the report goes on naming it", () => {
     it("passes over a box standing in the line rather than out of it", () => {
       expect(anchorsOf(held(textBox("width:323pt;height:129.6pt")))).toStrictEqual([]);
@@ -267,9 +327,13 @@ describe("readAnchors over a drawing in the old form", () => {
       expect(anchorsOf(held(textBox(strangeUnit)))).toStrictEqual([]);
     });
 
-    it("passes over a shape that is not a text box at all", () => {
-      const line = `<v:line style="position:absolute" from="0,0" to="180pt,0"/>`;
-      expect(anchorsOf(held(line))).toStrictEqual([]);
+    // The line left this list on 2026-08-19 and is drawn where its ends put it. What
+    // is still passed over is a shape holding neither text nor a picture whose
+    // geometry its own element name does not state: what a `v:shape` draws is the
+    // `v:shapetype` it names, which is a reading of its own.
+    it("passes over a shape that is neither a text box nor a geometry it can name", () => {
+      const plain = `<v:shape type="#_x0000_t202" style="${PLACED}"/>`;
+      expect(anchorsOf(held(plain))).toStrictEqual([]);
     });
 
     // The copy Word itself ignores. `paragraphOwnDrawings` drops it before this is

@@ -5,6 +5,8 @@ import {
   type CropInsets,
   type DrawingContent,
   type GroupChild,
+  type DrawingFlip,
+  type ShapeGeometry,
   type ShapePaint,
   type TextBoxAnchor,
   type TextBoxBody,
@@ -175,6 +177,7 @@ export type LegacyAnchoredDrawing = {
   readonly name: string;
   readonly widthEmu: number;
   readonly heightEmu: number;
+  readonly flip: DrawingFlip;
   // See `statedWidthOf`: a width the file states as a share of the text frame rather
   // than as a length, which the layout resolves and the reading only carries.
   readonly frameWidthShare?: number;
@@ -392,6 +395,9 @@ function distancesOf(style: ReadonlyMap<string, string>): WrapDistances {
 type LegacyFrame = {
   readonly widthEmu: number;
   readonly heightEmu: number;
+  // Which way round the shape is drawn in the box it was given. A box states none
+  // and a line states which of its box's two diagonals it runs along.
+  readonly flip: DrawingFlip;
   // See `statedWidthOf`: what the frame is a share of is the section's, which the
   // reading does not know, so a width stated as one is carried across and the layout
   // is what turns it into points.
@@ -402,6 +408,97 @@ type LegacyFrame = {
   readonly relativeHeight: number;
   readonly distances: WrapDistances;
 };
+
+const UNFLIPPED: DrawingFlip = { horizontal: false, vertical: false };
+
+/**
+ * How a shape is turned over inside the box it was given, which VML writes as one
+ * declaration naming the axes: `flip:y`, `flip:x`, `flip:xy`.
+ */
+function flipIn(style: ReadonlyMap<string, string>): DrawingFlip {
+  const stated = style.get("flip")?.toLowerCase() ?? "";
+  return { horizontal: stated.includes("x"), vertical: stated.includes("y") };
+}
+
+// One end of a line, `from="134.05pt,128.05pt"`, in the space a `margin-left` is
+// measured in.
+function endOf(stated: string | undefined): { x: number; y: number } | null {
+  if (stated === undefined) return null;
+  const [across, down] = stated.split(",");
+  const x = lengthPt(across);
+  const y = lengthPt(down);
+  return x === null || y === null ? null : { x, y };
+}
+
+/**
+ * Where a `v:line` stands, which it states in a way no other shape does.
+ *
+ * **A line states no offset and no size at all**: `from` and `to` are its two ends,
+ * in the same space a `margin-left` is measured in, and the box it is drawn in is
+ * the one they span. All nine in the corpus are written exactly so, with a
+ * `position:absolute` and nothing else about where they are, which is why `frameOf`
+ * turned every one of them down.
+ *
+ * **Which of the box's two diagonals it runs along is the two ends' own order**,
+ * turned over again by whatever the style's `flip` says: a line whose `to` is above
+ * its `from` runs up, and eight of the nine say `flip:y` beside coordinates that
+ * already run down. What that composition comes to has not been asked of Word, and
+ * on these nine it cannot be seen: every one of them spans 0.6pt or less from end to
+ * end vertically over 300pt or more across.
+ */
+function lineFrameOf(shape: XmlElement, style: ReadonlyMap<string, string>): LegacyFrame | null {
+  const from = endOf(attribute(shape, "", "from"));
+  const to = endOf(attribute(shape, "", "to"));
+  if (from === null || to === null) return null;
+
+  const horizontal = endAt(style, HORIZONTAL, HORIZONTAL_ORIGINS, "column", Math.min(from.x, to.x));
+  const vertical = endAt(style, VERTICAL, VERTICAL_ORIGINS, "paragraph", Math.min(from.y, to.y));
+  if (horizontal === null || vertical === null) return null;
+
+  const stated = flipIn(style);
+  const depth = depthOf(style);
+  return {
+    widthEmu: emuOf(Math.abs(to.x - from.x)),
+    heightEmu: emuOf(Math.abs(to.y - from.y)),
+    flip: {
+      horizontal: to.x < from.x !== stated.horizontal,
+      vertical: to.y < from.y !== stated.vertical,
+    },
+    horizontal,
+    vertical,
+    behindDoc: depth < 0,
+    relativeHeight: Math.abs(depth),
+    distances: distancesOf(style),
+  };
+}
+
+// Where a line stands on one axis. **`positionOn` cannot answer for a line**: it
+// reads the offset the style states and a line states none, so what stands here is
+// the same reading with the line's own nearer end in place of that offset. The
+// origin and the alignment are read exactly as they are for a box.
+function endAt(
+  style: ReadonlyMap<string, string>,
+  names: PositionNames,
+  origins: ReadonlyMap<string, AnchorOrigin>,
+  fallback: AnchorOrigin,
+  atPt: number,
+): AnchorPosition | null {
+  const stated = style.get(names.relative);
+  const from = stated === undefined ? fallback : origins.get(stated.toLowerCase());
+  if (from === undefined) return null;
+
+  const keyword = style.get(names.keyword)?.toLowerCase();
+  if (keyword !== undefined && keyword !== "absolute")
+    return { kind: "align", from, align: keyword };
+  return { kind: "offset", from, offsetEmu: emuOf(atPt) };
+}
+
+// Word stacks its drawings by the size of the z-index and draws the ones below
+// nought behind the text, which is where 60 of the corpus's 70 boxes are.
+function depthOf(style: ReadonlyMap<string, string>): number {
+  const stated = Number(style.get("z-index") ?? "");
+  return Number.isFinite(stated) ? stated : 0;
+}
 
 function frameOf(style: ReadonlyMap<string, string>): LegacyFrame | null {
   const width = statedWidthOf(style);
@@ -415,14 +512,12 @@ function frameOf(style: ReadonlyMap<string, string>): LegacyFrame | null {
   const vertical = positionOn(style, VERTICAL, VERTICAL_ORIGINS, "paragraph");
   if (horizontal === null || vertical === null) return null;
 
-  // Word stacks its drawings by the size of the z-index and draws the ones below
-  // nought behind the text, which is where 60 of the corpus's 70 boxes are.
-  const stated = Number(style.get("z-index") ?? "");
-  const depth = Number.isFinite(stated) ? stated : 0;
+  const depth = depthOf(style);
 
   return {
     widthEmu: emuOf(widthPt),
     heightEmu: emuOf(heightPt),
+    flip: UNFLIPPED,
     ...(width.kind === "share-of-the-frame" ? { frameWidthShare: width.share } : {}),
     horizontal,
     vertical,
@@ -521,7 +616,7 @@ const DEFAULT_FILL = "ffffff";
 const DEFAULT_STROKE = "000000";
 const DEFAULT_STROKE_WIDTH_PT = 0.75;
 
-function paintOf(shape: XmlElement): ShapePaint {
+function paintOf(shape: XmlElement, geometry: ShapeGeometry = "rectangle"): ShapePaint {
   const strokeWidthPt = lengthPt(attribute(shape, "", "strokeweight"));
   const strokeColor = paintedIn(attribute(shape, "", "strokecolor"), DEFAULT_STROKE);
 
@@ -537,7 +632,7 @@ function paintOf(shape: XmlElement): ShapePaint {
             widthPt: strokeWidthPt ?? DEFAULT_STROKE_WIDTH_PT,
             widthStated: strokeWidthPt !== null,
           },
-    geometry: "rectangle",
+    geometry,
     path: null,
   };
 }
@@ -675,6 +770,22 @@ function readLegacyDrawing(shape: XmlElement): LegacyReading {
   // A drawing standing in the line is not one of these: the picture is drawn by
   // `inlinePictureOf` and anything else in the line is drawn nowhere at all.
   if (style.get("position")?.toLowerCase() !== "absolute") return undrawnWhole;
+
+  // **A line is read before anything else asks about a size**, since it states
+  // none: where it stands and how big it is are the same two coordinates.
+  if (shape.name === "line") {
+    const drawn = lineFrameOf(shape, style);
+    return drawn === null
+      ? undrawnWhole
+      : {
+          drawing: {
+            ...drawn,
+            name: attribute(shape, "", "alt") ?? "",
+            content: { kind: "shape", paint: paintOf(shape, "line") },
+          },
+          undrawn: null,
+        };
+  }
 
   const frame = frameOf(style);
   if (frame === null) return undrawnWhole;

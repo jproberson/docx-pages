@@ -505,17 +505,17 @@ describe("readUnhonoured", () => {
     // Neither corpus container states two of the three, so what stands here is the
     // rule rather than a measurement.
     it("answers for the text over the picture, and for the picture over the rest", () => {
-      const line = `<v:line style="position:absolute" from="0,0" to="180pt,0"/>`;
+      const floating = picture("position:absolute;width:180pt;height:90pt");
       const boxed = textBox("position:absolute;margin-left:0;margin-top:0;width:10em;height:9pt");
       // The controls: each of the two answers on its own, or the two rows under them
       // say nothing about which won.
-      expect(legacyPicture("media/logo.png", undefined, undefined, line)).toStrictEqual([
+      expect(legacyPicture("media/logo.png", undefined, undefined, floating)).toStrictEqual([
         "legacy-drawing",
       ]);
       expect(legacyPicture("media/logo.png", undefined, undefined, boxed)).toStrictEqual([
         "legacy-text-box",
       ]);
-      expect(legacyPicture("media/chart.wmf", undefined, undefined, line)).toStrictEqual([
+      expect(legacyPicture("media/chart.wmf", undefined, undefined, floating)).toStrictEqual([
         "undrawable-picture",
       ]);
       expect(legacyPicture("media/chart.wmf", undefined, undefined, boxed)).toStrictEqual([
@@ -546,13 +546,19 @@ describe("readUnhonoured", () => {
       expect(kinds(reportOf(pict(textBox(inTheLine))))).toStrictEqual(["legacy-text-box"]);
     });
 
-    it("names a line, a shape naming no picture, and a picture out of the flow", () => {
-      const line = `<v:line style="position:absolute" from="0,0" to="180pt,0"/>`;
+    // The positioned line left this list on 2026-08-19 and is drawn where it stands;
+    // see the reading in `vml.test.ts`. A rule standing in the line and a picture out
+    // of the flow are still drawn nowhere.
+    it("names a rule in the line and a picture out of the flow", () => {
       const rule = `<v:rect style="width:180pt;height:1.5pt"/>`;
       const floating = picture("position:absolute;width:180pt;height:90pt");
-      expect(kinds(reportOf(pict(line)))).toStrictEqual(["legacy-drawing"]);
       expect(kinds(reportOf(pict(rule)))).toStrictEqual(["legacy-drawing"]);
       expect(kinds(reportOf(pict(floating)))).toStrictEqual(["legacy-drawing"]);
+    });
+
+    it("says nothing about a line it draws where the line states both its ends", () => {
+      const line = `<v:line style="position:absolute" from="0,0" to="180pt,0"/>`;
+      expect(kinds(reportOf(pict(line)))).toStrictEqual([]);
     });
 
     // Word draws a group as one drawing and the census counted one, so a group of
