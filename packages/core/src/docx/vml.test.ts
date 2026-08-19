@@ -376,6 +376,31 @@ describe("readAnchors over a drawing in the old form", () => {
       expect(child?.content.kind).toBe("text-box");
     });
 
+    // A group's own children are where the corpus keeps most of its ovals and its
+    // rounded rectangles, and a child holding no text was read as nothing at all
+    // until 2026-08-19.
+    it("reads a child that is paint and a geometry rather than a text box", () => {
+      const round = `<v:roundrect style="position:absolute;left:0;top:0;width:12240;height:1424"
+         fillcolor="#f1c232" stroked="f"/>`;
+      const anchor = only(anchorsOf(group(round)));
+      if (anchor.content.kind !== "group") throw new Error("not a group");
+
+      const [child] = anchor.content.children;
+      if (child?.content.kind !== "shape") throw new Error("not a shape");
+      expect(child.content.paint.geometry).toBe("rounded-rectangle");
+      expect(child.content.paint.fill?.base).toStrictEqual({ kind: "literal", hex: "f1c232" });
+      expect(child.content.paint.outline).toBeNull();
+    });
+
+    // **A shape the style turns is left undrawn rather than drawn straight.** Three
+    // corpus documents state a `rotation` on 43 shapes between them, in fractions of
+    // a degree, and nothing here reads one.
+    it("leaves a child the style turns out of its own box undrawn", () => {
+      const turned = `<v:roundrect style="position:absolute;left:0;top:0;width:12240;height:1424;
+         rotation:1752415fd" fillcolor="#f1c232"/>`;
+      expect(anchorsOf(group(turned))).toStrictEqual([]);
+    });
+
     it("measures a child from the group's own origin", () => {
       const anchor = only(
         anchorsOf(group(inGroup("position:absolute;left:6120;top:-532;width:6120;height:712"))),
@@ -391,9 +416,11 @@ describe("readAnchors over a drawing in the old form", () => {
     // whether or not the rule beside it could be read, and what was left out is what
     // the fidelity report goes on naming.
     it("draws the children it can read and leaves the rest out", () => {
-      const rule = `<v:rect style="position:absolute;top:-1;width:12240;height:15" fillcolor="#bebebe"/>`;
+      // A `v:shape` draws whatever `v:shapetype` it names, which is unread, so it is
+      // the child a group can hold and this cannot draw.
+      const unread = `<v:shape type="#_x0000_t32" style="position:absolute;top:-1;width:12240;height:15"/>`;
       const anchor = only(
-        anchorsOf(group(rule + inGroup("position:absolute;top:-1245;width:12240;height:1424"))),
+        anchorsOf(group(unread + inGroup("position:absolute;top:-1245;width:12240;height:1424"))),
       );
       if (anchor.content.kind !== "group") throw new Error("not a group");
       expect(anchor.content.children).toHaveLength(1);
@@ -422,8 +449,8 @@ describe("readAnchors over a drawing in the old form", () => {
     });
 
     it("passes over a group holding nothing it can read", () => {
-      const rule = `<v:rect style="position:absolute;top:-1;width:12240;height:15"/>`;
-      expect(anchorsOf(group(rule))).toStrictEqual([]);
+      const unread = `<v:shape type="#_x0000_t32" style="position:absolute;top:-1;width:12240;height:15"/>`;
+      expect(anchorsOf(group(unread))).toStrictEqual([]);
     });
   });
 });

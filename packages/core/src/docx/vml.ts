@@ -419,6 +419,16 @@ const NAMED_GEOMETRIES: ReadonlyMap<string, ShapeGeometry> = new Map([
   ["line", "line"],
 ]);
 
+// Whether the style turns the shape out of its own box, which VML writes in
+// fractions of a degree: `rotation:1752415fd` and `rotation:-1945699fd` both stand
+// in the corpus. Nothing here reads one, so what states one is not drawn.
+function isTurned(style: ReadonlyMap<string, string>): boolean {
+  const stated = style.get("rotation");
+  if (stated === undefined) return false;
+  const turn = Number(stated.toLowerCase().replace(/fd$/, ""));
+  return !Number.isFinite(turn) || turn !== 0;
+}
+
 const UNFLIPPED: DrawingFlip = { horizontal: false, vertical: false };
 
 /**
@@ -753,7 +763,19 @@ function contentInGroupOf(
   }
 
   const body = textBoxBodyOf(child, style);
-  return body === null ? null : { kind: "text-box", body, paint: paintOf(child) };
+  if (body !== null) return { kind: "text-box", body, paint: paintOf(child) };
+
+  // The same reading `readLegacyDrawing` gives a shape standing on its own: its
+  // paint, and the geometry its element name states. A group's own children are
+  // where the corpus keeps most of its ovals and rounded rectangles.
+  //
+  // **A shape the style turns is left undrawn rather than drawn straight.** VML
+  // states the turn in fractions of a degree (`rotation:1752415fd`) and nothing here
+  // reads one, and a stake drawn upright where the file leans it over is a shape in
+  // the wrong place rather than a shape half right.
+  const geometry = NAMED_GEOMETRIES.get(child.name);
+  if (geometry === undefined || imageOf(child) !== null || isTurned(style)) return null;
+  return { kind: "shape", paint: paintOf(child, geometry) };
 }
 
 /**
