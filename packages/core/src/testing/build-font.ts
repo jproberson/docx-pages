@@ -15,7 +15,15 @@ export type FontFixture = {
   readonly descender: number;
   readonly lineGap: number;
   readonly advances?: Readonly<Record<string, number>>;
-  readonly cmapFormat?: 4 | 6 | 12;
+  readonly cmapFormat?: 0 | 2 | 4 | 6 | 12 | 13;
+  // What a whole run of characters draws, which is what a format 13 cmap states
+  // and nothing else does: the character named states the glyph, and the one it
+  // is mapped to is the last of the run drawing it.
+  readonly sharedRanges?: Readonly<Record<string, string>>;
+  // A subtable in a format nothing here reads, declared at the widest encoding so
+  // that it outranks the fixture's own. A face states one to ask whether the
+  // subtable that can be read is passed over for it.
+  readonly unreadableSubtable?: boolean;
   // Which encodings the face declares it maps. A symbol face declares the symbol
   // one, and Symbol itself declares both: its glyphs are reachable by byte through
   // its own page and by what they mean.
@@ -409,34 +417,134 @@ function cmapFormat12(glyphs: readonly Glyph[]): Uint8Array {
   return table;
 }
 
-function cmapFormat6(): Uint8Array {
-  const table = new Uint8Array(10);
-  new DataView(table.buffer).setUint16(0, 6);
+// The whole array, whether the face maps the character or not: a character with no
+// glyph of its own holds .notdef where its byte is, which is the only way this
+// format has of saying so.
+function cmapFormat0(glyphs: readonly Glyph[]): Uint8Array {
+  const table = new Uint8Array(262);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 0);
+  view.setUint16(2, table.length);
+
+  for (const glyph of glyphs) if (glyph.codePoint <= 0xff) table[6 + glyph.codePoint] = glyph.id;
   return table;
 }
 
-// Every encoding the fixture declares points at the one subtable, since what a
-// fixture has to say here is which encodings a face offers rather than what each
-// of them maps.
-function cmapTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
-  const format = fixture.cmapFormat ?? 4;
-  const subtable =
-    format === 12 ? cmapFormat12(glyphs) : format === 6 ? cmapFormat6() : cmapFormat4(glyphs);
-  const declared = fixture.subtables ?? ["unicode"];
+// One run from the lowest character the face maps to the highest, so that a
+// character the fixture leaves out of the middle of it is in the run and unmapped.
+function cmapFormat6(glyphs: readonly Glyph[]): Uint8Array {
+  const mapped = glyphs.filter((glyph) => glyph.codePoint <= 0xffff);
+  const first = mapped[0]?.codePoint ?? 0;
+  const last = mapped[mapped.length - 1]?.codePoint ?? first;
+  const count = mapped.length === 0 ? 0 : last - first + 1;
 
-  const at = 4 + declared.length * 8;
-  const table = new Uint8Array(at + subtable.length);
+  const table = new Uint8Array(10 + count * 2);
   const view = new DataView(table.buffer);
-  view.setUint16(2, declared.length);
+  view.setUint16(0, 6);
+  view.setUint16(2, table.length);
+  view.setUint16(6, first);
+  view.setUint16(8, count);
 
-  declared.forEach((encoding, index) => {
-    const record = 4 + index * 8;
-    view.setUint16(record, 3);
-    view.setUint16(record + 2, encoding === "symbol" ? 0 : format === 12 ? 10 : 1);
-    view.setUint32(record + 4, at);
+  for (const glyph of mapped) view.setUint16(10 + (glyph.codePoint - first) * 2, glyph.id);
+  return table;
+}
+
+// Format 12's groups, meaning the opposite: a group draws the one glyph rather
+// than a consecutive run of them. A character the fixture states no run for stands
+// on its own, so a fixture that states none writes the map format 12 would.
+function cmapFormat13(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const table = new Uint8Array(16 + glyphs.length * 12);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, 13);
+  view.setUint32(4, table.length);
+  view.setUint32(12, glyphs.length);
+
+  glyphs.forEach((glyph, index) => {
+    const shared = Object.entries(fixture.sharedRanges ?? {}).find(
+      ([character]) => character.codePointAt(0) === glyph.codePoint,
+    );
+    const group = 16 + index * 12;
+    view.setUint32(group, glyph.codePoint);
+    view.setUint32(group + 4, shared?.[1].codePointAt(0) ?? glyph.codePoint);
+    view.setUint32(group + 8, glyph.id);
   });
 
-  table.set(subtable, at);
+  return table;
+}
+
+// Nothing looks past the format of a subtable it cannot read, so there is nothing
+// under it to write. Format 2 is the high-byte mapping of the legacy CJK
+// encodings, which is the format a real face states that nothing here reads.
+const UNREADABLE_FORMAT = 2;
+
+function cmapUnreadable(): Uint8Array {
+  const table = new Uint8Array(10);
+  const view = new DataView(table.buffer);
+  view.setUint16(0, UNREADABLE_FORMAT);
+  view.setUint16(2, table.length);
+  return table;
+}
+
+function cmapSubtable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const format = fixture.cmapFormat ?? 4;
+  if (format === 0) return cmapFormat0(glyphs);
+  if (format === 2) return cmapUnreadable();
+  if (format === 6) return cmapFormat6(glyphs);
+  if (format === 12) return cmapFormat12(glyphs);
+  if (format === 13) return cmapFormat13(fixture, glyphs);
+  return cmapFormat4(glyphs);
+}
+
+const WINDOWS_PLATFORM = 3;
+const SYMBOL_ENCODING = 0;
+const BASIC_PLANE_ENCODING = 1;
+const FULL_REPERTOIRE_ENCODING = 10;
+
+// The formats that reach past the basic plane are declared where a real face
+// declares them. The byte-indexed ones are declared on the Windows platform rather
+// than the Macintosh one a real face writes them on, since what a fixture asks
+// about is how a subtable is read and not which of them is picked.
+const encodingFor = (format: number): number =>
+  format === 12 || format === 13 ? FULL_REPERTOIRE_ENCODING : BASIC_PLANE_ENCODING;
+
+// Every encoding the fixture declares points at the one subtable, since what a
+// fixture has to say here is which encodings a face offers rather than what each
+// of them maps. The unreadable one is the exception, and comes first so that a
+// reader passing it over has reached past a subtable it prefers and met first.
+function cmapTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
+  const mapped = cmapSubtable(fixture, glyphs);
+  const format = fixture.cmapFormat ?? 4;
+
+  const records = [
+    ...(fixture.unreadableSubtable === true
+      ? [{ encoding: FULL_REPERTOIRE_ENCODING, bytes: cmapUnreadable() }]
+      : []),
+    ...(fixture.subtables ?? ["unicode"]).map((encoding) => ({
+      encoding: encoding === "symbol" ? SYMBOL_ENCODING : encodingFor(format),
+      bytes: mapped,
+    })),
+  ];
+
+  const offsets = new Map<Uint8Array, number>();
+  let end = 4 + records.length * 8;
+  for (const record of records) {
+    if (offsets.has(record.bytes)) continue;
+    offsets.set(record.bytes, end);
+    end += record.bytes.length;
+  }
+
+  const table = new Uint8Array(end);
+  const view = new DataView(table.buffer);
+  view.setUint16(2, records.length);
+
+  records.forEach((record, index) => {
+    const at = 4 + index * 8;
+    view.setUint16(at, WINDOWS_PLATFORM);
+    view.setUint16(at + 2, record.encoding);
+    view.setUint32(at + 4, offsets.get(record.bytes) ?? 0);
+  });
+
+  for (const [bytes, offset] of offsets) table.set(bytes, offset);
   return table;
 }
 

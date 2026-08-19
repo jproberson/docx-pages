@@ -17,9 +17,9 @@ export type GlyphIndex =
   | { readonly kind: "unavailable"; readonly reason: AdvancesUnavailable };
 
 type CharacterMap =
-  | { readonly kind: "map"; readonly glyphFor: CodeToGlyph }
-  | { readonly kind: "unsupported" }
-  | { readonly kind: "malformed" };
+  { readonly kind: "map"; readonly glyphFor: CodeToGlyph } | { readonly kind: "malformed" };
+
+type SubtableParser = (table: Uint8Array) => CharacterMap;
 
 type Segment = {
   readonly start: number;
@@ -46,6 +46,7 @@ const SYMBOL_ENCODING = 0;
 
 type Subtable = {
   readonly bytes: Uint8Array;
+  readonly parse: SubtableParser;
   readonly symbol: boolean;
 };
 
@@ -62,13 +63,16 @@ function preferenceOf(platform: number, encoding: number): number {
   return 0;
 }
 
+// A subtable in a format nothing here reads is passed over rather than chosen and
+// then refused, so a face that states its widest map in one of the legacy formats
+// is still read through whatever else it offers.
 function selectSubtable(cmap: Uint8Array): Subtable | null {
   if (cmap.byteLength < 4) return null;
   const view = viewOf(cmap);
   const count = view.getUint16(2);
 
   let bestScore = 0;
-  let bestOffset = 0;
+  let chosen: { bytes: Uint8Array; parse: SubtableParser } | null = null;
   let symbol = false;
   for (let index = 0; index < count; index += 1) {
     const record = 4 + index * 8;
@@ -78,13 +82,14 @@ function selectSubtable(cmap: Uint8Array): Subtable | null {
     if (platform === 3 && encoding === SYMBOL_ENCODING) symbol = true;
     const score = preferenceOf(platform, encoding);
     const offset = view.getUint32(record + 4);
-    if (score > bestScore && offset + 4 <= cmap.byteLength) {
-      bestScore = score;
-      bestOffset = offset;
-    }
+    if (score <= bestScore || offset + 4 > cmap.byteLength) continue;
+    const parse = parserFor(view.getUint16(offset));
+    if (parse === null) continue;
+    bestScore = score;
+    chosen = { bytes: cmap.subarray(offset), parse };
   }
 
-  return bestScore === 0 ? null : { bytes: cmap.subarray(bestOffset), symbol };
+  return chosen === null ? null : { ...chosen, symbol };
 }
 
 // Word writes a symbol face's characters in the F020 to F0FF page, and a face may
@@ -164,40 +169,98 @@ function parseFormat4(table: Uint8Array): CharacterMap {
   };
 }
 
-function parseFormat12(table: Uint8Array): CharacterMap {
-  if (table.byteLength < 16) return { kind: "malformed" };
+// One glyph for each of the first 256 characters and nothing above them, written
+// out in full whether the face maps the character or not: the array is the table,
+// so a character it has no glyph for holds .notdef there like any other.
+const FORMAT_0_GLYPHS_AT = 6;
+const FORMAT_0_LENGTH = FORMAT_0_GLYPHS_AT + 256;
+
+function parseFormat0(table: Uint8Array): CharacterMap {
+  if (table.byteLength < FORMAT_0_LENGTH) return { kind: "malformed" };
+  const glyphs = table.subarray(FORMAT_0_GLYPHS_AT, FORMAT_0_LENGTH);
+
+  return {
+    kind: "map",
+    glyphFor: (codePoint) => (codePoint > 0xff ? 0 : (glyphs[codePoint] ?? 0)),
+  };
+}
+
+// One run of characters and a glyph each, which is how a face states a map with
+// nothing worth trimming inside it. A character outside the run is unmapped, and
+// one inside it whose entry is zero is .notdef like anywhere else.
+const FORMAT_6_GLYPHS_AT = 10;
+
+function parseFormat6(table: Uint8Array): CharacterMap {
+  if (table.byteLength < FORMAT_6_GLYPHS_AT) return { kind: "malformed" };
+  const view = viewOf(table);
+
+  const first = view.getUint16(6);
+  const count = view.getUint16(8);
+  if (FORMAT_6_GLYPHS_AT + count * 2 > table.byteLength) return { kind: "malformed" };
+
+  return {
+    kind: "map",
+    glyphFor: (codePoint) => {
+      const index = codePoint - first;
+      return index < 0 || index >= count ? 0 : view.getUint16(FORMAT_6_GLYPHS_AT + index * 2);
+    },
+  };
+}
+
+const GROUPS_AT = 16;
+const GROUP_LENGTH = 12;
+
+function groupsOf(table: Uint8Array): readonly Group[] | null {
+  if (table.byteLength < GROUPS_AT) return null;
   const view = viewOf(table);
 
   const count = view.getUint32(12);
-  if (16 + count * 12 > table.byteLength) return { kind: "malformed" };
+  if (GROUPS_AT + count * GROUP_LENGTH > table.byteLength) return null;
 
   const groups: Group[] = [];
   for (let index = 0; index < count; index += 1) {
-    const at = 16 + index * 12;
+    const at = GROUPS_AT + index * GROUP_LENGTH;
     groups.push({
       start: view.getUint32(at),
       end: view.getUint32(at + 4),
       glyph: view.getUint32(at + 8),
     });
   }
+  return groups;
+}
+
+// Formats 12 and 13 state the same groups and mean the opposite by them: 12's
+// characters take consecutive glyphs, where 13's whole group draws the one. That
+// is how a last-resort face covers a script with a single mark.
+type GlyphInGroup = (group: Group, codePoint: number) => number;
+
+const consecutiveGlyph: GlyphInGroup = (group, codePoint) =>
+  group.glyph + (codePoint - group.start);
+const theGroupsOneGlyph: GlyphInGroup = (group) => group.glyph;
+
+function parseGroups(table: Uint8Array, glyphIn: GlyphInGroup): CharacterMap {
+  const groups = groupsOf(table);
+  if (groups === null) return { kind: "malformed" };
 
   return {
     kind: "map",
     glyphFor: (codePoint) => {
       for (const group of groups) {
         if (codePoint > group.end) continue;
-        return codePoint < group.start ? 0 : group.glyph + (codePoint - group.start);
+        return codePoint < group.start ? 0 : glyphIn(group, codePoint);
       }
       return 0;
     },
   };
 }
 
-function parseSubtable(table: Uint8Array): CharacterMap {
-  const format = viewOf(table).getUint16(0);
-  if (format === 4) return parseFormat4(table);
-  if (format === 12) return parseFormat12(table);
-  return { kind: "unsupported" };
+function parserFor(format: number): SubtableParser | null {
+  if (format === 0) return parseFormat0;
+  if (format === 4) return parseFormat4;
+  if (format === 6) return parseFormat6;
+  if (format === 12) return (table) => parseGroups(table, consecutiveGlyph);
+  if (format === 13) return (table) => parseGroups(table, theGroupsOneGlyph);
+  return null;
 }
 
 export function readGlyphIndex(tables: ReadonlyMap<string, Uint8Array>): GlyphIndex {
@@ -207,8 +270,7 @@ export function readGlyphIndex(tables: ReadonlyMap<string, Uint8Array>): GlyphIn
   const subtable = selectSubtable(cmap);
   if (subtable === null) return { kind: "unavailable", reason: "cmap-unsupported" };
 
-  const parsed = parseSubtable(subtable.bytes);
-  if (parsed.kind === "unsupported") return { kind: "unavailable", reason: "cmap-unsupported" };
+  const parsed = subtable.parse(subtable.bytes);
   if (parsed.kind === "malformed") return { kind: "unavailable", reason: "cmap-malformed" };
 
   return {

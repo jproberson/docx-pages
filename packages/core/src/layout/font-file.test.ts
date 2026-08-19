@@ -190,8 +190,13 @@ describe("readFontFile", () => {
   });
 
   it("reports a cmap subtable format it cannot read", () => {
-    const table = readFontFile(buildSfnt({ ...FACE, advances: WIDTHS, cmapFormat: 6 })).advances;
+    const table = readFontFile(buildSfnt({ ...FACE, advances: WIDTHS, cmapFormat: 2 })).advances;
     expect(table).toStrictEqual({ kind: "unavailable", reason: "cmap-unsupported" });
+  });
+
+  it("reads a face through the subtable it can read rather than the one it prefers", () => {
+    const advanceFor = advancesOf({ ...FACE, advances: WIDTHS, unreadableSubtable: true });
+    expect(advanceOf(advanceFor, "A")).toBe(660);
   });
 
   it("still reports metrics for a face it cannot measure text with", () => {
@@ -887,6 +892,69 @@ describe("readGlyphIndex", () => {
     expect(glyphOf(glyphsOf(wide), "\u{1F600}")).toBe(2);
   });
 
+  // A byte-indexed array of 256 glyphs, which is the whole of what a face stating
+  // this format maps.
+  it("reads a format 0 cmap", () => {
+    const bytes: FontFixture = { ...FACE, cmapFormat: 0, advances: WIDTHS };
+    expect(glyphOf(glyphsOf(bytes), "A")).toBe(2);
+    expect(glyphOf(glyphsOf(bytes), "B")).toBe(3);
+  });
+
+  it("answers .notdef for a character a format 0 cmap does not map", () => {
+    const bytes: FontFixture = { ...FACE, cmapFormat: 0, advances: WIDTHS };
+    expect(glyphOf(glyphsOf(bytes), "Z")).toBe(0);
+    expect(glyphOf(glyphsOf(bytes), "\u20AC")).toBe(0);
+  });
+
+  // A run of characters and a glyph each, trimmed to the run the face maps.
+  it("reads a format 6 cmap", () => {
+    const trimmed: FontFixture = { ...FACE, cmapFormat: 6, advances: WIDTHS };
+    expect(glyphOf(glyphsOf(trimmed), " ")).toBe(1);
+    expect(glyphOf(glyphsOf(trimmed), "A")).toBe(2);
+    expect(glyphOf(glyphsOf(trimmed), "B")).toBe(3);
+  });
+
+  it("answers .notdef for a character inside a format 6 run and for one outside it", () => {
+    const trimmed: FontFixture = { ...FACE, cmapFormat: 6, advances: WIDTHS };
+    expect(glyphOf(glyphsOf(trimmed), "!")).toBe(0);
+    expect(glyphOf(glyphsOf(trimmed), "Z")).toBe(0);
+  });
+
+  // Format 13 states format 12's groups and means the opposite by them: the whole
+  // group draws the one glyph, which is how a last-resort face covers a script
+  // with a single mark.
+  it("reads a format 13 cmap, whose every character in a group draws the one glyph", () => {
+    const last: FontFixture = {
+      ...FACE,
+      cmapFormat: 13,
+      advances: { "\u0400": 500 },
+      sharedRanges: { "\u0400": "\u04FF" },
+    };
+
+    expect(glyphOf(glyphsOf(last), "\u0400")).toBe(1);
+    expect(glyphOf(glyphsOf(last), "\u0410")).toBe(1);
+    expect(glyphOf(glyphsOf(last), "\u04FF")).toBe(1);
+  });
+
+  it("answers .notdef for a character outside every format 13 group", () => {
+    const last: FontFixture = {
+      ...FACE,
+      cmapFormat: 13,
+      advances: { "\u0400": 500 },
+      sharedRanges: { "\u0400": "\u04FF" },
+    };
+
+    expect(glyphOf(glyphsOf(last), "\u03FF")).toBe(0);
+    expect(glyphOf(glyphsOf(last), "\u0500")).toBe(0);
+  });
+
+  // Refusing a face for the subtable it states first would leave the one it states
+  // beside it unread, and that one draws the same letters.
+  it("passes over a subtable in a format nothing here reads for one that can be read", () => {
+    const both: FontFixture = { ...FACE, advances: WIDTHS, unreadableSubtable: true };
+    expect(glyphOf(glyphsOf(both), "A")).toBe(2);
+  });
+
   // The same two aliases the advances are read through, so a character measured at
   // one glyph's width is never written as another.
   it("follows a symbol face into the page it maps its glyphs in", () => {
@@ -922,7 +990,7 @@ describe("readGlyphIndex", () => {
 
   it("refuses a face whose cmap is in a format nothing here reads", () => {
     const error = caught(() =>
-      readGlyphIndex(buildSfnt({ ...FACE, cmapFormat: 6, advances: WIDTHS })),
+      readGlyphIndex(buildSfnt({ ...FACE, cmapFormat: 2, advances: WIDTHS })),
     );
 
     expect(error.code).toBe("font-glyphs-unreadable");
