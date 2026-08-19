@@ -175,6 +175,9 @@ export type LegacyAnchoredDrawing = {
   readonly name: string;
   readonly widthEmu: number;
   readonly heightEmu: number;
+  // See `statedWidthOf`: a width the file states as a share of the text frame rather
+  // than as a length, which the layout resolves and the reading only carries.
+  readonly frameWidthShare?: number;
   readonly horizontal: AnchorPosition;
   readonly vertical: AnchorPosition;
   readonly content: DrawingContent;
@@ -319,19 +322,48 @@ function positionOn(
   return offsetPt === null ? null : { kind: "offset", from, offsetEmu: emuOf(offsetPt) };
 }
 
-// **A size stated as a share of something else is refused rather than guessed at.**
-// 26 items in eight corpus documents state `mso-width-percent:400` or
-// `mso-height-percent:200` beside a width and a height in points on the same shape,
-// and which of the two Word draws has not been asked of it.
-const SHARES = ["mso-width-percent", "mso-height-percent"];
+/**
+ * How wide a shape is where its style states that twice, as a length and as a share
+ * of something else.
+ *
+ * **The share wins, and it is in tenths of a percent.** Measured against Word on
+ * 2026-08-19: a box stating `width:150pt` beside
+ * `mso-width-percent:400;mso-width-relative:margin`, standing in a 540pt text frame,
+ * broke its own eighteen words at 439.7, 428.5 and 411.2 from a left of 236.4. The
+ * longest of those lines is 203.3pt and the word after it did not fit, which is a box
+ * 216pt wide and not the 150 the same style states. 216 is 40.0% of the frame, so the
+ * 400 is tenths of a percent rather than a percentage, and the `margin` it is a share
+ * of is the text frame rather than the page.
+ *
+ * **Only `margin` is measured**, and every one of the nine corpus shapes stating a
+ * share states it, so a share of anything else is refused rather than guessed at.
+ *
+ * **The height's own share is not read.** `mso-height-percent:200` stands beside the
+ * width's on all nine, and what Word makes of it has never been asked; it costs
+ * nothing to leave, since all nine fit their shape to their text and so draw no
+ * stated height either.
+ */
+type StatedWidth =
+  | { readonly kind: "in-points" }
+  | { readonly kind: "share-of-the-frame"; readonly share: number }
+  | { readonly kind: "unreadable" };
 
-const sizedByShare = (style: ReadonlyMap<string, string>): boolean =>
-  SHARES.some((name) => {
-    const stated = style.get(name);
-    if (stated === undefined) return false;
-    const share = Number(stated);
-    return !Number.isFinite(share) || share !== 0;
-  });
+const TENTHS_OF_A_PERCENT = 1000;
+
+function statedWidthOf(style: ReadonlyMap<string, string>): StatedWidth {
+  const stated = style.get("mso-width-percent");
+  if (stated === undefined) return { kind: "in-points" };
+
+  const tenths = Number(stated);
+  if (!Number.isFinite(tenths)) return { kind: "unreadable" };
+  // Word writes the declaration out as a nought for a shape stating no share at all,
+  // which is what nearly every shape in the corpus does.
+  if (tenths === 0) return { kind: "in-points" };
+
+  return style.get("mso-width-relative")?.toLowerCase() === "margin"
+    ? { kind: "share-of-the-frame", share: tenths / TENTHS_OF_A_PERCENT }
+    : { kind: "unreadable" };
+}
 
 // Word's own distances round a floating object, which VML states in points and a
 // `wp:anchor` in EMU: an eighth of an inch at the sides and nothing above or below.
@@ -360,6 +392,10 @@ function distancesOf(style: ReadonlyMap<string, string>): WrapDistances {
 type LegacyFrame = {
   readonly widthEmu: number;
   readonly heightEmu: number;
+  // See `statedWidthOf`: what the frame is a share of is the section's, which the
+  // reading does not know, so a width stated as one is carried across and the layout
+  // is what turns it into points.
+  readonly frameWidthShare?: number;
   readonly horizontal: AnchorPosition;
   readonly vertical: AnchorPosition;
   readonly behindDoc: boolean;
@@ -368,7 +404,8 @@ type LegacyFrame = {
 };
 
 function frameOf(style: ReadonlyMap<string, string>): LegacyFrame | null {
-  if (sizedByShare(style)) return null;
+  const width = statedWidthOf(style);
+  if (width.kind === "unreadable") return null;
 
   const widthPt = lengthPt(style.get("width"));
   const heightPt = lengthPt(style.get("height"));
@@ -386,6 +423,7 @@ function frameOf(style: ReadonlyMap<string, string>): LegacyFrame | null {
   return {
     widthEmu: emuOf(widthPt),
     heightEmu: emuOf(heightPt),
+    ...(width.kind === "share-of-the-frame" ? { frameWidthShare: width.share } : {}),
     horizontal,
     vertical,
     behindDoc: depth < 0,

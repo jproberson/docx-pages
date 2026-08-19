@@ -476,9 +476,9 @@ describe("readUnhonoured", () => {
     });
 
     it("names a text box whose place or size it cannot read", () => {
-      // A size stated as a share of something else, which Word has not been asked
-      // about, and one standing in the line, which the corpus does not hold.
-      const shared = `${PLACED};mso-width-percent:400`;
+      // A width stated as a share of something the margin was measured for and this
+      // was not, and a box standing in the line, which the corpus does not hold.
+      const shared = `${PLACED};mso-width-percent:400;mso-width-relative:page`;
       const inTheLine = "width:180pt;height:90pt";
       expect(kinds(reportOf(pict(textBox(shared))))).toStrictEqual(["legacy-text-box"]);
       expect(kinds(reportOf(pict(textBox(inTheLine))))).toStrictEqual(["legacy-text-box"]);

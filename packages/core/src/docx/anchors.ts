@@ -57,6 +57,10 @@ export type FloatingAnchor = {
   readonly name: string;
   readonly widthEmu: number;
   readonly heightEmu: number;
+  // A width the file states as a share of the text frame rather than as a length,
+  // which only the old drawing form does and only the section knows the frame of.
+  // See `statedWidthOf`: where one stands, it is drawn and the length is not.
+  readonly frameWidthShare?: number;
   // How far round the object was turned after it was drawn, which is paint alone
   // here: what an object turned out of its own box does to the text wrapping
   // around it has not been asked of Word.

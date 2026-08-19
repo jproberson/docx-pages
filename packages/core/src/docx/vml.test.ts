@@ -66,6 +66,40 @@ describe("readAnchors over a drawing in the old form", () => {
     expect(anchor.paragraphIndex).toBe(0);
   });
 
+  /**
+   * **A width stated as a share of the text frame wins over the length beside it.**
+   * Measured against Word on 2026-08-19: a box stating `width:150pt` beside
+   * `mso-width-percent:400;mso-width-relative:margin`, standing in a 540pt frame,
+   * broke its own eighteen words at 439.7, 428.5 and 411.2 from a left of 236.4,
+   * which is 216pt of room and 40.0% of the frame. The share reaches the layout,
+   * since the frame it is a share of is the section's.
+   */
+  it("carries a width stated as a share of the frame beside the length it states", () => {
+    const shared = `${PLACED};mso-width-percent:400;mso-width-relative:margin`;
+    const anchor = only(anchorsOf(held(textBox(shared))));
+
+    expect(anchor.frameWidthShare).toBeCloseTo(0.4, 6);
+    expect(points(anchor.widthEmu)).toBeCloseTo(323, 6);
+  });
+
+  // Word writes the declaration out as a nought for a shape stating no share at all,
+  // which is what nearly every shape in the corpus does.
+  it("takes a share of nought as no share", () => {
+    const none = `${PLACED};mso-width-percent:0;mso-width-relative:margin`;
+    expect(only(anchorsOf(held(textBox(none)))).frameWidthShare).toBeUndefined();
+  });
+
+  // `mso-height-percent:200` stands beside the width's share on all nine corpus
+  // shapes and what Word makes of it has never been asked, so the height in points
+  // is what is drawn. It costs nothing: all nine fit their shape to their text.
+  it("leaves a share stated for the height alone", () => {
+    const shared = `${PLACED};mso-height-percent:200;mso-height-relative:margin`;
+    const anchor = only(anchorsOf(held(textBox(shared))));
+
+    expect(points(anchor.heightEmu)).toBeCloseTo(129.6, 6);
+    expect(anchor.frameWidthShare).toBeUndefined();
+  });
+
   it("reads the box's own paragraphs, which are laid out in its frame", () => {
     const two = `${TEXT}${TEXT}`;
     const anchor = only(anchorsOf(held(textBox(PLACED, "", two))));
@@ -216,12 +250,12 @@ describe("readAnchors over a drawing in the old form", () => {
       expect(anchorsOf(held(textBox("width:323pt;height:129.6pt")))).toStrictEqual([]);
     });
 
-    // 26 items in eight corpus documents state a share beside a size in points, and
-    // which of the two Word draws is unmeasured.
-    it("passes over a box sized as a share of something else", () => {
+    // Only a share of the margin is measured, and the nine corpus shapes that state
+    // one all state that. A share of the page is refused rather than guessed at.
+    it("passes over a box whose width is a share of something other than the margin", () => {
+      const ofThePage = `${PLACED};mso-width-percent:400;mso-width-relative:page`;
+      expect(anchorsOf(held(textBox(ofThePage)))).toStrictEqual([]);
       expect(anchorsOf(held(textBox(`${PLACED};mso-width-percent:400`)))).toStrictEqual([]);
-      expect(anchorsOf(held(textBox(`${PLACED};mso-height-percent:200`)))).toStrictEqual([]);
-      expect(anchorsOf(held(textBox(`${PLACED};mso-width-percent:0`)))).toHaveLength(1);
     });
 
     it("passes over a box whose size or position it cannot read", () => {

@@ -321,6 +321,17 @@ const cellsHolding = (cells: readonly PlacedCell[]): ((index: number) => CellFra
   return (index) => found.get(index) ?? null;
 };
 
+// A width the old drawing form states as a share of the text frame, which is what
+// is drawn where it states one: see `statedWidthOf`, measured against Word on
+// 2026-08-19 over a box stating 150pt beside 40.0% of a 540pt frame and drawn 216pt
+// wide. The frame is the section's own, which is why the share is resolved here and
+// not where it was read.
+function statedWidthPt(anchor: FloatingAnchor, page: SectionGeometry): number {
+  const share = anchor.frameWidthShare;
+  if (share === undefined) return emuToPoints(anchor.widthEmu);
+  return share * twipsToPoints(page.widthTwips - page.margin.leftTwips - page.margin.rightTwips);
+}
+
 // "Resize shape to fit text": the box is as tall as its text, and as wide as it
 // too when the text does not wrap inside it. A box holding no text still fits
 // itself to the paragraph mark standing in it, which Word makes one pilcrow wide
@@ -329,7 +340,7 @@ const cellsHolding = (cells: readonly PlacedCell[]): ((index: number) => CellFra
 // with it.
 function fittedSizePt(anchor: FloatingAnchor, frame: FloatFrame): FloatSize {
   const stored = {
-    widthPt: emuToPoints(anchor.widthEmu),
+    widthPt: statedWidthPt(anchor, frame.page),
     heightPt: emuToPoints(anchor.heightEmu),
   };
   const { content } = anchor;

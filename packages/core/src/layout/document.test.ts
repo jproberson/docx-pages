@@ -565,3 +565,44 @@ describe("an object a table cell holds", () => {
     expect(leftOf(laid, "deep")).toBeCloseTo(180 + 72 + 72, 6);
   });
 });
+
+/**
+ * **A box in the old form whose style states its width twice is drawn at the share
+ * of the text frame and not at the length beside it.** Measured against Word on
+ * 2026-08-19: a box stating `width:150pt` beside
+ * `mso-width-percent:400;mso-width-relative:margin`, standing in a 540pt frame,
+ * broke its own eighteen words at 439.7, 428.5 and 411.2 from a left of 236.4,
+ * which is 216pt of room and 40.0% of the frame.
+ *
+ * The share is read in `statedWidthOf` and resolved here because the frame it is a
+ * share of is the section's own, which the reading cannot see.
+ */
+describe("a legacy box whose width is a share of the text frame", () => {
+  const V_NS = "urn:schemas-microsoft-com:vml";
+  const W10_NS = "urn:schemas-microsoft-com:office:word";
+
+  const box = (name: string, style: string) =>
+    `<w:p><w:r><w:pict xmlns:v="${V_NS}" xmlns:w10="${W10_NS}">` +
+    `<v:shape type="#_x0000_t202" alt="${name}" style="position:absolute;` +
+    `margin-left:0;margin-top:0;width:150pt;height:48pt;${style}">` +
+    `<v:textbox><w:txbxContent><w:p><w:r><w:t>boxed</w:t></w:r></w:p></w:txbxContent>` +
+    `</v:textbox><w10:wrap type="none" anchorx="text"/></v:shape></w:pict></w:r></w:p>`;
+
+  const widthOf = (name: string): number => {
+    const body =
+      box("shared", "mso-width-percent:400;mso-width-relative:margin") +
+      box("stated", "") +
+      section(720, 432, false);
+    const bytes = buildDocx({ "word/document.xml": wordDocument(body) });
+    const laid = layOutDocument(openDocx(bytes), bestEffortMetrics([], DEFAULTS));
+    if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+    const found = laid.pages[0]?.floats.find((float) => float.anchor.name === name);
+    if (found === undefined) throw new Error(`no float named ${name}`);
+    return found.widthPt;
+  };
+
+  it("draws it that share of the frame, and the one beside it as it stands", () => {
+    expect(widthOf("shared")).toBeCloseTo(216, 6);
+    expect(widthOf("stated")).toBeCloseTo(150, 6);
+  });
+});
