@@ -461,6 +461,68 @@ describe("readUnhonoured", () => {
       expect(reportOf(pict(picture("width:180pt;height:90pt"), "object"))).toStrictEqual([]);
     });
 
+    /**
+     * **The picture on the line is asked about as well.** The reader reads one out of
+     * either container and the layout hands it to the drawer a `wp:inline` goes
+     * through, so a format nothing here decodes is drawn nowhere in the old form
+     * exactly as in the new one, and only the DrawingML branch said so until
+     * 2026-08-19. Four inline VML pictures stand in the corpus, all four of them
+     * metafiles, and two are metafiles the player refuses.
+     */
+    const legacyPicture = (
+      target: string,
+      bytes?: Uint8Array,
+      faces?: MetricsResolver,
+      beside = "",
+    ): readonly string[] => {
+      const rels = `<?xml version="1.0"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId9" Type="${R_NS}/image" Target="${target}"/></Relationships>`;
+      const parts: Record<string, DocxPart> = { "word/_rels/document.xml.rels": rels };
+      if (bytes !== undefined) parts[`word/${target}`] = bytes;
+      return kinds(reportOf(pict(picture("width:180pt;height:90pt") + beside), parts, faces));
+    };
+
+    it("names an inline picture held in a format nothing here decodes", () => {
+      expect(legacyPicture("media/chart.wmf")).toStrictEqual(["undrawable-picture"]);
+      expect(legacyPicture("media/logo.png")).toStrictEqual([]);
+    });
+
+    it("names a metafile the player refuses, and not one it plays", () => {
+      expect(legacyPicture("media/blank.emf", METAFILE_REFUSED, metricsFor)).toStrictEqual([
+        "undrawable-picture",
+      ]);
+      expect(legacyPicture("media/drawn.emf", METAFILE_PLAYED, metricsFor)).toStrictEqual([]);
+    });
+
+    // A part the package does not carry is a broken package rather than a feature
+    // passed over, which is what the same question answers under a `wp:inline`.
+    it("says nothing about a picture whose part the package does not carry", () => {
+      expect(reportOf(pict(picture("width:180pt;height:90pt")))).toStrictEqual([]);
+    });
+
+    // One answer a container, and the order is text, then the picture, then the rest.
+    // Neither corpus container states two of the three, so what stands here is the
+    // rule rather than a measurement.
+    it("answers for the text over the picture, and for the picture over the rest", () => {
+      const line = `<v:line style="position:absolute" from="0,0" to="180pt,0"/>`;
+      const boxed = textBox("position:absolute;margin-left:0;margin-top:0;width:10em;height:9pt");
+      // The controls: each of the two answers on its own, or the two rows under them
+      // say nothing about which won.
+      expect(legacyPicture("media/logo.png", undefined, undefined, line)).toStrictEqual([
+        "legacy-drawing",
+      ]);
+      expect(legacyPicture("media/logo.png", undefined, undefined, boxed)).toStrictEqual([
+        "legacy-text-box",
+      ]);
+      expect(legacyPicture("media/chart.wmf", undefined, undefined, line)).toStrictEqual([
+        "undrawable-picture",
+      ]);
+      expect(legacyPicture("media/chart.wmf", undefined, undefined, boxed)).toStrictEqual([
+        "legacy-text-box",
+      ]);
+    });
+
     it("says nothing about the shape type a picture names, which draws nothing itself", () => {
       const shapeType = `<v:shapetype id="_x0000_t75"><v:stroke joinstyle="miter"/></v:shapetype>`;
       expect(reportOf(pict(shapeType + picture("width:36pt;height:36pt")))).toStrictEqual([]);

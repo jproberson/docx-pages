@@ -9,7 +9,7 @@ import { drawablePicture } from "./pictures.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "./relationships.js";
 import { pageGeometrySignature, W_NS } from "./section.js";
 import { SETTINGS_PART } from "./settings.js";
-import { undrawnLegacyDrawings } from "./vml.js";
+import { inlinePictureOf, undrawnLegacyDrawings } from "./vml.js";
 import { attribute, type XmlElement } from "./xml.js";
 
 // What this project met in a document and did not honour.
@@ -279,7 +279,7 @@ function unhonouredBy(
     // the same picture and so is everything round it.
     case "pict":
     case "object":
-      return legacyDrawingUnread(element);
+      return legacyDrawingUnread(element, resolvePart, metricsFor);
     case "gridSpan":
     case "vMerge":
       return "merged-cells";
@@ -367,10 +367,42 @@ function unhonouredBy(
 // dropping the first two said a `v:line` was in 289 documents where 9 hold one.
 //
 // Text is worth more than paint, so a container holding both answers for the text.
-function legacyDrawingUnread(pict: XmlElement): UnhonouredKind | null {
+//
+// **And the picture on the line is asked about as well**, which it was not until
+// 2026-08-19: the reader reads one out of either container and the layout hands it
+// to the same drawer a `wp:inline` goes through, so a format nothing decodes is
+// drawn nowhere here exactly as it is there, and only the DrawingML branch said so.
+// Four inline VML pictures stand in the corpus, all four of them metafiles, and two
+// are metafiles the player refuses.
+//
+// **Which is named first where a container states both is not measured**, since
+// neither of the two states anything else undrawn. The picture goes first because it
+// names a cause a caller can act on, and because the same file held once in each
+// form should be answered for in the same words.
+function legacyDrawingUnread(
+  pict: XmlElement,
+  resolvePart: PartResolver,
+  metricsFor: MetricsResolver | undefined,
+): UnhonouredKind | null {
   const undrawn = undrawnLegacyDrawings(pict);
-  if (undrawn.length === 0) return null;
-  return undrawn.some((each) => each.holdsText) ? "legacy-text-box" : "legacy-drawing";
+  if (undrawn.some((each) => each.holdsText)) return "legacy-text-box";
+  if (undrawablePictureIn(pict, resolvePart, metricsFor)) return "undrawable-picture";
+  return undrawn.length === 0 ? null : "legacy-drawing";
+}
+
+// Whether the picture the container puts on the line is held in a format nothing
+// here decodes. A part the package does not carry says nothing, exactly as it says
+// nothing under a `wp:inline`: that is a broken package rather than a feature passed
+// over.
+function undrawablePictureIn(
+  pict: XmlElement,
+  resolvePart: PartResolver,
+  metricsFor: MetricsResolver | undefined,
+): boolean {
+  const picture = inlinePictureOf(pict);
+  if (picture === null) return false;
+  const held = resolvePart(picture.relationshipId);
+  return held !== null && !drawablePicture(held.part, held.bytes, metricsFor);
 }
 
 // Whether the paragraph holding a break has drawn anything before it. Word's own
