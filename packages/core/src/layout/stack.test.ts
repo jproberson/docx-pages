@@ -682,6 +682,57 @@ describe("measureStack over tables", () => {
     expect(acrossTheGrid("", cell(`<w:p/>`) + cell(`<w:p/>`))).toStrictEqual([468, 468]);
   });
 
+  // **A table stating fixed columns is laid out on its grid and its cells' own
+  // widths are ignored**, which is the way round the two corpus tables that state
+  // both are drawn. Read on 2026-08-18 off Word's own pdf: see `plannedWidthPt`.
+  describe('a table stating w:tblLayout w:type="fixed"', () => {
+    const FIXED = `<w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr>`;
+    const AUTOFIT = `<w:tblPr><w:tblLayout w:type="autofit"/></w:tblPr>`;
+    const own = (twips: number) => `<w:tcW w:w="${String(twips)}" w:type="dxa"/>`;
+
+    const widthsOf = (properties: string): readonly number[] => {
+      const cells = cell(`<w:p/>`, own(4320)) + cell(`<w:p/>`, own(720));
+      const result = measure(`<w:tbl>${properties}${GRID}<w:tr>${cells}</w:tr></w:tbl>`);
+      if (result.kind !== "measured") throw new Error(result.blocker.kind);
+      return result.cells.map((each) => each.widthPt);
+    };
+
+    it("takes its widths off the grid and not off the cells", () => {
+      expect(widthsOf(FIXED)).toStrictEqual([72, 144]);
+    });
+
+    it("stands the second cell where the grid puts it rather than the first's width", () => {
+      const cells = cell(`<w:p/>`, own(4320)) + cell(`<w:p/>`, own(720));
+      const result = measure(`<w:tbl>${FIXED}${GRID}<w:tr>${cells}</w:tr></w:tbl>`);
+      if (result.kind !== "measured") throw new Error(result.blocker.kind);
+      // The table's own default indent puts its left wall 5.4pt inside the frame.
+      expect(result.cells.map((each) => each.leftPt)).toStrictEqual([66.6, 138.6]);
+    });
+
+    it("spans the grid columns a w:gridSpan covers", () => {
+      const spanning = `<w:gridSpan w:val="2"/>${own(720)}`;
+      const result = measure(
+        `<w:tbl>${FIXED}${GRID}<w:tr>${cell(`<w:p/>`, spanning)}</w:tr></w:tbl>`,
+      );
+      if (result.kind !== "measured") throw new Error(result.blocker.kind);
+      expect(result.cells.map((each) => each.widthPt)).toStrictEqual([216]);
+    });
+
+    it("falls back on the stated width where the table declares no grid at all", () => {
+      const result = measure(`<w:tbl>${FIXED}<w:tr>${cell(`<w:p/>`, own(720))}</w:tr></w:tbl>`);
+      if (result.kind !== "measured") throw new Error(result.blocker.kind);
+      expect(result.cells.map((each) => each.widthPt)).toStrictEqual([36]);
+    });
+
+    // What Word does with an autofit table that disagrees with its own grid has not
+    // been asked, so it keeps the reading it always had. Five corpus tables state
+    // the disagreement, by as much as 5.55pt down a row.
+    it("leaves a table stating autofit, or stating nothing, on its own widths", () => {
+      expect(widthsOf(AUTOFIT)).toStrictEqual([216, 36]);
+      expect(widthsOf("")).toStrictEqual([216, 36]);
+    });
+  });
+
   it("names the paragraph a row opens with, which is where the break is decided", () => {
     const asked = `<w:trPr><w:trHeight w:val="1440"/></w:trPr>`;
     const body = `<w:p/><w:tbl><w:tr>${asked}${cell(`<w:p/>`)}${cell(`<w:p/>`)}</w:tr></w:tbl>`;

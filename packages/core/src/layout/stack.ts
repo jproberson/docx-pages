@@ -1297,8 +1297,7 @@ function planCells(block: Table, bands: BandSizes, frame: Frame): readonly (read
     let leftPt = frame.leftPt;
 
     for (const cell of row.cells) {
-      const widthPt =
-        cellWidthPt(cell) ?? columnWidthPt(block.gridTwips, gridAt, cell.gridSpan) ?? frame.widthPt;
+      const widthPt = plannedWidthPt(block, cell, gridAt) ?? frame.widthPt;
       const opened = cell.merge === "continue" ? open.get(gridAt) : undefined;
       const position = positionOf(block, bands, rowAt, gridAt, cell.gridSpan);
       if (opened === undefined) {
@@ -1792,6 +1791,30 @@ function columnWidthPt(gridTwips: readonly number[], at: number, span: number): 
   const spanned = gridTwips.slice(at, at + span);
   if (spanned.length === 0) return null;
   return twipsToPoints(spanned.reduce((total, twips) => total + twips, 0));
+}
+
+/**
+ * How wide a cell is planned, which is the grid where the table states fixed columns
+ * and the cell's own `w:tcW` where it does not.
+ *
+ * **A table stating `w:tblLayout w:type="fixed"` lays its columns out on the grid
+ * and its cells' stated widths are ignored.** Read on 2026-08-18 off Word's own pdf.
+ * Two tables in three corpus documents state the two at once: a grid of
+ * 111+2093+104+113+2160+103 twips and two cells of `w:gridSpan="3"` stating `w:tcW`
+ * 2318 and 2385, which come to 4703 against the grid's 4684. Word draws their
+ * shading between borders at 340.80 and 456.24 on a page 0.48pt of border wide, so
+ * the cells run 340.56 to 456.00 to 574.80: **115.44 and 118.80 against the grid's
+ * 115.40 and 118.80**, where the stated widths would give 115.90 and 119.25. Four
+ * pictures anchored in the second cell say the same from the other side, landing a
+ * flat 115.39 right of the ones in the first.
+ *
+ * Nothing is changed for a table that states no layout. **Five of those disagree
+ * with their own grid as well, by as much as 5.55pt down a row**, and what Word does
+ * with an autofit table is a rule of its own that has not been asked.
+ */
+function plannedWidthPt(block: Table, cell: TableCell, gridAt: number): number | null {
+  const fromGrid = columnWidthPt(block.gridTwips, gridAt, cell.gridSpan);
+  return block.fixedColumns ? (fromGrid ?? cellWidthPt(cell)) : (cellWidthPt(cell) ?? fromGrid);
 }
 
 function cellWidthPt(cell: TableCell): number | null {

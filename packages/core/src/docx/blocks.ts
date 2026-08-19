@@ -154,6 +154,15 @@ export type Block =
       // Null in a table that flows with the text, which is all but ten of the 966.
       readonly positioning: TablePositioning | null;
       readonly look: TableLook;
+      /**
+       * Whether the table states `w:tblLayout w:type="fixed"`, which puts its columns
+       * on the grid and leaves each cell's own `w:tcW` out of it.
+       *
+       * **Read off the table's own `w:tblPr` and nowhere else**: no styles part in
+       * any of the 718 corpus documents states a `w:tblLayout` at all, so there is
+       * no style chain here to walk and none has ever been exercised.
+       */
+      readonly fixedColumns: boolean;
     };
 
 // Text box content is laid out inside its own frame, and mc:Fallback repeats the
@@ -213,8 +222,14 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
     styleId: style === null ? null : (attribute(style, W_NS, "val") ?? null),
     positioning: tablePositioning(properties),
     look: tableLook(properties),
+    fixedColumns: statesFixedColumns(properties),
   };
 }
+
+const statesFixedColumns = (properties: XmlElement | null): boolean => {
+  const layout = properties === null ? null : firstNamed(properties, W_NS, "tblLayout");
+  return layout !== null && attribute(layout, W_NS, "type") === "fixed";
+};
 
 // **Word writes the switches twice**, once as attributes of their own and once as a
 // hex mask in `w:val` that older files carry alone. The attributes win where they
