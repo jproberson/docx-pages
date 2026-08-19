@@ -4,10 +4,12 @@ import { isDocxPagesError, type DocxPagesError } from "../errors.js";
 import {
   buildCollection,
   buildFace,
+  buildHighByteSubtable,
   buildSfnt,
   buildWoff,
   buildWoff2,
   type FontFixture,
+  type HighByteMapping,
 } from "../testing/build-font.js";
 import {
   readFontFaces,
@@ -25,7 +27,7 @@ import {
   type KerningTable,
   type MathTable,
 } from "./font-metrics.js";
-import type { CodeToGlyph } from "./glyphs.js";
+import { readHighByteMapping, type CodeToGlyph } from "./glyphs.js";
 
 const FACE: FontFixture = { unitsPerEm: 1000, ascender: 800, descender: -200, lineGap: 0 };
 
@@ -995,6 +997,90 @@ describe("readGlyphIndex", () => {
 
     expect(error.code).toBe("font-glyphs-unreadable");
     expect(error.context["reason"]).toBe("cmap-unsupported");
+  });
+
+  // The table is read by `readHighByteMapping` and reached by nothing: a face that
+  // offers only one is refused rather than read through it, since what a format 2
+  // subtable is indexed by is not a code point.
+  it("refuses a face whose only subtable is a format 2 one it could otherwise read", () => {
+    const legacy: FontFixture = {
+      ...FACE,
+      cmapFormat: 2,
+      advances: WIDTHS,
+      highByteMapping: { singleBytes: { 0x41: 2 } },
+    };
+
+    expect(caught(() => readGlyphIndex(buildSfnt(legacy))).context["reason"]).toBe(
+      "cmap-unsupported",
+    );
+  });
+});
+
+// Format 2 is the high-byte mapping the legacy Japanese, Chinese and Korean
+// encodings are written through, and the one format here that is read with the
+// bytes of a character rather than with a code point. Nothing converts a character
+// into those bytes and nothing picks a Macintosh subtable, so nothing reaches this;
+// what these hold is the reading of the table, settled ahead of either.
+describe("readHighByteMapping", () => {
+  const mappingOf = (mapping: HighByteMapping): ((encoded: number) => number) => {
+    const read = readHighByteMapping(buildHighByteSubtable(mapping));
+    if (read === null) throw new Error("expected a high-byte mapping");
+    return read;
+  };
+
+  const SINGLE: HighByteMapping = { singleBytes: { 0x41: 2, 0x43: 4 } };
+  // The single-byte run covers the bytes the pair tests reach for, so that a byte
+  // read through the wrong half of the table answers a glyph rather than falling
+  // off the end of a run and answering .notdef by luck.
+  const PAIRS: HighByteMapping = {
+    singleBytes: { 0x40: 5 },
+    leadBytes: { 0x81: { 0x40: 7, 0x42: 9, 0x81: 11 } },
+  };
+
+  it("maps a byte that is a character on its own", () => {
+    expect(mappingOf(SINGLE)(0x41)).toBe(2);
+    expect(mappingOf(SINGLE)(0x43)).toBe(4);
+  });
+
+  it("answers .notdef for a byte inside the run it does not map, and one outside it", () => {
+    expect(mappingOf(SINGLE)(0x42)).toBe(0);
+    expect(mappingOf(SINGLE)(0x50)).toBe(0);
+  });
+
+  it("maps a pair through the subheader its first byte picks", () => {
+    expect(mappingOf(PAIRS)(0x8140)).toBe(7);
+    expect(mappingOf(PAIRS)(0x8142)).toBe(9);
+  });
+
+  it("answers .notdef for a second byte the subheader does not map, and a first that leads nothing", () => {
+    expect(mappingOf(PAIRS)(0x8141)).toBe(0);
+    expect(mappingOf(PAIRS)(0x8240)).toBe(0);
+  });
+
+  // The two halves of the table answer for different characters, so a byte that
+  // leads a pair is not a character and a byte that is one leads nothing.
+  it("answers .notdef for a byte that leads a pair standing on its own", () => {
+    expect(mappingOf(PAIRS)(0x81)).toBe(0);
+  });
+
+  it("answers .notdef for a byte that is a character of its own written as a pair", () => {
+    expect(mappingOf({ ...SINGLE, leadBytes: { 0x81: { 0x40: 7 } } })(0x4141)).toBe(0);
+  });
+
+  it("adds the offset the subheader states, and leaves .notdef where the array holds nothing", () => {
+    const offset = mappingOf({ singleBytes: { 0x41: 300, 0x43: 302 }, delta: 100 });
+
+    expect(offset(0x41)).toBe(300);
+    expect(offset(0x43)).toBe(302);
+    expect(offset(0x42)).toBe(0);
+  });
+
+  it("reads a table that maps nothing at all", () => {
+    expect(mappingOf({})(0x41)).toBe(0);
+  });
+
+  it("refuses a table too short to hold the keys it is indexed by", () => {
+    expect(readHighByteMapping(buildHighByteSubtable(SINGLE).subarray(0, 400))).toBeNull();
   });
 });
 

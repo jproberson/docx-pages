@@ -254,6 +254,66 @@ function parseGroups(table: Uint8Array, glyphIn: GlyphInGroup): CharacterMap {
   };
 }
 
+// The bytes of a character in a legacy multi-byte encoding, one byte on its own or
+// two packed with the first of them high. Not a code point: format 2 is the only
+// subtable here that is not read with one.
+export type EncodedToGlyph = (encoded: number) => number;
+
+const SUBHEADER_KEYS_AT = 6;
+const SUBHEADERS_AT = SUBHEADER_KEYS_AT + 256 * 2;
+const SUBHEADER_LENGTH = 8;
+
+// Format 2, the high-byte mapping the legacy Japanese, Chinese and Korean
+// encodings are written through. A byte picks a subheader out of `subHeaderKeys`;
+// the subheader zero picks is where a byte that is a whole character is looked up,
+// and any other subheader is where the second byte of a pair the first byte leads
+// is. All of them share one glyph array, which each reaches through an offset from
+// the field that states it, as format 4's segments do.
+//
+// **Nothing reaches this yet, and that is deliberate.** `parserFor` does not answer
+// for format 2, so no face is read through it. Two things stand in the way, and
+// neither is settled here: a character has to be converted into Shift JIS, Big5,
+// GBK or Wansung before it can be looked up, and nothing here does that or knows
+// which of them a subtable is written in; and every format 2 subtable measured sits
+// on the Macintosh platform, which `preferenceOf` scores zero. Raising that score
+// is a separate decision, since a Macintosh subtable read as though its bytes were
+// code points draws the wrong letter rather than refusing, which is worse than the
+// refusal it would replace. What is settled here is the reading of the table
+// itself, so that whichever of the two is answered first does not have to answer
+// this one as well.
+export function readHighByteMapping(table: Uint8Array): EncodedToGlyph | null {
+  if (table.byteLength < SUBHEADERS_AT + SUBHEADER_LENGTH) return null;
+  const view = viewOf(table);
+
+  return (encoded) => {
+    if (encoded < 0 || encoded > 0xffff) return 0;
+
+    const lead = encoded > 0xff ? encoded >> 8 : encoded;
+    const key = view.getUint16(SUBHEADER_KEYS_AT + lead * 2);
+    // A byte the keys send to a subheader of its own leads a pair and stands for
+    // nothing alone; one they send to subheader zero is a whole character and
+    // leads nothing.
+    if (encoded > 0xff ? key === 0 : key !== 0) return 0;
+
+    const at = SUBHEADERS_AT + key;
+    if (at + SUBHEADER_LENGTH > table.byteLength) return 0;
+
+    const first = view.getUint16(at);
+    const count = view.getUint16(at + 2);
+    const delta = view.getInt16(at + 4);
+    const rangeOffset = view.getUint16(at + 6);
+
+    const index = (encoded & 0xff) - first;
+    if (index < 0 || index >= count) return 0;
+
+    const glyphAt = at + 6 + rangeOffset + index * 2;
+    if (glyphAt + 2 > table.byteLength) return 0;
+
+    const glyph = view.getUint16(glyphAt);
+    return glyph === 0 ? 0 : (glyph + delta) & 0xffff;
+  };
+}
+
 function parserFor(format: number): SubtableParser | null {
   if (format === 0) return parseFormat0;
   if (format === 4) return parseFormat4;

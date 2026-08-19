@@ -24,6 +24,11 @@ export type FontFixture = {
   // that it outranks the fixture's own. A face states one to ask whether the
   // subtable that can be read is passed over for it.
   readonly unreadableSubtable?: boolean;
+  // What a format 2 cmap maps. Its keys are bytes rather than characters, and its
+  // glyphs are stated by number rather than taken from the fixture's own, since
+  // what a format 2 subtable is indexed by is a character written in one of the
+  // legacy multi-byte encodings and not the character itself.
+  readonly highByteMapping?: HighByteMapping;
   // Which encodings the face declares it maps. A symbol face declares the symbol
   // one, and Symbol itself declares both: its glyphs are reachable by byte through
   // its own page and by what they mean.
@@ -472,23 +477,91 @@ function cmapFormat13(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Arra
   return table;
 }
 
-// Nothing looks past the format of a subtable it cannot read, so there is nothing
-// under it to write. Format 2 is the high-byte mapping of the legacy CJK
-// encodings, which is the format a real face states that nothing here reads.
-const UNREADABLE_FORMAT = 2;
+// What a format 2 cmap maps: a byte that is a character on its own, and the second
+// byte of each pair under the first byte that leads it. Both name the glyph by
+// number.
+export type HighByteMapping = {
+  readonly singleBytes?: Readonly<Record<number, number>>;
+  readonly leadBytes?: Readonly<Record<number, Readonly<Record<number, number>>>>;
+  // What the subheaders state their glyphs are offset by, which is how a face
+  // keeps the array they share short. A glyph of zero is .notdef whatever the
+  // offset says, so the array holds a zero rather than the offset backwards.
+  readonly delta?: number;
+};
 
-function cmapUnreadable(): Uint8Array {
-  const table = new Uint8Array(10);
+type ByteRun = {
+  readonly first: number;
+  readonly count: number;
+  readonly glyphs: readonly number[];
+};
+
+// One run from the lowest byte the subheader maps to the highest, so that a byte
+// the fixture leaves out of the middle of it is in the run and unmapped.
+function byteRun(mapping: Readonly<Record<number, number>>): ByteRun {
+  const bytes = Object.keys(mapping)
+    .map(Number)
+    .sort((left, right) => left - right);
+  const first = bytes[0] ?? 0;
+  const last = bytes[bytes.length - 1] ?? first;
+  const count = bytes.length === 0 ? 0 : last - first + 1;
+
+  return {
+    first,
+    count,
+    glyphs: Array.from({ length: count }, (_, index) => mapping[first + index] ?? 0),
+  };
+}
+
+const SUBHEADER_KEYS_AT = 6;
+const FORMAT_2_SUBHEADERS_AT = SUBHEADER_KEYS_AT + 256 * 2;
+const SUBHEADER_LENGTH = 8;
+
+// Subheader zero is where every byte that is a character on its own is looked up,
+// and there is one more for each byte that leads a pair. They share one glyph
+// array, which each reaches through an offset counted from the field that states
+// it. A byte the keys say nothing about goes to subheader zero, which is what
+// leaves it a single-byte character and not a lead.
+export function buildHighByteSubtable(mapping: HighByteMapping): Uint8Array {
+  const leads = Object.keys(mapping.leadBytes ?? {})
+    .map(Number)
+    .sort((left, right) => left - right);
+  const runs = [
+    byteRun(mapping.singleBytes ?? {}),
+    ...leads.map((lead) => byteRun(mapping.leadBytes?.[lead] ?? {})),
+  ];
+  const delta = mapping.delta ?? 0;
+
+  const glyphsAt = FORMAT_2_SUBHEADERS_AT + runs.length * SUBHEADER_LENGTH;
+  const table = new Uint8Array(glyphsAt + runs.reduce((sum, run) => sum + run.count, 0) * 2);
   const view = new DataView(table.buffer);
-  view.setUint16(0, UNREADABLE_FORMAT);
+  view.setUint16(0, 2);
   view.setUint16(2, table.length);
+
+  let written = 0;
+  runs.forEach((run, index) => {
+    const at = FORMAT_2_SUBHEADERS_AT + index * SUBHEADER_LENGTH;
+    view.setUint16(at, run.first);
+    view.setUint16(at + 2, run.count);
+    view.setInt16(at + 4, delta);
+    view.setUint16(at + 6, glyphsAt + written * 2 - (at + 6));
+
+    run.glyphs.forEach((glyph, offset) => {
+      view.setUint16(glyphsAt + (written + offset) * 2, glyph === 0 ? 0 : (glyph - delta) & 0xffff);
+    });
+    written += run.count;
+  });
+
+  leads.forEach((lead, index) => {
+    view.setUint16(SUBHEADER_KEYS_AT + lead * 2, (index + 1) * SUBHEADER_LENGTH);
+  });
+
   return table;
 }
 
 function cmapSubtable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
   const format = fixture.cmapFormat ?? 4;
   if (format === 0) return cmapFormat0(glyphs);
-  if (format === 2) return cmapUnreadable();
+  if (format === 2) return buildHighByteSubtable(fixture.highByteMapping ?? {});
   if (format === 6) return cmapFormat6(glyphs);
   if (format === 12) return cmapFormat12(glyphs);
   if (format === 13) return cmapFormat13(fixture, glyphs);
@@ -503,7 +576,9 @@ const FULL_REPERTOIRE_ENCODING = 10;
 // The formats that reach past the basic plane are declared where a real face
 // declares them. The byte-indexed ones are declared on the Windows platform rather
 // than the Macintosh one a real face writes them on, since what a fixture asks
-// about is how a subtable is read and not which of them is picked.
+// about is how a subtable is read and not which of them is picked. Format 2 goes
+// there too, so that a face stating one is refused for the format it is in rather
+// than for the platform it would really sit on.
 const encodingFor = (format: number): number =>
   format === 12 || format === 13 ? FULL_REPERTOIRE_ENCODING : BASIC_PLANE_ENCODING;
 
@@ -517,7 +592,7 @@ function cmapTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
 
   const records = [
     ...(fixture.unreadableSubtable === true
-      ? [{ encoding: FULL_REPERTOIRE_ENCODING, bytes: cmapUnreadable() }]
+      ? [{ encoding: FULL_REPERTOIRE_ENCODING, bytes: buildHighByteSubtable({}) }]
       : []),
     ...(fixture.subtables ?? ["unicode"]).map((encoding) => ({
       encoding: encoding === "symbol" ? SYMBOL_ENCODING : encodingFor(format),
