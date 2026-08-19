@@ -2,7 +2,13 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { censusOf, coveringDocuments, featuresIn, type DocumentCensus } from "./census.js";
+import {
+  censusOf,
+  coveringDocuments,
+  distinctDocuments,
+  featuresIn,
+  type DocumentCensus,
+} from "./census.js";
 import { documentsIn, CORPUS_DIRECTORY } from "./sweep.js";
 
 // Taking a census of a corpus, and choosing the smallest sample of it worth
@@ -23,10 +29,13 @@ const share = (count: number, of: number): string =>
   of === 0 ? "0%" : `${((count / of) * 100).toFixed(1)}%`;
 
 export function reportOf(censuses: readonly DocumentCensus[]): string {
-  const lines = [`${String(censuses.length)} documents`, "", "what they hold:"];
+  // A corpus holds the same bytes under more than one name, and everything counted
+  // below is over documents rather than files, so the share is over documents too.
+  const documents = distinctDocuments(censuses).length;
+  const lines = [`${String(documents)} documents`, "", "what they hold:"];
 
   for (const each of featuresIn(censuses)) {
-    const met = `${String(each.documents).padStart(5)} (${share(each.documents, censuses.length).padStart(6)})`;
+    const met = `${String(each.documents).padStart(5)} (${share(each.documents, documents).padStart(6)})`;
     lines.push(`  ${met}  ${each.feature.padEnd(28)} ${String(each.occurrences)} times`);
   }
 

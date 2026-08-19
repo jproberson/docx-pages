@@ -96,6 +96,11 @@ describe("coveringDocuments", () => {
     expect(coveringDocuments([census("aaa", ["notes"])], 3)).toHaveLength(1);
   });
 
+  it("does not let a second copy of a document cover a feature twice over", () => {
+    const twice = [census("aaa", ["notes"]), census("aaa", ["notes"])];
+    expect(coveringDocuments(twice, 2).map((each) => each.id)).toStrictEqual(["aaa"]);
+  });
+
   it("chooses the same sample twice from the same corpus", () => {
     const corpus = [
       census("bbb", ["tables", "notes"]),
@@ -118,6 +123,18 @@ describe("featuresIn", () => {
       { feature: "tables", documents: 2, occurrences: 5 },
       { feature: "shading", documents: 1, occurrences: 1 },
     ]);
+  });
+
+  // A corpus holds the same bytes under two names, and the sweep reads the second
+  // copy no further, so a census that counts both puts the ranking's denominator
+  // over its numerator.
+  it("counts a document held twice in the corpus once", () => {
+    const tallies = featuresIn([
+      { id: "aaa", bytes: 1, counts: { tables: 4 } },
+      { id: "aaa", bytes: 1, counts: { tables: 4 } },
+      { id: "bbb", bytes: 1, counts: { tables: 1 } },
+    ]);
+    expect(tallies).toStrictEqual([{ feature: "tables", documents: 2, occurrences: 5 }]);
   });
 });
 
@@ -166,6 +183,36 @@ describe("rankGaps", () => {
       [census("aaa", {}), census("bbb", {})],
     );
     expect(ranked[0]).toStrictEqual({ kind: "keep-lines-together", met: 1, could: 2 });
+  });
+
+  // The sweep reads a repeated document no further, so its numerator is over
+  // distinct documents; a census counting every file would divide the one by the
+  // other and state every share too low.
+  it("ranks against distinct documents where the corpus holds one twice", () => {
+    const ranked = rankGaps(
+      [
+        { id: "aaa", asks: ["merged-cells"] },
+        { id: "bbb", asks: [] },
+      ],
+      [
+        census("aaa", { "table-cells": 4 }),
+        census("aaa", { "table-cells": 4 }),
+        census("bbb", { "table-cells": 2 }),
+      ],
+    );
+    expect(ranked).toStrictEqual([{ kind: "merged-cells", met: 1, could: 2 }]);
+  });
+
+  it("ranks a shape's own gap against the documents holding a shape", () => {
+    const ranked = rankGaps(
+      [
+        { id: "aaa", asks: ["custom-geometry"] },
+        { id: "bbb", asks: [] },
+        { id: "ccc", asks: [] },
+      ],
+      [census("aaa", { shape: 2 }), census("bbb", { shape: 1 }), census("ccc", { paragraphs: 3 })],
+    );
+    expect(ranked).toStrictEqual([{ kind: "custom-geometry", met: 1, could: 2 }]);
   });
 
   it("counts a document once however many places it met a gap in", () => {

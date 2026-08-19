@@ -242,6 +242,22 @@ export function censusOf(bytes: Uint8Array): DocumentCensus {
   }
 }
 
+// A corpus holds the same bytes under more than one name, and a document is the
+// bytes rather than the file: 248 of the 966 files swept on 2026-08-19 were a copy
+// of another. `sweepCorpus` already reads a repeated document no further, so a
+// census that counted every file would put the gap ranking's denominator over its
+// numerator and state every share too low.
+export function distinctDocuments(censuses: readonly DocumentCensus[]): readonly DocumentCensus[] {
+  const seen = new Set<string>();
+  const distinct: DocumentCensus[] = [];
+  for (const each of censuses) {
+    if (seen.has(each.id)) continue;
+    seen.add(each.id);
+    distinct.push(each);
+  }
+  return distinct;
+}
+
 // What a document holds, without regard to how much of it: this is what a sample
 // has to cover.
 // A magnitude is not a feature: sampling on one would ask for a document per
@@ -267,14 +283,15 @@ export function coveringDocuments(
   censuses: readonly DocumentCensus[],
   atLeast = 3,
 ): readonly DocumentCensus[] {
+  const corpus = distinctDocuments(censuses);
   const wanted = new Map<string, number>();
-  for (const each of censuses) {
+  for (const each of corpus) {
     for (const feature of profileOf(each)) {
       wanted.set(feature, Math.min(atLeast, (wanted.get(feature) ?? 0) + 1));
     }
   }
 
-  const left = [...censuses].sort((one, other) => one.id.localeCompare(other.id));
+  const left = [...corpus].sort((one, other) => one.id.localeCompare(other.id));
   const chosen: DocumentCensus[] = [];
 
   while (wanted.size > 0) {
@@ -315,7 +332,7 @@ export function featuresIn(censuses: readonly DocumentCensus[]): readonly Featur
   const documents = new Map<string, number>();
   const occurrences = new Map<string, number>();
 
-  for (const each of censuses) {
+  for (const each of distinctDocuments(censuses)) {
     for (const [feature, met] of Object.entries(each.counts)) {
       if (met === 0) continue;
       documents.set(feature, (documents.get(feature) ?? 0) + 1);

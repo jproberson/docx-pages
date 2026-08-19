@@ -35,6 +35,12 @@ const FEATURE_OF: Readonly<Record<string, string>> = {
   "legacy-text-box": "legacy-drawings",
   "legacy-drawing": "legacy-drawings",
   "approximated-border": "paragraph-borders",
+  // A path drawn point by point is a shape's, and an equation this cannot read is
+  // one of the equations. Without these two the whole corpus is the denominator,
+  // and each reads as a gap in a tenth of one per cent of it rather than one in the
+  // few hundred documents that could have stated it at all.
+  "custom-geometry": "shape",
+  equation: "equations",
 };
 
 export type GapRank = {
