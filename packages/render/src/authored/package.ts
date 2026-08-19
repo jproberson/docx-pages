@@ -14,6 +14,13 @@ const MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 const W14_NS = "http://schemas.microsoft.com/office/word/2010/wordml";
 const WP14_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
 const M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+// The three the old drawing form is written in. A document holding a `w:pict` and declaring
+// none of them is refused by Word outright: `open file name` hands back nothing and the
+// AppleScript dies on a variable it never got, which reads as a broken script and is Word
+// declining the markup.
+const V_NS = "urn:schemas-microsoft-com:vml";
+const O_NS = "urn:schemas-microsoft-com:office:office";
+const W10_NS = "urn:schemas-microsoft-com:office:word";
 
 const DOCUMENT_NAMESPACES = [
   `xmlns:w="${W_NS}"`,
@@ -26,6 +33,9 @@ const DOCUMENT_NAMESPACES = [
   `xmlns:w14="${W14_NS}"`,
   `xmlns:wp14="${WP14_NS}"`,
   `xmlns:m="${M_NS}"`,
+  `xmlns:v="${V_NS}"`,
+  `xmlns:o="${O_NS}"`,
+  `xmlns:w10="${W10_NS}"`,
   `mc:Ignorable="w14 wp14"`,
 ].join(" ");
 
