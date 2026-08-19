@@ -409,6 +409,16 @@ type LegacyFrame = {
   readonly distances: WrapDistances;
 };
 
+// The geometry a shape's own element name states. `v:shape` is deliberately absent:
+// what one of those draws is the `v:shapetype` it names, and reading it as a
+// rectangle would paint a box over whatever the type actually draws.
+const NAMED_GEOMETRIES: ReadonlyMap<string, ShapeGeometry> = new Map([
+  ["rect", "rectangle"],
+  ["roundrect", "rounded-rectangle"],
+  ["oval", "ellipse"],
+  ["line", "line"],
+]);
+
 const UNFLIPPED: DrawingFlip = { horizontal: false, vertical: false };
 
 /**
@@ -801,9 +811,21 @@ function readLegacyDrawing(shape: XmlElement): LegacyReading {
   }
 
   const body = textBoxBodyOf(shape, style);
-  if (body === null) return undrawnWhole;
+  if (body !== null) {
+    return {
+      drawing: { ...frame, name, content: { kind: "text-box", body, paint: paintOf(shape) } },
+      undrawn: null,
+    };
+  }
+
+  // **A shape holding neither text nor a picture is its paint and its geometry**,
+  // where its own element name states one. A `v:shape` is not one of those: what it
+  // draws is the `v:shapetype` it names, which is a reading of its own, and a shape
+  // holding a picture is a picture drawn nowhere yet rather than a box to fill in.
+  const geometry = NAMED_GEOMETRIES.get(shape.name);
+  if (geometry === undefined || imageOf(shape) !== null) return undrawnWhole;
   return {
-    drawing: { ...frame, name, content: { kind: "text-box", body, paint: paintOf(shape) } },
+    drawing: { ...frame, name, content: { kind: "shape", paint: paintOf(shape, geometry) } },
     undrawn: null,
   };
 }
