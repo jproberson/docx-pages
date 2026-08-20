@@ -333,7 +333,7 @@ function readCase(value: unknown, at: number, root: string): ReferenceCase {
       optionalNumber(source, "picturesWordDrewWithoutAnImage", where) ?? 0,
     imagesWordDrewOutsideAPicture:
       optionalNumber(source, "imagesWordDrewOutsideAPicture", where) ?? 0,
-    picturesWordDrewInPieces: false,
+    picturesWordDrewInPieces: flag(source, "picturesWordDrewInPieces", where),
     textLinesMatched: optionalNumber(source, "textLinesMatched", where),
     textLinesPlaced: optionalNumber(source, "textLinesPlaced", where),
     textRunsMatched: optionalNumber(source, "textRunsMatched", where),

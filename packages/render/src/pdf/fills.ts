@@ -17,6 +17,8 @@ type Matrix = readonly [number, number, number, number, number, number];
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
+const BLACK = "#000000";
+
 const multiply = (m: Matrix, n: Matrix): Matrix => [
   m[0] * n[0] + m[1] * n[2],
   m[0] * n[1] + m[1] * n[3],
@@ -113,17 +115,22 @@ export async function readFillPlacements(bytes: Uint8Array): Promise<readonly Fi
     const operators = await page.getOperatorList();
 
     let current: Matrix = IDENTITY;
-    let color = "#000000";
-    const stack: Matrix[] = [];
+    let color = BLACK;
+    // A colour is part of the state `q` holds and `Q` gives back, so a fill after a
+    // scoped change is painted in whatever was in force before it, not in the
+    // scoped colour.
+    const stack: { readonly matrix: Matrix; readonly color: string }[] = [];
 
     operators.fnArray.forEach((fn, index) => {
       const args: unknown = operators.argsArray[index];
       if (fn === pdfjs.OPS.save) {
-        stack.push(current);
+        stack.push({ matrix: current, color });
         return;
       }
       if (fn === pdfjs.OPS.restore) {
-        current = stack.pop() ?? IDENTITY;
+        const held = stack.pop();
+        current = held?.matrix ?? IDENTITY;
+        color = held?.color ?? BLACK;
         return;
       }
       if (fn === pdfjs.OPS.transform && isMatrix(args)) {

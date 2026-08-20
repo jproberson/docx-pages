@@ -41,4 +41,9 @@ describe("readFillPlacements", () => {
     const drawn = await fillsOf("1 0 0 rg 0 0 10 10 re f 0 1 0 rg 20 0 10 10 re f");
     expect(drawn.map((fill) => fill.color)).toStrictEqual(["#ff0000", "#00ff00"]);
   });
+
+  it("gives back the colour in force before a save when the one after it is restored", async () => {
+    const drawn = await fillsOf("0 0 1 rg q 1 0 0 rg 0 0 10 10 re f Q 20 0 10 10 re f");
+    expect(drawn.map((fill) => fill.color)).toStrictEqual(["#ff0000", "#0000ff"]);
+  });
 });

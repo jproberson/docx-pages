@@ -85,6 +85,12 @@ describe("readReferenceManifest", () => {
     expect(only?.renderedPageIndexes).toStrictEqual([0, 1]);
   });
 
+  it("keeps a document out of the picture pairing when it says Word drew one in pieces", () => {
+    const json = `{"cases":[{"id":"a","documentPath":"/tmp/a.docx","picturesWordDrewInPieces":true}]}`;
+    const [only] = readReferenceManifest(manifestOf(json)).cases;
+    expect(only?.picturesWordDrewInPieces).toBe(true);
+  });
+
   it("tells a measurement nobody took from one that found nothing", () => {
     const json = `{"cases":[{"id":"a","documentPath":"/tmp/a.docx","renderedImagesPt":[]}]}`;
     const [only] = readReferenceManifest(manifestOf(json)).cases;
