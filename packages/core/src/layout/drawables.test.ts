@@ -926,6 +926,22 @@ describe("a set equation reaching the page", () => {
     expect(bar?.leftPt).toBe(82.137);
   });
 
+  // Each `m:oMath` is a unit of its own, so one line can hold two of them, and the
+  // key each drawable is found by has to part them: the viewer keys its elements by
+  // it and drops a sibling that repeats one.
+  it("gives two equations on one line keys of their own", () => {
+    const one = equationLineAt(36.1, 47.4258);
+    const two: PlacedLine = {
+      ...one,
+      line: { ...one.line, segments: [...one.line.segments, ...one.line.segments] },
+    };
+    const page = bodyPage([boxOf([two])]);
+    const keys = drawablesOf(layoutOf(page), page).map((each) => each.key);
+
+    expect(keys).toHaveLength(new Set(keys).size);
+    expect(runsOf(drawablesOf(layoutOf(page), page))).toHaveLength(4);
+  });
+
   // A line that set no equation draws none, and a page of plain text draws as it
   // always did.
   it("draws nothing for a line that holds no equation", () => {

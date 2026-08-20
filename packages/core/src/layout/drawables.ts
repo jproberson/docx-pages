@@ -820,27 +820,6 @@ function paintLayer(
   return [{ kind: "paint", key, painted, highlights }];
 }
 
-/**
- * **A highlight is the run's own advance across and the line's box down**, whatever
- * size the run itself is set at. Measured 2026-08-13 against Word's own pdf, six
- * cases of one highlighted word:
- *
- * | the line                          | Word painted |
- * | --------------------------------- | ------------ |
- * | 12pt throughout                   | 14.64pt tall, the 12pt line |
- * | 24pt throughout                   | 29.28pt      |
- * | a 12pt run on a line holding 24pt | 29.28pt, the whole line and not the run |
- * | a superscript run                 | 14.64pt, the line rather than the raised text |
- * | an exact rule of 24pt under 12pt  | 24.00pt, the whole of what the rule asked for |
- * | a line multiple of two            | 14.64pt, the text's own box and not the room |
- *
- * So the room a multiple opens below the text is not painted and the slot an exact
- * rule states is, which is exactly the height the line has to be given to stay on a
- * page: `fittingHeightPt` answers both without asking what the rule was.
- *
- * Nothing is painted for an empty paragraph whose mark states a highlight: Word's
- * pdf of one holds no fill at all.
- */
 function underlinesIn(
   boxes: readonly ParagraphBox[],
   options: DrawingOptions,
@@ -904,6 +883,27 @@ export const UNSTATED_COLOR = "#000000";
 
 export const drawnColor = (stated: string | null): string => stated ?? UNSTATED_COLOR;
 
+/**
+ * **A highlight is the run's own advance across and the line's box down**, whatever
+ * size the run itself is set at. Measured 2026-08-13 against Word's own pdf, six
+ * cases of one highlighted word:
+ *
+ * | the line                          | Word painted |
+ * | --------------------------------- | ------------ |
+ * | 12pt throughout                   | 14.64pt tall, the 12pt line |
+ * | 24pt throughout                   | 29.28pt      |
+ * | a 12pt run on a line holding 24pt | 29.28pt, the whole line and not the run |
+ * | a superscript run                 | 14.64pt, the line rather than the raised text |
+ * | an exact rule of 24pt under 12pt  | 24.00pt, the whole of what the rule asked for |
+ * | a line multiple of two            | 14.64pt, the text's own box and not the room |
+ *
+ * So the room a multiple opens below the text is not painted and the slot an exact
+ * rule states is, which is exactly the height the line has to be given to stay on a
+ * page: `fittingHeightPt` answers both without asking what the rule was.
+ *
+ * Nothing is painted for an empty paragraph whose mark states a highlight: Word's
+ * pdf of one holds no fill at all.
+ */
 function highlightsIn(boxes: readonly ParagraphBox[]): readonly HighlightPaint[] {
   return boxes.flatMap((box) =>
     box.lines.flatMap((placed) => {
@@ -1047,8 +1047,8 @@ function equationLayers(boxes: readonly ParagraphBox[], prefix: string): readonl
 
   boxes.forEach((box, boxAt) => {
     box.lines.forEach((placed, lineAt) => {
-      for (const segment of placed.line.segments) {
-        if (segment.kind !== "equation" || segment.pieces.length === 0) continue;
+      placed.line.segments.forEach((segment, segmentAt) => {
+        if (segment.kind !== "equation" || segment.pieces.length === 0) return;
         const primitives = mathPrimitivesOf(segment.pieces, {
           leftPt: placed.leftPt + segment.offsetPt,
           baselinePt: placed.baselinePt,
@@ -1056,10 +1056,10 @@ function equationLayers(boxes: readonly ParagraphBox[], prefix: string): readonl
         drawables.push(
           ...mathDrawables(
             { primitives, ascentPt: segment.ascentPt, descentPt: segment.descentPt },
-            `${prefix}-${String(boxAt)}-${String(lineAt)}`,
+            `${prefix}-${String(boxAt)}-${String(lineAt)}-${String(segmentAt)}`,
           ),
         );
-      }
+      });
     });
   });
   return drawables;
