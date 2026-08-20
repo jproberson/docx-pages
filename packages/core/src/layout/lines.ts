@@ -224,6 +224,11 @@ type Fragment = {
   // The line the fragment's faces make with nothing raised, which is what a
   // multiple line rule is taken of and what floors a line holding a short drawing.
   readonly fontHeightPt: number;
+  // How far the fragment reaches after each of its characters, which is what a word
+  // too long for the line it stands alone on is cut by. The total says nothing about
+  // where a character inside it ends, since the characters of a face are not all one
+  // width, and the reaches are added up here anyway.
+  readonly reachPt: readonly number[];
 };
 
 type Unit =
@@ -339,6 +344,7 @@ class Measurer {
     if (face === null) return null;
 
     let widthPt = 0;
+    const reachPt: number[] = [];
     let beforePointPt: number | null = null;
     let abovePt = ascentPt(face.metrics, mark.lineSizePt);
     let belowPt = lineHeightPt(face.metrics, mark.lineSizePt) - abovePt;
@@ -377,6 +383,7 @@ class Measurer {
       widthPt +=
         advanceWidthPt(drawn.advance, drawn.metrics, mark.fontSizePt) * mark.characterScale +
         mark.characterSpacingPt;
+      reachPt.push(widthPt + advanceWidthPt(kerningUnits, face.metrics, mark.fontSizePt));
 
       // The fragment already stands on its own face, so only a borrowed character
       // can raise it.
@@ -405,6 +412,7 @@ class Measurer {
       heightPt: raisedAbovePt + raisedBelowPt,
       ascentPt: raisedAbovePt,
       fontHeightPt: abovePt + belowPt,
+      reachPt,
     };
   }
 }
@@ -874,27 +882,38 @@ const emptyLine = (heldOpenPt: number | null): TextLine => ({
 // One line's worth of units, or nothing left to draw one from. A line held open by
 // nothing but a line break carries no text and takes no room, so the flow steps
 // over it and keeps looking rather than handing back a line that is not there.
+function fillFrom(
+  units: readonly Unit[],
+  tabs: LineTabs,
+  justified: boolean,
+  from: Cursor,
+  roomPt: number,
+  cutting: boolean,
+): Drawn | null {
+  let cursor = from;
+
+  for (;;) {
+    const built = fillLine(units, tabs, justified, cursor, roomPt, cutting);
+    if (built === null) return null;
+    if (built.line !== null) return { line: built.line, cursor: built.cursor };
+    cursor = built.cursor;
+  }
+}
+
+// That line, and the flow for whatever the paragraph has left after it.
 function buildLine(
   units: readonly Unit[],
   tabs: LineTabs,
   justified: boolean,
   from: Cursor,
   roomPt: number,
-  cutting = true,
 ): FlowedLine | null {
-  let cursor = from;
-
-  for (;;) {
-    const built = fillLine(units, tabs, justified, cursor, roomPt, cutting);
-    if (built === null) return null;
-    if (built.line !== null) {
-      return {
-        line: built.line,
-        rest: flowFrom(units, tabs, justified, { ...built.cursor, index: cursor.index + 1 }),
-      };
-    }
-    cursor = built.cursor;
-  }
+  const built = fillFrom(units, tabs, justified, from, roomPt, true);
+  if (built === null) return null;
+  return {
+    line: built.line,
+    rest: flowFrom(units, tabs, justified, { ...built.cursor, index: from.index + 1 }),
+  };
 }
 
 const flowFrom = (
@@ -918,16 +937,23 @@ const flowFrom = (
 // to cut a word in two: it runs to the first place a break is legal, and how far
 // that reaches is what any run of space has to hold. A word is unbreakable, a tab
 // holds the line open to the stop it reached, and a gap hangs past the edge.
+//
+// **This asks for the line alone and never for the flow after it.** Building that
+// flow asks its own least room, which built the flow after that, so making one flow
+// walked every break the paragraph had left: a paragraph of a few thousand words ran
+// the stack out, and every line before that one cost the whole remainder again.
 function leastRoomPt(
   units: readonly Unit[],
   tabs: LineTabs,
   justified: boolean,
   cursor: Cursor,
 ): number {
-  return buildLine(units, tabs, justified, cursor, 0, false)?.line.widthPt ?? 0;
+  return fillFrom(units, tabs, justified, cursor, 0, false)?.line.widthPt ?? 0;
 }
 
 type Filled = { readonly line: TextLine | null; readonly cursor: Cursor };
+
+type Drawn = { readonly line: TextLine; readonly cursor: Cursor };
 
 function fillLine(
   units: readonly Unit[],
@@ -1096,32 +1122,52 @@ function splitFragments(
   return [head, tail];
 }
 
+// **The character the cut falls at is the one whose own advance overflows.** The
+// fragment's width used to be shared out evenly over its characters, which put the
+// cut wherever the average said and handed both halves a width no face makes: eight
+// characters of `iiiiMMMM` average to nothing any of them measures. So the reaches
+// the fragment was measured by are what it is cut by, and the head comes out the
+// width the face would make of the head's own text.
+//
+// The tail keeps whatever the head left of the fragment's width, which is a kern for
+// the pair the cut now stands between. Nothing says what Word does with that pair.
 function splitFragment(
   fragment: Fragment,
   availablePt: number,
   atLeastOne: boolean,
 ): readonly [Fragment | null, Fragment | null] {
   const characters = charactersOf(fragment.text);
-  const perCharacter = fragment.widthPt / characters.length;
+  const reachOf = (count: number): number => fragment.reachPt[count - 1] ?? 0;
 
   let count = 0;
-  let filled = 0;
-  while (count < characters.length && filled + perCharacter <= availablePt + EPSILON) {
-    filled += perCharacter;
+  while (count < characters.length && reachOf(count + 1) <= availablePt + EPSILON) {
     count += 1;
   }
-  if (count === 0 && atLeastOne) {
-    count = 1;
-    filled = perCharacter;
-  }
+  if (count === 0 && atLeastOne) count = 1;
+  const filled = reachOf(count);
 
   const head = characters.slice(0, count).join("");
   const tail = characters.slice(count).join("");
   return [
-    head === "" ? null : { ...fragment, text: head, widthPt: filled },
-    tail === "" ? null : { ...fragment, text: tail, widthPt: fragment.widthPt - filled },
+    head === ""
+      ? null
+      : { ...fragment, text: head, widthPt: filled, reachPt: reachesTo(fragment, count) },
+    tail === ""
+      ? null
+      : {
+          ...fragment,
+          text: tail,
+          widthPt: fragment.widthPt - filled,
+          reachPt: reachesFrom(fragment, count, filled),
+        },
   ];
 }
+
+const reachesTo = (fragment: Fragment, count: number): readonly number[] =>
+  fragment.reachPt.slice(0, count);
+
+const reachesFrom = (fragment: Fragment, count: number, filledPt: number): readonly number[] =>
+  fragment.reachPt.slice(count).map((each) => each - filledPt);
 
 // Word justifies a line by handing every space character on it an equal share of
 // the room the line did not fill, whatever size that space is set in. A tab takes

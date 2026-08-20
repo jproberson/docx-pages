@@ -46,6 +46,16 @@ const EVEN: SuppliedFace = {
   advances: readFontFile(buildSfnt(FIXTURE)).advances,
 };
 
+// Letters of two widths, so a cut by the average lands somewhere the advances never
+// put it: `i` measures a tenth of the em and `M` nine tenths.
+const UNEVEN: SuppliedFace = {
+  name: "Uneven Sans",
+  bold: false,
+  italic: false,
+  metrics: METRICS,
+  advances: readFontFile(buildSfnt({ ...FIXTURE, advances: { i: 100, M: 900 } })).advances,
+};
+
 const metricsFor =
   (faces: readonly SuppliedFace[] = [EVEN]) =>
   (request: { readonly name: string }): MetricsLookup => {
@@ -136,6 +146,18 @@ describe("breakLines", () => {
     );
   });
 
+  // A flow used to measure the least room its next line could be given as it was
+  // made, and measuring that made the flow after it, so making one flow reached down
+  // every break the paragraph had left. A paragraph of a few thousand words ran the
+  // stack out, and each line before that cost the whole remainder over again.
+  it("breaks a paragraph of twenty thousand words", () => {
+    const words = Array.from({ length: 20_000 }, () => "abc").join(" ");
+
+    // Five words fill a 100pt line: five of 15pt with four 5pt spaces between them
+    // is 95, and a sixth would ask for 115.
+    expect(linesOf([runOf(words)], 100)).toHaveLength(4_000);
+  });
+
   it("keeps a line that fits as one line", () => {
     const lines = linesOf([runOf("abc def")], 100);
 
@@ -218,6 +240,19 @@ describe("breakLines", () => {
     const lines = linesOf([runOf("abcdefgh")], 20);
 
     expect(lines.map(textOf)).toStrictEqual(["abcd", "efgh"]);
+  });
+
+  // The cut used to be made by the fragment's average character width, which is a
+  // width none of `iiiiMMMM` measures: the average put it after the fourth character
+  // and called that head 20pt, where the four characters draw 4pt and a fifth still
+  // fits.
+  it("cuts a word of uneven letters where the advances overflow, not where the average does", () => {
+    const lines = linesOf([runOf("iiiiMMMM", mark(10, "Uneven Sans"))], 20, [UNEVEN]);
+
+    // What is left is cut again by its own advances, which is what says the tail
+    // carries the reaches of the characters still on it.
+    expect(lines.map(textOf)).toStrictEqual(["iiiiM", "MM", "M"]);
+    expect(lines.map((line) => line.widthPt)).toStrictEqual([13, 18, 9]);
   });
 
   it("always places at least one character, however narrow the line", () => {
