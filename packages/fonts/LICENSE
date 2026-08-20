@@ -1,10 +1,10 @@
 The code in this package is under the MIT license below.
 
 The font files under fonts/ are not this project's work and keep their own
-licenses, each committed beside them: Carlito (OFL-Carlito.txt) and Caladea
-(OFL-Caladea.txt) under the SIL Open Font License 1.1, and the Liberation
-fonts (OFL-Liberation.txt) under the SIL Open Font License 1.1 with the
-reserved font name "Liberation".
+licenses, each committed beside them: Carlito (OFL-Carlito.txt), Caladea
+(OFL-Caladea.txt) and Open Sans (OFL-OpenSans.txt) under the SIL Open Font
+License 1.1, and the Liberation fonts (OFL-Liberation.txt) under the SIL Open
+Font License 1.1 with the reserved font name "Liberation".
 
 MIT License
 

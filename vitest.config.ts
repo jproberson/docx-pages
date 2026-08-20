@@ -32,6 +32,11 @@ export const config = defineConfig({
     // while every other file is running waits far longer than a unit test's own
     // patience allows for.
     testTimeout: 60_000,
+    // A machine without the reference documents, without Word, or without Calibri
+    // has whole suites report nothing to run rather than fail, so a green tick
+    // means less there than here. Naming every test is how a run says which of
+    // them it actually was.
+    reporters: process.env["CI"] === undefined ? ["default"] : ["verbose"],
   },
 });
 
