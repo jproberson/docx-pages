@@ -21,15 +21,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify
 
       # A runner has neither the reference documents nor Word, so the suites that
       # need either report nothing to run rather than failing. That is right, and
       # it means a green tick here covers less than a green tick on a machine that
-      # has them: say which suites actually ran rather than leaving it implied.
-      - name: Say which suites ran
-        if: always()
-        run: pnpm vitest run --reporter=basic 2>&1 | tail -20
+      # has them, which is why the run names every test it ran: see `reporters` in
+      # `vitest.config.ts`.
+      - run: pnpm verify
 
   # What `pnpm verify` cannot see: whether the thing a consumer installs works.
   # An exports map that points at a file `files` does not ship, or a `workspace:*`
