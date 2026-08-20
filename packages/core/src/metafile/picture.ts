@@ -263,6 +263,13 @@ function readTextOut(
   const leftUnits = record.int(EMR_TEXT_AT);
   const offDx = record.uint(EMR_TEXT_AT + 36);
   const stride = (options & TEXT_PAIRED_ADVANCES) === 0 ? 4 : 8;
+  // A record answers nought for anything read past its own end, so an array stated
+  // where the record does not reach would space every character at nought and stack
+  // the whole run on its first. The array the format asks for is one advance a
+  // character, which is the bound held here: a record short of that is refused
+  // rather than drawn wrong.
+  if (offDx !== 0 && offDx + characters * stride > record.length) return undefined;
+
   const xUnits = [leftUnits];
   if (offDx !== 0) {
     for (let at = 0; at + 1 < characters; at += 1) {

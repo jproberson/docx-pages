@@ -166,6 +166,20 @@ describe("readMetafilePicture", () => {
     expect(picture?.shapes[0]).toMatchObject({ xUnits: [5] });
   });
 
+  // A record answers nought for a read past its own end, so a short array would space
+  // every character at nought and stack the whole run on its first character. The
+  // picture is refused instead, which is what the reader answers for anything it
+  // cannot draw faithfully.
+  it("refuses a run whose advances are not all in the record", () => {
+    expect(
+      played([
+        CALIBRI_AT_22,
+        select(7),
+        metafileText({ xUnits: 5, yUnits: 0, text: "abc", advances: [11] }),
+      ]),
+    ).toBeNull();
+  });
+
   it("refuses a run written in a font whose metrics nothing can answer for", () => {
     const unknown = metafileFont({ handle: 7, name: "Nothing Supplies This", heightUnits: -22 });
     expect(
