@@ -26,7 +26,7 @@ const SOURCE = ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"];
 const TOOLING = ["*.js", "*.config.ts"];
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**"] },
+  { ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "probes/**"] },
 
   { files: [...SOURCE, ...TOOLING], ...js.configs.recommended },
 

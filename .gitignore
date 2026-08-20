@@ -8,6 +8,11 @@ coverage/
 # Reference one-pagers. Labelled internal collateral, never committed.
 samples/
 
+# One-question measurement scripts, written to settle a rule and kept only until
+# they have. What one holds is often an observation about a real document, which
+# is why the directory as a whole stays out.
+/probes/
+
 # A corpus of real documents to sweep, and whatever a sweep writes about one.
 # Other people's work: it is found through DOCX_PAGES_CORPUS and lives outside
 # the repository, and this is here in case anyone puts one inside it.

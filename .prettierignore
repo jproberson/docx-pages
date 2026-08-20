@@ -10,3 +10,6 @@ BRIEF.md
 # The working notebooks, excluded from the repository in .git/info/exclude. Checking
 # the format of what is never committed only ever fails the gate.
 docs/
+
+# The probe scripts, which are never committed and gate nothing.
+probes/
