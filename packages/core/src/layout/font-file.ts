@@ -109,7 +109,15 @@ function sliceTable(bytes: Uint8Array, offset: number, length: number, tag: stri
   return bytes.subarray(offset, offset + length);
 }
 
+const SFNT_DIRECTORY_LENGTH = 12;
+
 function readSfntTables(bytes: Uint8Array, at = 0): ReadonlyMap<string, Uint8Array> {
+  // Where a face's directory sits is the collection's own word about itself rather
+  // than anything already checked, so the header it points at is checked here.
+  if (at < 0 || at + SFNT_DIRECTORY_LENGTH > bytes.byteLength) {
+    throw unreadable("a table directory runs past the end of the file", bytes.byteLength);
+  }
+
   const view = viewOf(bytes);
   const count = view.getUint16(at + 4);
   const tables = new Map<string, Uint8Array>();
@@ -124,9 +132,15 @@ function readSfntTables(bytes: Uint8Array, at = 0): ReadonlyMap<string, Uint8Arr
   return tables;
 }
 
+const WOFF_TABLE_COUNT_AT = 12;
+
 function readWoffTables(bytes: Uint8Array): ReadonlyMap<string, Uint8Array> {
+  if (bytes.byteLength < WOFF_TABLE_COUNT_AT + 2) {
+    throw unreadable("the file is too short to hold a woff table directory", bytes.byteLength);
+  }
+
   const view = viewOf(bytes);
-  const count = view.getUint16(12);
+  const count = view.getUint16(WOFF_TABLE_COUNT_AT);
   const tables = new Map<string, Uint8Array>();
   for (let index = 0; index < count; index += 1) {
     const record = 44 + index * 20;
@@ -140,8 +154,14 @@ function readWoffTables(bytes: Uint8Array): ReadonlyMap<string, Uint8Array> {
       tables.set(tag, stored);
       continue;
     }
+    // **Inflated into no more room than the table says it needs**, or a few hostile
+    // bytes ask for gigabytes: deflate carries about a thousand to one. The room is
+    // a byte over what was stated because fflate cuts what it cannot fit rather
+    // than failing, so a table filling that byte is one that disagreed with its own
+    // header, which every reader below would then trust the wrong length of.
+    let inflated: Uint8Array;
     try {
-      tables.set(tag, unzlibSync(stored));
+      inflated = unzlibSync(stored, { out: new Uint8Array(originalLength + 1) });
     } catch (error: unknown) {
       throw new DocxPagesError({
         code: "font-unreadable",
@@ -151,6 +171,15 @@ function readWoffTables(bytes: Uint8Array): ReadonlyMap<string, Uint8Array> {
         cause: error,
       });
     }
+    if (inflated.byteLength !== originalLength) {
+      throw new DocxPagesError({
+        code: "font-unreadable",
+        message: `the ${tag} table did not inflate to the length it states`,
+        at: AT,
+        context: { table: tag, stated: originalLength, inflated: inflated.byteLength },
+      });
+    }
+    tables.set(tag, inflated);
   }
   return tables;
 }
@@ -967,9 +996,7 @@ export type GlyphOutline = {
 };
 
 // **This belongs beside the ink on `InkTable`**, which is the same question asked
-// of the same tables; it is a table of its own only because `InkTable` is declared
-// in `font-metrics.ts`, which was another agent's while this was written. Joining
-// them is a rename and no more.
+// of the same tables. Joining them is a rename and no more.
 export type OutlineTable =
   | {
       readonly kind: "outlines";
@@ -1400,9 +1427,14 @@ function readCffDict(data: Uint8Array): ReadonlyMap<number, readonly number[]> {
       found.set(key, operands);
       operands = [];
     } else if (first === 28) {
+      // A dictionary cut short in the middle of an operand ends there, which is how
+      // every other damage to a face is answered here: with the tables that were
+      // read, and not with a throw out of the middle of a read.
+      if (at + 3 > data.byteLength) break;
       operands.push(viewOf(data).getInt16(at + 1));
       at += 3;
     } else if (first === 29) {
+      if (at + 5 > data.byteLength) break;
       operands.push(viewOf(data).getInt32(at + 1));
       at += 5;
     } else if (first === 30) {
@@ -1449,7 +1481,10 @@ function localSubrsOf(
   const stated = dict.get(PRIVATE_KEY);
   const size = stated?.[0];
   const at = stated?.[1];
-  if (size === undefined || at === undefined || at + size > cff.byteLength) return null;
+  // A dictionary states whatever it likes, negative included, and a subarray from a
+  // negative start reads from the end of the file rather than failing.
+  if (size === undefined || at === undefined || at < 0 || size < 0) return null;
+  if (at + size > cff.byteLength) return null;
 
   const subrsAt = readCffDict(cff.subarray(at, at + size)).get(LOCAL_SUBRS_KEY)?.[0];
   return subrsAt === undefined ? null : readCffIndex(cff, at + subrsAt);
@@ -1721,9 +1756,17 @@ function runCharstring(
   }
 }
 
+// A charstring cut short in the middle of an operand is damage like any other, and
+// the pen carries it as the interpreter carries every other kind.
+function brokenOff(code: Uint8Array, pen: Pen): number {
+  pen.broken = true;
+  return code.byteLength;
+}
+
 function pushOperand(code: Uint8Array, view: DataView, at: number, pen: Pen): number {
   const first = code[at] ?? 0;
   if (first === 28) {
+    if (at + 3 > code.byteLength) return brokenOff(code, pen);
     pen.stack.push(view.getInt16(at + 1));
     return at + 3;
   }
@@ -1741,6 +1784,7 @@ function pushOperand(code: Uint8Array, view: DataView, at: number, pen: Pen): nu
   }
   // A sixteen-sixteen fixed point number, which a charstring may state where a
   // whole one will not do.
+  if (at + 5 > code.byteLength) return brokenOff(code, pen);
   pen.stack.push(view.getInt32(at + 1) / FIXED);
   return at + 5;
 }

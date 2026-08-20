@@ -174,6 +174,40 @@ describe("readFontFile", () => {
     expect(caught(() => readFontMetrics(collection)).code).toBe("font-unreadable");
   });
 
+  // Where a face sits is the collection's own word, and a word may be a lie: the
+  // directory it points at is the one thing read before anything is checked.
+  it("reports a collection whose face sits past the end of the file", () => {
+    const collection = buildCollection([{ ...FACE, advances: WIDTHS }]);
+    new DataView(collection.buffer).setUint32(12, collection.byteLength - 4);
+
+    expect(caught(() => readFontMetrics(collection)).code).toBe("font-unreadable");
+    expect(caught(() => readFontFaces(collection)).code).toBe("font-unreadable");
+  });
+
+  // Twelve bytes are enough to say a file is a woff and not enough to say how many
+  // tables it holds.
+  it("reports a woff too short to hold its own table directory", () => {
+    expect(caught(() => readFontMetrics(buildWoff(FACE).subarray(0, 13))).code).toBe(
+      "font-unreadable",
+    );
+  });
+
+  /**
+   * **A compressed table is inflated into no more room than it says it needs.**
+   * Deflate carries about a thousand to one, so a table left to inflate to whatever
+   * it likes is a few bytes asking for gigabytes. Stating less than it inflates to
+   * is refused rather than cut down to the stated length, since every reader below
+   * would then measure the face off a table with its end missing.
+   */
+  it("refuses a woff table that does not inflate to the length it states", () => {
+    const woff = buildWoff({ ...FACE, advances: WIDTHS }, true);
+    const view = new DataView(woff.buffer);
+    const record = compressedRecordOf(woff);
+    view.setUint32(record + 12, view.getUint32(record + 12) - 4);
+
+    expect(caught(() => readFontMetrics(woff)).code).toBe("font-unreadable");
+  });
+
   it("gives glyphs past the last long metric that metric's advance", () => {
     const advanceFor = advancesOf({ ...FACE, advances: WIDTHS, longMetrics: 2 });
     expect(advanceOf(advanceFor, " ")).toBe(260);
@@ -1253,7 +1287,41 @@ describe("the outline a face states for a glyph", () => {
       ],
     });
   });
+
+  const CUT: FontFixture = {
+    ...FACE,
+    advances: WIDTHS,
+    outlines: { A: { from: [20, 0], steps: [{ line: [600, 0] }] } },
+  };
+
+  // A charstring may end on the head of an operand whose rest is not there: 28
+  // wants two more bytes and 255 four. The interpreter has one answer for a
+  // damaged glyph, which is that it draws nothing, and a read that ran off the end
+  // of the charstring would leave the whole face unread instead.
+  it("draws nothing for a glyph whose charstring stops in the middle of an operand", () => {
+    expect(outlineOf({ ...CUT, charstringTail: 28 }, "A")).toBeNull();
+    expect(outlineOf({ ...CUT, charstringTail: 255 }, "A")).toBeNull();
+  });
+
+  // The same damage in a dictionary, which is read before any glyph is: the
+  // operand that is not there ends the dictionary, and what it stated before that
+  // still reaches the charstrings.
+  it("reads a face whose top dictionary stops in the middle of an operand", () => {
+    expect(outlineOf({ ...CUT, dictTail: 28 }, "A")?.contours).toHaveLength(1);
+    expect(outlineOf({ ...CUT, dictTail: 29 }, "A")?.contours).toHaveLength(1);
+  });
 });
+
+// The first table a woff actually compressed: a short one is written as it stands
+// where deflate does not make it any shorter.
+function compressedRecordOf(woff: Uint8Array): number {
+  const view = new DataView(woff.buffer, woff.byteOffset, woff.byteLength);
+  for (let index = 0; index < view.getUint16(12); index += 1) {
+    const record = 44 + index * 20;
+    if (view.getUint32(record + 8) < view.getUint32(record + 12)) return record;
+  }
+  throw new Error("the woff compressed no table at all");
+}
 
 // A font built table by table, for the two things a face states that the fixture
 // builder has no way to write: a contour of curves, and a glyph made of another.

@@ -97,6 +97,11 @@ export type FontFixture = {
   // PostScript charstring, which states no box at all: the box is what the
   // outline comes to, and a curve reaches past its own ends.
   readonly outlines?: Readonly<Record<string, GlyphPath>>;
+  // A byte left on the end of the top dictionary, and the byte a charstring is
+  // left ending on in place of its endchar, for a fixture that wants either of
+  // them cut short in the middle of an operand.
+  readonly dictTail?: number;
+  readonly charstringTail?: number;
   // What the face says about setting mathematics, and how many bytes to cut off
   // the end of what it says, for a fixture that wants a table whose offsets run
   // past what is there.
@@ -274,7 +279,7 @@ const R_LINE_TO = 5;
 const R_CURVE_TO = 8;
 const END_CHAR = 14;
 
-function charstringOf(path: GlyphPath): Uint8Array {
+function charstringOf(path: GlyphPath, tail: number): Uint8Array {
   const written: Uint8Array[] = [
     charstringNumber(path.from[0]),
     charstringNumber(path.from[1]),
@@ -289,7 +294,7 @@ function charstringOf(path: GlyphPath): Uint8Array {
     }
   }
 
-  written.push(Uint8Array.from([END_CHAR]));
+  written.push(Uint8Array.from([tail]));
   return concat(written);
 }
 
@@ -327,21 +332,26 @@ function cffTable(fixture: FontFixture, glyphs: readonly Glyph[]): Uint8Array {
     const path = Object.entries(stated).find(
       ([character]) => character.codePointAt(0) === glyph.codePoint,
     )?.[1];
-    charstrings.push(path === undefined ? Uint8Array.from([END_CHAR]) : charstringOf(path));
+    charstrings.push(
+      path === undefined
+        ? Uint8Array.from([END_CHAR])
+        : charstringOf(path, fixture.charstringTail ?? END_CHAR),
+    );
   }
 
   const header = Uint8Array.from([1, 0, CFF_HEADER_LENGTH, 1]);
   const names = cffIndex([Uint8Array.from(Array.from("Meridian", (each) => each.charCodeAt(0)))]);
   const strings = cffIndex([]);
   const globalSubrs = cffIndex([]);
-  const topIndexLength = 3 + 2 * 4 + TOP_DICT_LENGTH;
+  const topIndexLength = 3 + 2 * 4 + TOP_DICT_LENGTH + (fixture.dictTail === undefined ? 0 : 1);
   const charStringsAt =
     header.length + names.length + topIndexLength + strings.length + globalSubrs.length;
 
-  const dict = new Uint8Array(TOP_DICT_LENGTH);
+  const dict = new Uint8Array(TOP_DICT_LENGTH + (fixture.dictTail === undefined ? 0 : 1));
   dict[0] = 29;
   new DataView(dict.buffer).setInt32(1, charStringsAt);
   dict[5] = CHARSTRINGS_OPERATOR;
+  if (fixture.dictTail !== undefined) dict[TOP_DICT_LENGTH] = fixture.dictTail;
 
   return concat([header, names, cffIndex([dict]), strings, globalSubrs, cffIndex(charstrings)]);
 }
