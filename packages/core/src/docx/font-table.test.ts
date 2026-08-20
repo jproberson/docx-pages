@@ -53,8 +53,8 @@ describe("readFaceShapes", () => {
 
 // **What the document says, not what the machine has.** A producer writes an
 // alternative beside a face because it knows the reader may not hold the original,
-// and the same name is answered differently by different documents: `JD Sans` comes
-// back `JD Sans Pro Book` in some of the corpus and `Corbel` in others.
+// and the same name is answered differently by different documents: `Alder Sans` comes
+// back `Alder Sans Pro Book` in some of the corpus and `Corbel` in others.
 describe("readFaceAlternatives", () => {
   const stated = (name: string, alternative: string): string =>
     `<w:font w:name="${name}"><w:altName w:val="${alternative}"/><w:family w:val="swiss"/></w:font>`;
@@ -103,9 +103,9 @@ describe("readFaceAlternatives", () => {
   // **An alternative nothing holds is still worth reporting**: this says what the
   // document said, and whoever resolves a face has somewhere else to go after it.
   it("reports an alternative whatever the machine holds, since it says nothing about that", () => {
-    const shapes = readFaceAlternatives(packageWith(stated("JD Sans", "JD Sans Pro Book")));
+    const shapes = readFaceAlternatives(packageWith(stated("Alder Sans", "Alder Sans Pro Book")));
 
-    expect(shapes.get("jd sans")).toBe("JD Sans Pro Book");
+    expect(shapes.get("alder sans")).toBe("Alder Sans Pro Book");
   });
 
   it("comes back empty for a document with no font table at all", () => {

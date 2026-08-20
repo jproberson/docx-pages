@@ -171,8 +171,8 @@ function familyOf(name: string): string | null {
 // **The alternative comes before the family because the document stated it and the
 // family is a guess off the spelling.** `readFaceAlternatives` reports what the
 // document said and nothing about what the machine holds, so an alternative naming a
-// face nothing holds either costs one candidate and the list carries on: `JD Sans`
-// offered as `JD Sans Pro Book` is answered by neither, and the family and the
+// face nothing holds either costs one candidate and the list carries on: `Alder Sans`
+// offered as `Alder Sans Pro Book` is answered by neither, and the family and the
 // fallbacks are still tried behind it.
 //
 // **A face of the family is nearer than a stranger, and the name is what says so.**

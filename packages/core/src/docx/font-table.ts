@@ -93,7 +93,7 @@ export function readFaceShapes(pkg: DocxPackage): ReadonlyMap<string, FaceShape>
  * **This is the document's own answer and not a guess about the name.** A producer
  * writes the alternative beside the face because it knows the reader may not hold
  * the original: the same name is answered differently by different documents, and
- * `JD Sans` comes back as `JD Sans Pro Book` in some and as `Corbel` in others. So
+ * `Alder Sans` comes back as `Alder Sans Pro Book` in some and as `Corbel` in others. So
  * no table keyed on a face name can stand in for this, and one keyed on the wrong
  * document is worse than none. Read off the corpus on 2026-08-14: most documents
  * state at least one, and the alternative is often a face every machine with Word

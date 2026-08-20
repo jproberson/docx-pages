@@ -248,7 +248,7 @@ describe("the family a face's name begins with", () => {
 
 // **What Word chose, put back after being measured.** A name in Word's own table is
 // resolved to a face the last resort would never have reached: measured over
-// documents naming `JD Sans Pro Medium`, what Word drew matched Calibri within a
+// documents naming `Alder Sans Pro Medium`, what Word drew matched Calibri within a
 // third of a percent and Cambria, where the last resort sends it, was fifteen times
 // further off.
 // **The face the document itself named, before any guess of ours.** A document states
@@ -284,18 +284,18 @@ describe("the alternative a document states", () => {
     ]);
   });
 
-  // **The case `JD Sans` needs.** A document may offer a face the machine has not got
+  // **The case `Alder Sans` needs.** A document may offer a face the machine has not got
   // either, and then the order carries on behind it rather than stopping there.
   it("carries on where the alternative is itself absent", () => {
     const faces = substitutingMetrics(
       [measurable("Cambria")],
       ["Cambria"],
-      asks("jd sans", "JD Sans Pro Book"),
+      asks("alder sans", "Alder Sans Pro Book"),
     );
 
-    expect(faces.metricsFor(ask("JD Sans")).kind).toBe("found");
+    expect(faces.metricsFor(ask("Alder Sans")).kind).toBe("found");
     expect(faces.substitutions()).toStrictEqual([
-      { requested: ask("JD Sans"), used: ask("Cambria") },
+      { requested: ask("Alder Sans"), used: ask("Cambria") },
     ]);
   });
 
