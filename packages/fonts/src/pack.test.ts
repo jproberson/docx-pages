@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { bestEffortMetrics, layOutDocument, openDocx } from "@docx-pages/core";
 import { buildDocx, wordDocument } from "@docx-pages/core/testing";
 
-import { METRIC_TWINS, PACK_FACES } from "./index.js";
-import { defaultFacesFromDisk } from "./node.js";
+import { METRIC_TWINS, PACK_FACES, readPack } from "./index.js";
+import { defaultFacesFromDisk, readFromDisk } from "./node.js";
 
 const SECTION = `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`;
 
@@ -28,6 +28,20 @@ describe("the default pack", () => {
     expect(defaults.faces).toHaveLength(PACK_FACES.length);
     for (const face of defaults.faces) {
       expect(face.advances.kind, face.name).toBe("advances");
+    }
+  });
+
+  // A page is drawn as well as measured, and both need the same file: the browser
+  // is offered the face the layout measured, and a pdf carries the ones it draws
+  // in. So the bytes come back beside the metrics rather than being read twice.
+  it("hands back the file each face was read out of, beside what was read from it", async () => {
+    const pack = await readPack(readFromDisk);
+
+    expect(pack.bytes.map((each) => each.name)).toStrictEqual(
+      pack.defaults.faces.map((face) => face.name),
+    );
+    for (const face of pack.bytes) {
+      expect(face.bytes.byteLength, face.name).toBeGreaterThan(0);
     }
   });
 

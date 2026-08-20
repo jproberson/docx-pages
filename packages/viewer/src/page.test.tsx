@@ -289,6 +289,20 @@ describe("Page", () => {
     expect(html).toMatch(/top:-7\.058\d*pt/);
   });
 
+  // Nothing holds a document to a source rectangle that leaves any of the picture
+  // showing, and the writer answers such a one with an empty frame. The screen says
+  // the same thing rather than sizing a bitmap at a fraction of nothing.
+  it("leaves the frame empty when srcRect hides the whole bitmap", () => {
+    const crop: CropInsets = { left: 0.6, top: 0, right: 0.6, bottom: 0 };
+    const html = markup(
+      layoutWith([
+        float({ kind: "picture", part: "word/media/image1.png", crop, paint: UNPAINTED }),
+      ]),
+    );
+    expect(html).toContain("width:180pt;height:90pt;overflow:hidden");
+    expect(html).not.toContain("<img");
+  });
+
   // A metafile is a recording of the drawing, so its shapes go straight into the
   // frame the document gave it and the frame decides the scale on its own.
   it("draws a metafile's own shapes in the frame the document gave it", () => {

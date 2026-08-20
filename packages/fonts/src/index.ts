@@ -112,6 +112,14 @@ export type ReadBytes = (url: URL) => Promise<Uint8Array>;
 // The reader a browser needs; a runtime whose fetch cannot reach the pack's own
 // files, node being the one, goes through `./node` instead.
 const overFetch: ReadBytes = async (url) => {
+  // A dev server that prebundles its dependencies moves this module into a deps
+  // cache, away from the files it resolves beside itself. Vite's is the one met so
+  // far, and the way out is configuration, so say so.
+  if (url.href.includes("/.vite/")) {
+    throw new Error(
+      `the font pack was prebundled away from its own files (${url.href}); add optimizeDeps: { exclude: ["@docx-pages/viewer", "@docx-pages/fonts"] } to vite.config`,
+    );
+  }
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`the font at ${url.href} came back ${String(response.status)}`);
@@ -119,13 +127,34 @@ const overFetch: ReadBytes = async (url) => {
   return new Uint8Array(await response.arrayBuffer());
 };
 
-// The defaults `bestEffortMetrics` asks for, read out of the pack's own files so
-// that each face knows its widths, its shape and its missing-glyph advance.
-export async function defaultFaces(read: ReadBytes = overFetch): Promise<FaceDefaults> {
-  const faces = await Promise.all(
-    PACK_FACES.map(async (each): Promise<SuppliedFace> => {
-      const found = readFontFile(await read(fontUrl(each)));
-      return {
+// One face's own file, under the name the pack carries it as.
+export type PackBytes = {
+  readonly name: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly bytes: Uint8Array;
+};
+
+export type FontPack = {
+  readonly defaults: FaceDefaults;
+  readonly bytes: readonly PackBytes[];
+};
+
+/**
+ * The pack read once: the defaults `bestEffortMetrics` asks for, so that each face
+ * knows its widths, its shape and its missing-glyph advance, and beside them the
+ * very bytes those were read out of.
+ *
+ * The bytes are here because a page is not only measured. A browser has to be
+ * offered the face it was measured in, and a pdf carries the faces it draws in, so
+ * whoever draws the page needs the file and not only what was read out of it.
+ */
+export async function readPack(read: ReadBytes = overFetch): Promise<FontPack> {
+  const pack = await Promise.all(
+    PACK_FACES.map(async (each) => {
+      const bytes = await read(fontUrl(each));
+      const found = readFontFile(bytes);
+      const face: SuppliedFace = {
         name: each.name,
         bold: each.bold,
         italic: each.italic,
@@ -133,15 +162,23 @@ export async function defaultFaces(read: ReadBytes = overFetch): Promise<FaceDef
         advances: found.advances,
         sansSerif: each.sansSerif ?? found.sansSerif,
       };
+      return { face, bytes: { name: each.name, bold: each.bold, italic: each.italic, bytes } };
     }),
   );
 
   return {
-    faces,
-    twins: METRIC_TWINS,
-    sansSerif: SANS_SERIF_DEFAULT,
-    serif: SERIF_DEFAULT,
-    monospace: MONOSPACE_DEFAULT,
-    lastResort: LAST_RESORT_DEFAULT,
+    defaults: {
+      faces: pack.map((each) => each.face),
+      twins: METRIC_TWINS,
+      sansSerif: SANS_SERIF_DEFAULT,
+      serif: SERIF_DEFAULT,
+      monospace: MONOSPACE_DEFAULT,
+      lastResort: LAST_RESORT_DEFAULT,
+    },
+    bytes: pack.map((each) => each.bytes),
   };
 }
+
+// What a caller that only lays out asks for, which is the pack without its files.
+export const defaultFaces = async (read: ReadBytes = overFetch): Promise<FaceDefaults> =>
+  (await readPack(read)).defaults;

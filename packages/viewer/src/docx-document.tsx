@@ -21,6 +21,7 @@ import {
 } from "@docx-pages/core";
 
 import { imageResolver, type ImageResolver } from "./images.js";
+import { offerToBrowser } from "./offer-face.js";
 import { Document, type FrameStyle } from "./page.js";
 
 // A face handed in by bytes, named the way the document names it. Everything
@@ -107,30 +108,6 @@ const suppliedFrom = (font: DocxFont): SuppliedFace => {
     sansSerif: read.sansSerif,
   };
 };
-
-const registered = new Set<string>();
-
-// Lets the browser draw a face under the name the layout measured it as: a
-// supplied face under its own name, and a stood-in face under the name the
-// document asked for, so what is painted is the very bytes that were measured.
-// A runtime without the FontFace API paints whatever its styles find, at the
-// measured widths; that is the one way a page here is right in its geometry and
-// wrong on the screen, and it is the runtime's limit rather than a quiet choice.
-function offerToBrowser(name: string, bold: boolean, italic: boolean, bytes: Uint8Array): void {
-  if (typeof FontFace === "undefined" || typeof document === "undefined") return;
-  const key = `${name.toLowerCase()}|${bold ? "b" : ""}${italic ? "i" : ""}`;
-  if (registered.has(key)) return;
-  registered.add(key);
-
-  const face = new FontFace(name, bytes.slice().buffer, {
-    weight: bold ? "bold" : "normal",
-    style: italic ? "italic" : "normal",
-  });
-  document.fonts.add(face);
-  face.load().catch(() => {
-    // A face the browser refuses stays measured and unpainted, as above.
-  });
-}
 
 const sameFace = (
   font: DocxFont,

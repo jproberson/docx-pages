@@ -81,12 +81,23 @@ const box = (drawable: ObjectDrawable): CSSProperties => ({
 
 // srcRect hides a fraction of each edge, so the whole bitmap is larger than the
 // placed rectangle by exactly that much and is shifted up and left behind it.
+//
+// A document may state a rectangle that hides the whole picture, and no bitmap is
+// large enough to show none of itself. The frame stays and nothing goes in it,
+// which is what the writer does with the same document.
 function croppedImage(drawable: ObjectDrawable, url: string, crop: CropInsets): ReactElement {
-  const width = drawable.widthPt / Math.max(1 - crop.left - crop.right, Number.EPSILON);
-  const height = drawable.heightPt / Math.max(1 - crop.top - crop.bottom, Number.EPSILON);
+  const frame = { ...box(drawable), overflow: "hidden" };
+  const acrossShown = 1 - crop.left - crop.right;
+  const downShown = 1 - crop.top - crop.bottom;
+  if (acrossShown <= 0 || downShown <= 0) {
+    return <div key={drawable.key} style={frame} data-kind="picture" />;
+  }
+
+  const width = drawable.widthPt / acrossShown;
+  const height = drawable.heightPt / downShown;
 
   return (
-    <div key={drawable.key} style={{ ...box(drawable), overflow: "hidden" }} data-kind="picture">
+    <div key={drawable.key} style={frame} data-kind="picture">
       <img
         src={url}
         alt={drawable.name}
