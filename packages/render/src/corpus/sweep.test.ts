@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import { buildAuthoredDocx } from "../authored/package.js";
 import { corpusFaces } from "./faces.js";
 import {
   changesBetween,
+  described,
   summaryOf,
   sweepCorpus,
   sweepDocument,
@@ -130,5 +131,31 @@ describe("sweepCorpus over a corpus holding the same document twice", () => {
     const swept = sweepCorpus(directory);
     expect(swept).toHaveLength(2);
     expect(new Set(swept.map((each) => each.id)).size).toBe(2);
+  });
+});
+
+// A report is meant to be safe to keep and to quote, and the only thing standing
+// between a real document's name and one is what a failure is allowed to say.
+describe("described", () => {
+  it("says only the errno of a file it could not read", () => {
+    const thrown = ((): unknown => {
+      try {
+        readFileSync(join(mkdtempSync(join(tmpdir(), "docx-pages-corpus-")), "Some Document.docx"));
+        return null;
+      } catch (error) {
+        return error;
+      }
+    })();
+
+    expect(described(thrown)).toBe("ENOENT");
+  });
+
+  it("takes the path and the quoted text out of anything else thrown", () => {
+    expect(described(new Error("cannot parse '/home/someone/Their Report.docx' at byte 12"))).toBe(
+      "cannot parse '...' at byte 12",
+    );
+    expect(described(new Error("unexpected token in /home/someone/Their Report.docx"))).toBe(
+      "unexpected token in ...",
+    );
   });
 });

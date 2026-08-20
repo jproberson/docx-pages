@@ -77,6 +77,17 @@ export type Looks = {
   readonly detail: string;
 };
 
+// This project refusing a document in the way it is designed to, which is a
+// different outcome from a document doing something nothing here anticipated. Which
+// of the two a sweep counts used to be read off the wording of a message thrown in
+// another module, so rewording one turned a known gap into an unknown one.
+export class LayoutBlocked extends Error {
+  constructor(readonly blocker: string) {
+    super(`blocked: ${blocker}`);
+    this.name = "LayoutBlocked";
+  }
+}
+
 const empty = (id: string, outcome: Looks["outcome"], detail: string): Looks => ({
   id,
   outcome,
@@ -140,7 +151,7 @@ async function eachOfOurPages(
     readFaceAlternatives(pkg),
   );
   const laid = layOutDocument(pkg, measuring);
-  if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+  if (laid.kind !== "laid-out") throw new LayoutBlocked(laid.blocker.kind);
 
   const imageUrl = imageResolver(pkg, measuring.metricsFor);
 
@@ -229,7 +240,7 @@ export async function looksOf(
     }
   } catch (thrown) {
     const detail = thrown instanceof Error ? thrown.message : String(thrown);
-    return empty(id, detail.startsWith("blocked: ") ? "blocked" : "threw", detail);
+    return empty(id, thrown instanceof LayoutBlocked ? "blocked" : "threw", detail);
   }
 
   let theirs: readonly PageGrid[];

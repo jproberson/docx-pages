@@ -6,14 +6,13 @@ import {
   paragraphBoxesOn,
   substitutingMetrics,
   WORD_FALLBACK_FACES,
-  type LaidOutDocument,
   type LaidOutPage,
   readFaceAlternatives,
 } from "@docx-pages/core";
 import { readTextPlacements, type TextPlacement } from "../pdf/text.js";
 import { corpusFaces } from "./faces.js";
 import { renderedPath } from "./render.js";
-import { documentsIn, identityOf } from "./sweep.js";
+import { CORPUS_DIRECTORY, documentsIn, identityOf } from "./sweep.js";
 
 // One corpus document beside Word's own drawing of it, line by line.
 //
@@ -58,11 +57,7 @@ type Reading = {
   readonly off: number | null;
 };
 
-function linesOn(
-  layout: LaidOutDocument,
-  page: LaidOutPage,
-  drawn: readonly TextPlacement[],
-): readonly Reading[] {
+function linesOn(page: LaidOutPage, drawn: readonly TextPlacement[]): readonly Reading[] {
   const readings: Reading[] = [];
   const bodyBoxes = new Set(page.body);
   for (const box of paragraphBoxesOn(page)) {
@@ -98,9 +93,16 @@ function linesOn(
 }
 
 async function main(): Promise<void> {
+  if (CORPUS_DIRECTORY === null) {
+    process.stdout.write(
+      "No corpus configured: set DOCX_PAGES_CORPUS to a directory of .docx files.\n",
+    );
+    return;
+  }
+
   const wanted = process.argv[2] ?? "";
 
-  for (const path of documentsIn(process.env["DOCX_PAGES_CORPUS"] ?? "")) {
+  for (const path of documentsIn(CORPUS_DIRECTORY)) {
     const bytes = new Uint8Array(readFileSync(path));
     const id = identityOf(bytes);
     if (id !== wanted) continue;
@@ -152,7 +154,7 @@ async function main(): Promise<void> {
     // Which page to read is the whole of the skill here, and a twelve page document
     // agrees about its first page and disagrees about its eighth. So the tally comes
     // first, page by page, and the lines follow for whichever page is asked for.
-    const readings = laid.pages.map((page) => linesOn(laid, page, drawn));
+    const readings = laid.pages.map((page) => linesOn(page, drawn));
 
     process.stdout.write("\nlines placed, page by page\n");
     for (const [at, lines] of readings.entries()) {

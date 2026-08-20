@@ -17,7 +17,7 @@ import { facesUsed } from "@docx-pages/core/internal";
 import { corpusFaces } from "../corpus/faces.js";
 import { drawPdf } from "./draw.js";
 import { offeredFaces } from "./faces.js";
-import type { OurPages, Workspace } from "./compare.js";
+import { LayoutBlocked, type OurPages, type Workspace } from "./compare.js";
 import type { RasterImage } from "./png.js";
 
 // Our page drawn the way Word's is: written out as a pdf and handed to the same
@@ -201,11 +201,11 @@ export async function ourWrittenPages(
     readFaceAlternatives(pkg),
   );
   const laid = layOutDocument(pkg, measuring);
-  if (laid.kind !== "laid-out") throw new Error(`blocked: ${laid.blocker.kind}`);
+  if (laid.kind !== "laid-out") throw new LayoutBlocked(laid.blocker.kind);
 
   const { fonts, missing, alsoCarry } = facesToEmbed(bytes, measuring);
   if (missing.length > 0 && fonts.length === 0) {
-    throw new Error(`blocked: no face on this machine for ${missing.join(", ")}`);
+    throw new LayoutBlocked(`no face on this machine for ${missing.join(", ")}`);
   }
 
   // **The writer is asked what it is short of rather than guessed at.** A run can
@@ -227,7 +227,7 @@ export async function ourWrittenPages(
       if (short === null || !alsoCarry(short.name, short.bold, short.italic)) throw thrown;
     }
   }
-  if (written === null) throw new Error("blocked: the writer kept asking for faces");
+  if (written === null) throw new LayoutBlocked("the writer kept asking for faces");
 
   const { writeFileSync, rmSync } = await import("node:fs");
   writeFileSync(pdfPath, written);

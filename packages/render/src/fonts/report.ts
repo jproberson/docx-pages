@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { lookupFontMetrics, openDocx, type UsedFace } from "@docx-pages/core";
 import { facesUsed } from "@docx-pages/core/internal";
@@ -51,7 +53,7 @@ export const describeFaces = (reports: readonly FaceReport[]): string =>
 function main(): void {
   const [documentPath] = process.argv.slice(2);
   if (documentPath === undefined) {
-    process.stderr.write("usage: node packages/render/dist/fonts/report.js <path to .docx>\n");
+    process.stderr.write("usage: pnpm fonts <path to .docx>\n");
     process.exitCode = 1;
     return;
   }
@@ -68,4 +70,9 @@ function main(): void {
   }
 }
 
-if (process.argv[1] !== undefined && process.argv[1].endsWith("report.js")) main();
+// Compared against this module's own path: a guard naming the built `.js` never
+// fires under tsx, which is how these are run, and the run then does nothing at all
+// and says nothing about it.
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

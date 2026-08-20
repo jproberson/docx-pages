@@ -94,9 +94,25 @@ export function documentsIn(directory: string): readonly string[] {
   return found.sort();
 }
 
-const described = (value: unknown): string => {
+const errnoOf = (value: unknown): string | null => {
+  if (!(value instanceof Error) || !("code" in value)) return null;
+  return typeof value.code === "string" ? value.code : null;
+};
+
+// What a failure is allowed to say. A file the sweep could not read throws a
+// message holding the whole path, and a library throws one holding the text it
+// choked on, so an errno is reported as itself, anything quoted is emptied, and a
+// path takes the rest of its line with it, since a document's name holds spaces as
+// often as not. Nothing a report can be quoted from may name a document.
+export const described = (value: unknown): string => {
   if (isDocxPagesError(value)) return value.code;
-  return value instanceof Error ? value.message.slice(0, 200) : String(value).slice(0, 200);
+  const errno = errnoOf(value);
+  if (errno !== null) return errno;
+  return (value instanceof Error ? value.message : String(value))
+    .replace(/'[^']*'/g, "'...'")
+    .replace(/"[^"]*"/g, '"..."')
+    .replace(/\S*[/\\].*/g, "...")
+    .slice(0, 200);
 };
 
 /**

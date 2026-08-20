@@ -93,6 +93,24 @@ const forceQuitWord = (): void => {
   }
 };
 
+export type Wanted = { readonly id: string; readonly path: string };
+
+// **The same document is filed under several names.** Two copies in one batch stage
+// to the one path and hand Word the same document twice, which is what leaves it
+// holding a file nothing later can open, and the second copy asks for a pdf the run
+// has already made.
+export function documentsWanted(directory: string): readonly Wanted[] {
+  const already = new Set<string>();
+  const wanted: Wanted[] = [];
+  for (const path of documentsIn(directory)) {
+    const id = identityOf(new Uint8Array(readFileSync(path)));
+    if (already.has(id)) continue;
+    already.add(id);
+    wanted.push({ id, path });
+  }
+  return wanted;
+}
+
 export type RenderProgress = (done: number, total: number, failures: number) => void;
 
 // Every document in the corpus that has no pdf yet, since a run of three quarters
@@ -100,12 +118,7 @@ export type RenderProgress = (done: number, total: number, failures: number) => 
 export function renderCorpus(directory: string, onProgress?: RenderProgress): readonly Rendered[] {
   mkdirSync(resolve(RENDERED_DIRECTORY), { recursive: true });
 
-  const wanted: { readonly id: string; readonly path: string }[] = [];
-  for (const path of documentsIn(directory)) {
-    const id = identityOf(new Uint8Array(readFileSync(path)));
-    if (existsSync(renderedPath(id))) continue;
-    wanted.push({ id, path });
-  }
+  const wanted = documentsWanted(directory).filter((each) => !existsSync(renderedPath(each.id)));
 
   const rendered: Rendered[] = [];
   let failures = 0;
