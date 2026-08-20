@@ -1,7 +1,7 @@
 {
   "name": "@docx-pages/fonts",
   "description": "Freely redistributable faces whose metrics twin the ones documents usually name, for laying out without the real fonts.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "license": "(MIT AND OFL-1.1)",
   "type": "module",
   "exports": {
