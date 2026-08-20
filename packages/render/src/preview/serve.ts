@@ -1,9 +1,14 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, resolve } from "node:path";
+
+import { pathOf } from "./paths.js";
 
 const ROOT = resolve("samples");
 const PORT = Number(process.env["DOCX_PAGES_PREVIEW_PORT"] ?? 8787);
+// Everything under `samples/` is what this repository promises never to publish, so
+// the preview is offered to this machine and to nothing else on the network.
+const HOST = "127.0.0.1";
 // Which page `/` lands on. `pnpm check` writes its own beside the suite's, so the
 // server is told which of the two it is being started for.
 const START = process.env["DOCX_PAGES_PREVIEW_START"] ?? "/preview/index.html";
@@ -39,14 +44,8 @@ function rangeOf(header: string | undefined, size: number): readonly [number, nu
   return [start, end];
 }
 
-const pathOf = (url: string): string => {
-  const asked = decodeURIComponent(new URL(url, "http://localhost").pathname);
-  const path = normalize(join(ROOT, asked === "/" ? START : asked));
-  return path.startsWith(ROOT) ? path : ROOT;
-};
-
 createServer((request, response) => {
-  const path = pathOf(request.url ?? "/");
+  const path = pathOf(request.url ?? "/", ROOT, START);
 
   if (!existsSync(path) || statSync(path).isDirectory()) {
     response.writeHead(404, { "cache-control": NO_STORE });
@@ -75,6 +74,6 @@ createServer((request, response) => {
     "content-range": `bytes ${String(start)}-${String(end)}/${String(size)}`,
   });
   createReadStream(path, { start, end }).pipe(response);
-}).listen(PORT, () => {
+}).listen(PORT, HOST, () => {
   process.stdout.write(`http://localhost:${String(PORT)}${START}\n`);
 });
