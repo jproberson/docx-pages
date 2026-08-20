@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // What Word said about each authored document. These are Word's own answers,
 // committed because the documents they describe were written here rather than
@@ -48,9 +48,11 @@ export type Measured = {
   readonly documents: Readonly<Record<string, MeasuredDocument>>;
 };
 
-export const MEASURED_PATH = resolve("packages/render/src/authored/measured.json");
-
-const EMPTY: Measured = { documents: {} };
+// Found from this module rather than from the working directory. Read against the
+// working directory the file is there only for a run started at the repository
+// root, and a run started anywhere else used to lose every answer in it without
+// saying so, which is a whole suite passing over nothing.
+export const MEASURED_PATH = fileURLToPath(new URL("measured.json", import.meta.url));
 
 // The file is written by the script beside it, so it is read for what it should
 // hold rather than guarded against every shape it could: a field that is not a
@@ -110,8 +112,12 @@ function readDocument(value: unknown, where: string): MeasuredDocument {
   };
 }
 
+// **This file is committed**, unlike the reference manifest, so it is never
+// legitimately missing: the suite goes quiet over a machine without Word's Calibri
+// and over nothing else. Answering an empty measurement for a file that is not
+// there is how a green run comes to mean almost nothing ran.
 export function readMeasured(path: string = MEASURED_PATH): Measured {
-  if (!existsSync(path)) return EMPTY;
+  if (!existsSync(path)) throw new Error(`${path}: no measurements to read`);
 
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
   const documents: Record<string, MeasuredDocument> = {};

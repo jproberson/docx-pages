@@ -7,7 +7,13 @@ import { authoredDocuments } from "./documents.js";
 // The documents themselves are built from the source beside them, so they are
 // written out rather than kept: what is worth committing is what Word says about
 // them, not the zip.
-export const AUTHORED_DIRECTORY = "samples/authored";
+//
+// Walked to from this module rather than taken off the working directory, since a
+// run started elsewhere would write them into a directory Word has not been granted
+// and a grant is per directory.
+export const AUTHORED_DIRECTORY = fileURLToPath(
+  new URL("../../../../samples/authored", import.meta.url),
+);
 
 export const authoredPath = (id: string): string => resolve(AUTHORED_DIRECTORY, `${id}.docx`);
 

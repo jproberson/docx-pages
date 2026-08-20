@@ -14,7 +14,7 @@ import {
 } from "./measured.js";
 import { authoredPath, writeAuthoredDocuments } from "./write.js";
 
-const SCRIPT = resolve("packages/render/src/authored/measure.applescript");
+const SCRIPT = fileURLToPath(new URL("measure.applescript", import.meta.url));
 
 // Word answers one document at a time and leaves each one open unless it is asked
 // to close, so the whole run goes through a single script that closes behind

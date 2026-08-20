@@ -1,3 +1,11 @@
+import {
+  anchoredTextBox,
+  bodySectionProperties,
+  emu,
+  exactLine,
+  exactLineClosedUp,
+  ONE_COLUMN,
+} from "./markup.js";
 import { sectionBreak, LEFT_PT, PICTURE_ID, RIGHT_PT, TOP_PT } from "./package.js";
 
 // The bodies of the authored documents that ask about a feature of the flowing
@@ -285,14 +293,8 @@ export function objectsPastTheFootDocument(): string {
   const BODY_PT = 720;
   const BOX_PT = 300;
 
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
-
   const OWN_PAGE = `<w:pageBreakBefore/>`;
 
-  // A box of a stated size holding one line, which is what makes the object
-  // readable: a picture says only where it was drawn and a pdf says nothing about
-  // which anchor drew it.
   const boxed = (
     id: number,
     name: string,
@@ -300,24 +302,15 @@ export function objectsPastTheFootDocument(): string {
     wrap: string,
     offsetPt: number,
   ): string =>
-    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
-      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
-        <wp:simplePos x="0" y="0"/>
-        <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
-        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionV>
-        <wp:extent cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/>
-        <wp:effectExtent l="0" t="0" r="0" b="0"/>
-        ${wrap}
-        <wp:docPr id="${String(id)}" name="${name}"/>
-        <wp:cNvGraphicFramePr/>
-        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
-          <wps:wsp><wps:cNvSpPr txBox="1"/>
-            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/></a:xfrm>
-              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
-            <wps:txbx><w:txbxContent>${paragraph(exactly(LINE_PT), run(`${name} boxed`))}</w:txbxContent></wps:txbx>
-            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
-          </wps:wsp></a:graphicData></a:graphic>
-      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+    anchoredTextBox({
+      id,
+      name,
+      widthPt: BOX_PT,
+      heightPt,
+      wrap,
+      offsetPt,
+      content: paragraph(exactLine(LINE_PT), run(`${name} boxed`)),
+    });
 
   const NONE = `<wp:wrapNone/>`;
   const SQUARE = `<wp:wrapSquare wrapText="bothSides"/>`;
@@ -337,13 +330,13 @@ export function objectsPastTheFootDocument(): string {
   };
 
   const block = (of: Case, id: number): string =>
-    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${of.name} marks`)) +
-    paragraph(exactly(BODY_PT - LINE_PT - of.leftPt), run(`${of.name} shims`)) +
+    paragraph(`${OWN_PAGE}${exactLine(LINE_PT)}`, run(`${of.name} marks`)) +
+    paragraph(exactLine(BODY_PT - LINE_PT - of.leftPt), run(`${of.name} shims`)) +
     paragraph(
-      exactly(LINE_PT),
+      exactLine(LINE_PT),
       boxed(id, of.name, of.heightPt, of.wrap, of.offsetPt ?? 0) + run(`${of.name} anchors`),
     ) +
-    (of.last === true ? "" : paragraph(exactly(LINE_PT), run(`${of.name} follows`)));
+    (of.last === true ? "" : paragraph(exactLine(LINE_PT), run(`${of.name} follows`)));
 
   const CASES: readonly Case[] = [
     // A hundred points of room and a box three times that, wrapping nothing, which
@@ -415,9 +408,6 @@ export function objectsAndTheFooterDocument(): string {
   const LINE_PT = 24;
   const SHIM_PT = 500;
 
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
-
   const OWN_PAGE = `<w:pageBreakBefore/>`;
 
   const NONE = `<wp:wrapNone/>`;
@@ -437,24 +427,16 @@ export function objectsAndTheFooterDocument(): string {
   };
 
   const boxed = (of: Box, id: number): string =>
-    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
-      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
-        <wp:simplePos x="0" y="0"/>
-        <wp:positionH relativeFrom="column"><wp:posOffset>${emu(of.leftPt)}</wp:posOffset></wp:positionH>
-        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(of.offsetPt)}</wp:posOffset></wp:positionV>
-        <wp:extent cx="${emu(of.widthPt)}" cy="${emu(of.heightPt)}"/>
-        <wp:effectExtent l="0" t="0" r="0" b="0"/>
-        ${of.wrap}
-        <wp:docPr id="${String(id)}" name="${of.name}"/>
-        <wp:cNvGraphicFramePr/>
-        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
-          <wps:wsp><wps:cNvSpPr txBox="1"/>
-            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(of.widthPt)}" cy="${emu(of.heightPt)}"/></a:xfrm>
-              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
-            <wps:txbx><w:txbxContent>${paragraph(exactly(LINE_PT), run(`${of.name} boxed`))}</w:txbxContent></wps:txbx>
-            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
-          </wps:wsp></a:graphicData></a:graphic>
-      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+    anchoredTextBox({
+      id,
+      name: of.name,
+      widthPt: of.widthPt,
+      heightPt: of.heightPt,
+      wrap: of.wrap,
+      leftPt: of.leftPt,
+      offsetPt: of.offsetPt,
+      content: paragraph(exactLine(LINE_PT), run(`${of.name} boxed`)),
+    });
 
   const square = (heightPt: number, offsetPt: number, leftPt = 0): Omit<Box, "name"> => ({
     wrap: SQUARE,
@@ -543,10 +525,10 @@ export function objectsAndTheFooterDocument(): string {
       boxed({ ...box, name: what === "" ? mark : `${mark} ${what}` }, from + at),
     );
     return (
-      paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${mark} marks`)) +
-      paragraph(exactly(SHIM_PT), run(`${mark} shims`)) +
-      paragraph(exactly(LINE_PT), boxes.join("") + run(`${mark} anchors`)) +
-      paragraph(exactly(LINE_PT), run(`${mark} follows`))
+      paragraph(`${OWN_PAGE}${exactLine(LINE_PT)}`, run(`${mark} marks`)) +
+      paragraph(exactLine(SHIM_PT), run(`${mark} shims`)) +
+      paragraph(exactLine(LINE_PT), boxes.join("") + run(`${mark} anchors`)) +
+      paragraph(exactLine(LINE_PT), run(`${mark} follows`))
     );
   };
 
@@ -570,20 +552,6 @@ export const STATED_FOOTER = paragraph(
   run("the footer"),
 );
 
-/**
- * What a page draws where its section names no header for the kind of page it is.
- *
- * Two corpus documents draw a logo and a footer on a second page where Word draws
- * neither, and the file says why: their first section states a `headerReference`
- * of type `first` and **no default at all**. Whether Word then draws nothing on a
- * page that is not the first, or falls back to the one header the section does
- * name, is the whole question, and only a page that draws or does not draw a word
- * can answer it.
- *
- * The header holds text of its own, so which pages hold that text in Word's own
- * pdf is the answer. The body is two pages of numbered lines, so the second page
- * exists whatever the header does.
- */
 /**
  * Which mark the line a break opens under it is measured from.
  *
@@ -725,28 +693,19 @@ export function lineIntoABandDocument(): string {
   const WIDTH_PT = RIGHT_PT - LEFT_PT;
   const LINES = 8;
 
-  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(MARKER_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLineClosedUp(MARKER_PT);
   const twice = `<w:spacing w:before="0" w:after="0" w:line="480" w:lineRule="auto"/>`;
 
   const banded = (id: number, name: string, offsetPt: number): string =>
-    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
-      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
-        <wp:simplePos x="0" y="0"/>
-        <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
-        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionV>
-        <wp:extent cx="${emu(WIDTH_PT)}" cy="${emu(BAND_PT)}"/>
-        <wp:effectExtent l="0" t="0" r="0" b="0"/>
-        <wp:wrapSquare wrapText="bothSides"/>
-        <wp:docPr id="${String(id)}" name="${name}"/>
-        <wp:cNvGraphicFramePr/>
-        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
-          <wps:wsp><wps:cNvSpPr txBox="1"/>
-            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(WIDTH_PT)}" cy="${emu(BAND_PT)}"/></a:xfrm>
-              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
-            <wps:txbx><w:txbxContent>${paragraph(exactly, run(`${name} boxed`))}</w:txbxContent></wps:txbx>
-            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
-          </wps:wsp></a:graphicData></a:graphic>
-      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+    anchoredTextBox({
+      id,
+      name,
+      widthPt: WIDTH_PT,
+      heightPt: BAND_PT,
+      wrap: `<wp:wrapSquare wrapText="bothSides"/>`,
+      offsetPt,
+      content: paragraph(exactly, run(`${name} boxed`)),
+    });
 
   // The marker keeps 24pt of its own, so the lines under it start at 60 and the
   // fourth of them holds its text from 147.89 to 162.54 in a box ending at 177.19.
@@ -799,7 +758,7 @@ export const NAMED_DEFAULT_HEADER = paragraph("", run("the default header"));
  */
 export function sectionsAndTheFirstPageDocument(): string {
   const LINE_PT = 24;
-  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLineClosedUp(LINE_PT);
   const lines = (name: string, count: number): readonly string[] =>
     Array.from({ length: count }, (_, at) =>
       paragraph(exactly, run(`${name} ${String(at + 1).padStart(2, "0")}`)),
@@ -819,9 +778,23 @@ export function sectionsAndTheFirstPageDocument(): string {
   ].join("");
 }
 
+/**
+ * What a page draws where its section names no header for the kind of page it is.
+ *
+ * Two corpus documents draw a logo and a footer on a second page where Word draws
+ * neither, and the file says why: their first section states a `headerReference`
+ * of type `first` and **no default at all**. Whether Word then draws nothing on a
+ * page that is not the first, or falls back to the one header the section does
+ * name, is the whole question, and only a page that draws or does not draw a word
+ * can answer it.
+ *
+ * The header holds text of its own, so which pages hold that text in Word's own
+ * pdf is the answer. The body is two pages of numbered lines, so the second page
+ * exists whatever the header does.
+ */
 export function headerNotNamedDocument(): string {
   const LINE_PT = 24;
-  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLineClosedUp(LINE_PT);
 
   // The body of an authored page is 720pt, so 30 of these fill one and 45 make a
   // second page that is plainly the second.
@@ -954,7 +927,7 @@ export const SPACED_FOOTER = paragraph(
 // many the body had room for. Thirty of them fill a body reaching the bottom
 // margin exactly and twenty eight fill one stopping at the footer's top.
 export function footerRoomDocument(): string {
-  const exactly = `<w:spacing w:before="0" w:after="0" w:line="${String(FOOTER_ROOM_LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLineClosedUp(FOOTER_ROOM_LINE_PT);
 
   return [
     ...Array.from({ length: 40 }, (_, at) =>
@@ -978,9 +951,6 @@ export function footerRoomDocument(): string {
 // since two lines of the same words cannot be told apart in a rendering.
 export function breaksInAParagraphDocument(): string {
   const LINE_PT = 24;
-
-  const exactly = (pt: number): string =>
-    `<w:spacing w:before="0" w:after="0" w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
 
   const OWN_PAGE = `<w:pageBreakBefore/>`;
   const BREAK = `<w:r><w:br/></w:r>`;
@@ -1009,9 +979,11 @@ export function breaksInAParagraphDocument(): string {
   const block = ([name, content]: readonly [string, (mark: string) => string]): string => {
     const mark = name.replace(/[^a-z]/g, "");
     return (
-      paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${mark} marks`)) +
-      [1, 2, 3].map((at) => paragraph(exactly(LINE_PT), content(`${mark}${String(at)}`))).join("") +
-      paragraph(exactly(LINE_PT), run(`${mark} follows`))
+      paragraph(`${OWN_PAGE}${exactLineClosedUp(LINE_PT)}`, run(`${mark} marks`)) +
+      [1, 2, 3]
+        .map((at) => paragraph(exactLineClosedUp(LINE_PT), content(`${mark}${String(at)}`)))
+        .join("") +
+      paragraph(exactLineClosedUp(LINE_PT), run(`${mark} follows`))
     );
   };
 
@@ -1293,8 +1265,6 @@ export function wrappingDocument(): string {
 
 const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 
-const emu = (pt: number): string => String(Math.round(pt * 12700));
-
 // A drawing in the flow of the text, which is the one thing in these documents
 // that stands on a line without being measured from a face. Its run still states
 // a face like any other, which is what says whether the line hears anything the
@@ -1416,9 +1386,9 @@ type DrawingCase = {
 // A drawing stands on the baseline like a letter and reaches as far above it as
 // it is tall, but it was never measured from a face: what a line multiple is
 // taken of, and what a paragraph mark still has to say once a drawing is on its
-// line, are questions the rules measured off text alone do not answer. The chart
-// in the LibreOffice sample is 162pt tall under a rule asking for 1.2 lines, and
-// Word gives that line about 165pt rather than 194.6.
+// line, are questions the rules measured off text alone do not answer. A real
+// document holds a 162pt drawing under a rule asking for 1.2 lines, and Word gives
+// that line about 165pt rather than 194.6.
 export function drawingDocument(): string {
   const spacing = (properties: string): string => `<w:spacing ${properties}/>`;
   const auto = (twips: number): string => spacing(`w:line="${String(twips)}" w:lineRule="auto"`);
@@ -1495,8 +1465,6 @@ export function drawingDocument(): string {
 // the case itself. The marker opening the next block is where the flow resumed,
 // which says whether room a break swallowed was kept anywhere.
 export function breakingDocument(): string {
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
   const room = (properties: string): string => `<w:spacing ${properties}/>`;
 
   const FILLERS = 9;
@@ -1511,13 +1479,13 @@ export function breakingDocument(): string {
   // the paragraph on.
   const NO_LINE_PT = 12;
 
-  const marker = (text: string): string => paragraph(exactly(MARKER_PT), run(text));
+  const marker = (text: string): string => paragraph(exactLine(MARKER_PT), run(text));
 
   // A page's worth of paragraphs ending in the case being asked about, with the
   // room left in front of that case named in points.
   const block = (leftPt: number, ...cases: readonly string[]): readonly string[] => [
-    ...Array.from({ length: FILLERS }, () => paragraph(exactly(FILLER_PT), run("filler"))),
-    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - leftPt), run("shim")),
+    ...Array.from({ length: FILLERS }, () => paragraph(exactLine(FILLER_PT), run("filler"))),
+    paragraph(exactLine(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - leftPt), run("shim")),
     ...cases,
   ];
 
@@ -1567,11 +1535,7 @@ export function sectionsDocument(): string {
   const THREE_INCHES = 4320;
 
   const sectionProperties = (leftTwips: number, type: string): string =>
-    `<w:sectPr>` +
-    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
-    `<w:pgSz w:w="12240" w:h="15840"/>` +
-    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="${String(leftTwips)}" w:header="720" w:footer="720" w:gutter="0"/>` +
-    `</w:sectPr>`;
+    bodySectionProperties({ type, leftTwips });
 
   // The paragraph carrying section properties is the last of whichever section they
   // turn out to govern, which is what this document is for.
@@ -1615,12 +1579,7 @@ export function sectionPagesDocument(): string {
   // The body's own page, written out again: a section stating anything else would
   // be asking a second question and there is no way to lay it out yet.
   const sectionProperties = (type: string): string =>
-    `<w:sectPr>` +
-    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
-    `<w:pgSz w:w="12240" w:h="15840"/>` +
-    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
-    `<w:cols w:space="720"/>` +
-    `</w:sectPr>`;
+    bodySectionProperties({ type, columns: ONE_COLUMN });
 
   const closes = (name: string, type: string): string =>
     paragraph(sectionProperties(type), run(`${name} closes`));
@@ -1676,20 +1635,12 @@ export function sectionPagesDocument(): string {
 // closer is the type the **next** closer states. `a`, `b` and `c` each want one,
 // `d` and `e` want none, and the closer under each is what says so.
 export function sectionCloserDocument(): string {
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
-
   const OWN_PAGE = `<w:pageBreakBefore/>`;
   const LINE_PT = 24;
   const BODY_PT = 720;
 
   const sectionProperties = (type: string): string =>
-    `<w:sectPr>` +
-    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
-    `<w:pgSz w:w="12240" w:h="15840"/>` +
-    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
-    `<w:cols w:space="720"/>` +
-    `</w:sectPr>`;
+    bodySectionProperties({ type, columns: ONE_COLUMN });
 
   // `leftPt` is the room standing under the shim, which is what the closer is
   // offered. Less than a line of it is the case that tells the two readings apart.
@@ -1699,10 +1650,10 @@ export function sectionCloserDocument(): string {
     type: string,
     closerText: string,
   ): readonly string[] => [
-    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${name} marks`)),
-    paragraph(exactly(BODY_PT - LINE_PT - leftPt), run(`${name} shims`)),
-    paragraph(`${exactly(LINE_PT)}${sectionProperties(type)}`, closerText),
-    paragraph(exactly(LINE_PT), run(`${name} follows`)),
+    paragraph(`${OWN_PAGE}${exactLine(LINE_PT)}`, run(`${name} marks`)),
+    paragraph(exactLine(BODY_PT - LINE_PT - leftPt), run(`${name} shims`)),
+    paragraph(`${exactLine(LINE_PT)}${sectionProperties(type)}`, closerText),
+    paragraph(exactLine(LINE_PT), run(`${name} follows`)),
   ];
 
   const CLOSER_FITS_PT = 36;
@@ -1751,11 +1702,7 @@ export function sectionFlowDocument(): string {
   const THREE_INCHES = 4320;
 
   const sectionProperties = (topTwips: number, type: string): string =>
-    `<w:sectPr>` +
-    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
-    `<w:pgSz w:w="12240" w:h="15840"/>` +
-    `<w:pgMar w:top="${String(topTwips)}" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
-    `</w:sectPr>`;
+    bodySectionProperties({ type, topTwips });
 
   const closes = (name: string, topTwips: number, type: string): string =>
     paragraph(sectionProperties(topTwips, type), run(name));
@@ -1800,15 +1747,10 @@ export function sectionFlowDocument(): string {
 export function overflowingSectionDocument(): string {
   const LINE_PT = 24;
 
-  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLine(LINE_PT);
 
   const sectionProperties = (topTwips: number, leftTwips: number, type: string): string =>
-    `<w:sectPr>` +
-    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
-    `<w:pgSz w:w="12240" w:h="15840"/>` +
-    `<w:pgMar w:top="${String(topTwips)}" w:right="720" w:bottom="720" w:left="${String(leftTwips)}" w:header="720" w:footer="720" w:gutter="0"/>` +
-    `<w:cols w:space="720"/>` +
-    `</w:sectPr>`;
+    bodySectionProperties({ type, topTwips, leftTwips, columns: ONE_COLUMN });
 
   const line = (name: string): string => paragraph(exactly, run(name));
 
@@ -1998,8 +1940,6 @@ export function raisedTextDocument(): string {
 // answers for the paragraph, and a paragraph begins above whatever room it asked
 // for, which is the same number whether the page kept that room or not.
 export function spaceAboveABreakDocument(): string {
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
   const roomAbove = (twips: number): string => `<w:spacing w:before="${String(twips)}"/>`;
 
   const OWN_PAGE = `<w:pageBreakBefore/>`;
@@ -2008,13 +1948,7 @@ export function spaceAboveABreakDocument(): string {
   // The body's own page, written out again: every section here is the page the
   // document's own is, to the twip, so the only thing a break can be about is the
   // break.
-  const sectionProperties =
-    `<w:sectPr>` +
-    `<w:type w:val="nextPage"/>` +
-    `<w:pgSz w:w="12240" w:h="15840"/>` +
-    `<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
-    `<w:cols w:space="720"/>` +
-    `</w:sectPr>`;
+  const sectionProperties = bodySectionProperties({ type: "nextPage", columns: ONE_COLUMN });
 
   // Room the paragraph could not be standing in by accident, against the 3.4pt and
   // 3.95pt the documents in the wild ask for.
@@ -2033,7 +1967,7 @@ export function spaceAboveABreakDocument(): string {
 
   const block = (name: string, opening: Opening, roomTwips: number): readonly string[] => {
     const marker = paragraph(
-      `${OWN_PAGE}${exactly(MARKER_PT)}${opening === "a section" ? sectionProperties : ""}`,
+      `${OWN_PAGE}${exactLine(MARKER_PT)}${opening === "a section" ? sectionProperties : ""}`,
       run(`${name} above`) + (opening === "a break in the text" ? PAGE_BREAK : ""),
     );
     const fills =
@@ -2041,9 +1975,9 @@ export function spaceAboveABreakDocument(): string {
         ? []
         : [
             ...Array.from({ length: FILLERS }, () =>
-              paragraph(exactly(FILLER_PT), run(`${name} fills`)),
+              paragraph(exactLine(FILLER_PT), run(`${name} fills`)),
             ),
-            paragraph(exactly(SHIM_PT), run(`${name} shims`)),
+            paragraph(exactLine(SHIM_PT), run(`${name} shims`)),
           ];
     const cases = ["one", "two", "three"].map((which, at) =>
       paragraph(
@@ -2097,8 +2031,6 @@ export function positionedTableDocument(): string {
   const ROW_PT = 14.4;
   const CELL_TWIPS = 1440;
 
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
   const OWN_PAGE = `<w:pageBreakBefore/>`;
 
   // Stated because an authored document declares no table style, and a table whose
@@ -2111,7 +2043,7 @@ export function positionedTableDocument(): string {
 
   const cell = (text: string): string =>
     `<w:tc><w:tcPr><w:tcW w:w="${String(CELL_TWIPS)}" w:type="dxa"/></w:tcPr>` +
-    paragraph(exactly(ROW_PT), run(text)) +
+    paragraph(exactLine(ROW_PT), run(text)) +
     `</w:tc>`;
 
   const row = (left: string, right: string): string =>
@@ -2135,11 +2067,11 @@ export function positionedTableDocument(): string {
   const positioned = (properties: string): string => `<w:tblpPr ${properties}/>`;
 
   const block = (name: string, positioning: string, after = ""): readonly string[] => [
-    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${name} above`)),
+    paragraph(`${OWN_PAGE}${exactLine(LINE_PT)}`, run(`${name} above`)),
     table(name, positioning),
     ...["one", "two", "three"].map((which) =>
       paragraph(
-        exactly(LINE_PT),
+        exactLine(LINE_PT),
         run(after === "" ? `${name} ${which}` : `${name} ${which} ${after}`),
       ),
     ),
@@ -2212,30 +2144,19 @@ export function spaceUnderAWrapDocument(): string {
   const BOX_PT = 200;
   const OWN_PAGE = `<w:pageBreakBefore/>`;
 
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
   const above = (pt: number, linePt: number): string =>
     `<w:spacing w:before="${String(pt * 20)}" w:line="${String(linePt * 20)}" w:lineRule="exact"/>`;
 
   const boxed = (id: number, name: string, heightPt: number, wrap: string, offsetPt = 0): string =>
-    `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>
-      <wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${String(id)}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
-        <wp:simplePos x="0" y="0"/>
-        <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
-        <wp:positionV relativeFrom="paragraph"><wp:posOffset>${emu(offsetPt)}</wp:posOffset></wp:positionV>
-        <wp:extent cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/>
-        <wp:effectExtent l="0" t="0" r="0" b="0"/>
-        ${wrap}
-        <wp:docPr id="${String(id)}" name="${name}"/>
-        <wp:cNvGraphicFramePr/>
-        <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
-          <wps:wsp><wps:cNvSpPr txBox="1"/>
-            <wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emu(BOX_PT)}" cy="${emu(heightPt)}"/></a:xfrm>
-              <a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>
-            <wps:txbx><w:txbxContent>${paragraph(exactly(LINE_PT), run(`${name} boxed`))}</w:txbxContent></wps:txbx>
-            <wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"/>
-          </wps:wsp></a:graphicData></a:graphic>
-      </wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+    anchoredTextBox({
+      id,
+      name,
+      widthPt: BOX_PT,
+      heightPt,
+      wrap,
+      offsetPt,
+      content: paragraph(exactLine(LINE_PT), run(`${name} boxed`)),
+    });
 
   const TOP_AND_BOTTOM = `<wp:wrapTopAndBottom/>`;
   const SQUARE = `<wp:wrapSquare wrapText="bothSides"/>`;
@@ -2255,13 +2176,13 @@ export function spaceUnderAWrapDocument(): string {
   };
 
   const block = (of: Case, id: number): string =>
-    paragraph(`${OWN_PAGE}${exactly(LINE_PT)}`, run(`${of.name} marks`)) +
+    paragraph(`${OWN_PAGE}${exactLine(LINE_PT)}`, run(`${of.name} marks`)) +
     paragraph(
-      exactly(LINE_PT),
+      exactLine(LINE_PT),
       boxed(id, of.name, of.heightPt, of.wrap, of.offsetPt ?? 0) + run(`${of.name} anchors`),
     ) +
     paragraph(above(of.abovePt, LINE_PT), run(`${of.name} follows`)) +
-    paragraph(exactly(LINE_PT), run(`${of.name} after`));
+    paragraph(exactLine(LINE_PT), run(`${of.name} after`));
 
   const CASES: readonly Case[] = [
     // The case in the wild: a band ending far below where the paragraph would have
@@ -2317,17 +2238,12 @@ export function spaceUnderAWrapDocument(): string {
 // gap without any line having to wrap.
 export function columnsDocument(): string {
   const LINE_PT = 24;
-  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLine(LINE_PT);
   const RIGHT = `<w:jc w:val="right"/>`;
   const COLUMN_BREAK = `<w:r><w:br w:type="column"/></w:r>`;
 
   const sectionProperties = (columns: string, type: string): string =>
-    `<w:sectPr>` +
-    (type === "" ? "" : `<w:type w:val="${type}"/>`) +
-    `<w:pgSz w:w="12240" w:h="15840"/>` +
-    `<w:pgMar w:top="720" w:right="720" w:bottom="12240" w:left="720" w:header="720" w:footer="720" w:gutter="0"/>` +
-    columns +
-    `</w:sectPr>`;
+    bodySectionProperties({ type, bottomTwips: 12240, columns });
 
   // Half an inch of gap and the whole 540pt to share, so two columns are 252pt and
   // three are 168pt if Word takes the gaps off the text and divides what is left.
@@ -2403,9 +2319,6 @@ export function columnsDocument(): string {
 // case moved would start partway down a page and leave the next one less room than
 // it was told to leave.
 export function keepingDocument(): string {
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
-
   const FILLERS = 8;
   const FILLER_PT = 72;
   const MARKER_PT = 24;
@@ -2423,14 +2336,14 @@ export function keepingDocument(): string {
   const PAGE_BREAK = `<w:r><w:br w:type="page"/></w:r>`;
 
   const line = (name: string, properties = ""): string =>
-    paragraph(`${properties}${exactly(LINE_PT)}`, run(name));
+    paragraph(`${properties}${exactLine(LINE_PT)}`, run(name));
 
   const held = (name: string): string => line(name, KEEP);
 
   const block = (name: string, leftPt: number, ...cases: readonly string[]): readonly string[] => [
-    paragraph(`${OWN_PAGE}${exactly(MARKER_PT)}`, run(name)),
-    ...Array.from({ length: FILLERS }, () => paragraph(exactly(FILLER_PT), run("filler"))),
-    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - leftPt), run("shim")),
+    paragraph(`${OWN_PAGE}${exactLine(MARKER_PT)}`, run(name)),
+    ...Array.from({ length: FILLERS }, () => paragraph(exactLine(FILLER_PT), run("filler"))),
+    paragraph(exactLine(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - leftPt), run("shim")),
     ...cases,
   ];
 
@@ -2451,7 +2364,7 @@ export function keepingDocument(): string {
       "never",
       ONE_PT,
       held("held"),
-      paragraph(exactly(BLOCK_PT + ONE_PT), run("taller than a page")),
+      paragraph(exactLine(BLOCK_PT + ONE_PT), run("taller than a page")),
     ),
     // The same pair with a chain in front of it, which is the one case where what
     // stops the rule shows: the paragraph at the head of a chain has nowhere left
@@ -2461,7 +2374,7 @@ export function keepingDocument(): string {
       TWO_PT,
       held("chained one"),
       held("chained two"),
-      paragraph(exactly(BLOCK_PT + ONE_PT), run("chained taller than a page")),
+      paragraph(exactLine(BLOCK_PT + ONE_PT), run("chained taller than a page")),
     ),
     // A paragraph asking for a page of its own, held by the one above it. There is
     // room here for both, so anything that moves is the two rules meeting rather
@@ -2472,7 +2385,7 @@ export function keepingDocument(): string {
     ...block(
       "against its own break",
       TWO_PT,
-      paragraph(`${KEEP}${exactly(LINE_PT)}`, run("holds and breaks") + PAGE_BREAK),
+      paragraph(`${KEEP}${exactLine(LINE_PT)}`, run("holds and breaks") + PAGE_BREAK),
       line("after the break"),
     ),
     // A held paragraph the break runs through, whose last line therefore already
@@ -2483,7 +2396,7 @@ export function keepingDocument(): string {
       "split",
       TWO_PT,
       paragraph(
-        `${KEEP}${exactly(LINE_PT)}`,
+        `${KEEP}${exactLine(LINE_PT)}`,
         run("split one") +
           BREAK +
           run("split two") +
@@ -2519,7 +2432,7 @@ export function linedRowsDocument(): string {
   const CELL_TWIPS = 2880;
   const LINE_PT = 20;
 
-  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLine(LINE_PT);
 
   const around = (eighths: number): string =>
     eighths === 0
@@ -2635,7 +2548,7 @@ export function statedRowHeightsDocument(): string {
   const CELL_TWIPS = 2880;
   const LINE_PT = 20;
 
-  const exactly = `<w:spacing w:line="${String(LINE_PT * 20)}" w:lineRule="exact"/>`;
+  const exactly = exactLine(LINE_PT);
 
   const around = (eighths: number): string =>
     eighths === 0
@@ -2731,9 +2644,6 @@ export function statedRowHeightsDocument(): string {
 // Every line names itself rather than repeating a word, so that Word's own drawing
 // of one can be paired with ours by its text.
 export function tearingDocument(): string {
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
-
   const FILLERS = 7;
   const FILLER_PT = 72;
   const MARKER_PT = 24;
@@ -2765,15 +2675,15 @@ export function tearingDocument(): string {
 
   const lines = (name: string, from: number, to: number, linePt = LINE_PT): string =>
     Array.from({ length: to - from + 1 }, (_, at) =>
-      paragraph(exactly(linePt), run(named(name, from + at))),
+      paragraph(exactLine(linePt), run(named(name, from + at))),
     ).join("");
 
   const block = (name: string, content: string): readonly string[] => [
-    paragraph(`<w:pageBreakBefore/>${exactly(MARKER_PT)}`, run(`case ${name}`)),
+    paragraph(`<w:pageBreakBefore/>${exactLine(MARKER_PT)}`, run(`case ${name}`)),
     ...Array.from({ length: FILLERS }, (_, at) =>
-      paragraph(exactly(FILLER_PT), run(`${name} fill ${String(at + 1)}`)),
+      paragraph(exactLine(FILLER_PT), run(`${name} fill ${String(at + 1)}`)),
     ),
-    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - ROOM_PT), run(`${name} shim`)),
+    paragraph(exactLine(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - ROOM_PT), run(`${name} shim`)),
     content,
   ];
 
@@ -2838,9 +2748,6 @@ export function tearingDocument(): string {
 // all. They stand on one page each, since what is being asked is a height and not a
 // break.
 export function resumingDocument(): string {
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
-
   const FILLERS = 7;
   const FILLER_PT = 72;
   const MARKER_PT = 24;
@@ -2883,15 +2790,15 @@ export function resumingDocument(): string {
 
   const lines = (name: string, from: number, to: number): string =>
     Array.from({ length: to - from + 1 }, (_, at) =>
-      paragraph(exactly(LINE_PT), run(named(name, from + at))),
+      paragraph(exactLine(LINE_PT), run(named(name, from + at))),
     ).join("");
 
   const block = (name: string, content: string): readonly string[] => [
-    paragraph(`<w:pageBreakBefore/>${exactly(MARKER_PT)}`, run(`case ${name}`)),
+    paragraph(`<w:pageBreakBefore/>${exactLine(MARKER_PT)}`, run(`case ${name}`)),
     ...Array.from({ length: FILLERS }, (_, at) =>
-      paragraph(exactly(FILLER_PT), run(`${name} fill ${String(at + 1)}`)),
+      paragraph(exactLine(FILLER_PT), run(`${name} fill ${String(at + 1)}`)),
     ),
-    paragraph(exactly(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - ROOM_PT), run(`${name} shim`)),
+    paragraph(exactLine(BLOCK_PT - MARKER_PT - FILLERS * FILLER_PT - ROOM_PT), run(`${name} shim`)),
     content,
   ];
 
@@ -2904,7 +2811,7 @@ export function resumingDocument(): string {
       Array.from({ length: to - from + 1 }, (_, at) => lines(name, from + at, from + at)),
     ) + closer;
 
-  const CLOSED_EMPTY = paragraph(exactly(LINE_PT), "");
+  const CLOSED_EMPTY = paragraph(exactLine(LINE_PT), "");
 
   return [
     // No table at all, so the line this resumes with stands at the top of the body
@@ -3744,14 +3651,14 @@ export function unmappedInTextFaceDocument(): string {
 // This project drops it, on the reading that whitespace at the edge of an element is
 // what xml leaves insignificant and `xml:space` is what asks for it back. **The worst
 // placed document in the corpus says otherwise**: it writes a heading as a run
-// holding `Protocolo de demostración`, a run holding one bare space, and a run
-// holding the rest, and Word breaks the line at that space while this project has
-// nothing to break at and carries an unbreakable 287pt word off the end of the line.
-// Every line of the document below it is then in the wrong place.
+// holding the first words of it, a run holding one bare space, and a run holding the
+// rest, and Word breaks the line at that space while this project has nothing to
+// break at and carries an unbreakable 287pt word off the end of the line. Every line
+// of the document below it is then in the wrong place.
 //
-// **953 of the corpus `w:t` elements over 113 documents hold whitespace at an edge
-// without asking for it**, and 3469 more over four documents hold nothing else at
-// all, so what Word does here is worth asking properly.
+// **A sixth of the corpus's documents hold a `w:t` with whitespace at an edge
+// without asking for it**, and a few hold elements of nothing else at all, so what
+// Word does here is worth asking properly.
 //
 // Every case is right-aligned, so where the line starts says how wide it is and a
 // space either side of the question is worth 12pt of it: the runs are at 48pt and a
@@ -3908,10 +3815,7 @@ export function mergedCellsDocument(): string {
   const LINE_PT = 20;
   const ROWS = 4;
 
-  const exactly = (pt: number): string =>
-    `<w:spacing w:line="${String(pt * 20)}" w:lineRule="exact"/>`;
-
-  const line = (name: string, pt = LINE_PT): string => paragraph(exactly(pt), run(name));
+  const line = (name: string, pt = LINE_PT): string => paragraph(exactLine(pt), run(name));
 
   // An authored document declares no table style, so a table stating no margins is
   // held off its walls by nothing at all, and a row is exactly as tall as its lines.
@@ -3973,9 +3877,9 @@ export function mergedCellsDocument(): string {
   // A line of its own either side of each table, so where the table starts and where
   // it ends are read as well as the distance from row to row.
   const block = (name: string, content: string): string =>
-    paragraph(`<w:pageBreakBefore/>${exactly(LINE_PT)}`, run(`case ${name}`)) +
+    paragraph(`<w:pageBreakBefore/>${exactLine(LINE_PT)}`, run(`case ${name}`)) +
     content +
-    paragraph(exactly(LINE_PT), run(`${name} after`));
+    paragraph(exactLine(LINE_PT), run(`${name} after`));
 
   // Three grid columns where the first two are spanned by one cell, so that the left
   // of the third column's text says what a span is worth. The second row spans
