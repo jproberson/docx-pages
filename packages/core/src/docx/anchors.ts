@@ -9,7 +9,7 @@ import {
 import { paragraphOwnDrawings } from "./paragraphs.js";
 import { W_NS } from "./section.js";
 import { legacyAnchoredDrawingsIn } from "./vml.js";
-import { attribute, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, firstNamed, statedNumber, type XmlElement } from "./xml.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
@@ -199,8 +199,7 @@ function readWrapping(anchor: XmlElement, flip: DrawingFlip): Wrapping {
 const statedOn = (raw: string | undefined): boolean => raw !== "0" && raw !== "false";
 
 const numberAttribute = (element: XmlElement, name: string, fallback: number): number => {
-  const raw = attribute(element, "", name);
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(attribute(element, "", name));
   return Number.isFinite(value) ? value : fallback;
 };
 

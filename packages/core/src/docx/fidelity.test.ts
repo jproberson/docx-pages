@@ -253,6 +253,25 @@ describe("readUnhonoured", () => {
     expect(reportOf(`<w:p>${spacing}<w:r><w:t>a</w:t></w:r></w:p>`)).toStrictEqual([]);
   });
 
+  // A symbol is a character taken from a face of its own by a code point of its own,
+  // and the run reader reads neither, so the line loses both the glyph and its room.
+  it("names a symbol character, which nothing draws", () => {
+    const symbol = `<w:r><w:sym w:font="Wingdings" w:char="F0A7"/></w:r>`;
+    expect(reportOf(`<w:p>${symbol}</w:p>`)).toStrictEqual([
+      {
+        kind: "symbol-character",
+        effect: "moves-text",
+        places: [{ part: "word/document.xml", paragraphIndex: 0 }],
+      },
+    ]);
+  });
+
+  // A carriage return is read as the line break it is, so a document holding one is
+  // drawn as Word draws it and has nothing to report.
+  it("says nothing about a carriage return, which is honoured", () => {
+    expect(reportOf(`<w:p><w:r><w:t>a</w:t><w:cr/><w:t>b</w:t></w:r></w:p>`)).toStrictEqual([]);
+  });
+
   it("names the paragraph a feature was met in, and the part", () => {
     const report = reportOf(
       `<w:p><w:r><w:t>first</w:t></w:r></w:p><w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>gone</w:t></w:r></w:p>`,
@@ -392,6 +411,21 @@ describe("readUnhonoured", () => {
     const table = `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>
       <w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>`;
     expect(kinds(reportOf(table, { "word/styles.xml": styles }))).toStrictEqual([]);
+  });
+
+  // The default style is written in by every paragraph naming none, so what it states
+  // is read however the attribute spells on.
+  it("reads the default style whatever the on it states is spelled", () => {
+    const styles = (
+      value: string,
+    ) => `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
+      <w:style w:type="paragraph" w:default="${value}" w:styleId="Normal">
+        <w:rPr><w:vanish/></w:rPr></w:style></w:styles>`;
+    for (const value of ["1", "true", "on"]) {
+      expect(kinds(reportOf(`<w:p/>`, { "word/styles.xml": styles(value) }))).toStrictEqual([
+        "hidden-text",
+      ]);
+    }
   });
 
   // 481 of the 718 corpus documents state `w:kern` on a style alone, and the row

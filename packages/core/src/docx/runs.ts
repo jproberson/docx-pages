@@ -96,6 +96,13 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
       });
       continue;
     }
+    // A carriage return is the line ending a `w:br` of no type is, spelled the way
+    // the older producers spell it. It carries no type, so it ends neither a page
+    // nor a column.
+    if (child.namespace === W_NS && child.name === "cr") {
+      into.push({ kind: "break", endsPage: false, endsColumn: false });
+      continue;
+    }
     if (child.namespace === WP_NS && child.name === "inline") {
       into.push(extentOf(child));
       continue;

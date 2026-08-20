@@ -59,6 +59,15 @@ describe("readNumberingTable", () => {
     });
   });
 
+  // A start written out with nothing in it states no start, and a list numbering from
+  // nowhere would number from nought where every list Word writes numbers from one.
+  it("numbers from one where a level writes its start out empty", () => {
+    const empty = `<w:abstractNum w:abstractNumId="7"><w:lvl w:ilvl="0">
+      <w:start w:val=""/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>
+      <w:num w:numId="4"><w:abstractNumId w:val="7"/></w:num>`;
+    expect(levelOf(empty, "4", 0)?.start).toBe(1);
+  });
+
   it("keeps the level's own properties for the style cascade to read", () => {
     const level = levelOf(ONE_LIST, "4", 0);
     if (level === null) throw new Error("expected a level");

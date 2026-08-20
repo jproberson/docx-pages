@@ -50,7 +50,24 @@ export function partText(pkg: DocxPackage, part: string): string {
 }
 
 export function partXml(pkg: DocxPackage, part: string): XmlElement {
-  const root = parseXml(partText(pkg, part));
+  const text = partText(pkg, part);
+  // The parser answers nothing for some malformed input and throws for the rest, a
+  // part cut off in the middle of a tag among them. Both are the same fault in bytes
+  // a caller was handed rather than wrote, and both leave here as the same error, or
+  // a caller telling a document it refuses from a fault of its own reads one as the
+  // other.
+  let root: XmlElement | null;
+  try {
+    root = parseXml(text);
+  } catch (error: unknown) {
+    throw new DocxPagesError({
+      code: "docx-malformed",
+      message: "the part is not readable xml",
+      at: "core/docx/package.partXml",
+      context: { part },
+      cause: error,
+    });
+  }
   if (root === null) {
     throw new DocxPagesError({
       code: "docx-malformed",

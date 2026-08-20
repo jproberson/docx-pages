@@ -45,6 +45,13 @@ export type TableCell = {
   // stand behind. Settling them takes the whole table: see `resolveCellBorders`.
   readonly borders: StatedBorders;
   readonly fillColor: string | null;
+  // What the cell states for its own width, which the grid stands in front of where
+  // the table lays its columns out fixed. Null where it states none, and null as well
+  // where it states one in anything but twips: **a `w:tcW` of `w:type="pct"`, and one
+  // naming no type at all though the default is twips, are both left to the grid or
+  // to the frame**, and nothing has asked Word what either draws. Real tables state
+  // percentages, so this is a gap rather than a measurement.
+  readonly statedWidthTwips: number | null;
 };
 
 // How tall a row asks to be. A stated height is a floor under the row unless the
@@ -207,6 +214,7 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
         merge: mergeOf(properties),
         borders: readBorders(properties, "tcBorders"),
         fillColor: readShading(properties),
+        statedWidthTwips: statedCellWidth(properties),
       });
     }
     rows.push({ cells, height: rowHeight(tr), cantSplit: refusesToSplit(tr) });
@@ -225,6 +233,13 @@ function readTable(element: XmlElement, nextIndex: NextIndex): Block {
     fixedColumns: statesFixedColumns(properties),
   };
 }
+
+const statedCellWidth = (properties: XmlElement | null): number | null => {
+  const width = properties === null ? null : firstNamed(properties, W_NS, "tcW");
+  if (width === null || attribute(width, W_NS, "type") !== "dxa") return null;
+  const twips = Number(attribute(width, W_NS, "w") ?? Number.NaN);
+  return Number.isFinite(twips) ? twips : null;
+};
 
 const statesFixedColumns = (properties: XmlElement | null): boolean => {
   const layout = properties === null ? null : firstNamed(properties, W_NS, "tblLayout");

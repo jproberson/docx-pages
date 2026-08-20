@@ -65,6 +65,23 @@ describe("facesUsed", () => {
     expect(named(facesOf(body(textBox)))).toContain("Verdana");
   });
 
+  // A table style stands between the document's defaults and a paragraph's own style,
+  // so where the paragraph style names no face the table's is the one its paragraphs
+  // are laid out in, and a face this never named is one the caller never loaded.
+  it("reports a face named by nothing but the table's own style", () => {
+    const styles = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+        <w:rPr><w:sz w:val="24"/></w:rPr></w:style>
+      <w:style w:type="table" w:styleId="Grid">
+        <w:rPr><w:rFonts w:ascii="Georgia"/></w:rPr></w:style></w:styles>`;
+    const table = `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>
+      <w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>`;
+
+    expect(named(facesOf({ ...body(table), "word/styles.xml": styles }))).toStrictEqual([
+      "Georgia",
+    ]);
+  });
+
   it("reads the header as well as the body, since both are drawn", () => {
     const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     const faces = facesOf({

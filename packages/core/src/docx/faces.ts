@@ -1,5 +1,5 @@
 import { readAnchors } from "./anchors.js";
-import { blockParagraphs, readBlocks, type Block } from "./blocks.js";
+import { readBlocks, type Block } from "./blocks.js";
 import { numberParagraphs } from "./list-numbers.js";
 import { MAIN_DOCUMENT_PART, type DocxPackage } from "./package.js";
 import { defaultFooterPart, defaultHeaderPart } from "./relationships.js";
@@ -8,6 +8,7 @@ import {
   resolveParagraphMark,
   resolveRunMarks,
   readStyleTable,
+  type InTable,
   type ParagraphMark,
   type StyleTable,
 } from "./styles.js";
@@ -59,20 +60,36 @@ class Faces {
 
 // A text box holds its own paragraphs, which are laid out in their own faces and
 // so have to be walked as well as the story around them.
+//
+// **A paragraph inside a table is resolved with its table's style**, which is what
+// the layout resolves it with: a table style naming a face reaches the paragraph
+// mark of every paragraph in the table, and a face this never named is a face the
+// caller never loaded. The runs are asked without it, again as the layout asks them.
 function collect(blocks: readonly Block[], styles: StyleTable, into: Faces): void {
   const numbered = numberParagraphs(blocks, styles);
 
-  for (const paragraph of blockParagraphs(blocks)) {
-    into.add(resolveParagraphMark(paragraph, styles));
-    for (const mark of resolveRunMarks(paragraph, styles)) into.add(mark);
+  const visit = (of: readonly Block[], inTable: InTable | null): void => {
+    for (const block of of) {
+      if (block.kind === "table") {
+        const under: InTable = { styleId: block.styleId, at: null };
+        for (const row of block.rows) for (const cell of row.cells) visit(cell.blocks, under);
+        continue;
+      }
 
-    const number = numbered.kind === "numbered" ? numbered.numbers.get(paragraph.index) : undefined;
-    if (number !== undefined) into.add(resolveNumberMark(paragraph, styles, number.level));
+      const paragraph = block.paragraph;
+      into.add(resolveParagraphMark(paragraph, styles, inTable));
+      for (const mark of resolveRunMarks(paragraph, styles)) into.add(mark);
 
-    for (const anchor of readAnchors(paragraph)) {
-      if (anchor.content.kind === "text-box") collect(anchor.content.body.blocks, styles, into);
+      const number =
+        numbered.kind === "numbered" ? numbered.numbers.get(paragraph.index) : undefined;
+      if (number !== undefined) into.add(resolveNumberMark(paragraph, styles, number.level));
+
+      for (const anchor of readAnchors(paragraph)) {
+        if (anchor.content.kind === "text-box") collect(anchor.content.body.blocks, styles, into);
+      }
     }
-  }
+  };
+  visit(blocks, null);
 }
 
 // Every face the document needs before it can be laid out, over the stories that

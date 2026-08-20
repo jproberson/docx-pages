@@ -61,6 +61,12 @@ describe("resolveParagraphMark", () => {
     expect(runMark(`<w:sz w:val="24"/>`).fontSizePt).toBe(12);
   });
 
+  // A size written out with nothing in it states no size, so the style's own stands.
+  // Reading it as a nought would floor every such run at half a point.
+  it("inherits the size where a run writes one out empty", () => {
+    expect(runMark(`<w:sz w:val=""/>`).fontSizePt).toBe(11);
+  });
+
   it("falls back to the default paragraph style when the paragraph names none", () => {
     expect(markOf(`<w:p/>`, styles(NORMAL))).toStrictEqual({
       font: { kind: "named", name: "Arial" },
@@ -153,6 +159,21 @@ describe("resolveParagraphMark", () => {
       highlight: null,
       capitals: "none",
     });
+  });
+
+  // `w:default` is an on/off attribute, and a producer that is not Word spells on
+  // "true" or "on". A default style not found at all leaves every paragraph naming
+  // no style with the document's bare defaults.
+  it("finds the default style however the attribute spells on", () => {
+    for (const value of ["1", "true", "on"]) {
+      const written = styles(
+        `<w:style w:type="paragraph" w:default="${value}" w:styleId="Normal">
+           <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="22"/></w:rPr></w:style>`,
+      );
+      const mark = markOf(`<w:p/>`, written);
+      expect(mark.font).toStrictEqual({ kind: "named", name: "Arial" });
+      expect(mark.fontSizePt).toBe(11);
+    }
   });
 
   it("resolves a minor theme font reference through the theme part", () => {
@@ -464,6 +485,18 @@ describe("resolveParagraphFrame", () => {
 
   it("leaves an unnumbered paragraph on the margin", () => {
     expect(resolved(`<w:p/>`).frame.indentLeftTwips).toBe(0);
+  });
+
+  // An attribute written out with nothing in it states nothing, and a paragraph
+  // stating nothing inherits. Reading it as the nought `Number("")` answers would
+  // let a malformed document overrule the style it is written in.
+  it("reads an indent written out empty as one the paragraph never stated", () => {
+    const indented = styles(
+      `${NORMAL}<w:style w:type="paragraph" w:styleId="Body">
+         <w:pPr><w:ind w:left="1440"/></w:pPr></w:style>`,
+    );
+    const body = `<w:p><w:pPr><w:pStyle w:val="Body"/><w:ind w:left=""/></w:pPr></w:p>`;
+    expect(resolved(body, indented).frame.indentLeftTwips).toBe(1440);
   });
 });
 

@@ -26,7 +26,16 @@ import { drawsInLine, paragraphRuns } from "./paragraphs.js";
 import { TWIPS_PER_POINT } from "../layout/units.js";
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
-import { attribute, childrenNamed, descendantsNamed, firstNamed, type XmlElement } from "./xml.js";
+import {
+  attribute,
+  childrenNamed,
+  descendantsNamed,
+  firstNamed,
+  statedNumber,
+  statesOn,
+  toggledOn,
+  type XmlElement,
+} from "./xml.js";
 
 export const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
@@ -306,8 +315,7 @@ function toAlignment(value: string | undefined): ParagraphAlignment | undefined 
 
 function twipsAttribute(element: XmlElement | null, name: string): number | undefined {
   if (element === null) return undefined;
-  const raw = attribute(element, W_NS, name);
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(attribute(element, W_NS, name));
   return Number.isFinite(value) ? value : undefined;
 }
 
@@ -403,22 +411,28 @@ const merge = (base: PartialMark, over: PartialMark): PartialMark => ({
   kernFromHalfPoints: over.kernFromHalfPoints ?? base.kernFromHalfPoints,
 });
 
+// Whether a style is the one a paragraph naming none is written in. `w:default` is
+// an on/off attribute like any other, and a producer that is not Word writes it
+// "true" or "on": reading only "1" finds no default style at all, and every
+// paragraph naming none then loses its font, its size, its spacing and its numbering.
+export const statesDefaultStyle = (style: XmlElement): boolean => {
+  const value = attribute(style, W_NS, "default");
+  return value !== undefined && statesOn(value);
+};
+
 // The same three answers an on/off element gives, spelled as an attribute: an
 // automatic space is asked for on `w:spacing` rather than under it.
 function onOffAttribute(element: XmlElement | null, name: string): boolean | undefined {
   if (element === null) return undefined;
   const value = attribute(element, W_NS, name);
-  if (value === undefined) return undefined;
-  return value !== "0" && value !== "false" && value !== "off";
+  return value === undefined ? undefined : statesOn(value);
 }
 
 // An on/off property is on when it is there without a value, so only an explicit
 // off turns it back off further down the cascade.
 function onOff(container: XmlElement, name: string): boolean | undefined {
   const element = firstNamed(container, W_NS, name);
-  if (element === null) return undefined;
-  const value = attribute(element, W_NS, "val");
-  return value !== "0" && value !== "false" && value !== "off";
+  return element === null ? undefined : toggledOn(element, W_NS);
 }
 
 function readThemeFonts(pkg: DocxPackage): ReadonlyMap<string, string> {
@@ -463,13 +477,11 @@ function readMark(
   }
 
   const size = firstNamed(rPr, W_NS, "sz");
-  const raw = size === null ? undefined : attribute(size, W_NS, "val");
-  const halfPoints = raw === undefined ? undefined : Number(raw);
+  const halfPoints = statedNumber(size === null ? undefined : attribute(size, W_NS, "val"));
 
   return {
     fontName,
-    fontSizeHalfPoints:
-      halfPoints === undefined || !Number.isFinite(halfPoints) ? undefined : halfPoints,
+    fontSizeHalfPoints: Number.isFinite(halfPoints) ? halfPoints : undefined,
     bold: onOff(rPr, "b"),
     italic: onOff(rPr, "i"),
     underline: underlineOf(rPr),
@@ -631,7 +643,7 @@ export function readStyleTable(pkg: DocxPackage): StyleTable {
       columnBandSize: bandSizeOf(style, "tblStyleColBandSize"),
     });
     const isParagraph = (attribute(style, W_NS, "type") ?? "paragraph") === "paragraph";
-    if (isParagraph && attribute(style, W_NS, "default") === "1") defaultParagraphStyleId = id;
+    if (isParagraph && statesDefaultStyle(style)) defaultParagraphStyleId = id;
   }
 
   return {

@@ -105,6 +105,26 @@ describe("readBlocks", () => {
     });
   });
 
+  it("reads the width a cell asks for itself, in twips", () => {
+    const [block] = blocksOf(table(row(cell(para("in"), `<w:tcW w:w="4320" w:type="dxa"/>`))));
+    if (block?.kind !== "table") throw new Error("expected a table");
+    expect(block.rows[0]?.cells[0]?.statedWidthTwips).toBe(4320);
+  });
+
+  // A width in anything but twips is left to the grid, and so is one naming no type
+  // at all though the default is twips. Neither has been asked of Word.
+  it("reads no width for a cell that states one as a percentage, or states none", () => {
+    const asked = (properties: string) => {
+      const [block] = blocksOf(table(row(cell(para("in"), properties))));
+      if (block?.kind !== "table") throw new Error("expected a table");
+      return block.rows[0]?.cells[0]?.statedWidthTwips;
+    };
+
+    expect(asked(`<w:tcW w:w="2500" w:type="pct"/>`)).toBeNull();
+    expect(asked(`<w:tcW w:w="4320"/>`)).toBeNull();
+    expect(asked("")).toBeNull();
+  });
+
   it("reads the height a row asks for, and whether it is a floor or the whole of it", () => {
     const asked = (properties: string) =>
       blocksOf(table(`<w:tr><w:trPr>${properties}</w:trPr>${cell(para("in"))}</w:tr>`))[0];

@@ -58,8 +58,8 @@ const WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordproc
 // A run holding only a floating anchor places nothing on the line, so it does not
 // contribute to the line's height. Word lays floats out of flow. A run holding
 // only a break is not that: it ends the line it sits on, and dropping it runs the
-// text either side of it together.
-const LINE_CONTENT = new Set(["t", "tab", "br"]);
+// text either side of it together. A `w:cr` is such a break under another name.
+const LINE_CONTENT = new Set(["t", "tab", "br", "cr"]);
 
 function holdsLineContent(run: XmlElement, mustDraw: boolean): boolean {
   let found = false;
@@ -75,7 +75,8 @@ function holdsLineContent(run: XmlElement, mustDraw: boolean): boolean {
         holdsALegacyPicture(child.namespace, child.name) && inlinePictureOf(child) !== null;
       // **A `w:t` holding nothing draws nothing, and neither does a break.** Both
       // still stand on the line; see `drawsInLine`.
-      const drawsNothing = (child.name === "t" && child.text === "") || child.name === "br";
+      const drawsNothing =
+        (child.name === "t" && child.text === "") || child.name === "br" || child.name === "cr";
       if (isText && mustDraw && drawsNothing) {
         visit(child);
         continue;

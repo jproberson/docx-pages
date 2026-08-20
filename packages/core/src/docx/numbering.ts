@@ -1,6 +1,6 @@
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
-import { attribute, childrenNamed, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, childrenNamed, firstNamed, statedNumber, type XmlElement } from "./xml.js";
 
 export const NUMBERING_PART = "word/numbering.xml";
 
@@ -77,7 +77,7 @@ function valueOf(level: XmlElement, name: string): string | undefined {
 }
 
 function integerOr(value: string | undefined, fallback: number): number {
-  const parsed = value === undefined ? Number.NaN : Number(value);
+  const parsed = statedNumber(value);
   return Number.isInteger(parsed) ? parsed : fallback;
 }
 

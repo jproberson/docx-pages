@@ -9,6 +9,7 @@ import { drawablePicture } from "./pictures.js";
 import { defaultFooterPart, defaultHeaderPart, readRelationships } from "./relationships.js";
 import { pageGeometrySignature, W_NS } from "./section.js";
 import { SETTINGS_PART } from "./settings.js";
+import { statesDefaultStyle } from "./styles.js";
 import { inlinePictureOf, undrawnLegacyDrawings } from "./vml.js";
 import { attribute, type XmlElement } from "./xml.js";
 
@@ -73,7 +74,8 @@ export type UnhonouredKind =
   | "alternate-first-or-even-page"
   | "substituted-face"
   | "character-from-another-face"
-  | "missing-glyph";
+  | "missing-glyph"
+  | "symbol-character";
 
 const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // A page draws its own section's header and footer and hangs them where its own
@@ -189,6 +191,9 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // box's own advance. Word would have reached for a face of its own before
   // drawing one, so the width here is not Word's width.
   "missing-glyph": "moves-text",
+  // A `w:sym` names a face and a code point of its own and the run reader passes
+  // over both, so the character is missing and the line is short by its advance.
+  "symbol-character": "moves-text",
 };
 
 // Whether an element that is a toggle is on. Word writes the toggle bare to turn
@@ -320,6 +325,11 @@ function unhonouredBy(
         : null;
     case "tab":
       return attribute(element, W_NS, "val") === "bar" ? "bar-tab-stop" : null;
+    // A symbol names the face it is drawn from and the code point inside that face,
+    // and the run reader passes over both: the character is drawn nowhere and the
+    // line closes over the room it should have taken.
+    case "sym":
+      return "symbol-character";
     // Built on 2026-08-13: the run's own advance across, the line's box down, in the
     // colour the name stands for. A colour outside the sixteen is nothing Word
     // paints either, so no name is left to raise.
@@ -554,7 +564,7 @@ function stylesTheFlowReaches(
     byId.set(id, style);
     // A paragraph naming no style of its own is written in the default one, and so
     // is a run and a table.
-    if (attribute(style, W_NS, "default") === "1") wanted.add(id);
+    if (statesDefaultStyle(style)) wanted.add(id);
   }
 
   const NAMES = new Set(["pStyle", "rStyle", "tblStyle"]);

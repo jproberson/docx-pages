@@ -173,6 +173,29 @@ describe("readSections", () => {
     expect(sections[0]?.columns.widthsTwips).toStrictEqual([]);
   });
 
+  // The rule `bodySections` keeps: a `w:sectPr` inside a cell governs the story in
+  // that cell and closes no section of the body's.
+  it("passes over the section properties a table cell carries", () => {
+    const inACell =
+      `<w:tbl><w:tr><w:tc>` +
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240"/></w:sectPr></w:pPr></w:p>` +
+      `</w:tc></w:tr></w:tbl>`;
+    const sections = sectionsOf(`${inACell}${LETTER_SECTION}`);
+    expect(sections.map((each) => each.geometry.widthTwips)).toStrictEqual([12240]);
+  });
+
+  // A text box's content is laid out in its own frame, so what it says about a
+  // section says nothing about the body's.
+  it("passes over the section properties a text box carries", () => {
+    const inATextBox =
+      `<w:p><w:r><w:pict><v:shape xmlns:v="urn:schemas-microsoft-com:vml"><v:textbox>` +
+      `<w:txbxContent>` +
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240"/></w:sectPr></w:pPr></w:p>` +
+      `</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>`;
+    const sections = sectionsOf(`${inATextBox}${LETTER_SECTION}`);
+    expect(sections.map((each) => each.geometry.widthTwips)).toStrictEqual([12240]);
+  });
+
   it("gives the last section's page to a reader asking for the document's", () => {
     const body = `${ending(`<w:pgSz w:w="15840" w:h="12240"/>`)}${LETTER_SECTION}`;
     expect(
@@ -281,6 +304,20 @@ describe("the header and footer a section names", () => {
     const [without] = sectionsOfBody(`<w:p/><w:sectPr>${PAGE}</w:sectPr>`);
     expect(with_?.titlePage).toBe(true);
     expect(without?.titlePage).toBe(false);
+  });
+
+  // Word writes the toggle bare and leaves it out to turn it off, but a producer
+  // that writes it out off is asking for the page it opens to draw the section's
+  // default story like any other.
+  it("reads a section stating the toggle off as one that opens no page of its own", () => {
+    for (const value of ["0", "false", "off"]) {
+      const [section] = sectionsOfBody(
+        `<w:p/><w:sectPr><w:titlePg w:val="${value}"/>${PAGE}</w:sectPr>`,
+      );
+      expect(section?.titlePage).toBe(false);
+    }
+    const [on] = sectionsOfBody(`<w:p/><w:sectPr><w:titlePg w:val="true"/>${PAGE}</w:sectPr>`);
+    expect(on?.titlePage).toBe(true);
   });
 });
 

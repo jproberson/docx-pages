@@ -1,7 +1,7 @@
 import { DocxPagesError } from "../errors.js";
 import { MAIN_DOCUMENT_PART, partXml, type DocxPackage } from "./package.js";
 import { readRelationships, R_NS } from "./relationships.js";
-import { attribute, descendantsNamed, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, descendantsNamed, firstNamed, toggledOn, type XmlElement } from "./xml.js";
 
 export const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -92,10 +92,10 @@ export function pageGeometrySignature(section: XmlElement): string {
 
 // Every section a document is made of, in the order they run.
 //
-// A `w:sectPr` on a paragraph ends the section that paragraph is the last of, and
-// the one standing at the end of the body governs the text after the last of those.
-// So the sections are the `sectPr` elements in document order, and the body's own
-// is the final one.
+// A `w:sectPr` on a paragraph of the body ends the section that paragraph is the
+// last of, and the one standing at the end of the body governs the text after the
+// last of those. So the sections are those `sectPr` elements in document order, and
+// the body's own is the final one.
 //
 // Reading only the last of them, which is all this did until now, gives the whole
 // document the geometry of its final section. Where the sections differ that puts
@@ -105,7 +105,7 @@ export function pageGeometrySignature(section: XmlElement): string {
 export function readSections(pkg: DocxPackage): readonly DocumentSection[] {
   const root = partXml(pkg, MAIN_DOCUMENT_PART);
   const body = firstNamed(root, W_NS, "body");
-  const sections = body === null ? [] : descendantsNamed(body, W_NS, "sectPr");
+  const sections = body === null ? [] : sectionPropertiesOf(body);
   if (sections.length === 0) throw noSection();
 
   return sections.map((section) => ({
@@ -113,6 +113,32 @@ export function readSections(pkg: DocxPackage): readonly DocumentSection[] {
     breakKind: breakOf(section),
     columns: columnsOf(section),
   }));
+}
+
+// The `w:sectPr` elements that divide the body, in document order, the body's own
+// last. Reading every one in the part instead counts a table cell's and a text box's
+// as sections of the body, which they are not: the walk therefore stops at a table,
+// and a paragraph answers with the properties it carries rather than being walked
+// into, which is what keeps a text box's out, its content standing under a run.
+function sectionPropertiesOf(body: XmlElement): readonly XmlElement[] {
+  const found: XmlElement[] = [];
+  const visit = (node: XmlElement): void => {
+    for (const child of node.children) {
+      if (child.namespace === W_NS && child.name === "tbl") continue;
+      if (child.namespace === W_NS && child.name === "p") {
+        const closer = sectionClosedBy(child);
+        if (closer !== null) found.push(closer);
+        continue;
+      }
+      if (child.namespace === W_NS && child.name === "sectPr") {
+        found.push(child);
+        continue;
+      }
+      visit(child);
+    }
+  };
+  visit(body);
+  return found;
 }
 
 // A paragraph carrying section properties is the last paragraph of its section.
@@ -257,7 +283,7 @@ export function bodySections(
       endsAt,
       headers,
       footers,
-      titlePage: firstNamed(element, W_NS, "titlePg") !== null,
+      titlePage: statesTitlePage(element),
     };
   };
 
@@ -266,6 +292,14 @@ export function bodySections(
     return properties === null ? [] : [of(properties, closer)];
   });
   return own === null ? sections : [...sections, of(own, null)];
+}
+
+// `w:titlePg` is a toggle like any other: Word writes it bare to ask for a separate
+// first page and leaves it out otherwise, but a producer that writes it off writes it
+// out with a value, and that section opens on its own default header.
+function statesTitlePage(section: XmlElement): boolean {
+  const stated = firstNamed(section, W_NS, "titlePg");
+  return stated !== null && toggledOn(stated, W_NS);
 }
 
 function breakOf(section: XmlElement): SectionBreak {

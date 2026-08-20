@@ -140,13 +140,26 @@ export function parseXml(source: string): XmlElement | null {
   return null;
 }
 
+// The number an attribute states, and NaN where it states none this can read. An
+// attribute written out empty is one stating nothing rather than one stating a
+// nought, which is what `Number("")` alone would make of it: a stated nought would
+// win the cascade over the value the document meant to inherit.
+export const statedNumber = (raw: string | undefined): number =>
+  raw === undefined || raw === "" ? Number.NaN : Number(raw);
+
+// The three spellings of off an on/off value has. Everything else is on, "1", "true"
+// and "on" among them, so one place answers for a toggle written as an element and
+// for one written as an attribute of its own.
+export const statesOn = (value: string): boolean =>
+  value !== "0" && value !== "false" && value !== "off";
+
 // An empty namespace means an unprefixed attribute, which XML puts in no namespace
 // at all rather than in the element's default one.
 // Whether an element that is a toggle is on. Word writes one bare to turn it on,
 // so an element with no value at all counts, and only an explicit off turns it off.
 export const toggledOn = (element: XmlElement, namespace: string): boolean => {
   const value = attribute(element, namespace, "val");
-  return value !== "0" && value !== "false" && value !== "off";
+  return value === undefined || statesOn(value);
 };
 
 export const attribute = (

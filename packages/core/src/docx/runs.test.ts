@@ -109,6 +109,31 @@ describe("readRuns", () => {
     ).toStrictEqual([false, false, true, false]);
   });
 
+  // A carriage return is the line ending a `w:br` of no type is, spelled the way the
+  // producers that are not Word spell it. It ends neither a page nor a column.
+  it("reads a carriage return as the line break it is", () => {
+    const runs = runsOf(`<w:p><w:r><w:t>a</w:t><w:cr/><w:t>b</w:t></w:r></w:p>`);
+    expect(runs[0]?.pieces).toStrictEqual([
+      { kind: "text", text: "a" },
+      { kind: "break", endsPage: false, endsColumn: false },
+      { kind: "text", text: "b" },
+    ]);
+  });
+
+  // A run holding nothing but a carriage return is dropped before it is read unless
+  // the paragraph counts one as content, which runs the text either side together.
+  it("keeps a carriage return that is a run of its own", () => {
+    const runs = runsOf(
+      `<w:p><w:r><w:t>a</w:t></w:r><w:r><w:cr/></w:r><w:r><w:t>b</w:t></w:r></w:p>`,
+    );
+
+    expect(runs.map((run) => run.pieces.map((piece) => piece.kind))).toStrictEqual([
+      ["text"],
+      ["break"],
+      ["text"],
+    ]);
+  });
+
   // A run of its own is where Word puts a break the author typed between two runs
   // of text, and a run carrying nothing else still ends the line it sits on.
   it("keeps a break that is a run of its own", () => {
