@@ -178,6 +178,18 @@ describe("breakStack", () => {
     expect(pages).toHaveLength(2);
   });
 
+  // The column pass asks the same question of the same line and absorbs the last bits
+  // of the sums to answer it (`cutColumnAt`), while this pass adds the tops up again
+  // as `topPt - shiftPt`. A line whose foot lands on the foot of the page can come out
+  // a fraction of nothing past it that way, and the two would then break the same
+  // stack in different places.
+  it("keeps a line whose foot passes the foot of the page by a fraction of nothing", () => {
+    const boxes = stack([[10], [10], [5 + 1e-13]]);
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 125 });
+
+    expect(pages).toHaveLength(1);
+  });
+
   it("moves the paragraph that would cross the bottom onto the next page", () => {
     const pages = breakStack({
       cells: [],

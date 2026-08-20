@@ -20,7 +20,7 @@ import {
 import { numberParagraphs, type ParagraphNumber } from "../docx/list-numbers.js";
 import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns, type TextRun } from "../docx/runs.js";
-import { W_NS, type SectionClose } from "../docx/section.js";
+import type { SectionClose } from "../docx/section.js";
 import {
   measuresTheIndentToTheText,
   roundsAnchorsToTwips,
@@ -45,7 +45,6 @@ import {
   type ParagraphMark,
   type StyleTable,
 } from "../docx/styles.js";
-import { attribute, firstNamed } from "../docx/xml.js";
 import { lineHeightPt } from "./font-metrics.js";
 import {
   beginLines,
@@ -543,6 +542,12 @@ function measureBlocks(
       if (measured.kind === "blocked") return measured;
       boxes.push(...measured.boxes);
       cells.push(...measured.cells);
+      // A row of the table that will not be torn is offered to no page break, where a
+      // row of a table in the flow is. The break answers such a row by opening a page at the
+      // row's own top, and the top of a table keeping no room in the flow is nowhere
+      // in the flow to open one: what follows the table stands where the table never
+      // was, and would be carried down with it. Nothing has asked Word whether it
+      // tears a `w:cantSplit` row that stands out of the flow.
       standing = [
         ...standing,
         bandRound(placed, top + placed.topPt, measured.heightPt, block.positioning),
@@ -687,6 +692,7 @@ function measureColumnRun(
         boxes,
         cells,
         untornRows,
+        // Offered to no page break, for the reason `fillColumns` records.
         anchoredObjects: [],
         // What stands under the run stands under the last stretch of it, and under the
         // tallest column of that stretch: Word started the section below a balanced run
@@ -996,6 +1002,14 @@ function fillColumns(
       boxes,
       cells,
       untornRows,
+      // **An object a column's text wraps round is offered to no page break.** How
+      // much of a run a page holds is settled here, by `cutColumnAt` against the room
+      // the page left, so `breakStack` never cuts inside a run and an object moving
+      // its paragraph to the page below would have to be answered by the column
+      // holding it. A row that will not be torn reaches the break because a run
+      // carries on into the columns of the next page whole blocks at a time, which is
+      // where such a row can still move. Nothing has asked Word what it does with an
+      // object a column has not the room for.
       anchoredObjects: [],
       heightPt: drawnHeightPt(columnHeightsPt, columnsDrawing),
     },
@@ -1817,13 +1831,8 @@ function plannedWidthPt(block: Table, cell: TableCell, gridAt: number): number |
   return block.fixedColumns ? (fromGrid ?? cellWidthPt(cell)) : (cellWidthPt(cell) ?? fromGrid);
 }
 
-function cellWidthPt(cell: TableCell): number | null {
-  const properties = firstNamed(cell.element, W_NS, "tcPr");
-  const width = properties === null ? null : firstNamed(properties, W_NS, "tcW");
-  if (width === null || attribute(width, W_NS, "type") !== "dxa") return null;
-  const twips = Number(attribute(width, W_NS, "w") ?? Number.NaN);
-  return Number.isFinite(twips) ? twipsToPoints(twips) : null;
-}
+const cellWidthPt = (cell: TableCell): number | null =>
+  cell.statedWidthTwips === null ? null : twipsToPoints(cell.statedWidthTwips);
 
 export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   ...box,
