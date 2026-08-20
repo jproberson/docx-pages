@@ -348,6 +348,10 @@ function maskOf(png: PngImage): PdfValue | undefined {
 // than the placed rectangle by exactly that much and is drawn behind it, cut to
 // the frame. The viewer does the same with an oversized `img` inside an
 // `overflow: hidden` box.
+//
+// A document is free to state a rectangle that hides the whole picture, and there
+// is no bitmap large enough to show none of itself: the frame is left empty, as a
+// window of no width leaves a metafile's below.
 function drawBitmap(
   out: Content,
   page: PdfPage,
@@ -355,8 +359,12 @@ function drawBitmap(
   resource: string,
   crop: CropInsets,
 ): void {
-  const widthPt = at.widthPt / Math.max(1 - crop.left - crop.right, Number.EPSILON);
-  const heightPt = at.heightPt / Math.max(1 - crop.top - crop.bottom, Number.EPSILON);
+  const acrossShown = 1 - crop.left - crop.right;
+  const downShown = 1 - crop.top - crop.bottom;
+  if (acrossShown <= 0 || downShown <= 0) return;
+
+  const widthPt = at.widthPt / acrossShown;
+  const heightPt = at.heightPt / downShown;
   const leftPt = at.leftPt - crop.left * widthPt;
   const topPt = at.topPt - crop.top * heightPt;
 

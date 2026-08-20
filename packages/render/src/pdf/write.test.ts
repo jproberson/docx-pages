@@ -303,12 +303,12 @@ describe("what a page paints behind its text", () => {
 
 // A turn is stated on the transform in sixty-thousandths of a degree, clockwise,
 // which is how every drawing in a real document states one.
-const drawing = (widthEmu: number, heightEmu: number, turnDegrees = 0): string =>
+const drawing = (widthEmu: number, heightEmu: number, turnDegrees = 0, srcRect = ""): string =>
   `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">` +
   `<wp:extent cx="${String(widthEmu)}" cy="${String(heightEmu)}"/>` +
   `<wp:docPr id="1" name="Picture 1"/><a:graphic xmlns:a="${A_NS}">` +
   `<a:graphicData uri="${PIC_NS}"><pic:pic xmlns:pic="${PIC_NS}">` +
-  `<pic:blipFill><a:blip xmlns:r="${R_NS}" r:embed="rId9"/></pic:blipFill>` +
+  `<pic:blipFill><a:blip xmlns:r="${R_NS}" r:embed="rId9"/>${srcRect}</pic:blipFill>` +
   `<pic:spPr><a:xfrm rot="${String(turnDegrees * 60000)}">` +
   `<a:ext cx="${String(widthEmu)}" cy="${String(heightEmu)}"/></a:xfrm>` +
   `</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
@@ -319,9 +319,12 @@ const withPicture = (
   picture: Uint8Array = TINY_JPEG,
   name = "jpeg",
   turnDegrees = 0,
+  srcRect = "",
 ) => {
   const bytes = buildDocx({
-    "word/document.xml": wordDocument(drawing(widthEmu, heightEmu, turnDegrees) + section()),
+    "word/document.xml": wordDocument(
+      drawing(widthEmu, heightEmu, turnDegrees, srcRect) + section(),
+    ),
     "word/styles.xml": STYLES,
     [`word/media/image1.${name}`]: picture,
     "word/_rels/document.xml.rels":
@@ -395,6 +398,22 @@ describe("a picture", () => {
   it("is left undrawn where nothing answers for its bytes", async () => {
     const { layout } = withPicture(914400, 914400);
     const bytes = writePdf(layout, { fonts, imageBytes: () => undefined, metricsFor });
+
+    expect(await readImagePlacements(bytes)).toStrictEqual([]);
+  });
+
+  // A source rectangle states what fraction of each edge is hidden, and nothing
+  // holds a document to stating less than the whole picture. There is no bitmap
+  // large enough to show none of itself, so the frame is left empty as it is for
+  // bytes that are not there.
+  it("is left undrawn where its source rectangle hides the whole of it", async () => {
+    const hidden = `<a:srcRect l="60000" r="60000"/>`;
+    const { pkg, layout } = withPicture(914400, 914400, TINY_JPEG, "jpeg", 0, hidden);
+    const bytes = writePdf(layout, {
+      fonts,
+      imageBytes: (part) => pkg.parts.get(part),
+      metricsFor,
+    });
 
     expect(await readImagePlacements(bytes)).toStrictEqual([]);
   });

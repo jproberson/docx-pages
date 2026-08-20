@@ -89,6 +89,20 @@ describe("a pdf name", () => {
     expect(written(pdfName("Times New Roman"))).toBe("/Times#20New#20Roman");
     expect(written(pdfName("a/b#c"))).toBe("/a#2fb#23c");
   });
+
+  // A document set in a face whose own name is not latin1 is a document like any
+  // other, and refusing to write one at all would be stricter than the format:
+  // a name is bytes, and the bytes of one past ascii are its utf-8.
+  it("writes a name past ascii as the utf-8 bytes of it", () => {
+    expect(written(pdfName("\u5b8b\u4f53"))).toBe("/#e5#ae#8b#e4#bd#93");
+  });
+
+  // A character outside the basic plane is one character rather than the two code
+  // units it is held as, so it goes out as one run of four bytes and not as two
+  // halves of nothing.
+  it("writes a character past the basic plane as the one character it is", () => {
+    expect(written(pdfName("\u{1d54f}"))).toBe("/#f0#9d#95#8f");
+  });
 });
 
 describe("a pdf string", () => {
@@ -102,6 +116,18 @@ describe("a pdf string", () => {
 
   it("writes bytes as hex, which is what a glyph number needs", () => {
     expect(written(pdfHexString(Uint8Array.from([0, 36, 255])))).toBe("<0024ff>");
+  });
+
+  // A title is the caller's own words, and a curly quote written a byte to a
+  // character comes out as 0x19, a device control, with nothing said about it.
+  it("writes a string past ascii as utf-16 behind the mark that says so", () => {
+    expect(written(pdfString("Jos\u00e9\u2019s"))).toBe("<feff004a006f007300e920190073>");
+  });
+
+  // The escapes are what a bracket needs, so a string that needs none of them
+  // stays readable in the file.
+  it("keeps an ascii string as the literal it was", () => {
+    expect(written(pdfString("docx-pages"))).toBe("(docx-pages)");
   });
 });
 

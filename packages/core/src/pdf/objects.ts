@@ -26,7 +26,8 @@ export type PdfValue =
   // anything at all.
   | { readonly kind: "name"; readonly name: string }
   // Written `(text)`, one byte to a character, which is what the syntax reads a
-  // string as until a document says otherwise.
+  // string as until a byte order mark says otherwise. A string carrying anything
+  // past ascii is written as utf-16 instead, since one byte cannot hold it.
   | { readonly kind: "literal-string"; readonly text: string }
   // Written `<hex>`. What carries a string of anything but latin1, and what the
   // text operators take: a font under Identity-H is addressed by glyph, and a
@@ -102,26 +103,54 @@ export function formatPdfNumber(value: number): string {
 // The characters a name may not carry: whitespace, the delimiters, and `#`
 // itself, which is the escape. Everything else goes through as written, which is
 // what keeps `/Type` and `/FontFile2` readable in the output.
-const ESCAPED_IN_NAME = /[^!-~]|[#()<>[\]{}/%]/g;
+const ESCAPED_IN_NAME = /[^!-~]|[#()<>[\]{}/%]/gu;
 
+const utf8 = (text: string): Uint8Array => strToU8(text);
+
+const escapedBytes = (bytes: Uint8Array): string =>
+  [...bytes].map((byte) => `#${byte.toString(16).padStart(2, "0")}`).join("");
+
+// A name is bytes, and a character past ascii is more than one of them. The
+// specification asks for utf-8 with an escape to the byte, which is how a reader
+// gets a face's own name back out of a document that named it in its own
+// alphabet.
 const escapeName = (name: string): string =>
-  name.replace(ESCAPED_IN_NAME, (character) => {
-    const code = character.charCodeAt(0);
-    if (code > 0xff) {
-      throw new DocxPagesError({
-        code: "pdf-name-unwritable",
-        message: "a pdf name is bytes, and this one holds a character outside them",
-        at: AT,
-        context: { name },
-      });
-    }
-    return `#${code.toString(16).padStart(2, "0")}`;
-  });
+  name.replace(ESCAPED_IN_NAME, (character) => escapedBytes(utf8(character)));
 
 // A literal string ends at its own closing bracket, so the brackets inside one
 // and the backslash that escapes them are escaped in turn.
 const escapeLiteral = (text: string): string =>
   text.replace(/[\\()\r]/g, (character) => (character === "\r" ? "\\r" : `\\${character}`));
+
+const pastAscii = (text: string): boolean => {
+  for (let at = 0; at < text.length; at += 1) {
+    if (text.charCodeAt(at) > 0x7f) return true;
+  }
+  return false;
+};
+
+// JavaScript holds a string as utf-16 already, so the bytes of one are its code
+// units the big end first, behind the mark that tells a reader they are.
+const utf16BigEndian = (text: string): Uint8Array => {
+  const bytes = new Uint8Array(2 + text.length * 2);
+  bytes[0] = 0xfe;
+  bytes[1] = 0xff;
+  for (let at = 0; at < text.length; at += 1) {
+    const code = text.charCodeAt(at);
+    bytes[2 + at * 2] = code >> 8;
+    bytes[3 + at * 2] = code & 0xff;
+  }
+  return bytes;
+};
+
+// A reader takes a string for PDFDocEncoding until a byte order mark says
+// otherwise, and one byte to a character cannot hold what a title may say: a
+// curly quote is 0x2019, and writing the low byte of it would put a device
+// control where the quote was and report nothing.
+const writeText = (out: Buffer, text: string): void => {
+  if (pastAscii(text)) out.write(`<${hexOf(utf16BigEndian(text))}>`);
+  else out.write(`(${escapeLiteral(text)})`);
+};
 
 const HEX = "0123456789abcdef";
 
@@ -194,7 +223,7 @@ function writeValue(out: Buffer, value: PdfValue): void {
       out.write(`/${escapeName(value.name)}`);
       return;
     case "literal-string":
-      out.write(`(${escapeLiteral(value.text)})`);
+      writeText(out, value.text);
       return;
     case "hex-string":
       out.write(`<${hexOf(value.bytes)}>`);
