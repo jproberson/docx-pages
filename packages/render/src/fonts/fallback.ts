@@ -138,6 +138,10 @@ const faceOf = (name: string, path: string): SuppliedFace => {
     italic: false,
     metrics: read.metrics,
     advances: read.advances,
+    // The pairs the file states, which the disk scan has always carried and this
+    // did not: a face out of the pack shadows the same file found on the disk, so
+    // dropping them here is a run that asks to kern being measured without them.
+    kerning: read.kerning,
     // Cambria Math comes out of this list and out of no other, and an equation
     // cannot be set at all without the outlines its halves are measured off and the
     // MATH table it takes its every constant from.
@@ -157,6 +161,11 @@ const faceOf = (name: string, path: string): SuppliedFace => {
  * Word's copy has and the system's has not got at all. Measured on 2026-08-06 off
  * Word's own pdf of the authored `unmapped-in-a-text-face` document, and again on
  * 2026-08-21 file by file: every cut of each copy answers as its regular does.
+ *
+ * The two agree about everything else: read cut by cut on 2026-08-21, every one of
+ * the 527 glyphs the two copies both hold across Latin-1 and Latin Extended advances
+ * the same in each, so which copy answers matters only where one of them has no
+ * glyph at all.
  *
  * So each cut's heights come out of the system's copy and a glyph out of Word's
  * where the system's has none. Reading only the system's files refuses a document

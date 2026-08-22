@@ -103,6 +103,19 @@ describe.skipIf(cutsOf(WORD_SERIF_FALLBACK_FACE).length === 0)(
       expect(advances.filter((each) => each !== null)).toHaveLength(4);
     });
 
+    // The pack is gathered ahead of the disk scan, so a face it offers shadows the
+    // same file found there and anything it leaves off is left off for the whole
+    // sweep. Dropping the pairs measured a run that asks to kern without them: a
+    // line of `AV To Ta Wa Yo AWAY` in Times New Roman 12pt is 8.78pt narrower
+    // with them than without.
+    it("states the pairs the file does, which the disk scan has always carried", () => {
+      const pairs = cutsOf(WORD_SERIF_FALLBACK_FACE).map((face) =>
+        face.kerning?.kind === "kerning" ? face.kerning.kerningBetween(0x41, 0x56) : null,
+      );
+
+      expect(pairs.filter((each) => each !== null && each < 0)).toHaveLength(4);
+    });
+
     it("lays a bold line out as tall as a regular one", () => {
       expect(stepPt("<w:b/>")).toBeCloseTo(stepPt(""), 4);
       expect(stepPt("<w:i/>")).toBeCloseTo(stepPt(""), 4);
