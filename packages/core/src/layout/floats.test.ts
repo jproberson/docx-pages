@@ -164,16 +164,19 @@ describe("readAnchors", () => {
     ]);
   });
 
-  // A corner written out with nothing in it states no corner, and reading it as the
-  // nought `Number("")` answers would pull the wrap area out to the frame's own edge.
-  it("passes over a polygon corner written out empty", () => {
+  // A corner written out empty is a corner at nought, which pulls the wrap area out
+  // to the frame's own edge. What was measured of Word on 2026-08-22 is that an
+  // empty `w:after`, `w:ind w:left`, `w:sz` and `w:start` each read as a stated
+  // nought rather than as nothing; the polygon itself was not put to Word, and it
+  // is read here the same way because it is read by the same parser.
+  it("reads a polygon corner written out empty as one at nought", () => {
     const polygon =
       `<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon>` +
       `<wp:start x="5400" y="0"/><wp:lineTo x="" y=""/>` +
       `<wp:lineTo x="21600" y="16200"/><wp:lineTo x="5400" y="0"/>` +
       `</wp:wrapPolygon></wp:wrapTight>`;
     const anchor = firstAnchor(anchorXml({ h: offsetH(0), v: offsetV(0), wrap: polygon }));
-    expect(edgesOf(anchor.area)).toStrictEqual({ left: 0.25, top: 0, right: 1, bottom: 0.75 });
+    expect(edgesOf(anchor.area)).toStrictEqual({ left: 0, top: 0, right: 1, bottom: 0.75 });
   });
 
   it("takes a tight wrap with no polygon as the whole frame", () => {

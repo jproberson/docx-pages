@@ -140,12 +140,16 @@ export function parseXml(source: string): XmlElement | null {
   return null;
 }
 
-// The number an attribute states, and NaN where it states none this can read. An
-// attribute written out empty is one stating nothing rather than one stating a
-// nought, which is what `Number("")` alone would make of it: a stated nought would
-// win the cascade over the value the document meant to inherit.
+// The number an attribute states, and NaN where it states none this can read.
+//
+// **An attribute written out empty states a nought, not nothing.** Asked of Word on
+// 2026-08-22 with a style stating 12pt after, a 36pt indent and 20pt text: a
+// paragraph writing `w:after=""` was set 24.48pt from the next as `w:after="0"` is
+// and not the 36.48pt of one inheriting, `w:ind w:left=""` sat on the margin where
+// the stated nought sits, and `w:sz w:val=""` drew at 0.48pt beside the stated
+// nought's own 0.48pt. Only an absent attribute inherits.
 export const statedNumber = (raw: string | undefined): number =>
-  raw === undefined || raw === "" ? Number.NaN : Number(raw);
+  raw === undefined ? Number.NaN : Number(raw);
 
 // The three spellings of off an on/off value has. Everything else is on, "1", "true"
 // and "on" among them, so one place answers for a toggle written as an element and

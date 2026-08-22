@@ -9,8 +9,11 @@ import { readStyleTable } from "./styles.js";
 
 const BULLET_CHARACTER = "\uF0A7";
 
-const level = (ilvl: number, format: string, text: string, extra = "") =>
-  `<w:lvl w:ilvl="${String(ilvl)}"><w:numFmt w:val="${format}"/>
+// Every level here states its start, because a level that states none begins at
+// nought and these are about how a list counts rather than where it opens.
+const level = (ilvl: number, format: string, text: string, extra = "", start = 1) =>
+  `<w:lvl w:ilvl="${String(ilvl)}"><w:start w:val="${String(start)}"/>
+     <w:numFmt w:val="${format}"/>
      <w:lvlText w:val="${text}"/>${extra}</w:lvl>`;
 
 const numbering = (inner: string) => `<?xml version="1.0"?>
@@ -24,7 +27,7 @@ const LISTS = numbering(
   `${list("1", `${level(0, "decimal", "%1.")}${level(1, "lowerLetter", "%1.%2)")}`)}
    ${list("2", level(0, "bullet", "&#xF0A7;"))}
    ${list("3", `${level(0, "upperRoman", "%1.")}${level(1, "decimal", "%2.", `<w:lvlRestart w:val="0"/>`)}`)}
-   ${list("4", level(0, "decimalZero", "%1", `<w:start w:val="9"/>`))}
+   ${list("4", level(0, "decimalZero", "%1", "", 9))}
    ${list("5", level(0, "none", "%1."))}
    ${list("6", level(0, "ideographDigital", "%1"))}`,
 );

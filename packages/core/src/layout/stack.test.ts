@@ -774,7 +774,10 @@ const numbering = (levels: string) => `<?xml version="1.0"?>
   <w:abstractNum w:abstractNumId="0">${levels}</w:abstractNum>
   <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
 
+// The level states its start, since one that states none begins at nought and what
+// is asked here is where the number is drawn rather than what it counts from.
 const decimalLevel = (extra = "") => `<w:lvl w:ilvl="0">
+  <w:start w:val="1"/>
   <w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/>${extra}
   <w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>`;
 

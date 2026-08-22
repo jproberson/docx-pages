@@ -100,7 +100,12 @@ function readLevel(element: XmlElement): NumberingLevel | null {
     ilvl,
     format: formatOf(valueOf(element, "numFmt")),
     text: valueOf(element, "lvlText") ?? "",
-    start: integerOr(valueOf(element, "start"), 1),
+    // **A level stating no start at all begins at nought, not at one.** Asked of
+    // Word on 2026-08-22: three paragraphs of a level writing no `w:start` were
+    // marked 0. 1. 2., the same as a level stating `w:val="0"`, where a level
+    // stating `w:val="1"` was marked 1. 2. 3. Word's own lists all write the
+    // attribute out, which is why this went unseen.
+    start: integerOr(valueOf(element, "start"), 0),
     restart: restartOf(element),
     suffix: suffixOf(valueOf(element, "suff")),
     properties: element,

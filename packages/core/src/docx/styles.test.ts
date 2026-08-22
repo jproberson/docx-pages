@@ -61,10 +61,12 @@ describe("resolveParagraphMark", () => {
     expect(runMark(`<w:sz w:val="24"/>`).fontSizePt).toBe(12);
   });
 
-  // A size written out with nothing in it states no size, so the style's own stands.
-  // Reading it as a nought would floor every such run at half a point.
-  it("inherits the size where a run writes one out empty", () => {
-    expect(runMark(`<w:sz w:val=""/>`).fontSizePt).toBe(11);
+  // **A size written out empty is a stated nought**, so it floors with the rest of
+  // them rather than inheriting. Asked of Word on 2026-08-22 against a style stating
+  // 20pt text: `w:sz w:val=""` drew at 0.48pt, which is the same 0.48pt `w:val="0"`
+  // drew at beside it, and nothing like the style's own.
+  it("holds a run writing its size out empty to half a point, as a stated nought", () => {
+    expect(runMark(`<w:sz w:val=""/>`).fontSizePt).toBe(0.5);
   });
 
   it("falls back to the default paragraph style when the paragraph names none", () => {
@@ -487,16 +489,17 @@ describe("resolveParagraphFrame", () => {
     expect(resolved(`<w:p/>`).frame.indentLeftTwips).toBe(0);
   });
 
-  // An attribute written out with nothing in it states nothing, and a paragraph
-  // stating nothing inherits. Reading it as the nought `Number("")` answers would
-  // let a malformed document overrule the style it is written in.
-  it("reads an indent written out empty as one the paragraph never stated", () => {
+  // **An attribute written out empty states a nought, and a stated nought overrules
+  // the style.** Asked of Word on 2026-08-22 against a style stating a 36pt indent:
+  // a paragraph writing `w:ind w:left=""` sat on the margin, exactly where the one
+  // writing `w:left="0"` sat, and 36pt left of the one inheriting.
+  it("reads an indent written out empty as a stated nought", () => {
     const indented = styles(
       `${NORMAL}<w:style w:type="paragraph" w:styleId="Body">
          <w:pPr><w:ind w:left="1440"/></w:pPr></w:style>`,
     );
     const body = `<w:p><w:pPr><w:pStyle w:val="Body"/><w:ind w:left=""/></w:pPr></w:p>`;
-    expect(resolved(body, indented).frame.indentLeftTwips).toBe(1440);
+    expect(resolved(body, indented).frame.indentLeftTwips).toBe(0);
   });
 });
 
