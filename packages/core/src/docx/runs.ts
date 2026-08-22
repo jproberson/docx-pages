@@ -18,7 +18,7 @@ import { WP_NS } from "./inlines.js";
 import { W_NS } from "./section.js";
 import { resolveRuns, type MarkedRun, type ParagraphMark, type StyleTable } from "./styles.js";
 import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
-import { attribute, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, firstNamed, statedNumber, type XmlElement } from "./xml.js";
 
 export type RunPiece =
   | { readonly kind: "text"; readonly text: string }
@@ -63,7 +63,7 @@ function extentOf(inline: XmlElement): RunPiece {
   const extent = firstNamed(inline, WP_NS, "extent");
   const size = (name: string): number => {
     const raw = extent === null ? undefined : attribute(extent, "", name);
-    const value = raw === undefined ? Number.NaN : Number(raw);
+    const value = statedNumber(raw);
     return Number.isFinite(value) ? value : 0;
   };
   return {

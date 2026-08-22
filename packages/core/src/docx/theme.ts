@@ -1,7 +1,7 @@
 import { partXml, type DocxPackage } from "./package.js";
 import { W_NS } from "./section.js";
 import { A_NS } from "./styles.js";
-import { attribute, childrenNamed, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, childrenNamed, firstNamed, statedNumber, type XmlElement } from "./xml.js";
 
 export const THEME_PART = "word/theme/theme1.xml";
 const SETTINGS_PART = "word/settings.xml";
@@ -72,7 +72,7 @@ function fraction(parent: XmlElement, name: string, fallback: number): number {
   const element = firstNamed(parent, A_NS, name);
   if (element === null) return fallback;
   const raw = attribute(element, "", "val");
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(raw);
   return Number.isFinite(value) ? value / PERCENT_UNITS : fallback;
 }
 

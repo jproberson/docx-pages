@@ -10,7 +10,7 @@ import {
 import { paragraphOwnDrawings } from "./paragraphs.js";
 import { W_NS } from "./section.js";
 import { inlinePictureOf } from "./vml.js";
-import { attribute, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, firstNamed, statedNumber, type XmlElement } from "./xml.js";
 
 export const WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
@@ -31,7 +31,7 @@ export type InlineDrawing = {
 
 const numberAttribute = (element: Parameters<typeof attribute>[0], name: string): number => {
   const raw = attribute(element, "", name);
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(raw);
   return Number.isFinite(value) ? value : 0;
 };
 

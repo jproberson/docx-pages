@@ -3,7 +3,7 @@ import { R_NS } from "./relationships.js";
 import { W_NS } from "./section.js";
 import { A_NS } from "./styles.js";
 import { readColorReference, type ColorReference } from "./theme.js";
-import { attribute, childrenNamed, firstNamed, type XmlElement } from "./xml.js";
+import { attribute, childrenNamed, firstNamed, statedNumber, type XmlElement } from "./xml.js";
 
 export const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 export const WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
@@ -201,7 +201,7 @@ const PERCENT_UNITS = 100000;
 function cropEdge(srcRect: XmlElement | null, name: string): number {
   if (srcRect === null) return 0;
   const raw = attribute(srcRect, "", name);
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(raw);
   return Number.isFinite(value) ? value / PERCENT_UNITS : 0;
 }
 
@@ -217,7 +217,7 @@ function readOutline(shapeProperties: XmlElement): ShapeOutline | null {
   const fill = firstNamed(line, A_NS, "solidFill");
   const color = fill === null ? null : readColorReference(fill);
   const raw = attribute(line, "", "w");
-  const width = raw === undefined ? Number.NaN : Number(raw);
+  const width = statedNumber(raw);
   const widthStated = Number.isFinite(width);
   return {
     color,
@@ -323,7 +323,7 @@ function readPath(custom: XmlElement, shapeProperties: XmlElement): readonly Pat
 const emuAttribute = (element: XmlElement | null, name: string): number | null => {
   if (element === null) return null;
   const raw = attribute(element, "", name);
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(raw);
   return Number.isFinite(value) ? value : null;
 };
 
@@ -338,7 +338,7 @@ type Box = {
 
 const emu = (node: XmlElement | null, name: string): number => {
   const raw = node === null ? undefined : attribute(node, "", name);
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(raw);
   return Number.isFinite(value) ? value : 0;
 };
 
@@ -361,7 +361,7 @@ const SIXTIETHS_OF_A_DEGREE = 60000;
 
 const turnIn = (transform: XmlElement | null): number => {
   const raw = transform === null ? undefined : attribute(transform, "", "rot");
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(raw);
   return Number.isFinite(value) ? value / SIXTIETHS_OF_A_DEGREE : 0;
 };
 
@@ -461,7 +461,7 @@ function readPicture(picture: XmlElement): DrawingContent {
 
 function insetEmu(bodyPr: XmlElement | null, name: string, fallback: number): number {
   const raw = bodyPr === null ? undefined : attribute(bodyPr, "", name);
-  const value = raw === undefined ? Number.NaN : Number(raw);
+  const value = statedNumber(raw);
   return Number.isFinite(value) ? value : fallback;
 }
 
