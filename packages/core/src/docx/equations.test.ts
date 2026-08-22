@@ -224,6 +224,15 @@ describe("a break inside an equation", () => {
     for (const piece of content) if (piece.kind === "run") expect(piece.style).toBe("plain");
   });
 
+  // A carriage return is the same ending line, spelled as the older producers spell
+  // it, and it is read that way outside an equation too. See `readRun` in runs.ts.
+  it("reads a carriage return as the line ending a typeless break is", () => {
+    const broken = `<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>a</m:t><w:cr/><m:t>b</m:t></m:r>`;
+    const content = contentOf(equationOf(`<m:oMath>${broken}</m:oMath>`));
+    expect(kindsIn(content)).toStrictEqual(["run", "break", "run"]);
+    expect(textIn(content)).toStrictEqual(["a", "b"]);
+  });
+
   // Where a page or a column starts inside an equation is a place nothing has
   // measured, so it is refused rather than read as an ending line.
   it("refuses a break that starts a page or a column", () => {

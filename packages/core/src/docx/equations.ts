@@ -413,6 +413,14 @@ function readMathRun(run: XmlElement, pieces: EquationPiece[], unreadable: Set<s
       } else unreadable.add("w:br");
       continue;
     }
+    // A carriage return is that same typeless break spelled the way the older
+    // producers spell it, which is how `readRun` in runs.ts has always read one
+    // outside an equation. Reading it here refuses one document fewer.
+    if (child.namespace === W_NS && child.name === "cr") {
+      flush();
+      pieces.push({ kind: "break", element: run });
+      continue;
+    }
     unreadable.add(named(child));
   }
 
