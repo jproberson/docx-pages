@@ -136,7 +136,7 @@ const DRAWN: Readonly<Record<string, Drawn>> = {
   // Sixty seven cases of a marker and three repeats, and the second line of each.
   // Every one of them lands where Word drew it, which twenty four did not until the
   // squeeze was measured against the advance of the word being taken rather than
-  // against the size its text is set in. See **Settled recently** in `docs/gaps.md`.
+  // against the size its text is set in.
   "justified-fitting": { lines: 570, runs: 681, numbers: 0 },
   // Every line of the same body in a document that declares no compatibility mode,
   // where no line is squeezed at all and every one of them lands where Word drew it.

@@ -32,9 +32,9 @@ import { CORPUS_DIRECTORY, documentsIn, identityOf } from "./sweep.js";
 //
 // **Keep all three.** The cells see paint, pictures and what covers what, which no
 // reading of lines can; the lines say by how much and in which direction, which is
-// what names a rule; this says whether the page is worth showing at all. `docs/gaps.md`
-// says twice why the first two are both kept, and this adds a third for the same
-// reason: the day the raster was built, a page scoring 35 of its 35 lines was wrong
+// what names a rule; this says whether the page is worth showing at all. The first two
+// are each kept for the reason this third one is: the day the raster was built, a page
+// scoring 35 of its 35 lines was wrong
 // five ways, and on 2026-08-12 the eight documents whose pages are Word's cell for
 // cell were being called `missing` by this, over every bullet in them.
 //

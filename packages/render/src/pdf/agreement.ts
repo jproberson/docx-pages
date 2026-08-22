@@ -43,9 +43,8 @@ import type { DrawnText, TextPlacement } from "./text.js";
 //
 // **Every threshold here was chosen against the raster and not guessed at**, since a
 // reading that calls a page wrong where Word drew it cell for cell is worse than no
-// reading, and the first cut of this did it three ways. The two readings of the corpus
-// were joined page by page on 2026-08-12; what they said is under **Reading a page as
-// moved, drifting or deformed** in `docs/gaps.md`.
+// reading, and the first cut of this did it three ways. The thresholds are what joining
+// the two readings of the corpus page by page settled, on 2026-08-12.
 export type PageShape = "agrees" | "shifted" | "drifting" | "deformed" | "missing";
 
 // How far our drawing of a page stands from Word's, where one offset explains it.
