@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import {
-  readFontFile,
+  readSuppliedFace,
   WORD_CHARACTER_FALLBACK_FACES,
   WORD_FALLBACK_FACES,
   WORD_SERIF_FALLBACK_FACE,
@@ -130,25 +130,18 @@ const TIMES_NEW_ROMAN_CUTS: readonly TimesNewRomanCut[] = [
 export const fallbackFacePath = (name: string): string | null =>
   (FILES[name]?.paths ?? []).find((each) => existsSync(each)) ?? null;
 
+// Cambria Math comes out of this list and out of no other, so this is a face whose
+// MATH table decides whether an equation can be set at all, and whose pairs the disk
+// scan beside it has always carried: a face out of the pack shadows the same file
+// found on the disk, so anything left off here is a run asking to kern and measured
+// without it. `readSuppliedFace` is what carries them now.
 const faceOf = (name: string, path: string): SuppliedFace => {
-  const read = readFontFile(new Uint8Array(readFileSync(path)), FILES[name]?.faceName);
-  return {
-    name,
-    bold: false,
-    italic: false,
-    metrics: read.metrics,
-    advances: read.advances,
-    // The pairs the file states, which the disk scan has always carried and this
-    // did not: a face out of the pack shadows the same file found on the disk, so
-    // dropping them here is a run that asks to kern being measured without them.
-    kerning: read.kerning,
-    // Cambria Math comes out of this list and out of no other, and an equation
-    // cannot be set at all without the outlines its halves are measured off and the
-    // MATH table it takes its every constant from.
-    ink: read.ink,
-    math: read.math,
-    sansSerif: read.sansSerif,
-  };
+  const inFile = FILES[name]?.faceName;
+  return readSuppliedFace(
+    new Uint8Array(readFileSync(path)),
+    { name, bold: false, italic: false },
+    inFile === undefined ? {} : { inFile },
+  );
 };
 
 /**

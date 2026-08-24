@@ -4,6 +4,7 @@ import { DocxPagesError } from "../errors.js";
 import {
   MATH_VALUE_CONSTANTS,
   type AdvanceTable,
+  type FaceRequest,
   type FontMetrics,
   type InkBox,
   type InkTable,
@@ -16,6 +17,7 @@ import {
   type MathTable,
   type MathValueConstant,
   type MathVariant,
+  type SuppliedFace,
 } from "./font-metrics.js";
 import { readAdvanceTable, readGlyphIndex as glyphIndexIn, type CodeToGlyph } from "./glyphs.js";
 
@@ -2439,6 +2441,49 @@ export function readFontFile(bytes: Uint8Array, faceName?: string): ReadFontFile
     math: unmapped ?? readMath(tables, glyphFor, metricCount, ink),
     sansSerif: readsSansSerif(tables),
     ...readPost(tables),
+  };
+}
+
+export type SuppliedFaceOptions = {
+  // Which face out of a collection, which holds several. A file of one face
+  // ignores it, as `readFontFile` does.
+  readonly inFile?: string;
+  // Vertical geometry the caller holds a better answer for than the file does,
+  // which is a measured manifest and nothing else.
+  readonly metrics?: FontMetrics;
+  // Whether the face draws its letters without serifs, where the caller knows and
+  // the file does not say.
+  readonly sansSerif?: boolean;
+};
+
+/**
+ * Everything laying a face out needs, out of the file the face lives in.
+ *
+ * **The one place a supplied face is built from its bytes.** Four of what
+ * `SuppliedFace` carries are optional, because a caller that never read a table is
+ * told nothing rather than told there is nothing, and that is a good rule for the
+ * type and a trap for a call site: seven of them wrote the object out by hand and
+ * three left the same three tables off. A document laid out through those three
+ * kerned nowhere and could not set an equation at all, in the real face, with no
+ * substitution to report because nothing had been stood in for. Ask here rather
+ * than writing the fields out again.
+ */
+export function readSuppliedFace(
+  bytes: Uint8Array,
+  face: FaceRequest,
+  options: SuppliedFaceOptions = {},
+): SuppliedFace {
+  const read = readFontFile(bytes, options.inFile);
+  return {
+    name: face.name,
+    bold: face.bold,
+    italic: face.italic,
+    metrics: options.metrics ?? read.metrics,
+    advances: read.advances,
+    kerning: read.kerning,
+    ink: read.ink,
+    math: read.math,
+    sansSerif: options.sansSerif ?? read.sansSerif,
   };
 }
 

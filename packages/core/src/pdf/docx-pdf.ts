@@ -1,7 +1,7 @@
 import { openDocx } from "../docx/package.js";
 import { DocxPagesError } from "../errors.js";
 import { layOutDocument } from "../layout/document.js";
-import { readFontFile } from "../layout/font-file.js";
+import { readSuppliedFace } from "../layout/font-file.js";
 import { lookupFontMetrics, type SuppliedFace } from "../layout/font-metrics.js";
 import type { MetricsResolver } from "../layout/stack.js";
 
@@ -15,17 +15,12 @@ export type PdfOfDocxOptions = {
   readonly metadata?: PdfMetadata;
 };
 
-const suppliedFrom = (font: PdfFont): SuppliedFace => {
-  const read = readFontFile(font.bytes, font.name);
-  return {
-    name: font.name,
-    bold: font.bold ?? false,
-    italic: font.italic ?? false,
-    metrics: read.metrics,
-    advances: read.advances,
-    sansSerif: read.sansSerif,
-  };
-};
+const suppliedFrom = (font: PdfFont): SuppliedFace =>
+  readSuppliedFace(
+    font.bytes,
+    { name: font.name, bold: font.bold ?? false, italic: font.italic ?? false },
+    { inFile: font.name },
+  );
 
 /**
  * Opens a `.docx`, lays it out over the faces supplied, and writes it out as a

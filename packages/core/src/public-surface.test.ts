@@ -66,6 +66,7 @@ const CORE_SURFACE: readonly string[] = [
   "readFontFile",
   "readFontMetrics",
   "readGlyphIndex",
+  "readSuppliedFace",
   "readMetafilePicture",
   "readTheme",
   "readUnhonoured",

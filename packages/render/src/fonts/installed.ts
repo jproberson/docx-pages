@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 
-import { readFontFaces, readFontFile, type SuppliedFace } from "@docx-pages/core";
+import { readFontFaces, readSuppliedFace, type SuppliedFace } from "@docx-pages/core";
 
 /**
  * Every face this machine can offer a document, found by opening the fonts rather
@@ -141,25 +141,12 @@ export function installedFaces(
       for (const face of faces) {
         // A collection is read by the name of the face wanted out of it, so the
         // whole name is what asks; a file of one face ignores it either way.
-        const build = (): SuppliedFace => {
-          const read = readFontFile(bytes, face.fullName === "" ? undefined : face.fullName);
-          return {
-            name: face.family,
-            bold: face.bold,
-            italic: face.italic,
-            metrics: read.metrics,
-            advances: read.advances,
-            // The pairs the file states, so a run that asks to kern kerns in the face
-            // Word drew it in rather than in a face measured without them.
-            kerning: read.kerning,
-            // What each glyph draws and what the face says about setting
-            // mathematics, without which a face carrying a MATH table cannot set an
-            // equation at all.
-            ink: read.ink,
-            math: read.math,
-            sansSerif: read.sansSerif,
-          };
-        };
+        const build = (): SuppliedFace =>
+          readSuppliedFace(
+            bytes,
+            { name: face.family, bold: face.bold, italic: face.italic },
+            face.fullName === "" ? {} : { inFile: face.fullName },
+          );
 
         offer(face.family, face.bold, face.italic, build);
         if (face.fullName !== face.family) offer(face.fullName, false, false, build);

@@ -1,4 +1,4 @@
-import { readFontFile, type FaceDefaults, type SuppliedFace } from "@docx-pages/core";
+import { readSuppliedFace, type FaceDefaults, type SuppliedFace } from "@docx-pages/core";
 
 // Faces that may be shipped where the ones documents actually name may not.
 // Each family here was drawn to match the advance widths of a face Word ships,
@@ -153,15 +153,11 @@ export async function readPack(read: ReadBytes = overFetch): Promise<FontPack> {
   const pack = await Promise.all(
     PACK_FACES.map(async (each) => {
       const bytes = await read(fontUrl(each));
-      const found = readFontFile(bytes);
-      const face: SuppliedFace = {
-        name: each.name,
-        bold: each.bold,
-        italic: each.italic,
-        metrics: found.metrics,
-        advances: found.advances,
-        sansSerif: each.sansSerif ?? found.sansSerif,
-      };
+      const face: SuppliedFace = readSuppliedFace(
+        bytes,
+        { name: each.name, bold: each.bold, italic: each.italic },
+        each.sansSerif === undefined ? {} : { sansSerif: each.sansSerif },
+      );
       return { face, bytes: { name: each.name, bold: each.bold, italic: each.italic, bytes } };
     }),
   );

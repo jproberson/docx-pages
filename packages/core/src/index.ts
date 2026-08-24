@@ -67,12 +67,14 @@ export {
   readFontFile,
   readFontMetrics,
   readGlyphIndex,
+  readSuppliedFace,
 } from "./layout/font-file.js";
 export type {
   FontFaceName,
   FontFileFormat,
   ReadFontFileResult,
   ReadFontMetricsResult,
+  SuppliedFaceOptions,
   UnderlineMetrics,
 } from "./layout/font-file.js";
 export type { CodeToGlyph } from "./layout/glyphs.js";

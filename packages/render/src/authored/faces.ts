@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import {
-  readFontFile,
+  readSuppliedFace,
   substitutingMetrics,
   type MetricsResolver,
   type SuppliedFace,
@@ -109,16 +109,9 @@ export const authoredMetrics = (): MetricsResolver =>
 function faceOf(name: string, path: string | null): SuppliedFace | null {
   if (path === null) return null;
 
-  const read = readFontFile(new Uint8Array(readFileSync(path)));
-  return {
+  return readSuppliedFace(new Uint8Array(readFileSync(path)), {
     name,
     bold: false,
     italic: false,
-    metrics: read.metrics,
-    advances: read.advances,
-    kerning: read.kerning,
-    ink: read.ink,
-    math: read.math,
-    sansSerif: read.sansSerif,
-  };
+  });
 }

@@ -6,7 +6,7 @@ import {
   layOutDocument,
   openDocx,
   readFaceShapes,
-  readFontFile,
+  readSuppliedFace,
   unshowableIn,
   writePdf,
   type FaceDefaults,
@@ -97,17 +97,12 @@ export type DocxDocumentProps = {
   readonly className?: string;
 };
 
-const suppliedFrom = (font: DocxFont): SuppliedFace => {
-  const read = readFontFile(font.bytes);
-  return {
+const suppliedFrom = (font: DocxFont): SuppliedFace =>
+  readSuppliedFace(font.bytes, {
     name: font.name,
     bold: font.bold ?? false,
     italic: font.italic ?? false,
-    metrics: read.metrics,
-    advances: read.advances,
-    sansSerif: read.sansSerif,
-  };
-};
+  });
 
 const sameFace = (
   font: DocxFont,

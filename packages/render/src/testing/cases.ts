@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import {
   NO_ADVANCES,
   DocxPagesError,
-  readFontFile,
+  readSuppliedFace,
   type FaceRequest,
   type FontMetrics,
   type SuppliedFace,
@@ -401,16 +401,9 @@ function faceOf(font: ReferenceFont): SuppliedFace {
   if (path === null || !existsSync(path)) {
     return { ...style, metrics: font.metrics, advances: NO_ADVANCES };
   }
-  const read = readFontFile(new Uint8Array(readFileSync(path)));
-  return {
-    ...style,
+  return readSuppliedFace(new Uint8Array(readFileSync(path)), style, {
     metrics: font.metrics,
-    advances: read.advances,
-    kerning: read.kerning,
-    ink: read.ink,
-    math: read.math,
-    sansSerif: read.sansSerif,
-  };
+  });
 }
 
 export const suppliedFaces = (): readonly SuppliedFace[] => referenceFonts().map(faceOf);
@@ -421,18 +414,11 @@ export const authoredFonts = (): readonly AuthoredFace[] =>
 // The authored file is the whole answer for the face it names: its own metrics as
 // well as its own advances, since the manifest's are the substitute's.
 function authoredFaceOf(face: AuthoredFace): SuppliedFace {
-  const read = readFontFile(new Uint8Array(readFileSync(face.filePath)));
-  return {
+  return readSuppliedFace(new Uint8Array(readFileSync(face.filePath)), {
     name: face.name,
     bold: face.bold,
     italic: face.italic,
-    metrics: read.metrics,
-    advances: read.advances,
-    kerning: read.kerning,
-    ink: read.ink,
-    math: read.math,
-    sansSerif: read.sansSerif,
-  };
+  });
 }
 
 const styleKey = (face: FaceRequest): string =>

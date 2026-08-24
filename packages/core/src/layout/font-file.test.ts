@@ -16,6 +16,7 @@ import {
   readFontFile,
   readFontMetrics,
   readGlyphIndex,
+  readSuppliedFace,
   type GlyphOutline,
   type OutlineTable,
 } from "./font-file.js";
@@ -1461,5 +1462,65 @@ describe("a TrueType outline of curves", () => {
 
   it("answers nothing for a glyph of no length at all", () => {
     expect(outlineOfGlyph(faceDrawing([new Uint8Array(0), curvedGlyph()]), 0)).toBeNull();
+  });
+});
+
+describe("a face built from the file it lives in", () => {
+  const ASKED = { name: "Meridian", bold: false, italic: false };
+  const COMPLETE: FontFixture = {
+    ...FACE,
+    advances: WIDTHS,
+    kernPairs: { AB: -80 },
+    boxes: { A: { left: 20, bottom: 0, right: 640, top: 700 } },
+    math: { constants: { axisHeight: 250, fractionRuleThickness: 60 } },
+  };
+
+  // Seven call sites wrote this object out by hand and three of them left these
+  // three tables off, so a document laid out through those three kerned nowhere
+  // and could set no equation at all, in the real face, with nothing stood in for
+  // to report it. Two of the three were the published packages.
+  it("carries the pairs, the ink and the mathematics the file states", () => {
+    const face = readSuppliedFace(buildSfnt(COMPLETE), ASKED);
+
+    expect(face.kerning?.kind).toBe("kerning");
+    expect(face.ink?.kind).toBe("ink");
+    expect(face.math?.kind).toBe("math");
+  });
+
+  it("answers to the name and the cut it was asked for", () => {
+    const face = readSuppliedFace(buildSfnt(COMPLETE), {
+      name: "Cambria",
+      bold: true,
+      italic: true,
+    });
+
+    expect(face).toMatchObject({ name: "Cambria", bold: true, italic: true });
+  });
+
+  // The reference manifest holds Word's own answer for a face's vertical geometry,
+  // which is the one thing about it the file is not authoritative for.
+  it("takes vertical metrics the caller holds over the file's own", () => {
+    const measured = { unitsPerEm: 1000, ascender: 750, descender: -250, lineGap: 20 };
+    const face = readSuppliedFace(buildSfnt(COMPLETE), ASKED, { metrics: measured });
+
+    expect(face.metrics).toStrictEqual(measured);
+    expect(face.advances.kind === "advances" && advanceOf(face.advances.advanceFor, "A")).toBe(660);
+  });
+
+  it("takes the caller's answer about serifs over the file's", () => {
+    const file = buildSfnt(COMPLETE);
+    const stated = readFontFile(file).sansSerif;
+
+    expect(readSuppliedFace(file, ASKED, { sansSerif: !stated }).sansSerif).toBe(!stated);
+  });
+
+  it("reads the face of a collection the caller names", () => {
+    const collection = buildCollection([
+      { ...FACE, faceName: "Meridian", advances: WIDTHS },
+      { ...FACE, faceName: "Meridian Math", advances: { A: 111 } },
+    ]);
+    const face = readSuppliedFace(collection, ASKED, { inFile: "Meridian Math" });
+
+    expect(face.advances.kind === "advances" && advanceOf(face.advances.advanceFor, "A")).toBe(111);
   });
 });
