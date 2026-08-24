@@ -83,9 +83,10 @@ repository is made in.
 ### Fonts are yours to supply, and the pack answers when you do not
 
 `core` reads font files but never goes looking for one. A face is handed in as a
-`SuppliedFace` carrying its metrics and its glyph advances, both read out of the
-file with `readFontFile`. The reader takes ttf, otf, ttc and woff, and refuses
-woff2, which needs brotli. `@docx-pages/fonts` is a set of such faces that may
+`SuppliedFace`, which `readSuppliedFace` builds from the file's bytes: its
+metrics, its glyph advances, the pairs it kerns by, what each glyph draws, and
+what it says about setting mathematics. The reader takes ttf, otf, ttc and woff,
+and refuses woff2, which needs brotli. `@docx-pages/fonts` is a set of such faces that may
 be shipped where the named ones may not, and everything below applies to a face
 out of the pack exactly as it applies to one of yours.
 
@@ -95,6 +96,14 @@ back out of `substitutions()`, and every character it had to draw out of another
 face comes back out of `fallbackCharacters()`. A page drawn on the back of one is
 no longer the page Word would draw, and the library will not pretend otherwise.
 
+**An equation wants more of a face than a line of text does**: the outlines its
+halves are measured off and the MATH table it takes its every constant from. A
+document is set in the face its `m:mathPr` names, Cambria Math unless it says
+otherwise, and where no supplied face carries those tables the document is
+refused rather than set out of a face that cannot say where a fraction's bar
+goes. The pack does not carry a math face, so a document holding an equation
+wants one from you.
+
 ## What a document asks for and does not get
 
 `LaidOutDocument.unhonoured` names everything the layout passed over, each with
@@ -103,14 +112,19 @@ drawn wrongly: it is what a document asks for that nothing here answers, whether
 not it showed.
 
 The ones worth knowing before you start, every one of them named in the report
-rather than passed over quietly: kerning and `keep-with-next` are read from the
-document and not yet acted on; a footnote takes no room at the
-foot of its page; only the last section's geometry is read, so a document that
-changes page size or margins part way through lays the rest out on the wrong
-page; and a cell spanning its neighbours is laid out at its own width.
+rather than passed over quietly: a footnote takes no room at the foot of its
+page; only the last section's geometry is read, so a document that changes page
+size or margins part way through lays the rest out on the wrong page; a cell
+spanning its neighbours is laid out at its own width, and a table style's
+conditional formatting is not applied; and a comment, with the column it is drawn
+in, is not drawn.
 
-Two gaps are **not** named in the report, which makes them the ones to watch: the
-old `w:pict` and `w:object` drawing form, which nothing here reads, and a
+Two more are about the faces rather than the page. Ligatures are unread, so a
+line is the sum of its characters' advances and whatever the pairs move them by.
+And only the Latin slots of `w:rFonts` are read, so a run of CJK, Arabic or
+Devanagari text is measured in whatever face the Latin slot named.
+
+One gap is **not** named in the report, which makes it the one to watch: a
 paragraph whose indents together exceed the frame they stand in, which is drawn to
 a rule that was never measured against Word.
 

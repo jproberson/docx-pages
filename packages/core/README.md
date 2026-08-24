@@ -191,9 +191,18 @@ over is in that report rather than in this list.
 ## Limits worth knowing
 
 - **woff2 is refused.** It needs brotli, which is not in every runtime.
-- **cmap formats 4 and 12 only.** Anything else refuses the document rather than
-  guessing a width.
-- **No kerning and no ligatures.** A line is the sum of its characters' advances.
+- **cmap formats 0, 4, 6, 12 and 13.** A face whose best subtable is format 2
+  refuses the document rather than guessing a width.
+- **No ligatures.** A line is the sum of its characters' advances and whatever
+  the face's pairs move them by. The pairs themselves are read, from `kern` and
+  from GPOS.
+- **Only the Latin slots of `w:rFonts`.** The East Asian and complex-script slots
+  are unread, so a run of CJK, Arabic or Devanagari text is measured in whatever
+  face the Latin slot named.
+- **A face that sets equations needs its MATH table and its outlines**, which all
+  but a handful of faces state nothing of. A document holding an equation and
+  naming no such face is refused rather than set out of one that cannot say where
+  a fraction's bar goes.
 - **Bold and italic are separate faces**, each needing its own file.
 
 ## Licence
