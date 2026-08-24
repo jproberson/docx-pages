@@ -2567,7 +2567,17 @@ function layOutWholeParagraph(
       lines: [],
       marker: markerAt(number, slot.topPt + height.baseFromTopPt),
       markTopPt: slot.topPt + height.seatPt,
-      contentBottomPt: slot.topPt + height.heightPt,
+      // **The room a multiple opens below a mark hangs past the foot, as it does
+      // below a line of text**, which is what `breakStack` has always read
+      // `fittingHeightPt` for. Measured on 2026-08-24, one document a case, by
+      // whether Word made a second page for a trailing empty paragraph: a body of
+      // 720pt holding 48 lines of 14.6484 leaves 16.90, and a mark under a rule of
+      // 1.3 asking 19.04 for a line of its own 14.65 stayed on the page, while the
+      // same mark under no multiple with 49 lines above it, where its own line does
+      // not fit either, opened a second page. Two corpus documents of one template
+      // turn on it, each opening a page for a mark that missed the foot by two
+      // tenths of a point.
+      contentBottomPt: slot.topPt + height.fittingHeightPt,
       resumesUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
       keepNext,

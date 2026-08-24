@@ -93,6 +93,23 @@ describe("measureStack", () => {
     expect(result.boxes[0]?.heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
   });
 
+  // **The room a multiple opens below a mark hangs past the foot of a page, as the
+  // room below a line of text does.** Measured on 2026-08-24 one document a case, by
+  // whether Word opened a second page for a trailing empty paragraph: a mark under a
+  // rule of 1.3 whose own line fit the room left stayed on the page though the room
+  // the rule opened did not fit, and the same mark stayed only until its own line
+  // stopped fitting too. So the paragraph keeps its whole height in the stack and
+  // offers only its mark's line to the break.
+  it("keeps an empty paragraph's whole height but offers the break its mark's line", () => {
+    const body = `<w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/></w:pPr></w:p>`;
+    const result = measure(body);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    const box = result.boxes[0];
+
+    expect(box?.heightPt).toBeCloseTo(ARIAL_12 * 1.5, 9);
+    expect((box?.contentBottomPt ?? 0) - (box?.topPt ?? 0)).toBeCloseTo(ARIAL_12, 9);
+  });
+
   it("takes the tallest run, not the paragraph mark, when a run is bigger", () => {
     const body = `<w:p><w:pPr><w:rPr><w:sz w:val="16"/></w:rPr></w:pPr>
       <w:r><w:rPr><w:sz w:val="44"/></w:rPr><w:t>Heading</w:t></w:r></w:p>`;
