@@ -583,6 +583,28 @@ describe("breakLines", () => {
     expect(lines[0]?.heightPt).toBeCloseTo(36, 9);
   });
 
+  // **A space in front of a drawing too wide for the line is enough to move the
+  // drawing off it, and the space stays behind on a line of its own.** Measured on
+  // 2026-08-24 in a 540pt frame: a 560pt picture opening a line after one space was
+  // drawn a whole line below the same picture opening a line with nothing in front
+  // of it. A space is held pending rather than committed, so the line read as empty
+  // and took the picture however wide it was, which drew four corpus documents of
+  // one template a line too high and one space too far right.
+  it("moves a drawing too wide for the line off a line holding only a space", () => {
+    const run = piecesRun([
+      { kind: "text", text: " " },
+      { kind: "drawing", widthEmu: 914400 * 3, heightEmu: 457200, turnDegrees: 0 },
+    ]);
+    const lines = linesOf([run], 200);
+
+    expect(lines).toHaveLength(2);
+    // The line the space is left on draws nothing and stands as tall as its own
+    // face, and the drawing opens the next line at its very start.
+    expect(lines[0]?.heightPt).toBeCloseTo(lines[0]?.fontHeightPt ?? 0, 9);
+    expect(lines[1]?.segments[0]?.offsetPt).toBe(0);
+    expect(lines[1]?.heightPt).toBeCloseTo(36, 9);
+  });
+
   // Word rounds the turn to the nearest quarter and keeps the extent that way
   // round, so a picture turned a quarter is held in a box as wide as it was tall.
   // Measured off Word's own pdf of the authored `rotated-drawings` document.

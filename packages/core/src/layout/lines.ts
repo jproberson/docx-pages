@@ -650,6 +650,10 @@ class LineBuilder {
   private committedPt = 0;
   private pending: LineSegment[] = [];
   private pendingPt = 0;
+  // The line the faces of the pending spaces would have made, kept because a space
+  // never raises a line it shares and does make one of its own where a drawing is
+  // moved off it. See `drawing`.
+  private pendingFontHeightPt = 0;
   private ascentPt = 0;
   private descentPt = 0;
   private fontHeightPt = 0;
@@ -720,6 +724,7 @@ class LineBuilder {
     this.committedPt += this.pendingPt + widthPt;
     this.pending = [];
     this.pendingPt = 0;
+    this.pendingFontHeightPt = 0;
     this.tabbed = false;
   }
 
@@ -762,6 +767,7 @@ class LineBuilder {
     for (const fragment of fragments) {
       this.pending.push(startingAt(segmentOf(fragment), this.committedPt + this.pendingPt));
       this.pendingPt += fragment.widthPt;
+      this.pendingFontHeightPt = Math.max(this.pendingFontHeightPt, fragment.fontHeightPt);
     }
     return TAKEN;
   }
@@ -806,8 +812,30 @@ class LineBuilder {
     return TAKEN;
   }
 
+  /**
+   * A drawing on the line, which moves to the next one where it does not fit.
+   *
+   * **Spaces in front of it are enough to move it, and they stay behind on a line
+   * of their own.** A space is held pending rather than committed, so a line
+   * holding nothing else reads as empty and used to take the drawing however wide
+   * it was. Measured on 2026-08-24 in a 540pt frame: a 560pt picture opening a line
+   * after one space was drawn a whole line below the same picture opening a line
+   * with nothing in front of it, and a 400pt one went the same way. Four corpus
+   * documents of one template hold that shape, each drawing its picture a line too
+   * high and the width of one space too far right.
+   *
+   * The spaces left behind draw nothing, and the line they hold open is the line
+   * their own face would have made: they raise nothing, as a space never does, and
+   * `finish` floors a line at its faces.
+   */
   drawing(widthPt: number, heightPt: number, fontHeightPt: number): Taken {
-    if (!this.empty && this.filled + widthPt > this.room + EPSILON) {
+    const overflows = this.filled + widthPt > this.room + EPSILON;
+    if (overflows && !this.empty) {
+      return { kind: "full", rest: null };
+    }
+    if (overflows && this.pending.length > 0) {
+      this.raise(0, 0, this.pendingFontHeightPt);
+      this.commit([], 0);
       return { kind: "full", rest: null };
     }
     this.raise(heightPt, 0, fontHeightPt);
