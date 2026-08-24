@@ -183,15 +183,22 @@ async function main(): Promise<void> {
         `  cell at ${cell.leftPt.toFixed(1)},${cell.topPt.toFixed(1)} ${cell.widthPt.toFixed(1)}x${cell.heightPt.toFixed(1)}\n`,
       );
     }
+    // **Four decimals, because a tenth of a point is not fine enough to read this
+    // by.** Word draws on a grid of 0.24pt, so its own answers carry that much
+    // rounding and a single line's `dy` cannot be trusted at all; what a page is read
+    // by is whether `dy` wanders inside that grid or grows down the page. Rounding
+    // the column to a tenth hides the difference between the two, and a drift of
+    // four hundredths a line, which is what cost three documents a page, is invisible
+    // in it.
     process.stdout.write("  ours (left, baseline, chars, box)  |  Word's, by the text\n");
     for (const line of readings[at] ?? []) {
       process.stdout.write(
-        `  ${line.leftPt.toFixed(1).padStart(7)} ${line.baselinePt.toFixed(1).padStart(7)} ${String(line.characters).padStart(4)}ch ${line.inABox ? "box" : "   "}  |  ` +
+        `  ${line.leftPt.toFixed(2).padStart(8)} ${line.baselinePt.toFixed(4).padStart(10)} ${String(line.characters).padStart(4)}ch ${line.inABox ? "box" : "   "}  |  ` +
           (line.drawn === null
             ? line.drawnOnPage === null
               ? "not found"
               : `Word drew it on page ${String(line.drawnOnPage)}`
-            : `${line.drawn.leftPt.toFixed(1).padStart(7)} ${line.drawn.baselinePt.toFixed(1).padStart(7)}   dx ${(line.leftPt - line.drawn.leftPt).toFixed(1)}  dy ${(line.baselinePt - line.drawn.baselinePt).toFixed(1)}`) +
+            : `${line.drawn.leftPt.toFixed(2).padStart(8)} ${line.drawn.baselinePt.toFixed(4).padStart(10)}   dx ${(line.leftPt - line.drawn.leftPt).toFixed(4)}  dy ${(line.baselinePt - line.drawn.baselinePt).toFixed(4)}`) +
           "\n",
       );
     }
