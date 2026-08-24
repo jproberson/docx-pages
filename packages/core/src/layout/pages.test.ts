@@ -375,6 +375,33 @@ describe("breakStack", () => {
     expect(pages.map(indexesOn)).toStrictEqual([[0], [1, 2]]);
   });
 
+  // **A break a paragraph asked for opens a page even where the page it leaves is
+  // empty.** Measured on 2026-08-24, every section the same page to the twip: two
+  // section breaks with nothing between them drew three pages and three of them drew
+  // four, each leaving a page blank but for its footer, and two paragraphs each
+  // asking for a page of its own did the same. A corpus document ends on two such
+  // breaks and Word draws both of its blank pages.
+  // The paragraph carrying a section's properties draws nothing and stands no
+  // higher than nought, so the one after it opens at the very top of the page the
+  // break just opened, which is where the two readings differ.
+  it("opens a page for a second break though the first left the page empty", () => {
+    const boxes = asking(asking(stack([[10], [], [10]]), 0, { endsPage: true }), 1, {
+      endsPage: true,
+    });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1], [2]]);
+  });
+
+  // What the older reading of that was for, and it still holds: the paragraph asking
+  // has nothing before it, so there is no page to leave.
+  it("keeps the first paragraph of a document off a page of its own", () => {
+    const boxes = asking(stack([[10], [10]]), 0, { startsPage: true });
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0, 1]]);
+  });
+
   // Widow control moves a break it would otherwise strand a line with; a break the
   // document asked for is not one of those.
   it("holds a line asked onto a page there whatever widow control would say", () => {

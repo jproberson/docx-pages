@@ -138,12 +138,24 @@ function breakOnce(
     topPt - shiftPt + heightPt > body.bottomPt + EPSILON && topPt - shiftPt > body.topPt + EPSILON;
 
   // The page is left where the break asked, so what comes after it starts again at
-  // the top of the page the paragraph opening it makes. A break with nothing left to
-  // move makes no page: a paragraph asking for one of its own while already standing
-  // at the top of one stays where it is, which is what keeps the first paragraph of
-  // a document off page two.
-  const leave = (topPt: number, next: PageBody, openedBy: number): boolean => {
-    if (topPt - shiftPt <= body.topPt + EPSILON) return false;
+  // the top of the page the paragraph opening it makes.
+  //
+  // **A break a paragraph asked for opens a page even where the page it leaves is
+  // empty; a break the page foot forced does not.** The two need telling apart at
+  // the top of a page, where both look like a break with nothing left to move.
+  // Measured on 2026-08-24, every section the same page to the twip so that only the
+  // break could move anything: two section breaks with nothing between them drew
+  // three pages and three of them drew four, each break leaving a page blank but for
+  // its footer, and two paragraphs each asking for a page of its own did the same.
+  // A break stating `continuous` opened none, as it opens none anywhere.
+  //
+  // So an asked break is refused only where nothing at all stands on the page it
+  // would leave, which is still what keeps the first paragraph of a document off
+  // page two. A forced one keeps the older test, which is what stops a row or an
+  // object taller than a whole page from opening page after page for itself.
+  const leave = (topPt: number, next: PageBody, openedBy: number, askedFor = false): boolean => {
+    const holdsNothingYet = (pages[pages.length - 1]?.length ?? 0) === 0;
+    if (askedFor ? holdsNothingYet : topPt - shiftPt <= body.topPt + EPSILON) return false;
     shiftPt = topPt - next.topPt;
     open(next, openedBy);
     return true;
@@ -196,7 +208,7 @@ function breakOnce(
         brokenAtASection && !box.startsPage && !carriedForward
           ? box.topPt
           : (box.lines[0]?.topPt ?? box.topPt) - box.resumesUnderPt;
-      leave(opensAt, opens, box.index);
+      leave(opensAt, opens, box.index, broken || box.startsPage);
     }
     broken = box.endsPage;
     brokenAtASection = box.endsPageAtASection;
