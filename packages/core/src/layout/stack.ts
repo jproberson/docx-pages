@@ -2783,9 +2783,15 @@ function heightOfLine(line: TextLine, at: number, input: LayOutParagraphInput): 
       naturalPt: Math.max(line.heightPt, held) + raisedPt,
       ascentPt: line.ascentPt + raisedPt,
       seatPt: line.seatPt,
-      // A number lifts the line by as much as its own face reaches, so it is part
-      // of what a multiple over the line is taken of.
-      fontHeightPt: Math.max(line.fontHeightPt, held) + raisedPt,
+      // **The room a number adds is not part of what a multiple is taken of**: Word
+      // multiplies the line the paragraph's own faces made and adds the number's
+      // room on top of that. Measured on 2026-08-24 over twelve paragraphs of Arial
+      // 10pt under a rule of 1.1, bulleted from a Symbol level: multiplying the
+      // lifted line puts their span at 210.97 and Word drew 210.48, which is what
+      // adding the room after the multiple gives to a hundredth of a point. Three
+      // corpus documents of one template turn on it, each making a page more than
+      // Word does on the half point it costs a page.
+      fontHeightPt: Math.max(line.fontHeightPt, held),
     },
     input.paragraphFrame,
   );

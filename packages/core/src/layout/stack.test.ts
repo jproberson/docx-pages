@@ -893,6 +893,26 @@ describe("measureStack over a numbered paragraph", () => {
     expect(box.lines[0]?.baselinePt).toBeCloseTo(36 + 12, 9);
   });
 
+  // **A multiple is taken of the line the paragraph's own faces made, and the room
+  // the number adds goes on top of that rather than being multiplied with it.**
+  // Measured on 2026-08-24 over twelve paragraphs of Arial 10pt under a rule of 1.1,
+  // bulleted from a Symbol level: Word drew their baselines 210.48 apart, which is
+  // what adding the room after the multiple gives to a hundredth of a point, where
+  // multiplying the lifted line gives 210.97. Three corpus documents of one template
+  // each made a page more than Word did on the half point it costs a page.
+  it("multiplies the line the text made and adds the number's room after it", () => {
+    const item =
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>` +
+      `<w:spacing w:line="360" w:lineRule="auto"/></w:pPr>` +
+      `<w:r><w:t>aaaa</w:t></w:r></w:p>`;
+    const lift = 12 - ARIAL_ASCENT_12;
+
+    expect(numberedFirst(item, levelInFace("Tall Marks")).heightPt).toBeCloseTo(
+      ARIAL_12 * 1.5 + lift,
+      9,
+    );
+  });
+
   it("leaves the line alone for a number that only reaches below the baseline", () => {
     const box = numberedFirst(listItem("aaaa"), levelInFace("Deep Marks"));
     expect(box.heightPt).toBeCloseTo(ARIAL_12, 9);
