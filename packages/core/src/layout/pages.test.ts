@@ -792,15 +792,74 @@ describe("an object anchored to a paragraph", () => {
   });
 });
 
-// **A page break's own line never has to fit.** Seven cases were put to Word on
-// 2026-08-15 by `break-foot-probe`, three repeats each, over a body running 36 to 756
-// filled to 660, and it left the break's line at the foot of the page it started on in
-// every one. Each case below is that page: a filler, then a paragraph ending on a
-// break whose line stands at 110, then what follows the break. The foot of the body is
-// what moves from case to case, so the line has room for itself twice over, exactly
-// enough, a twip too little, half its own height too little, and a single twip against
-// a line of 24. The break ends the page whatever it did with the line.
-describe("a paragraph whose page break ends the page", () => {
+// **A page break's own line never has to fit, where the paragraph goes on past it.**
+// Seven cases were put to Word on 2026-08-15 by `break-foot-probe`, three repeats each,
+// over a body running 36 to 756 filled to 660, and it left the break's line at the foot
+// of the page it started on in every one. Each case below is that page: a filler, then
+// a paragraph whose break stands at 110 and whose text carries on after it, then the
+// paragraph after that. The foot of the body is what moves from case to case, so the
+// line has room for itself twice over, exactly enough, a twip too little, half its own
+// height too little, and a single twip against a line of 24. The text after the break
+// opens the next page whatever the line did.
+describe("a paragraph whose text goes on past its page break", () => {
+  const breaking = (heightPt = 24): readonly ParagraphBox[] =>
+    asking(stack([[10], [heightPt, 10], [10]], 100), 1, { line: 1 });
+
+  const pagesOf = (bottomPt: number, heightPt = 24) =>
+    breakStack({ cells: [], boxes: breaking(heightPt), topPt: 100, bottomPt });
+
+  // The break's line stays with the filler and the text after it goes on alone, so a
+  // page holding both boxes at one line apiece is the line left where it stood.
+  const keptItsLine = (bottomPt: number, heightPt = 24): readonly number[] =>
+    linesOn(pagesOf(bottomPt, heightPt)[0]);
+
+  it("keeps its line where it stands with room for it twice over", () => {
+    const pages = pagesOf(158);
+
+    expect(linesOn(pages[0])).toStrictEqual([1, 1]);
+    expect(indexesOn(pages[1] ?? { boxes: [] })).toStrictEqual([1, 2]);
+  });
+
+  it("keeps its line ending exactly at the foot", () => {
+    expect(keptItsLine(134)).toStrictEqual([1, 1]);
+  });
+
+  it("keeps its line missing the foot by a twip", () => {
+    expect(keptItsLine(133.95)).toStrictEqual([1, 1]);
+  });
+
+  it("keeps its line missing the foot by half of itself", () => {
+    expect(keptItsLine(122)).toStrictEqual([1, 1]);
+  });
+
+  it("keeps its line left a single twip of room", () => {
+    expect(keptItsLine(110.05)).toStrictEqual([1, 1]);
+  });
+
+  // The shape two corpus documents have, which is what sent anyone looking: an
+  // ordinary line of 12.207 left 8 points of room.
+  it("keeps an ordinary line left less room than it takes", () => {
+    expect(keptItsLine(118, 12.207)).toStrictEqual([1, 1]);
+  });
+
+  // And the text after the break opens the next page however much room was left.
+  it("opens the next page for the text after the break", () => {
+    const pages = pagesOf(400);
+
+    expect(pages).toHaveLength(2);
+    expect(indexesOn(pages[1] ?? { boxes: [] })).toStrictEqual([1, 2]);
+  });
+});
+
+// **A break with nothing after it is an ordinary line and does have to fit.** The seven
+// above all wrote the break and then text in the same paragraph; a paragraph whose whole
+// content is the break has the one line and nothing to follow it. The same seven
+// questions were put to Word for that shape on 2026-08-24 by `trailing-break-foot-probe`,
+// three repeats each and all three agreeing: the two with room to spare and the one
+// ending exactly at the foot kept their line, and the four short of the foot moved it to
+// the next page, which the break then leaves blank. **A twip short is enough to move
+// it**, so the boundary is the ordinary one and not a tolerance.
+describe("a paragraph whose whole content is a page break", () => {
   const breaking = (heightPt = 24): readonly ParagraphBox[] =>
     asking(stack([[10], [heightPt], [10]], 100), 1, { endsPage: true });
 
@@ -818,22 +877,25 @@ describe("a paragraph whose page break ends the page", () => {
     expect(indexesOn(pagesOf(134)[0] ?? { boxes: [] })).toStrictEqual([0, 1]);
   });
 
-  it("keeps its line missing the foot by a twip", () => {
-    expect(indexesOn(pagesOf(133.95)[0] ?? { boxes: [] })).toStrictEqual([0, 1]);
+  // A twip is the smallest miss a document can spell, and Word moves the line for it.
+  it("moves its line missing the foot by a twip, and leaves that page blank", () => {
+    const pages = pagesOf(133.95);
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1], [2]]);
   });
 
-  it("keeps its line missing the foot by half of itself", () => {
-    expect(indexesOn(pagesOf(122)[0] ?? { boxes: [] })).toStrictEqual([0, 1]);
+  it("moves its line missing the foot by half of itself", () => {
+    expect(pagesOf(122).map(indexesOn)).toStrictEqual([[0], [1], [2]]);
   });
 
-  it("keeps its line left a single twip of room", () => {
-    expect(indexesOn(pagesOf(110.05)[0] ?? { boxes: [] })).toStrictEqual([0, 1]);
+  it("moves its line left a single twip of room", () => {
+    expect(pagesOf(110.05).map(indexesOn)).toStrictEqual([[0], [1], [2]]);
   });
 
-  // The shape two corpus documents have, which is what sent anyone looking: an
-  // ordinary line of 12.207 left 8 points of room.
-  it("keeps an ordinary line left less room than it takes", () => {
-    expect(indexesOn(pagesOf(118, 12.207)[0] ?? { boxes: [] })).toStrictEqual([0, 1]);
+  // `95be79ab5055`'s own shape: an ordinary line of 12.207 left 8 points of room, where
+  // a drawing and two empty paragraphs take the page to within 1.67 of its foot.
+  it("moves an ordinary line left less room than it takes", () => {
+    expect(pagesOf(118, 12.207).map(indexesOn)).toStrictEqual([[0], [1], [2]]);
   });
 
   // And what follows the break opens the next page however much room was left.
@@ -844,7 +906,7 @@ describe("a paragraph whose page break ends the page", () => {
     expect(indexesOn(pages[1] ?? { boxes: [] })).toStrictEqual([2]);
   });
 
-  // A paragraph closing a section is left as it was, since none of the seven asked
+  // A paragraph closing a section is left as it was, since none of the fourteen asked
   // about one and the page a section opens keeps its own room above itself.
   it("moves a line that will not fit where the break closes a section", () => {
     const boxes = asking(breaking(), 1, { endsPageAtASection: true });

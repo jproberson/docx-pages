@@ -60,9 +60,9 @@ type Opening = {
 // first move put it, mid page, with room below it to move into and nothing to gain
 // by it.
 /**
- * **A page break's own line never has to fit.** Whatever room the page has left, the
- * line the break runs off the end of stays where the stack put it, and the break ends
- * the page all the same, so what follows opens the next one.
+ * **A page break's own line never has to fit, where the paragraph goes on past it.**
+ * Whatever room the page has left, the line the break runs off the end of stays where
+ * the stack put it, and the text after the break opens the next page.
  *
  * Measured on 2026-08-15 by `break-foot-probe`, seven cases and three repeats each,
  * over a body running 36 to 756 filled to 660: a break's line with room for it twice
@@ -72,12 +72,27 @@ type Opening = {
  * every one of them at the foot of the page it started on**, where this project gave
  * four of the seven a page of their own.
  *
- * A paragraph closing a section is left as it was, since none of the seven asked
+ * **A break with nothing after it is an ordinary line and does have to fit**, which is
+ * a second shape the seven never held: every one of them wrote the break and then text
+ * in the same paragraph, so the break's line is the one before it and another line of
+ * the paragraph follows. A paragraph whose whole content is the break has that one line
+ * and nothing after it.
+ *
+ * The same seven questions were put to Word for that shape on 2026-08-24 by
+ * `trailing-break-foot-probe`, three repeats each and all three agreeing: the two with
+ * room to spare and **the one ending exactly at the foot kept their line**, and the
+ * four short of the foot **moved it to the next page, which the break then leaves
+ * blank** with a page of its own after it. One twip short is enough to move it, so this
+ * is the ordinary rule for a line and not a tolerance. Found from `95be79ab5055`, where
+ * a drawing ends at 815.6 of a body running to 842.43, two empty paragraphs take it to
+ * 840.76, and the break's line wants 11.50 of the 1.67 left: Word makes 8 pages of it
+ * and this project made 7.
+ *
+ * A paragraph closing a section is left as it was, since none of the fourteen asked
  * about one and the page a section opens keeps its own room above itself.
  */
 const carriesABreak = (box: ParagraphBox, at: number): boolean =>
-  box.lines[at + 1]?.startsPage === true ||
-  (at === box.lines.length - 1 && box.endsPage && !box.endsPageAtASection);
+  box.lines[at + 1]?.startsPage === true;
 
 // Room is a difference of exact ratios, so only the last bits of one need absorbing.
 const EPSILON = 1e-9;
