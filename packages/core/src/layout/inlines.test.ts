@@ -128,6 +128,56 @@ describe("placeInlines", () => {
     expect(placed[0]?.leftPt).toBeCloseTo(612 - 36 - 180, 6);
   });
 
+  // **A paragraph whose lines are told exactly how tall to be cuts off a drawing that
+  // hangs above it.** Measured on 2026-08-25 by `exact-line-clip-probe`, six cases read
+  // off Word's own pdf: a picture 150 by 100 alone in paragraphs of exactly 10, 20, 40,
+  // 60, 100 and 120 showed 8.01, 16.01, 32.01, 48.01, 80.01 and 96.01 of its height,
+  // each starting at the paragraph's own top.
+  it("cuts a drawing off at the paragraph where the line is told to be shorter", () => {
+    const exactly = `<w:spacing w:line="200" w:lineRule="exact"/>`;
+    const { placed } = place(paragraph(exactly, image()), 100);
+    const cut = placed[0]?.clipTo;
+    expect(cut?.topPt).toBeCloseTo(100, 6);
+    expect(cut?.heightPt).toBeCloseTo(10, 6);
+    // The drawing itself is placed whole, hanging from the baseline as ever.
+    expect(placed[0]?.topPt).toBeCloseTo(108 - 90, 6);
+    expect(placed[0]?.heightPt).toBeCloseTo(90, 6);
+  });
+
+  // The same picture with an empty line above it in the same paragraph showed 18.01,
+  // and with twelve above it the whole of its 100: what the drawing hangs over is its
+  // paragraph's own room and not the line it stands on.
+  it("keeps what a drawing hangs over its own paragraph's earlier lines", () => {
+    const exactly = `<w:spacing w:line="200" w:lineRule="exact"/>`;
+    const twelve = `<w:r>${"<w:br/>".repeat(12)}</w:r>`;
+    expect(place(paragraph(exactly, twelve + image()), 100).placed[0]?.clipTo).toBeNull();
+  });
+
+  // The cut is the paragraph's own room, two lines of 10 here, and what shows of the
+  // picture is the 18 of it between that room's top and its own bottom on the second
+  // baseline. Word drew 18.01.
+  it("cuts at the paragraph's top where the drawing hangs past it", () => {
+    const exactly = `<w:spacing w:line="200" w:lineRule="exact"/>`;
+    const { placed } = place(paragraph(exactly, `<w:r><w:br/></w:r>${image()}`), 100);
+    const cut = placed[0]?.clipTo;
+    expect(cut?.topPt).toBeCloseTo(100, 6);
+    expect(cut?.heightPt).toBeCloseTo(20, 6);
+    const drawing = placed[0];
+    if (drawing === undefined) throw new Error("expected the drawing");
+    expect(drawing.topPt + drawing.heightPt - (cut?.topPt ?? 0)).toBeCloseTo(18, 6);
+  });
+
+  it("cuts nothing where the line is tall enough to hold the drawing", () => {
+    const exactly = `<w:spacing w:line="2400" w:lineRule="exact"/>`;
+    expect(place(paragraph(exactly, image()), 100).placed[0]?.clipTo).toBeNull();
+  });
+
+  // A line grown to hold the drawing holds all of it, which is every line stating no
+  // rule and every one stating `atLeast`.
+  it("cuts nothing where the line measured itself", () => {
+    expect(place(paragraph("", image()), 100).placed[0]?.clipTo).toBeNull();
+  });
+
   // Measured against Word: an inline picture right-aligned beside a wrapping
   // object ends where that object's band begins, not at the margin behind it.
   it("keeps a drawing out of the band an object beside it wraps", () => {

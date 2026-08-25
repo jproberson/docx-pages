@@ -364,9 +364,26 @@ export function contentOf(
       case "paint":
         paintLayer(out, pdfPage, drawable.painted, drawable.highlights);
         break;
-      case "object":
+      case "object": {
+        const { clipTo } = drawable;
+        if (clipTo === null) {
+          drawObject(out, pdfPage, options.images, drawable);
+          break;
+        }
+        // A line cuts off a drawing taller than itself, and Word writes the whole
+        // drawing under that cut rather than leaving out what does not show.
+        out.save();
+        out.rectangle(
+          clipTo.leftPt,
+          pdfPage.heightPt - clipTo.topPt - clipTo.heightPt,
+          clipTo.widthPt,
+          clipTo.heightPt,
+        );
+        out.clip();
         drawObject(out, pdfPage, options.images, drawable);
+        out.restore();
         break;
+      }
     }
   }
 

@@ -819,7 +819,27 @@ export function Page(props: PageProps): ReactElement {
           return [textLayer(drawable, widthPt, heightPt, fallbackFonts)];
         }
         if (drawable.kind === "glyphs") return [glyphLayer(drawable, frames)];
-        return renderObject(drawable, imageUrl, frames, fallbackFonts);
+        const drawn = renderObject(drawable, imageUrl, frames, fallbackFonts);
+        const cut = drawable.clipTo;
+        if (cut === null) return drawn;
+        // **A line cuts off a drawing taller than itself**, and what hangs out of it
+        // is drawn nowhere: see `placeInlines`. The cut stands in the page's own
+        // coordinates, which is what the drawing inside it is placed in.
+        return [
+          <div
+            key={`${drawable.key}-cut`}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: pt(widthPt),
+              height: pt(heightPt),
+              clipPath: `inset(${pt(cut.topPt)} 0 ${pt(heightPt - cut.topPt - cut.heightPt)} 0)`,
+            }}
+          >
+            {drawn}
+          </div>,
+        ];
       })}
     </div>
   );

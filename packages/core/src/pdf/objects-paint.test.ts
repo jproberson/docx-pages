@@ -77,6 +77,7 @@ const object = (flip = UNFLIPPED): ObjectDrawable => ({
   ...BOX,
   flip,
   turnDegrees: 0,
+  clipTo: null,
 });
 
 const FILLED: PlacedPaint = {

@@ -10,7 +10,7 @@ import type { FaceRequest } from "./font-metrics.js";
 import { mathPrimitivesOf, type MathPrimitive } from "./math.js";
 import type { PlacedInline } from "./inlines.js";
 import { paintOfCell, paintOfParagraph, type PaintedFill, type PaintedLine } from "./painting.js";
-import type { ParagraphBox, ParagraphPaint, PlacedCell, PlacedLine } from "./stack.js";
+import type { ClipRect, ParagraphBox, ParagraphPaint, PlacedCell, PlacedLine } from "./stack.js";
 import { aliasedSymbolText } from "./symbol-aliases.js";
 import { turnedAbout } from "./turns.js";
 
@@ -603,6 +603,9 @@ export type Drawable =
       // How far clockwise the shape is turned about the middle of the box above,
       // which is the box it stands in before it is turned.
       readonly turnDegrees: number;
+      // What the line a drawing stands in lets through of it, and null for anything
+      // the whole of which is drawn. `placeInlines` records why.
+      readonly clipTo: ClipRect | null;
     }
   | {
       readonly kind: "text";
@@ -660,6 +663,7 @@ type Standing = {
   readonly heightPt: number;
   readonly flip: DrawingFlip;
   readonly turnDegrees: number;
+  readonly clipTo: ClipRect | null;
 };
 
 /**
@@ -701,6 +705,7 @@ function objectsOf(standing: Standing, key: string, options: DrawingOptions): re
           heightPt,
           flip: child.flip,
           turnDegrees: standing.turnDegrees + child.turnDegrees,
+          clipTo: standing.clipTo,
         },
         `${key}-${String(at)}`,
         options,
@@ -722,6 +727,9 @@ const fromFloat = (float: PlacedFloat, key: string, options: DrawingOptions): re
       heightPt: float.heightPt,
       flip: float.flip,
       turnDegrees: float.turnDegrees,
+      // A floating drawing stands beside the lines rather than in one, so no line
+      // cuts it.
+      clipTo: null,
     },
     key,
     options,
@@ -742,6 +750,7 @@ const fromInline = (
       heightPt: inline.heightPt,
       flip: inline.flip,
       turnDegrees: inline.turnDegrees,
+      clipTo: inline.clipTo,
     },
     key,
     options,
