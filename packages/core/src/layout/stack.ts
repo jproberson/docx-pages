@@ -820,49 +820,35 @@ function evensBetter(one: Filled, than: Filled): boolean {
 }
 
 /**
- * What the run costs the page it stands on: **the tallest of its columns up to and
- * including the last one that draws anything. The columns past that cost nothing,
- * however much they hold.**
+ * What the run costs the page it stands on: **the tallest of its columns, measured to
+ * the foot of everything each one holds.** A column holding nothing but empty
+ * paragraphs is worth every one of them, and the mark closing the run's own section is
+ * worth nothing anywhere, which is what leaves it out of the heights this is handed.
  *
- * Measured on 2026-08-13 by the authored cases H and I: three lines of 24pt followed by
- * three empty paragraphs of 30pt, in two equal columns, put the lines in the first column
- * and the empties in the second, and the run cost **72**, the first column alone. The same
- * with 26pt empties cost 72 as well, so the second column's 90 and its 78 were both worth
- * nothing. **Case J is the control**: put a word in each of those three paragraphs and
- * they cost 90, drawn in the second column at 60, 90 and 120. The only thing that changed
- * is that they draw something.
+ * Measured on 2026-08-25 by `column-empty-sweep-probe`, twelve cases three repeats
+ * each, read off Word's own pdf. Each is a block of 78 in two equal columns followed by
+ * empty paragraphs the second column takes whole: **three of 30 cost the run 90, three
+ * of 34 cost 102, two of 60 cost 120, four of 20 cost 80.** Every one of them is the
+ * second column's own height, and the second column draws nothing at all.
  *
- * **A column standing before one that draws is worth its whole height, drawn or not**,
- * which is what says this is about the columns after the last drawn thing and not about
- * empty columns anywhere. The corpus run `28ef8aa08b34` carries a stretch of three columns
- * whose first two hold nothing but empty paragraphs, 28.17 and 27.60, and whose third
- * draws one line and stands 23.85: Word put the paragraph under it at 28.17, the tallest
- * of the three.
+ * **What stood here said the columns past the last drawing one cost nothing**, on a
+ * reading of the authored cases H and I that their own arithmetic does not carry: those
+ * runs come to 72 and 60, and to 72 and 52, so the first column is the tallest either
+ * way and neither case can tell the two rules apart. Case J is not a control for the
+ * same reason. The twelve cases above were built to separate them and do.
  *
- * **A column that draws anything is measured to the foot of everything in it**, its own
- * empty paragraphs included. Case G: four empty paragraphs falling in the column that also
- * drew three blocks counted for their 96, and the run cost 168.
+ * The corpus said it too, and was read the other way: `28ef8aa08b34` carries a stretch
+ * of three columns whose first two hold nothing but empty paragraphs, 28.17 and 27.60,
+ * and whose third draws one line and stands 23.85. Word put the paragraph under it at
+ * 28.17, which is the tallest of the three and stands in a column that draws nothing.
  *
- * Case E said the same of a column that receives nothing at all, and B could not tell the
- * difference, since its empties came to exactly the 72 its drawn column already cost.
- *
- * Where no column draws anything the run keeps the room its tallest column takes, which is
- * what this did before any of it was measured and what nothing has asked Word about.
+ * **The mark closing the section is worth nothing where it stands.** Measured the same
+ * day by `column-empty-tail-probe` case R: a break divides the run outright, the second
+ * column takes the break's own mark, three lines and the closer, and the run costs 96
+ * where counting that closer would make it 120.
  */
-function drawnHeightPt(
-  columnHeightsPt: readonly number[],
-  columnsDrawing: readonly boolean[],
-): number {
-  const lastDrawing = columnsDrawing.lastIndexOf(true);
-  if (lastDrawing < 0) return Math.max(0, ...columnHeightsPt);
-  return Math.max(0, ...columnHeightsPt.slice(0, lastDrawing + 1));
-}
-
-// Whether anything of the paragraph is drawn where it stands: its text, the number a
-// list puts in front of it, or the borders and shading behind it. A paragraph holding
-// none of those is drawn nowhere at all.
-const drawsSomething = (box: ParagraphBox): boolean =>
-  box.lines.length > 0 || box.marker !== null || box.paint !== null;
+const tallestColumnPt = (columnHeightsPt: readonly number[]): number =>
+  Math.max(0, ...columnHeightsPt);
 
 type Filled = {
   readonly kind: "filled";
@@ -878,10 +864,9 @@ type Filled = {
   // How far below the run's top each block reached, which are the heights a
   // column could be cut to.
   readonly bottomsPt: readonly number[];
-  // How tall each column came out, which is what one fill is judged against another by,
-  // and whether each of them draws anything, which is what says what the run costs.
+  // How tall each column came out, which is both what one fill is judged against
+  // another by and what the run costs its page.
   readonly columnHeightsPt: readonly number[];
-  readonly columnsDrawing: readonly boolean[];
 };
 
 type ColumnFill = { readonly kind: "blocked"; readonly blocker: LayoutBlocker } | Filled;
@@ -925,7 +910,6 @@ function fillColumns(
   const untornRows: UntornRow[] = [];
   const bottomsPt: number[] = [];
   const columnHeightsPt: number[] = [];
-  const columnsDrawing: boolean[] = [];
   let from = 0;
   // What the column above left of the paragraph the run carries on with, which the
   // column being filled breaks again at its own width.
@@ -935,7 +919,6 @@ function fillColumns(
     const afterTheLastBreak = lastBreak !== null && from >= lastBreak;
     if (from >= blocks.length) {
       columnHeightsPt.push(0);
-      columnsDrawing.push(false);
       continue;
     }
     const measured = measureBlocks(blocks.slice(from), context, topPt, column, {
@@ -967,7 +950,6 @@ function fillColumns(
       cells.push(...measured.cells);
       untornRows.push(...measured.untornRows);
       columnHeightsPt.push(measured.heightPt);
-      columnsDrawing.push(measured.boxes.some(drawsSomething));
       from = blocks.length;
       carried = null;
       continue;
@@ -990,7 +972,6 @@ function fillColumns(
       kept.heightPt +
         (cut.keepLines === null ? nearSideOfABreak(measured.boxes, blockOf, forced, cut.at) : 0),
     );
-    columnsDrawing.push(kept.boxes.some(drawsSomething));
     from = cut.at;
     carried = kept.rest ?? null;
   }
@@ -1011,14 +992,13 @@ function fillColumns(
       // where such a row can still move. Nothing has asked Word what it does with an
       // object a column has not the room for.
       anchoredObjects: [],
-      heightPt: drawnHeightPt(columnHeightsPt, columnsDrawing),
+      heightPt: tallestColumnPt(columnHeightsPt),
     },
     whole: from >= blocks.length,
     consumed: from,
     rest: carried,
     bottomsPt,
     columnHeightsPt,
-    columnsDrawing,
   };
 }
 

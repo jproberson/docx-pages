@@ -1866,20 +1866,33 @@ describe("measureStack over a section of more than one column", () => {
       expect(run.costPt).toBeCloseTo(168, 9);
     });
 
-    // H: three lines of 24pt then three empty paragraphs of 30pt. Word put the lines in
-    // the first column and the empties in the second, and the run cost **72**, the first
-    // column alone: **a column that draws nothing costs the page nothing, however much it
-    // holds.** The second column stands at 90.
-    it("costs nothing for a column that draws nothing", () => {
+    // H: three lines of 24pt then three empty paragraphs of 30pt, the last of them
+    // carrying the break. Word put the lines in the first column and the empties in the
+    // second, and the run cost **72**: the empties come to 60 and the closing mark is
+    // worth nothing, so the drawn column is the taller.
+    it("costs the drawn column, where the empty paragraphs beside it come to less", () => {
       const run = runIn([wrapping(THREE_LINES), emptyOf(30), emptyOf(30), emptyOf(30)], TWO);
       expect(run.drawnIn).toStrictEqual([0]);
       expect(run.costPt).toBeCloseTo(72, 9);
     });
 
-    // I: the same with 26pt empties, which came to 72 as well. The second column stands at
-    // 78 here and at 90 in H, and neither is worth anything, so the run is not being
-    // charged some part of what that column holds.
-    it("costs nothing for a column of empty paragraphs whatever they measure", () => {
+    // **A column of nothing but empty paragraphs costs the page every one of them.**
+    // Measured on 2026-08-25 by `column-empty-sweep-probe`, whose block of 78 beside
+    // three empty paragraphs of 30 cost the run **90**, and whose three of 34 cost 102
+    // and two of 60 cost 120. H and I read the other way for years and could not tell:
+    // their empties came to less than the column beside them either way.
+    it("costs a column of empty paragraphs its own height, where it is the taller", () => {
+      const run = runIn(
+        [wrapping(THREE_LINES), emptyOf(30), emptyOf(30), emptyOf(30), emptyOf(30)],
+        TWO,
+      );
+      expect(run.drawnIn).toStrictEqual([0]);
+      expect(run.costPt).toBeCloseTo(90, 9);
+    });
+
+    // I: the same as H with 26pt empties, which came to 72 as well: 52 against 72 says
+    // the same thing at another size.
+    it("costs the drawn column at any size of the empty paragraphs beside it", () => {
       const run = runIn([wrapping(THREE_LINES), emptyOf(26), emptyOf(26), emptyOf(26)], TWO);
       expect(run.drawnIn).toStrictEqual([0]);
       expect(run.costPt).toBeCloseTo(72, 9);
