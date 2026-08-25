@@ -68,6 +68,21 @@ export type WritePdfOptions = {
   // viewer takes them. A run written in one holds positions in that face's own
   // page, and drawing it as the stand-in's letters would draw the wrong ones.
   readonly aliasSymbolFaces?: ReadonlySet<string>;
+  /**
+   * Told once about each picture that stood on a page and was drawn nowhere on it.
+   *
+   * **This backend draws fewer formats than the library reads.** A jpeg, a png and
+   * a metafile are written into the file; a gif, a bmp, a tiff, an svg or a webp is
+   * not, though the viewer draws all of those by handing them to the browser. So
+   * `LaidOutDocument.unhonoured` is right to stay quiet about them, since nothing
+   * about the document is unhonoured, and the writer is the only thing that knows.
+   *
+   * Found on 2026-08-24 in a corpus document holding one gif and one png, whose
+   * png came out cell for cell and whose gif left a hole in the page that nothing
+   * anywhere reported. A library that sells itself on saying what it did not do
+   * cannot drop a picture in silence.
+   */
+  readonly undrawn?: (part: string) => void;
 };
 
 const infoOf = (metadata: PdfMetadata): PdfEntries => ({
@@ -103,6 +118,7 @@ export function writePdf(layout: LaidOutDocument, options: WritePdfOptions): Uin
     metricsFor: options.metricsFor,
     fonts,
     objects,
+    ...(options.undrawn === undefined ? {} : { onUndrawn: options.undrawn }),
   });
 
   // The tree is reserved before the pages it holds, since a page names it and it

@@ -313,6 +313,15 @@ const drawing = (widthEmu: number, heightEmu: number, turnDegrees = 0, srcRect =
   `<a:ext cx="${String(widthEmu)}" cy="${String(heightEmu)}"/></a:xfrm>` +
   `</pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
 
+// A real 1 by 1 gif, header and all. The writer dispatches on the bytes rather
+// than on the part's extension, so a jpeg named `.gif` is drawn perfectly well and
+// says nothing about this at all.
+const TINY_GIF = Uint8Array.from([
+  0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0xff, 0xff, 0xff, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b,
+]);
+
 const withPicture = (
   widthEmu: number,
   heightEmu: number,
@@ -341,6 +350,39 @@ const withPicture = (
 
 describe("a picture", () => {
   // A jpeg goes into the file as it stands, so what the reader finds is the very
+  // **This backend draws fewer formats than the library reads.** The viewer hands a
+  // gif to the browser and the browser draws it, so nothing about the document is
+  // unhonoured and `unhonoured` is right to stay quiet; the writer is the only thing
+  // that knows it drew a hole. Found in a corpus document holding one gif beside one
+  // png, whose png came out cell for cell and whose gif was reported by nothing.
+  it("says which pictures it could not draw, rather than leaving a hole in silence", () => {
+    const inches = 914400;
+    const { pkg, layout } = withPicture(inches, inches, TINY_GIF, "gif");
+    const undrawn: string[] = [];
+    writePdf(layout, {
+      fonts,
+      imageBytes: (part) => pkg.parts.get(part),
+      metricsFor,
+      undrawn: (part) => undrawn.push(part),
+    });
+
+    expect(undrawn).toStrictEqual(["word/media/image1.gif"]);
+  });
+
+  it("says nothing about a picture it did draw", () => {
+    const inches = 914400;
+    const { pkg, layout } = withPicture(inches, inches, TINY_JPEG, "jpeg");
+    const undrawn: string[] = [];
+    writePdf(layout, {
+      fonts,
+      imageBytes: (part) => pkg.parts.get(part),
+      metricsFor,
+      undrawn: (part) => undrawn.push(part),
+    });
+
+    expect(undrawn).toStrictEqual([]);
+  });
+
   // bytes the document held, drawn into the rectangle layout placed it in.
   it("is drawn in the rectangle layout placed it in", async () => {
     const inches = 914400;

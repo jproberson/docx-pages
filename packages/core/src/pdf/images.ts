@@ -61,6 +61,9 @@ export type ImageOptions = {
   readonly metricsFor: MetricsResolver;
   readonly fonts: PdfFonts;
   readonly objects: PdfObjects;
+  // Told once about each picture that reached the page and was drawn nowhere on
+  // it. See `undrawn` on `WritePdfOptions` for why the writer has to say.
+  readonly onUndrawn?: (part: string) => void;
 };
 
 type Bitmap = { readonly resource: string; readonly object: PdfReference };
@@ -91,17 +94,28 @@ export function pdfImages(options: ImageOptions): PdfImages {
     return picture;
   };
 
+  // Said once a part, however many pages drew it, so a logo on every page of a
+  // long document is one line and not two hundred.
+  const told = new Set<string>();
+  const undrawn = (part: string): false => {
+    if (options.onUndrawn !== undefined && !told.has(part)) {
+      told.add(part);
+      options.onUndrawn(part);
+    }
+    return false;
+  };
+
   return {
     draw: (out, page, at, part, crop) => {
       if (pictureExtension(part) === METAFILE_EXTENSION) {
         const picture = metafileFor(part);
-        if (picture === null) return false;
+        if (picture === null) return undrawn(part);
         playMetafile(out, page, at, picture, crop, options.fonts);
         return true;
       }
 
       const bitmap = bitmapFor(part);
-      if (bitmap === null) return false;
+      if (bitmap === null) return undrawn(part);
       drawBitmap(out, page, at, bitmap.resource, crop);
       return true;
     },
