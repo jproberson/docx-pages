@@ -1672,14 +1672,19 @@ describe("measureStack over a section of more than one column", () => {
     const THREE_LINES =
       "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november";
 
-    // The run, the empty paragraph carrying its section break, and a closer standing
-    // under it in a section of one column. **The closer is the measurement**: where it
+    // The run, whose last paragraph carries its section break, and a closer standing
+    // under it in a section of one column. **That closer is the measurement**: where it
     // came to sit is the whole of what Word's drawing says a run cost, since a column
-    // holding nothing but empty paragraphs is drawn nowhere at all. The break's own
-    // paragraph takes no room, which the authored `section-closer` document settled.
+    // holding nothing but empty paragraphs is drawn nowhere at all.
+    //
+    // **The run's own last paragraph is the one carrying the break**, which is how the
+    // probes these cases were measured by wrote it, and what a case is asking depends
+    // on it: a paragraph added after the run to carry the break is a block of the run
+    // like any other, so the run under test would be a paragraph longer than the one
+    // Word answered for.
     const runIn = (paragraphs: readonly string[], columns: SectionColumns) => {
-      const closesAt = paragraphs.length;
-      const body = [...paragraphs, `<w:p><w:pPr>${exactly}</w:pPr></w:p>`, line("closer")];
+      const closesAt = paragraphs.length - 1;
+      const body = [...paragraphs, line("closer")];
       const pkg = openDocx(
         buildDocx({
           "word/document.xml": wordDocument(body.join("")),
@@ -1833,17 +1838,21 @@ describe("measureStack over a section of more than one column", () => {
       expect(run.drawnIn).toStrictEqual([0, 1]);
     });
 
-    // G: two blocks, a break, three blocks and four empty paragraphs in three columns.
-    // Word drew the two in the first column and the other seven in the second, left the
-    // third empty, and the run cost 168. **What follows the run's last break of its own
-    // stays in the column that break opened**, so the empties stack under it rather than
-    // balancing away into a column of their own as B's did.
+    // G: two blocks, a break, three blocks and four empty paragraphs in three columns,
+    // the last of the four carrying the section's own break. Word drew the two in the
+    // first column and the other seven in the second, left the third empty, and the run
+    // cost 168: the break's own mark opens that column, the three blocks and the three
+    // empty paragraphs stand under it, and the closing mark at its foot is worth
+    // nothing. **What follows the run's last break of its own stays in the column that
+    // break opened**, so the empties stack under it rather than balancing away into a
+    // column of their own as B's did.
     it("keeps what follows the last break in the column that break opened", () => {
       const run = runIn(
         [
           line("g1"),
           line("g2"),
-          opensAColumn("g3"),
+          breakOnly,
+          line("g3"),
           line("g4"),
           line("g5"),
           empty,
