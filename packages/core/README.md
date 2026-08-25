@@ -204,11 +204,11 @@ over is in that report rather than in this list.
   naming no such face is refused rather than set out of one that cannot say where
   a fraction's bar goes.
 - **Bold and italic are separate faces**, each needing its own file.
-- **The pdf writer draws jpeg, png and metafiles.** Every format the viewer shows
-  is read and measured, so a gif, a bmp, a tiff, an svg or a webp holds its room
-  and lays out correctly, but writing one into a pdf leaves its frame empty. Pass
-  `undrawn` to `writePdf` to be told which parts those were. The viewer hands all
-  of them to the browser and draws whatever it supports.
+- **The pdf writer draws jpeg, png, gif and metafiles.** A bmp, a tiff, an svg or
+  a webp is read and measured, so it holds its room and the page around it is
+  right, but writing one into a pdf leaves its frame empty. Pass `undrawn` to
+  `writePdf` to be told which parts those were. The viewer hands every format to
+  the browser and draws whatever it supports.
 
 ## Licence
 

@@ -26,6 +26,7 @@ import {
   type PdfValue,
 } from "./objects.js";
 import type { ObjectDrawable } from "./objects-paint.js";
+import { readGif } from "./gif.js";
 import { hasAlpha, readPng, samplesOf, splitAlpha, type PngImage } from "./png.js";
 
 // The two kinds of picture a `.docx` holds that this writes, which are not the
@@ -196,7 +197,42 @@ function writeBitmap(options: ImageOptions, part: string): PdfReference | null {
     return png === null ? null : writePng(options, png);
   }
 
-  return writeJpeg(options, bytes) ?? writePng(options, bytes);
+  return writeJpeg(options, bytes) ?? writePng(options, bytes) ?? writeGif(options, bytes);
+}
+
+/**
+ * A gif written into the file, as the pixels a pdf can carry.
+ *
+ * **The only picture here whose bytes are opened for no reason but the format.** A
+ * jpeg and a png both go across largely untouched; a gif has to be decoded because
+ * a pdf reads neither its LZW nor its palette blocks. Word decodes it too, and
+ * writes what comes out as RGB with a soft mask beside it, which is what this
+ * writes. Asked of Word's own pdf on 2026-08-24.
+ */
+function writeGif(options: ImageOptions, bytes: Uint8Array): PdfReference | null {
+  const gif = readGif(bytes);
+  if (gif === null) return null;
+
+  const shared: PdfEntries = {
+    Type: pdfName("XObject"),
+    Subtype: pdfName("Image"),
+    Width: pdfNumber(gif.widthPixels),
+    Height: pdfNumber(gif.heightPixels),
+    BitsPerComponent: pdfNumber(BITS),
+  };
+
+  if (gif.alpha === null) {
+    return options.objects.add(
+      pdfStream({ ...shared, ColorSpace: pdfName("DeviceRGB") }, gif.colour),
+    );
+  }
+
+  const soft = options.objects.add(
+    pdfStream({ ...shared, ColorSpace: pdfName("DeviceGray") }, gif.alpha),
+  );
+  return options.objects.add(
+    pdfStream({ ...shared, ColorSpace: pdfName("DeviceRGB"), SMask: soft }, gif.colour),
+  );
 }
 
 function writeJpeg(options: ImageOptions, bytes: Uint8Array): PdfReference | null {
