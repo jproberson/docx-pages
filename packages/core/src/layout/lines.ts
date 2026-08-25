@@ -116,6 +116,14 @@ export type MeasureFailure =
       readonly kind: "unmapped-character";
       readonly fontName: string;
       readonly codePoint: number;
+    }
+  | {
+      // The face an equation asked to be set in carries no MATH table, or none of
+      // the outlines its halves are measured off. This is not a face that cannot
+      // be measured: ordinary text in it lays out perfectly well, and only an
+      // equation wants the two tables.
+      readonly kind: "unsettable-equation";
+      readonly fontName: string;
     };
 
 export type LineBreaking =
@@ -276,15 +284,28 @@ class Measurer {
   // The face an equation is set out of, which wants more of a file than a line of
   // text does: the outlines a fraction's height is measured off and the MATH table it
   // takes its every constant from. A face carrying neither cannot set one at all.
+  //
+  // **What could not be had is recorded here**, because nothing above records it.
+  // A null used to leave the measurer with no failure at all, and `measureText`
+  // and `breakParagraph` each fill that hole with `unresolved-font`, so the only
+  // two documents the corpus refuses were both refused for a cause that had not
+  // happened: their runs name a face, and the face simply does not set equations.
   mathFaceFor(mark: ParagraphMark): MathFace | null {
+    const fontName = mark.font.kind === "named" ? mark.font.name : "";
     const lookup = this.metricsFor(faceRequestFor(mark));
-    if (lookup.kind === "missing") return null;
-    return mathFace({
+    if (lookup.kind === "missing") {
+      this.failure ??= { kind: "unknown-font-metrics", fontName };
+      return null;
+    }
+
+    const face = mathFace({
       metrics: lookup.metrics,
       advances: lookup.advances,
       ink: lookup.ink ?? NO_INK,
       math: lookup.math ?? NO_MATH,
     });
+    if (face === null) this.failure ??= { kind: "unsettable-equation", fontName };
+    return face;
   }
 
   private faceFor(mark: ParagraphMark): Face | null {

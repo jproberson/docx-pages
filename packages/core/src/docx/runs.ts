@@ -16,7 +16,13 @@ import type { MarkedMath } from "../layout/math.js";
 import { spelledAsMath } from "./math-letters.js";
 import { WP_NS } from "./inlines.js";
 import { W_NS } from "./section.js";
-import { resolveRuns, type MarkedRun, type ParagraphMark, type StyleTable } from "./styles.js";
+import {
+  resolveRuns,
+  statesItsOwnFace,
+  type MarkedRun,
+  type ParagraphMark,
+  type StyleTable,
+} from "./styles.js";
 import { holdsALegacyPicture, inlinePictureOf } from "./vml.js";
 import { attribute, firstNamed, statedNumber, type XmlElement } from "./xml.js";
 
@@ -126,10 +132,21 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
   }
 }
 
+// What an equation is set in: the document's own math font, and the theme the
+// question "does this run name a face itself" has to be asked through.
+type MathFaces = {
+  readonly font: string;
+  readonly themeFonts: ReadonlyMap<string, string>;
+};
+
 // A math run names its own face in its w:rPr wherever Word wrote it, and the
-// document's math font is what one that names none is set in.
-const inTheMathFont = (mark: ParagraphMark, mathFont: string): ParagraphMark =>
-  mark.font.kind === "named" ? mark : { ...mark, font: { kind: "named", name: mathFont } };
+// document's math font is what one that names none is set in. **The run is asked,
+// not the mark**: the mark carries whatever the cascade handed down, and a face
+// out of `docDefaults` is not a face the run named. See `statesItsOwnFace`.
+const inTheMathFont = (mark: ParagraphMark, run: XmlElement, faces: MathFaces): ParagraphMark =>
+  statesItsOwnFace(run, faces.themeFonts)
+    ? mark
+    : { ...mark, font: { kind: "named", name: faces.font } };
 
 /**
  * **Four fifths, rounded to the nearest half point**, which is what a small capital
@@ -266,7 +283,7 @@ function equationsToSet(
 function markedMathOf(
   pieces: readonly EquationPiece[],
   marks: ReadonlyMap<XmlElement, ParagraphMark>,
-  mathFont: string,
+  faces: MathFaces,
 ): readonly MarkedMath[] {
   const marked: MarkedMath[] = [];
   for (const piece of pieces) {
@@ -277,7 +294,7 @@ function markedMathOf(
       marked.push({
         kind: "run",
         text: spelledAsMath(piece.text, piece.style),
-        mark: inTheMathFont(mark, mathFont),
+        mark: inTheMathFont(mark, piece.element, faces),
       });
       continue;
     }
@@ -289,15 +306,15 @@ function markedMathOf(
     // inside left it with no mark and dropped the whole delimiter.
     const first = runsIn([piece])[0];
     const mark = first === undefined ? undefined : marks.get(first.element);
-    if (mark === undefined) continue;
-    const own = inTheMathFont(mark, mathFont);
+    if (first === undefined || mark === undefined) continue;
+    const own = inTheMathFont(mark, first.element, faces);
 
     if (piece.kind === "fraction") {
       marked.push({
         kind: "fraction",
         mark: own,
-        numerator: markedMathOf(piece.numerator, marks, mathFont),
-        denominator: markedMathOf(piece.denominator, marks, mathFont),
+        numerator: markedMathOf(piece.numerator, marks, faces),
+        denominator: markedMathOf(piece.denominator, marks, faces),
       });
       continue;
     }
@@ -310,7 +327,7 @@ function markedMathOf(
       // back on the fourth rung of Cambria Math's ladder where the same one with
       // `m:grow` turned off came back on the first.
       grows: piece.grows ?? true,
-      content: piece.parts.flatMap((part) => markedMathOf(part, marks, mathFont)),
+      content: piece.parts.flatMap((part) => markedMathOf(part, marks, faces)),
     });
   }
   return marked;
@@ -332,12 +349,16 @@ export function readRuns(paragraph: Paragraph, styles: StyleTable): readonly Tex
     // Every run of one equation answers with the same piece, emitted where the first
     // of them stands and passed over at the rest.
     if (each.run !== equation.at) continue;
+    const faces = { font: styles.mathFont, themeFonts: styles.themeFonts };
     runs.push(
       ...equationRuns(
         equation.equation.kind === "read" ? equation.equation.content : [],
-        each.mark,
+        // The equation's own mark, which is the face its constants and its sizes are
+        // taken from and not only the face its characters are drawn in, so it goes
+        // through the math font exactly as the runs inside it do.
+        inTheMathFont(each.mark, each.run, faces),
         marks,
-        styles.mathFont,
+        faces,
       ),
     );
   }
@@ -369,13 +390,13 @@ function equationRuns(
   content: readonly EquationPiece[],
   mark: ParagraphMark,
   marks: ReadonlyMap<XmlElement, ParagraphMark>,
-  mathFont: string,
+  faces: MathFaces,
 ): readonly TextRun[] {
   const runs: TextRun[] = [];
   let held: EquationPiece[] = [];
 
   const flush = (): void => {
-    const marked = markedMathOf(held, marks, mathFont);
+    const marked = markedMathOf(held, marks, faces);
     if (marked.length > 0) runs.push({ mark, pieces: [{ kind: "equation", content: marked }] });
     held = [];
   };
@@ -405,7 +426,10 @@ function flatRuns(marked: readonly MarkedRun[], styles: StyleTable): readonly Te
 
     const style = mathStyleOf(each.run);
     return capitalised(
-      inTheMathFont(each.mark, styles.mathFont),
+      inTheMathFont(each.mark, each.run, {
+        font: styles.mathFont,
+        themeFonts: styles.themeFonts,
+      }),
       pieces.map((piece) =>
         piece.kind === "text" ? { kind: "text", text: spelledAsMath(piece.text, style) } : piece,
       ),

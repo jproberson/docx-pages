@@ -267,6 +267,24 @@ describe("readRuns", () => {
     expect(mark?.font).toStrictEqual({ kind: "named", name: "Cambria Math" });
   });
 
+  // **The cascade's answer is not the run's own**, which is the whole of the rule
+  // and was the whole of the bug: the mark was asked instead of the run, so a
+  // document whose `docDefaults` name a face set every equation in that face. The
+  // only two documents this project ever refused were refused for it, and Word's
+  // own pdf of both embeds Cambria Math.
+  it("sets a math run in the math font though the cascade names a face of its own", () => {
+    const equation = `<m:oMath ${MATH}><m:r><m:t>x</m:t></m:r></m:oMath>`;
+    const mark = runsOf(`<w:p>${equation}</w:p>`, NORMAL)[0]?.mark;
+    expect(mark?.font).toStrictEqual({ kind: "named", name: "Cambria Math" });
+  });
+
+  it("leaves a math run that names its own face in it", () => {
+    const stated = `<w:rPr><w:rFonts w:ascii="Cambria"/></w:rPr>`;
+    const equation = `<m:oMath ${MATH}><m:r>${stated}<m:t>x</m:t></m:r></m:oMath>`;
+    const mark = runsOf(`<w:p>${equation}</w:p>`, NORMAL)[0]?.mark;
+    expect(mark?.font).toStrictEqual({ kind: "named", name: "Cambria" });
+  });
+
   // Word draws the letters themselves slanted rather than asking for a slanted face,
   // which is what the pdf of every style says: nothing is bold or italic anywhere.
   it("leaves a math run upright and unbolded whatever its style states", () => {

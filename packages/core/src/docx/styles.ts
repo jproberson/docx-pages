@@ -496,6 +496,26 @@ function readMark(
   };
 }
 
+/**
+ * Whether a run names a face in its own `w:rPr`, rather than being handed one by
+ * the cascade above it.
+ *
+ * **An equation turns on the difference.** The document's math font sets a math
+ * run that names no face of its own, and a face the cascade handed down is not a
+ * face the run named. Measured on 2026-08-24 off Word's own pdf of the only two
+ * corpus documents this project refused: their math runs resolve to Times New
+ * Roman through `docDefaults`, they state Cambria Math in `m:mathPr`, and both
+ * pdfs embed Cambria Math. Asking the resolved mark instead read the cascade's
+ * answer as the run's own, so the math font was never applied and the documents
+ * were refused for a face that sets no equations.
+ */
+export function statesItsOwnFace(
+  run: XmlElement,
+  themeFonts: ReadonlyMap<string, string>,
+): boolean {
+  return readMark(run, themeFonts).fontName !== undefined;
+}
+
 // **Both stated is `w:caps`.** Measured 2026-08-13: a run stating the two came out
 // exactly as one stating only `w:caps`, every letter a capital at the run's own size
 // and the same 153.09pt of advance.
