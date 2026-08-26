@@ -2,7 +2,7 @@ import type { DrawingFlip } from "../docx/drawing.js";
 import type { InlineDrawing } from "../docx/inlines.js";
 import { resolveContent, type PartResolver, type PlacedContent } from "./floats.js";
 import type { ClipRect, ParagraphBox } from "./stack.js";
-import { unturnedRect } from "./turns.js";
+import { boundsOfTurn, unturnedRect } from "./turns.js";
 import { emuToPoints } from "./units.js";
 import type { Theme } from "../docx/theme.js";
 
@@ -68,6 +68,13 @@ export type PlaceInlinesInput = {
  *
  * The cut is up and down alone. Nothing has asked Word what a paragraph does to a drawing
  * wider than the text area, so the rectangle keeps the drawing's own left and width.
+ *
+ * **A turned drawing is measured by the paint it reaches and not by the box it was
+ * stored in.** The flow keeps a turned drawing the room its turn rounds to, so a picture
+ * on its side stands 307 by 167 in a paragraph 167 tall while the box it was stored in
+ * is 167 by 307: read that stored box and every such drawing looks as though it hangs
+ * out. `e199f3435eaf` and the two documents beside it are the reading, whose photograph
+ * came out cut down its sides.
  */
 const cutToItsParagraph = (box: ParagraphBox, drawing: ClipRect): ClipRect | null => {
   const first = box.lines[0];
@@ -111,7 +118,7 @@ export function placeInlines(input: PlaceInlinesInput): readonly PlacedInline[] 
         ...standing,
         turnDegrees: drawing.turnDegrees,
         flip: drawing.flip,
-        clipTo: cutToItsParagraph(input.box, standing),
+        clipTo: cutToItsParagraph(input.box, boundsOfTurn(standing, drawing.turnDegrees)),
       });
     }
   }

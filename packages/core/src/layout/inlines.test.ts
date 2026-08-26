@@ -24,6 +24,19 @@ const image = (cx = 2286000, cy = 1143000) =>
      <wp:extent cx="${String(cx)}" cy="${String(cy)}"/>
      <wp:docPr id="1" name="Logo"/></wp:inline></w:drawing></w:r>`;
 
+// The same, turned about its own middle: the flow keeps it the room the turn rounds to.
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+const turnedImage = (cx: number, cy: number, degrees: number) =>
+  `<w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">
+     <wp:extent cx="${String(cx)}" cy="${String(cy)}"/>
+     <wp:docPr id="1" name="Logo"/>
+     <a:graphic xmlns:a="${A_NS}"><a:graphicData uri="${PIC_NS}">
+       <pic:pic xmlns:pic="${PIC_NS}">
+         <pic:spPr><a:xfrm rot="${String(degrees * 60000)}"/></pic:spPr>
+       </pic:pic>
+     </a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+
 const V_NS = "urn:schemas-microsoft-com:vml";
 const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
@@ -165,6 +178,17 @@ describe("placeInlines", () => {
     const drawing = placed[0];
     if (drawing === undefined) throw new Error("expected the drawing");
     expect(drawing.topPt + drawing.heightPt - (cut?.topPt ?? 0)).toBeCloseTo(18, 6);
+  });
+
+  // **A drawing on its side is measured by the paint it reaches.** The flow keeps it the
+  // room its turn rounds to, so a picture stored 90 wide by 180 tall stands 180 by 90 in
+  // a paragraph 90 tall: read the stored box and it looks as though it hangs 90 out of a
+  // paragraph it sits inside. `e199f3435eaf` came out cut down its sides for it.
+  it("cuts nothing off a turned drawing whose paint stands inside its paragraph", () => {
+    const { placed } = place(paragraph("", turnedImage(1143000, 2286000, 90)), 100);
+    expect(placed[0]?.clipTo).toBeNull();
+    expect(placed[0]?.widthPt).toBeCloseTo(90, 6);
+    expect(placed[0]?.heightPt).toBeCloseTo(180, 6);
   });
 
   it("cuts nothing where the line is tall enough to hold the drawing", () => {
