@@ -1,3 +1,4 @@
+import { effectOf, NO_EFFECT, type WrapDistances } from "./anchors.js";
 import { isDetachedContent, type Paragraph } from "./blocks.js";
 import { readDrawingTurn } from "./drawing.js";
 import {
@@ -40,6 +41,9 @@ export type RunPiece =
       // The extent is the drawing the right way up, so how far round it was turned
       // is part of how much of the line it takes.
       readonly turnDegrees: number;
+      // How far past that extent the drawing's own effects reach, which is room the
+      // line keeps on all four sides. See `placeInlines`.
+      readonly effect: WrapDistances;
     }
   // An equation that has to be set rather than laid along the line: a fraction or a
   // delimiter, with the runs it holds gathered back into the shape the reader found.
@@ -77,6 +81,7 @@ function extentOf(inline: XmlElement): RunPiece {
     widthEmu: size("cx"),
     heightEmu: size("cy"),
     turnDegrees: readDrawingTurn(inline),
+    effect: effectOf(firstNamed(inline, WP_NS, "effectExtent")),
   };
 }
 
@@ -123,6 +128,9 @@ function collectPieces(node: XmlElement, into: RunPiece[]): void {
           widthEmu: picture.widthEmu,
           heightEmu: picture.heightEmu,
           turnDegrees: 0,
+          // The old form states no effect extent at all, so its drawings ask for
+          // nothing beyond the size their style gives them.
+          effect: NO_EFFECT,
         });
       }
       continue;

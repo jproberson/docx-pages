@@ -207,7 +207,7 @@ export const NO_EFFECT: WrapDistances = { topEmu: 0, rightEmu: 0, bottomEmu: 0, 
 
 // An effect extent is written with a letter a side, and a drawing that overhangs
 // nothing writes it out as four noughts rather than leaving it out.
-const effectOf = (element: XmlElement | null): WrapDistances =>
+export const effectOf = (element: XmlElement | null): WrapDistances =>
   element === null
     ? NO_EFFECT
     : {

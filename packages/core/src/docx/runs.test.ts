@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildDocx, wordDocument } from "../testing/build-docx.js";
 import { readParagraphs } from "./blocks.js";
 import { openDocx } from "./package.js";
+import { NO_EFFECT } from "./anchors.js";
 import { readRuns, type TextRun } from "./runs.js";
 import { readStyleTable } from "./styles.js";
 
@@ -154,7 +155,7 @@ describe("readRuns", () => {
     const runs = runsOf(`<w:p><w:r>${drawing}</w:r></w:p>`);
 
     expect(runs[0]?.pieces).toStrictEqual([
-      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 0 },
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 0, effect: NO_EFFECT },
     ]);
   });
 
@@ -168,7 +169,7 @@ describe("readRuns", () => {
     const runs = runsOf(`<w:p><w:r>${drawing}</w:r></w:p>`);
 
     expect(runs[0]?.pieces).toStrictEqual([
-      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 90 },
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 90, effect: NO_EFFECT },
     ]);
   });
 

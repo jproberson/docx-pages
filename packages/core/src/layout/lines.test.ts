@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { NO_EFFECT } from "../docx/anchors.js";
 import type { ParagraphMark } from "../docx/styles.js";
 import type { RunPiece, TextRun } from "../docx/runs.js";
 import { buildSfnt } from "../testing/build-font.js";
@@ -600,7 +601,7 @@ describe("breakLines", () => {
 
   it("gives a drawing the width it takes on the line", () => {
     const run = piecesRun([
-      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 0 },
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 0, effect: NO_EFFECT },
     ]);
     const lines = linesOf([run], 200);
 
@@ -618,7 +619,13 @@ describe("breakLines", () => {
   it("moves a drawing too wide for the line off a line holding only a space", () => {
     const run = piecesRun([
       { kind: "text", text: " " },
-      { kind: "drawing", widthEmu: 914400 * 3, heightEmu: 457200, turnDegrees: 0 },
+      {
+        kind: "drawing",
+        widthEmu: 914400 * 3,
+        heightEmu: 457200,
+        turnDegrees: 0,
+        effect: NO_EFFECT,
+      },
     ]);
     const lines = linesOf([run], 200);
 
@@ -635,7 +642,7 @@ describe("breakLines", () => {
   // Measured off Word's own pdf of the authored `rotated-drawings` document.
   it("gives a drawing turned a quarter the room its turn lays it in", () => {
     const run = piecesRun([
-      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 90 },
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 90, effect: NO_EFFECT },
     ]);
     const lines = linesOf([run], 200);
 
@@ -647,7 +654,7 @@ describe("breakLines", () => {
   // the box it was stored in regardless, which is what Word does.
   it("gives a drawing turned less than an eighth the room it was stored at", () => {
     const run = piecesRun([
-      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 30 },
+      { kind: "drawing", widthEmu: 914400, heightEmu: 457200, turnDegrees: 30, effect: NO_EFFECT },
     ]);
     const lines = linesOf([run], 200);
 

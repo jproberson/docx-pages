@@ -24,6 +24,14 @@ const image = (cx = 2286000, cy = 1143000) =>
      <wp:extent cx="${String(cx)}" cy="${String(cy)}"/>
      <wp:docPr id="1" name="Logo"/></wp:inline></w:drawing></w:r>`;
 
+// The same with an effect extent, which is the room the drawing's own effects reach
+// past its extent, a number a side in EMU.
+const effectedImage = (effect: { l?: number; t?: number; r?: number; b?: number }) =>
+  `<w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">
+     <wp:extent cx="2286000" cy="1143000"/>
+     <wp:effectExtent l="${String(effect.l ?? 0)}" t="${String(effect.t ?? 0)}" r="${String(effect.r ?? 0)}" b="${String(effect.b ?? 0)}"/>
+     <wp:docPr id="1" name="Logo"/></wp:inline></w:drawing></w:r>`;
+
 // The same, turned about its own middle: the flow keeps it the room the turn rounds to.
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture";
@@ -139,6 +147,35 @@ describe("placeInlines", () => {
   it("takes the alignment a paragraph style sets when the paragraph sets none", () => {
     const { placed } = place(paragraph(`<w:pStyle w:val="Figure"/>`, image()));
     expect(placed[0]?.leftPt).toBeCloseTo(612 - 36 - 180, 6);
+  });
+
+  // **The room a drawing's effects reach is room its line keeps.** Measured on
+  // 2026-08-25 by `probes/effect-extent-room-probe.ts`, five cases read off Word's own
+  // pdf: 5pt stated below a picture put the line under it 5.04 lower, 5pt above sat the
+  // picture 5 further down its line, both together came to 9.84, 5pt to the right moved
+  // the word after it 5.04 on, and 5pt to the left moved the picture itself 5 in.
+  it("keeps the room a drawing's effects reach below it", () => {
+    const { box } = place(paragraph("", effectedImage({ b: 12700 * 5 })), 100);
+    expect(box.lines[0]?.heightPt).toBeCloseTo(95, 6);
+  });
+
+  it("seats the drawing under the room its effects reach above it", () => {
+    const { placed, box } = place(paragraph("", effectedImage({ t: 12700 * 5 })), 100);
+    expect(box.lines[0]?.heightPt).toBeCloseTo(95, 6);
+    expect(placed[0]?.topPt).toBeCloseTo(105, 6);
+    expect(placed[0]?.heightPt).toBeCloseTo(90, 6);
+  });
+
+  it("stands the drawing past the room its effects reach to its left", () => {
+    const { placed } = place(paragraph("", effectedImage({ l: 12700 * 5 })), 100);
+    expect(placed[0]?.leftPt).toBeCloseTo(36 + 5, 6);
+    expect(placed[0]?.widthPt).toBeCloseTo(180, 6);
+  });
+
+  it("keeps the room to a drawing's right without moving the drawing", () => {
+    const { placed, box } = place(paragraph("", effectedImage({ r: 12700 * 5 })), 100);
+    expect(placed[0]?.leftPt).toBeCloseTo(36, 6);
+    expect(box.lines[0]?.line.widthPt).toBeCloseTo(185, 6);
   });
 
   // **A paragraph whose lines are told exactly how tall to be cuts off a drawing that

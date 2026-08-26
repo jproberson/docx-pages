@@ -66,6 +66,16 @@ export type PlaceInlinesInput = {
  * the reason this is the paragraph's box: a picture 531 by 108.75 hanging over eleven
  * empty lines of its own paragraph, which Word draws whole.
  *
+ * **The room a drawing's own effects reach is room the line keeps.** Word writes it on
+ * the drawing as a `wp:effectExtent`, a number a side, and measured on 2026-08-25 by
+ * `probes/effect-extent-room-probe.ts` it holds every side open: a picture 160 by 75.96
+ * with 5pt stated below it put the line under it 5.04 lower, 5pt above it sat the
+ * picture 5 further down its own line, both together came to 9.84, 5pt to its right
+ * moved the word after it 5.04 on, and 5pt to its left moved the picture itself 5 in.
+ * `2edd1dc21864` and `9b515f273d08` are the reading in the wild: each states 0.55 below
+ * a picture and every line under it stood 0.44 high here, which is that 0.55 through
+ * Word's own quarter-point grid.
+ *
  * The cut is up and down alone. Nothing has asked Word what a paragraph does to a drawing
  * wider than the text area, so the rectangle keeps the drawing's own left and width.
  *
@@ -102,10 +112,12 @@ export function placeInlines(input: PlaceInlinesInput): readonly PlacedInline[] 
       if (drawing === undefined) return placed;
       const standing = unturnedRect(
         {
-          leftPt: line.leftPt + segment.offsetPt,
-          topPt: line.baselinePt - segment.heightPt,
-          widthPt: segment.widthPt,
-          heightPt: segment.heightPt,
+          // The drawing stands inside the room its line kept, which is its own extent
+          // and whatever its effects reach past it.
+          leftPt: line.leftPt + segment.offsetPt + segment.insetLeftPt,
+          topPt: line.baselinePt - segment.heightPt + segment.insetTopPt,
+          widthPt: segment.paintWidthPt,
+          heightPt: segment.paintHeightPt,
         },
         {
           widthPt: emuToPoints(drawing.widthEmu),

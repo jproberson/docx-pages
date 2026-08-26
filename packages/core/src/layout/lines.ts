@@ -51,9 +51,18 @@ export type LineSegment =
     }
   | {
       readonly kind: "drawing";
+      // The room the drawing keeps on the line, which is its extent and whatever its
+      // own effects reach past it. `placeInlines` records what Word does.
       readonly widthPt: number;
       readonly heightPt: number;
       readonly offsetPt: number;
+      // How far into that room the drawing itself is drawn, which is the room its
+      // effects asked for above it and to its left.
+      readonly insetLeftPt: number;
+      readonly insetTopPt: number;
+      // What the drawing itself measures, the effects left out.
+      readonly paintWidthPt: number;
+      readonly paintHeightPt: number;
     }
   // A set equation, already placed about its own baseline, which the line's baseline
   // is. A renderer asks `mathPrimitivesOf` what to draw and nothing here has to know
@@ -261,6 +270,10 @@ type Unit =
       readonly kind: "drawing";
       readonly widthPt: number;
       readonly heightPt: number;
+      readonly insetLeftPt: number;
+      readonly insetTopPt: number;
+      readonly paintWidthPt: number;
+      readonly paintHeightPt: number;
       // The line the drawing's own run would have made had it held text, which is
       // all the face on that run has to say about the line it stands on.
       readonly fontHeightPt: number;
@@ -614,7 +627,21 @@ function addPiece(
       { widthPt: emuToPoints(piece.widthEmu), heightPt: emuToPoints(piece.heightEmu) },
       piece.turnDegrees,
     );
-    units.push({ kind: "drawing", widthPt: room.widthPt, heightPt: room.heightPt, fontHeightPt });
+    // **The line keeps the room a drawing's own effects reach**, which Word writes on
+    // the drawing as an effect extent and this read as nothing until 2026-08-25. See
+    // `placeInlines` for what was measured.
+    const insetLeftPt = emuToPoints(piece.effect.leftEmu);
+    const insetTopPt = emuToPoints(piece.effect.topEmu);
+    units.push({
+      kind: "drawing",
+      widthPt: room.widthPt + insetLeftPt + emuToPoints(piece.effect.rightEmu),
+      heightPt: room.heightPt + insetTopPt + emuToPoints(piece.effect.bottomEmu),
+      insetLeftPt,
+      insetTopPt,
+      paintWidthPt: room.widthPt,
+      paintHeightPt: room.heightPt,
+      fontHeightPt,
+    });
     return true;
   }
 
@@ -871,7 +898,17 @@ class LineBuilder {
    * their own face would have made: they raise nothing, as a space never does, and
    * `finish` floors a line at its faces.
    */
-  drawing(widthPt: number, heightPt: number, fontHeightPt: number): Taken {
+  drawing(
+    widthPt: number,
+    heightPt: number,
+    fontHeightPt: number,
+    paint: {
+      readonly insetLeftPt: number;
+      readonly insetTopPt: number;
+      readonly paintWidthPt: number;
+      readonly paintHeightPt: number;
+    },
+  ): Taken {
     const overflows = this.filled + widthPt > this.room + EPSILON;
     if (overflows && !this.empty) {
       return { kind: "full", rest: null };
@@ -882,7 +919,7 @@ class LineBuilder {
       return { kind: "full", rest: null };
     }
     this.raise(heightPt, 0, fontHeightPt);
-    this.commit([{ kind: "drawing", widthPt, heightPt, offsetPt: 0 }], widthPt);
+    this.commit([{ kind: "drawing", widthPt, heightPt, offsetPt: 0, ...paint }], widthPt);
     return TAKEN;
   }
 
@@ -1133,7 +1170,12 @@ function tookOf(
     case "equation":
       return builder.equation(unit);
     case "drawing":
-      return builder.drawing(unit.widthPt, unit.heightPt, unit.fontHeightPt);
+      return builder.drawing(unit.widthPt, unit.heightPt, unit.fontHeightPt, {
+        insetLeftPt: unit.insetLeftPt,
+        insetTopPt: unit.insetTopPt,
+        paintWidthPt: unit.paintWidthPt,
+        paintHeightPt: unit.paintHeightPt,
+      });
     case "break":
       return TAKEN;
   }
