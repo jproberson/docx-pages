@@ -23,7 +23,6 @@ import { readRuns, type TextRun } from "../docx/runs.js";
 import type { SectionClose } from "../docx/section.js";
 import {
   measuresTheIndentToTheText,
-  roundsAnchorsToTwips,
   squeezesAJustifiedLine,
   DEFAULT_SETTINGS,
   type DocumentSettings,
@@ -506,11 +505,11 @@ function measureBlocks(
       let box = measured.box;
       rest = measured.rest;
 
-      // Where the anchor rounds down, the object the next paragraph holds stands
-      // over the foot of this one, whose last line is then blocked and falls past
-      // it. The object itself keeps the place the flow gave it, so the room the
-      // line had is left empty.
-      const ahead = lookedAhead(neighbours.below, top + box.heightPt, context);
+      // Where the object the next paragraph holds is seated over the foot of this
+      // one, this paragraph's last line is blocked and falls past it. The object
+      // itself keeps the place the flow gave it, so the room the line had is left
+      // empty.
+      const ahead = lookedAhead(neighbours.below, box, top + box.heightPt, context);
       if (ahead.length > 0) {
         const again = measureParagraph(
           paragraph,
@@ -1164,22 +1163,37 @@ const opensPage = (
   (above?.endsPage === true ||
     resolveParagraphFrame(paragraph, context.styles, context.inTable).pageBreakBefore);
 
-// Half the twip a legacy document's anchors are rounded to, which is as far over
-// the paragraph above an object can come to stand by that rounding alone. An
-// object reaching further up than that is one nothing has measured, and is left to
-// the paragraph that anchors it as it always was.
-const ROUNDING_PT = 1 / 40;
-
-// The objects the next paragraph anchors that ended up standing over the foot of
-// this one, which only a document Word rounds an anchor's position in can have.
+/**
+ * The objects the next paragraph anchors that ended up standing over the foot of this
+ * one, whose last line is then blocked by them like any other.
+ *
+ * **An object seated above the top of the paragraph it is anchored in is seated over the
+ * paragraph before it, and Word drops that paragraph's last line past it.** A legacy
+ * document gets there by rounding, half a twip at a time; any document gets there by
+ * stating a negative `wp:positionV`, and 30 of the corpus do. Measured on 2026-08-25 by
+ * `square-wrap-seat-probe`: the same drawing seated at nought and seated 0.15pt above
+ * leaves 24.01 and 37.36 under itself, and the 13.35 between them is a line of the
+ * paragraph **above** it. `square-wrap-seat-line-probe` varied that paragraph alone and
+ * Word answered 13.35, 26.79, 9.75 and 29.91 for lines of 13.43, 26.85, 9.77 and an
+ * exact 30, and nothing at all where the drawing opened the page with no line above it.
+ * The distance up does not matter: a lift of 0.15 and one of 13.30 cost the same line.
+ *
+ * **A drawing reaching further up than that last line is left where it is.** Word drops
+ * every line it reaches, and `droppedPast` can answer for one: `square-wrap-lift-depth-probe`
+ * has the staircase, a line of the paragraph above per line of it reached, and nine of the
+ * corpus lift a drawing 55 to 175pt, which is pages of lines rather than one. That is a
+ * stated limitation and not this rule.
+ */
 function lookedAhead(
   below: Paragraph | null,
+  box: ParagraphBox,
   footPt: number,
   context: Context,
 ): readonly WrapBand[] {
-  if (below === null || !roundsAnchorsToTwips(context.settings)) return [];
+  if (below === null) return [];
+  const lastTopPt = box.lines[box.lines.length - 1]?.topPt ?? box.markTopPt;
   return bandsOf(below, footPt, context).filter(
-    (band) => band.topPt < footPt - EPSILON && footPt - band.topPt <= ROUNDING_PT + EPSILON,
+    (band) => band.topPt < footPt - EPSILON && band.topPt >= lastTopPt - EPSILON,
   );
 }
 

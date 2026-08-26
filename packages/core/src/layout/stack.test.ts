@@ -984,7 +984,11 @@ describe("measureStack over a numbered paragraph", () => {
 
 // Every glyph is half an em, so a 12pt line of n characters is 6n wide; the frame
 // below runs from 72 to 540.
-const wrapped = (body: string, bandsFor: BandResolver) => {
+const wrapped = (
+  body: string,
+  bandsFor: BandResolver,
+  settings: DocumentSettings = DEFAULT_SETTINGS,
+) => {
   const pkg = openDocx(
     buildDocx({ "word/document.xml": wordDocument(body), "word/styles.xml": NORMAL }),
   );
@@ -997,6 +1001,7 @@ const wrapped = (body: string, bandsFor: BandResolver) => {
     leftPt: 72,
     widthPt: 468,
     bandsFor,
+    settings,
   });
   if (result.kind !== "measured") throw new Error(result.blocker.kind);
   return result.boxes;
@@ -1141,6 +1146,65 @@ describe("measureStack around wrapping objects", () => {
     );
 
     expect(boxes[0]?.heightPt).toBeCloseTo(100 + ARIAL_12 - 36, 9);
+  });
+
+  // **An object seated above the top of the paragraph it is anchored in is seated over
+  // the paragraph before it, whose last line falls past it while the object keeps the
+  // place the flow gave it.** Measured on 2026-08-25 by `square-wrap-seat-probe`: the
+  // same drawing seated at nought and 0.15pt above leaves 24.01 and 37.36 under itself,
+  // and the 13.35 between them is a line of the paragraph above.
+  const OVER_THE_FOOT = { leftPt: 0, rightPt: 530, topPt: 36 + ARIAL_12 - 1, bottomPt: 200 };
+
+  it("drops the last line of the paragraph above past an object seated over it", () => {
+    const boxes = wrapped(paragraph(``, "aaaa") + paragraph(``, "bbbb"), bandOn(1, OVER_THE_FOOT));
+
+    expect(boxes[0]?.lines[0]?.topPt).toBe(200);
+    expect(boxes[1]?.topPt).toBeCloseTo(200 + ARIAL_12, 9);
+  });
+
+  // The object itself is not carried down with the line it moved: it stands where the
+  // flow first put it, which is the foot the line has just left.
+  it("leaves the object where the flow put it when the line under it falls", () => {
+    const boxes = wrapped(paragraph(``, "aaaa") + paragraph(``, "bbbb"), bandOn(1, OVER_THE_FOOT));
+
+    expect(boxes[1]?.anchorTopPt).toBeCloseTo(36 + ARIAL_12, 9);
+  });
+
+  // An empty paragraph above has a mark rather than a line, and the mark falls the
+  // same way: this is `9b515f273d08`'s own shape, a drawing alone in a paragraph three
+  // twips above an empty one.
+  it("drops an empty paragraph's mark past an object seated over it", () => {
+    const boxes = wrapped(`<w:p/>` + paragraph(``, "bbbb"), bandOn(1, OVER_THE_FOOT));
+
+    expect(boxes[0]?.heightPt).toBeCloseTo(200 + ARIAL_12 - 36, 9);
+    expect(boxes[1]?.topPt).toBeCloseTo(200 + ARIAL_12, 9);
+  });
+
+  // It has nothing to do with the twip a legacy document's anchors are rounded to,
+  // which is how this was first met: a modern document stating the seat outright is
+  // answered the same way, and every case Word was asked was a modern one.
+  it("drops it in a document Word rounds no anchor in", () => {
+    const boxes = wrapped(paragraph(``, "aaaa") + paragraph(``, "bbbb"), bandOn(1, OVER_THE_FOOT), {
+      ...DEFAULT_SETTINGS,
+      compatibilityMode: 15,
+    });
+
+    expect(boxes[0]?.lines[0]?.topPt).toBe(200);
+  });
+
+  // **An object reaching further up than that last line is left alone.** Word drops
+  // every line it reaches, a line of the paragraph above per line reached, and this
+  // answers for one; nine corpus documents lift a drawing 55 to 175pt, which is pages
+  // of lines. Stated limitation, and the reason the reach is bounded rather than the
+  // seat.
+  it("leaves the paragraph above where it is when an object reaches past its last line", () => {
+    const boxes = wrapped(
+      paragraph(``, "aaaa") + paragraph(``, "bbbb"),
+      bandOn(1, { leftPt: 0, rightPt: 530, topPt: 35, bottomPt: 200 }),
+    );
+
+    expect(boxes[0]?.lines[0]?.topPt).toBe(36);
+    expect(boxes[1]?.lines[0]?.topPt).toBe(200);
   });
 
   it("keeps an object out of the paragraphs ahead of the one it is anchored to", () => {
