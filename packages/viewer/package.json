@@ -1,7 +1,7 @@
 {
   "name": "@docx-pages/viewer",
   "description": "React components that draw a page laid out by @docx-pages/core.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -36,7 +36,7 @@
     "react-dom": "^19.2.8"
   },
   "peerDependencies": {
-    "@docx-pages/fonts": "^1.0.0",
+    "@docx-pages/fonts": "^1.1.0",
     "react": ">=18",
     "react-dom": ">=18"
   },
