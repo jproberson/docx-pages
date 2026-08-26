@@ -8,7 +8,9 @@ for glyph, so lines break where the named face would have broken them.
 
 ```ts
 import { bestEffortMetrics, layOutDocument, openDocx, readFaceShapes } from "@docx-pages/core";
-import { defaultFaces } from "@docx-pages/fonts"; // or "@docx-pages/fonts/node" off a disk
+import { defaultFaces } from "@docx-pages/fonts";
+// In Node, read them off the disk instead: the same defaults under a different name.
+// import { defaultFacesFromDisk as defaultFaces } from "@docx-pages/fonts/node";
 
 const pkg = openDocx(bytes);
 const faces = bestEffortMetrics(suppliedFaces, await defaultFaces(), readFaceShapes(pkg));
