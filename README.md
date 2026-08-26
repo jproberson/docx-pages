@@ -113,11 +113,13 @@ not it showed.
 
 The ones worth knowing before you start, every one of them named in the report
 rather than passed over quietly: a footnote takes no room at the foot of its
-page; only the last section's geometry is read, so a document that changes page
-size or margins part way through lays the rest out on the wrong page; a cell
-spanning its neighbours is laid out at its own width, and a table style's
-conditional formatting is not applied; and a comment, with the column it is drawn
-in, is not drawn.
+page; a page draws its own section's header and footer, but how wide they wrap is
+still the document's answer, so a section keeping a different left or right margin
+wraps its header at the wrong width; a cell spanning its neighbours is laid out at
+its own width; a table style's conditional formatting is read for what it says
+about a paragraph or a run and not for what it says about a cell, a row or the
+table, so a first row shaded by its style comes out unshaded; and a comment, with
+the column it is drawn in, is not drawn.
 
 Two more are about the faces rather than the page. Ligatures are unread, so a
 line is the sum of its characters' advances and whatever the pairs move them by.
