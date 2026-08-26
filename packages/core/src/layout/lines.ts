@@ -476,12 +476,34 @@ const NO_BREAK = "\\u00a0\\u2007\\u202f\\ufeff";
 const GAP = new RegExp(`([^\\S${NO_BREAK}]+)`);
 const IS_GAP = new RegExp(`^[^\\S${NO_BREAK}]+$`);
 
-// Word lets a line end on a hyphen inside a word, so each one closes the word it
-// belongs to and the rest of it becomes a word of its own.
-const AFTER_HYPHEN = /(?<=-)/;
+/**
+ * Word lets a line end on a hyphen inside a word, so each one closes the word it
+ * belongs to and the rest of it becomes a word of its own.
+ *
+ * **Which characters those are was measured on 2026-08-25** by
+ * `probes/hyphen-break-probe.ts`, twelve of them put between the halves of one
+ * compound in a column wide enough for the compound alone and not for the word before
+ * it: a break leaves the first half at the end of the first line, and no break carries
+ * the whole compound to the second. Word breaks after **U+002D, U+2010, U+2012,
+ * U+2013 and U+2014**, the hyphen-minus, the hyphen and the figure, en and em dashes.
+ *
+ * **It does not break after U+2011, U+00AD, U+2043, U+002F or U+2044**: the
+ * non-breaking hyphen, a soft hyphen written as a character rather than as
+ * `w:softHyphen`, the hyphen bullet, the solidus or the fraction slash. U+2015, the
+ * horizontal bar, is the one that answers neither way: the compound went whole to the
+ * second line and then broke again, which is a break before the bar and not after it,
+ * and nothing here reads that.
+ *
+ * `8d31983d2189` is the reading in the wild. It ends a line on U+2010 where this
+ * carried the compound on, and the two pages below that line each came out one line
+ * out of place.
+ */
+const HYPHENS = "\\u002d\\u2010\\u2012\\u2013\\u2014";
+const AFTER_HYPHEN = new RegExp(`(?<=[${HYPHENS}])`, "u");
+const ENDS_ON_HYPHEN = new RegExp(`[${HYPHENS}]$`, "u");
 
 const endsOnHyphen = (unit: Unit): boolean =>
-  unit.kind === "word" && (unit.fragments.at(-1)?.text ?? "").endsWith("-");
+  unit.kind === "word" && ENDS_ON_HYPHEN.test(unit.fragments.at(-1)?.text ?? "");
 
 // **What decides the size a fraction's halves are set at is drawn text on the line,
 // not the shape of the paragraph.** Measured on 2026-08-13: a paragraph holding a

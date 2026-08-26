@@ -21,7 +21,10 @@ const NO_BREAK_SPACE = "\u00a0";
 // The other three Word will not break at, so that each measures half an em here
 // like everything else and a width can be counted rather than computed.
 const NO_BREAK_SPACES = `${NO_BREAK_SPACE}\u2007\u202f\ufeff`;
-const CHARACTERS = `abcdefghijklmnopqrstuvwxyz0123456789. -${NO_BREAK_SPACES}`;
+// The dashes and slashes Word was asked about on 2026-08-25, five of which end a line
+// and five of which do not, each half an em wide here like everything else.
+const DASHES = `-\u2010\u2011\u2012\u2013\u2014\u00ad\u2043/\u2044`;
+const CHARACTERS = `abcdefghijklmnopqrstuvwxyz0123456789. ${DASHES}${NO_BREAK_SPACES}`;
 
 const FIXTURE = {
   unitsPerEm: 1000,
@@ -176,6 +179,28 @@ describe("breakLines", () => {
   it("breaks after a hyphen inside a word, leaving the hyphen on the line it ends", () => {
     // "ab-cd" is 25pt and "ab-" alone is 15pt, so a 20pt line ends on the hyphen.
     expect(linesOf([runOf("ab-cd")], 20).map(textOf)).toStrictEqual(["ab-", "cd"]);
+  });
+
+  // **Which characters end a line was measured on 2026-08-25** by
+  // `probes/hyphen-break-probe.ts`: Word breaks after the hyphen-minus, the hyphen and
+  // the figure, en and em dashes, and carries the compound whole past the non-breaking
+  // hyphen, a soft hyphen written as a character, the hyphen bullet, the solidus and
+  // the fraction slash.
+  // A word before the compound and a line with room for the compound alone, which is
+  // the shape the probe put to Word: the break either ends the first line on the
+  // character or carries the whole compound down.
+  it("breaks after every dash Word breaks after", () => {
+    for (const dash of ["-", "\u2010", "\u2012", "\u2013", "\u2014"]) {
+      const lines = linesOf([runOf(`zz ab${dash}cd`)], 30).map(textOf);
+      expect(lines).toStrictEqual([`zz ab${dash}`, "cd"]);
+    }
+  });
+
+  it("carries a word whole past the characters Word will not end a line on", () => {
+    for (const held of ["\u2011", "\u00ad", "\u2043", "/", "\u2044"]) {
+      const lines = linesOf([runOf(`zz ab${held}cd`)], 30).map(textOf);
+      expect(lines).toStrictEqual(["zz", `ab${held}cd`]);
+    }
   });
 
   it("keeps a hyphenated word whole when the line has room for it", () => {
