@@ -192,6 +192,10 @@ type PartialNumbering = {
 type ConditionalFormat = {
   readonly mark: PartialMark;
   readonly frame: PartialFrame;
+  // What its `w:tcPr` shades the cell itself with, undefined where it states none.
+  // Of everything a `w:tcPr` may hold, the corpus states shading and cell borders and
+  // nothing else, and this reads the first of the two.
+  readonly fillColor: string | null | undefined;
 };
 
 type StyleDefinition = {
@@ -787,6 +791,25 @@ const conditionalFormats = (
   return found;
 };
 
+/**
+ * What a table style's conditional formats shade a cell standing here with, and null
+ * where none of them shades it. The cell's own `w:shd` stands in front of this.
+ *
+ * **The order is the one already measured for a paragraph and a run**, which is what
+ * `conditionalFormats` walks: the bands, then the edges, then the corners, a vertical
+ * band beating a horizontal one. Asked again of shading on 2026-08-27 by
+ * `probes/conditional-shading-probe.ts`, a five by five table with a fill of its own for
+ * each of the twelve places, and Word answered the same order exactly: the corners took
+ * the four corners, the first and last rows took their rows, the first and last columns
+ * took theirs, and the interior came out at the vertical bands.
+ */
+export function conditionalCellFill(table: StyleTable, inTable: InTable | null): string | null {
+  let fill: string | null = null;
+  for (const format of conditionalFormats(table, inTable))
+    if (format.fillColor !== undefined) fill = format.fillColor;
+  return fill;
+}
+
 const framesOver = (table: StyleTable, inTable: InTable | null): PartialFrame => {
   let resolved = table.docDefaultsFrame;
   for (const style of styleChain(table, inTable?.styleId ?? undefined)) {
@@ -846,7 +869,12 @@ function readConditionalFormats(
     if (child.namespace !== W_NS || child.name !== "tblStylePr") continue;
     const type = attribute(child, W_NS, "type");
     if (type === undefined) continue;
-    formats.set(type, { mark: readMark(child, themeFonts), frame: readFrame(child) });
+    const cell = firstNamed(child, W_NS, "tcPr");
+    formats.set(type, {
+      mark: readMark(child, themeFonts),
+      frame: readFrame(child),
+      fillColor: cell === null ? undefined : readShading(cell),
+    });
   }
   return formats;
 }

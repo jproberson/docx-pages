@@ -388,11 +388,12 @@ describe("readUnhonoured", () => {
   });
 
   it("reads the styles and the settings as well as the flow", () => {
-    // A conditional format holding a `w:pPr` alone is read now, so the one this
-    // asks about shades a cell, which is not.
+    // A conditional format holding a `w:pPr`, a `w:rPr` or a `w:tcPr` that only shades
+    // is read now, so the one this asks about draws a cell border, which is not.
     const styles = `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
       <w:style w:type="table" w:styleId="Grid"><w:tblStylePr w:type="firstRow">
-        <w:tcPr><w:shd w:val="clear" w:fill="FF0000"/></w:tcPr></w:tblStylePr></w:style></w:styles>`;
+        <w:tcPr><w:tcBorders><w:top w:val="single" w:sz="4"/></w:tcBorders></w:tcPr>
+        </w:tblStylePr></w:style></w:styles>`;
     const settings = `<?xml version="1.0"?><w:settings xmlns:w="${WORDPROCESSING_NS}">
       <w:autoHyphenation/></w:settings>`;
     const table = `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>
@@ -400,6 +401,17 @@ describe("readUnhonoured", () => {
     expect(
       kinds(reportOf(table, { "word/styles.xml": styles, "word/settings.xml": settings })),
     ).toStrictEqual(["automatic-hyphenation", "table-style-conditional-formatting"]);
+  });
+
+  // A `w:tcPr` whose only business is shading is read as of 2026-08-27, so a format
+  // holding one asks for nothing it does not get either.
+  it("passes over a conditional format that only shades a cell", () => {
+    const styles = `<?xml version="1.0"?><w:styles xmlns:w="${WORDPROCESSING_NS}">
+      <w:style w:type="table" w:styleId="Grid"><w:tblStylePr w:type="firstRow">
+        <w:tcPr><w:shd w:val="clear" w:fill="FF0000"/></w:tcPr></w:tblStylePr></w:style></w:styles>`;
+    const table = `<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>
+      <w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>`;
+    expect(kinds(reportOf(table, { "word/styles.xml": styles }))).toStrictEqual([]);
   });
 
   // What a conditional format says about a paragraph or a run is read, so a format

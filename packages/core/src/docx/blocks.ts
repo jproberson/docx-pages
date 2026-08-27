@@ -102,9 +102,9 @@ export const DEFAULT_TABLE_INSETS: TableInsets = {
 };
 
 // Which of a table style's conditional formats the table asks for, and how many
-// rows and columns a band is. Word writes `w:tblLook` on every table it makes; a
-// table that states none asks for none of them, which is what the attributes
-// default to.
+// rows and columns a band is. Word writes `w:tblLook` on every table it makes, and
+// all 193 tables in the corpus state one, so `NO_TABLE_LOOK` answers for documents
+// from elsewhere rather than for anything measured against.
 export type TableLook = {
   readonly firstRow: boolean;
   readonly lastRow: boolean;
@@ -117,12 +117,25 @@ export type TableLook = {
   readonly columnBandSize: number | undefined;
 };
 
+/**
+ * What a table stating no `w:tblLook` asks for, which is **not nothing**: Word reads
+ * the first row, the first column and horizontal banding, and leaves the last row, the
+ * last column and vertical banding off. That is the `04A0` Word writes as its own
+ * default, arrived at from the other end.
+ *
+ * Measured on 2026-08-27 by `probes/conditional-shading-probe.ts`, whose third case is
+ * the same five by five table with the `w:tblLook` taken out: its first row and first
+ * column came back shaded, its far row and column came back at those same two formats
+ * rather than at the last row's and last column's, its north-west corner took the corner
+ * format and the other three did not, and its interior banded **horizontally**, where
+ * every case that states a look bands vertically.
+ */
 export const NO_TABLE_LOOK: TableLook = {
-  firstRow: false,
+  firstRow: true,
   lastRow: false,
-  firstColumn: false,
+  firstColumn: true,
   lastColumn: false,
-  horizontalBanding: false,
+  horizontalBanding: true,
   verticalBanding: false,
   rowBandSize: undefined,
   columnBandSize: undefined,

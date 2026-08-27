@@ -2137,3 +2137,127 @@ describe("measureStack over a paragraph's own lines", () => {
     expect(boxesOf(paragraph(""))[0]?.paint).toBeNull();
   });
 });
+
+// **A table style's conditional formats shade the cell itself, and not only the
+// paragraphs and runs in it.** Measured on 2026-08-27 by
+// `probes/conditional-shading-probe.ts`, five cases over one five by five table, each
+// of the twelve places given a fill of its own so the colour a cell comes back says
+// which format won it.
+describe("measureStack over a table style's conditional shading", () => {
+  const FILLS: readonly (readonly [string, string])[] = [
+    ["firstRow", "FF0000"],
+    ["lastRow", "00FF00"],
+    ["firstCol", "0000FF"],
+    ["lastCol", "FFFF00"],
+    ["band1Horz", "FF00FF"],
+    ["band2Horz", "00FFFF"],
+    ["band1Vert", "FF8000"],
+    ["band2Vert", "8000FF"],
+    ["nwCell", "808000"],
+  ];
+
+  const styled = (bands: string): string =>
+    `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+        <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr></w:style>
+      <w:style w:type="table" w:styleId="Banded"><w:name w:val="Banded"/>
+        <w:tblPr>${bands}</w:tblPr>
+        ${FILLS.map(
+          ([type, fill]) =>
+            `<w:tblStylePr w:type="${type}"><w:tcPr>` +
+            `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/></w:tcPr></w:tblStylePr>`,
+        ).join("")}
+      </w:style></w:styles>`;
+
+  const BAND_OF_ONE = `<w:tblStyleRowBandSize w:val="1"/><w:tblStyleColBandSize w:val="1"/>`;
+  const LOOK = `<w:tblLook w:val="01E0" w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="0" w:noVBand="0"/>`;
+
+  // Four rows by four columns, so a first and a last of each and an interior of two.
+  const bandedTable = (look: string): string =>
+    `<w:tbl><w:tblPr><w:tblStyle w:val="Banded"/>${look}</w:tblPr>` +
+    Array.from(
+      { length: 4 },
+      () => `<w:tr>${Array.from({ length: 4 }, () => cell(`<w:p/>`)).join("")}</w:tr>`,
+    ).join("") +
+    `</w:tbl>`;
+
+  const fillsOf = (look: string, bands = BAND_OF_ONE): readonly (string | null)[] => {
+    const result = measure(bandedTable(look), styled(bands));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    return result.cells.map((each) => each.fillColor);
+  };
+
+  const named = new Map(FILLS.map(([type, fill]) => [`#${fill.toLowerCase()}`, type]));
+  const asPlaces = (fills: readonly (string | null)[]): readonly string[] =>
+    fills.map((fill) => (fill === null ? "-" : (named.get(fill.toLowerCase()) ?? fill)));
+
+  // Only the north-west corner is given a format here, so the other three corners fall
+  // to the last row and the last column the way any other cell in them would, which is
+  // what says the corner formats win by being declared rather than by being corners.
+  it("shades the corners, then the rows, then the columns, then the bands", () => {
+    expect(asPlaces(fillsOf(LOOK))).toStrictEqual([
+      "nwCell",
+      "firstRow",
+      "firstRow",
+      "firstRow",
+      "firstCol",
+      "band1Vert",
+      "band2Vert",
+      "lastCol",
+      "firstCol",
+      "band1Vert",
+      "band2Vert",
+      "lastCol",
+      "lastRow",
+      "lastRow",
+      "lastRow",
+      "lastRow",
+    ]);
+  });
+
+  // A vertical band beats a horizontal one, which is the order already measured for a
+  // paragraph and a run and holds for the cell as well.
+  it("gives the interior to the vertical band and not the horizontal one", () => {
+    expect(asPlaces(fillsOf(LOOK)).slice(5, 7)).toStrictEqual(["band1Vert", "band2Vert"]);
+  });
+
+  // **A style declaring no band size bands nothing at all**, where a depth of one
+  // would have banded the interior.
+  it("bands nothing where neither the style nor the table states a depth", () => {
+    expect(asPlaces(fillsOf(LOOK, "")).slice(5, 7)).toStrictEqual(["-", "-"]);
+  });
+
+  // A table stating no look is not a table asking for nothing: Word reads the first
+  // row, the first column and horizontal banding, and leaves the rest off.
+  it("reads a table stating no look as first row, first column and horizontal bands", () => {
+    expect(asPlaces(fillsOf(""))).toStrictEqual([
+      "nwCell",
+      "firstRow",
+      "firstRow",
+      "firstRow",
+      "firstCol",
+      "band1Horz",
+      "band1Horz",
+      "band1Horz",
+      "firstCol",
+      "band2Horz",
+      "band2Horz",
+      "band2Horz",
+      "firstCol",
+      "band1Horz",
+      "band1Horz",
+      "band1Horz",
+    ]);
+  });
+
+  // The cell's own shading stands in front of everything the style says.
+  it("lets the cell's own shading stand in front of the style's", () => {
+    const own = `<w:shd w:val="clear" w:color="auto" w:fill="123456"/>`;
+    const body =
+      `<w:tbl><w:tblPr><w:tblStyle w:val="Banded"/>${LOOK}</w:tblPr>` +
+      `<w:tr>${cell(`<w:p/>`, own)}${cell(`<w:p/>`)}</w:tr></w:tbl>`;
+    const result = measure(body, styled(BAND_OF_ONE));
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.cells[0]?.fillColor).toBe("#123456");
+  });
+});

@@ -34,6 +34,7 @@ import {
   resolveParagraphMark,
   resolveParagraphNumbering,
   resolveRunMarks,
+  conditionalCellFill,
   resolveBandSizes,
   resolveTableBorders,
   resolveTableInsets,
@@ -1214,7 +1215,7 @@ type PositionedTable = {
 function tableWidthPt(block: Table, frame: Frame): number {
   // A width needs no bands: every cell of the first row is as wide as its columns
   // however the style formats it.
-  const plans = planCells(block, { rowBandSize: 1, columnBandSize: 1 }, frame);
+  const plans = planCells(block, { rowBandSize: null, columnBandSize: null }, frame);
   const first = plans[0] ?? [];
   return first.reduce((width, plan) => width + plan.widthPt, 0);
 }
@@ -1265,8 +1266,8 @@ function positionOf(
   const firstColumn = look.firstColumn && gridAt === 0;
   const lastColumn = look.lastColumn && gridAt + span >= columns && columns > 1;
 
-  const bandOf = (index: number, size: number): 1 | 2 | null =>
-    index < 0 ? null : Math.floor(index / size) % 2 === 0 ? 1 : 2;
+  const bandOf = (index: number, size: number | null): 1 | 2 | null =>
+    size === null || index < 0 ? null : Math.floor(index / size) % 2 === 0 ? 1 : 2;
 
   return {
     firstRow,
@@ -1284,9 +1285,19 @@ function positionOf(
   };
 }
 
-// A band is as deep as the table style says unless the table says otherwise, and
-// one row and one column deep where neither does.
-type BandSizes = { readonly rowBandSize: number; readonly columnBandSize: number };
+/**
+ * A band is as deep as the table style says unless the table says otherwise.
+ *
+ * **Where neither states one there is no banding at all**, which is null here rather
+ * than a depth of one. Measured on 2026-08-27 by `probes/conditional-shading-probe.ts`:
+ * the same five by five table under a style declaring a band size shades its interior
+ * at the band's fill, and under a style declaring none comes back unshaded, while the
+ * rows, columns and corners of both are shaded alike.
+ */
+type BandSizes = {
+  readonly rowBandSize: number | null;
+  readonly columnBandSize: number | null;
+};
 
 function planCells(block: Table, bands: BandSizes, frame: Frame): readonly (readonly CellPlan[])[] {
   // A merge learns how far down it reached only once the rows under it have been
@@ -1426,8 +1437,8 @@ function measureTable(
   const plans = planCells(
     block,
     {
-      rowBandSize: block.look.rowBandSize ?? stated.rowBandSize ?? 1,
-      columnBandSize: block.look.columnBandSize ?? stated.columnBandSize ?? 1,
+      rowBandSize: block.look.rowBandSize ?? stated.rowBandSize ?? null,
+      columnBandSize: block.look.columnBandSize ?? stated.columnBandSize ?? null,
     },
     rowFrame,
   );
@@ -1574,7 +1585,7 @@ function measureRowCells(
       leftPt: plan.leftPt,
       widthPt: plan.widthPt,
       throughRow: plan.throughRow,
-      fillColor: cell.fillColor,
+      fillColor: cell.fillColor ?? conditionalCellFill(context.styles, inCellHere.inTable ?? null),
       borders: own,
     });
   }
