@@ -254,7 +254,7 @@ export { readFaceAlternatives, readFaceShapes, FONT_TABLE_PART } from "./docx/fo
 export type { FaceShape } from "./docx/font-table.js";
 
 export { readMetafilePicture } from "./metafile/picture.js";
-export { pngFromMetafile, readMetafileBitmap } from "./metafile/wmf.js";
+export { pngFromEnhancedMetafile, pngFromMetafile, readMetafileBitmap } from "./metafile/wmf.js";
 export type { DecodedBitmap } from "./metafile/wmf.js";
 export type { MetafilePicture, MetafileRect, MetafileShape } from "./metafile/picture.js";
 

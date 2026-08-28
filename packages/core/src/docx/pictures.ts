@@ -1,6 +1,6 @@
 import type { MetricsResolver } from "../layout/lines.js";
 import { readMetafilePicture } from "../metafile/picture.js";
-import { readMetafileBitmap } from "../metafile/wmf.js";
+import { readEnhancedMetafileBitmap, readMetafileBitmap } from "../metafile/wmf.js";
 
 // The picture formats this project can put on a page, which is what a browser has
 // a decoder for plus the one this project decodes itself.
@@ -53,7 +53,11 @@ export function drawablePicture(
   }
   if (extension === METAFILE_EXTENSION) {
     if (metricsFor === undefined) return true;
-    return bytes !== undefined && readMetafilePicture(bytes, metricsFor) !== null;
+    if (bytes === undefined) return false;
+    // One that plays as a drawing, or one whose whole content is a blitted bitmap.
+    return (
+      readMetafilePicture(bytes, metricsFor) !== null || readEnhancedMetafileBitmap(bytes) !== null
+    );
   }
   return PICTURE_MEDIA_TYPES.has(extension);
 }

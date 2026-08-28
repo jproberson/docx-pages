@@ -5,6 +5,7 @@ import {
   OLD_METAFILE_EXTENSION,
   PICTURE_MEDIA_TYPES,
   pngFromMetafile,
+  pngFromEnhancedMetafile,
   type DocxPackage,
   type MetafilePicture,
   type MetricsResolver,
@@ -27,9 +28,15 @@ export function imageDataUrl(pkg: DocxPackage, part: string): string | undefined
   if (bytes === undefined) return undefined;
 
   // The older metafile records a bitmap rather than a drawing, so it arrives here
-  // as the png that bitmap makes and is drawn like any other picture.
+  // as the png that bitmap makes and is drawn like any other picture. **So does the
+  // newer one where its whole content is a blitted bitmap**, which is the shape Word
+  // wraps a photograph in and which plays as no drawing at all.
   if (pictureExtension(part) === OLD_METAFILE_EXTENSION) {
     const png = pngFromMetafile(bytes);
+    return png === null ? undefined : `data:image/png;base64,${toBase64(png)}`;
+  }
+  if (pictureExtension(part) === METAFILE_EXTENSION) {
+    const png = pngFromEnhancedMetafile(bytes);
     return png === null ? undefined : `data:image/png;base64,${toBase64(png)}`;
   }
 
@@ -51,7 +58,10 @@ function drawableImage(
   if (pictureExtension(part) === METAFILE_EXTENSION) {
     const bytes = pkg.parts.get(part);
     const picture = bytes === undefined ? null : readMetafilePicture(bytes, metricsFor);
-    return picture === null ? undefined : { kind: "metafile", picture };
+    if (picture !== null) return { kind: "metafile", picture };
+    // One that plays as nothing may still be a bitmap blitted whole.
+    const url = imageDataUrl(pkg, part);
+    return url === undefined ? undefined : { kind: "bitmap", url };
   }
 
   const url = imageDataUrl(pkg, part);

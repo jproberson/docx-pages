@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { pngFromMetafile, readMetafileBitmap } from "./wmf.js";
+import { EMR } from "./records.js";
+import { metafileHeader, metafileRecord } from "../testing/build-metafile.js";
+import { pngFromMetafile, readEnhancedMetafileBitmap, readMetafileBitmap } from "./wmf.js";
 
 // A placeable metafile holding one record, built here rather than taken from a
 // document: the corpus is other people's work and none of it may be committed.
@@ -152,5 +154,73 @@ describe("the bitmap an older metafile blits", () => {
     expect(png?.[19]).toBe(2);
     expect(png?.[23]).toBe(2);
     expect(png?.[25]).toBe(2);
+  });
+});
+
+// **An enhanced metafile whose whole content is a blitted bitmap** is the other kind
+// Word writes: `readMetafilePicture` plays a drawing and refuses any record it does not
+// know, so one wrapping a photograph played as nothing and was drawn nowhere while the
+// report said nothing about it. `38b5a0336fda` holds one, 1.8MB of `EMR_STRETCHDIBITS`
+// between a header and an end, and drew its second picture nowhere until this.
+describe("the bitmap an enhanced metafile blits", () => {
+  const STRETCH_DIB_ITS = 81;
+  const BIT_BLT = 76;
+
+  // The parameters a `EMR_STRETCHDIBITS` states before its bitmap, walked past by
+  // looking for the bitmap's own 40-byte header rather than by counting them.
+  const BEFORE = new Uint8Array(64);
+
+  const enhanced = (records: readonly Uint8Array[]): Uint8Array => {
+    const parts = [metafileHeader({ frameWidth: 1000, frameHeight: 1000 }), ...records];
+    const out = new Uint8Array(parts.reduce((sum, each) => sum + each.byteLength, 0));
+    let at = 0;
+    for (const part of parts) {
+      out.set(part, at);
+      at += part.byteLength;
+    }
+    return out;
+  };
+
+  const blitting = (type: number, bitmap: Uint8Array): Uint8Array => {
+    const tail = new Uint8Array(BEFORE.byteLength + bitmap.byteLength);
+    tail.set(BEFORE, 0);
+    tail.set(bitmap, BEFORE.byteLength);
+    return metafileRecord(type, [], tail);
+  };
+
+  it("reads the bitmap a stretched dib record carries", () => {
+    const bitmap = bitmapOf([
+      [RED, GREEN],
+      [BLUE, WHITE],
+    ]);
+    const found = readEnhancedMetafileBitmap(
+      enhanced([blitting(STRETCH_DIB_ITS, bitmap), metafileRecord(EMR.eof, [0, 0, 0])]),
+    );
+
+    expect(found?.widthPixels).toBe(2);
+    expect(found?.heightPixels).toBe(2);
+    expect([...(found?.rgb ?? [])]).toStrictEqual([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255]);
+  });
+
+  it("reads one a plain blit carries as well", () => {
+    const found = readEnhancedMetafileBitmap(
+      enhanced([blitting(BIT_BLT, bitmapOf([[RED]])), metafileRecord(EMR.eof, [0, 0, 0])]),
+    );
+
+    expect(found?.widthPixels).toBe(1);
+  });
+
+  // A metafile that records a drawing is not a bitmap, and is left to the player.
+  it("refuses one that draws rather than blitting", () => {
+    const drawing = enhanced([
+      metafileRecord(EMR.createPen, [1, 0, 1, 0, 0]),
+      metafileRecord(EMR.eof, [0, 0, 0]),
+    ]);
+
+    expect(readEnhancedMetafileBitmap(drawing)).toBeNull();
+  });
+
+  it("refuses a run of bytes that is no metafile at all", () => {
+    expect(readEnhancedMetafileBitmap(new Uint8Array([1, 2, 3]))).toBeNull();
   });
 });

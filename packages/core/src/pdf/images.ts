@@ -1,7 +1,7 @@
 import type { CropInsets } from "../docx/drawing.js";
 import { METAFILE_EXTENSION, OLD_METAFILE_EXTENSION, pictureExtension } from "../docx/pictures.js";
 import { METAFILE_PEN_OFFSET } from "../layout/drawables.js";
-import { pngFromMetafile } from "../metafile/wmf.js";
+import { pngFromEnhancedMetafile, pngFromMetafile } from "../metafile/wmf.js";
 import type { MetricsResolver } from "../layout/stack.js";
 import {
   type MetafilePicture,
@@ -108,11 +108,15 @@ export function pdfImages(options: ImageOptions): PdfImages {
 
   return {
     draw: (out, page, at, part, crop) => {
+      // A metafile that records a drawing is played. **One that plays as nothing may
+      // still be a bitmap blitted whole**, which is how Word wraps a photograph, so it
+      // falls through to the bitmap path rather than going undrawn there.
       if (pictureExtension(part) === METAFILE_EXTENSION) {
         const picture = metafileFor(part);
-        if (picture === null) return undrawn(part);
-        playMetafile(out, page, at, picture, crop, options.fonts);
-        return true;
+        if (picture !== null) {
+          playMetafile(out, page, at, picture, crop, options.fonts);
+          return true;
+        }
       }
 
       const bitmap = bitmapFor(part);
@@ -194,6 +198,12 @@ function writeBitmap(options: ImageOptions, part: string): PdfReference | null {
   // through.
   if (pictureExtension(part) === OLD_METAFILE_EXTENSION) {
     const png = pngFromMetafile(bytes);
+    return png === null ? null : writePng(options, png);
+  }
+  // And the newer one where its whole content is a blitted bitmap, which
+  // `readMetafilePicture` plays as no drawing at all.
+  if (pictureExtension(part) === METAFILE_EXTENSION) {
+    const png = pngFromEnhancedMetafile(bytes);
     return png === null ? null : writePng(options, png);
   }
 

@@ -234,3 +234,59 @@ export function pngFromMetafile(bytes: Uint8Array): Uint8Array | null {
   const bitmap = readMetafileBitmap(bytes);
   return bitmap === null ? null : pngOfBitmap(bitmap);
 }
+
+// The records of an EMF that blit a bitmap rather than drawing anything.
+const EMF_BIT_BLT = 76;
+const EMF_STRETCH_BLT = 77;
+const EMF_SET_DIB_TO_DEVICE = 80;
+const EMF_STRETCH_DIB_ITS = 81;
+const EMF_RECORD_HEADER_BYTES = 8;
+
+/**
+ * The bitmap an **enhanced** metafile blits, or nothing where it draws anything else.
+ *
+ * `readMetafilePicture` plays an EMF's lines and text into shapes and refuses any record
+ * it does not know, which is right for a drawing and wrong for the other kind of EMF
+ * Word writes: one whose whole content is a photograph, wrapped as a single
+ * `EMR_STRETCHDIBITS` between a header and an end. That one played as nothing at all,
+ * and `38b5a0336fda` drew its second picture nowhere while saying nothing about it.
+ *
+ * So this is the WMF path applied to the newer format, and for the same reason: the
+ * bitmap is read out and handed on as a png, which both renderers already draw. The DIB
+ * inside the record is the very same structure, so `bitmapIn` finds it the same way, by
+ * the 40-byte header it opens with rather than by counting parameters.
+ *
+ * **A metafile this cannot read is still refused rather than approximated**, and
+ * `readMetafilePicture` is still asked first, so an EMF that really does record a drawing
+ * is played as one.
+ */
+export function readEnhancedMetafileBitmap(bytes: Uint8Array): DecodedBitmap | null {
+  if (bytes.byteLength < EMF_RECORD_HEADER_BYTES) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  let at = 0;
+  while (at + EMF_RECORD_HEADER_BYTES <= bytes.byteLength) {
+    const type = view.getUint32(at, true);
+    const length = view.getUint32(at + 4, true);
+    if (length < EMF_RECORD_HEADER_BYTES || length % 4 !== 0) return null;
+    if (at + length > bytes.byteLength) return null;
+
+    if (
+      type === EMF_BIT_BLT ||
+      type === EMF_STRETCH_BLT ||
+      type === EMF_SET_DIB_TO_DEVICE ||
+      type === EMF_STRETCH_DIB_ITS
+    ) {
+      const found = bitmapIn(view, bytes, at + EMF_RECORD_HEADER_BYTES, at + length);
+      if (found !== null) return found;
+    }
+    at += length;
+  }
+
+  return null;
+}
+
+export function pngFromEnhancedMetafile(bytes: Uint8Array): Uint8Array | null {
+  const bitmap = readEnhancedMetafileBitmap(bytes);
+  return bitmap === null ? null : pngOfBitmap(bitmap);
+}

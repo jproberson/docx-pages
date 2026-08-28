@@ -41,6 +41,7 @@ const CORE_SURFACE: readonly string[] = [
   "bestEffortMetrics",
   "boundsOfTurn",
   "drawablePicture",
+  "pngFromEnhancedMetafile",
   "pngFromMetafile",
   "readMetafileBitmap",
   "OLD_METAFILE_EXTENSION",
