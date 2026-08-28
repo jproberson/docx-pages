@@ -413,6 +413,7 @@ const EQUATION_BOX: ParagraphBox = {
   markTopPt: 90,
   contentBottomPt: 104.6484375,
   resumesUnderPt: 0,
+  keepsUnderPt: 0,
   widowControl: false,
   keepNext: false,
   startsPage: false,

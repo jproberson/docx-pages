@@ -240,6 +240,7 @@ const boxOf = (
   markTopPt: lines[0]?.topPt ?? 0,
   contentBottomPt: (lines.at(-1)?.topPt ?? 0) + 14.6484375,
   resumesUnderPt: 0,
+  keepsUnderPt: 0,
   widowControl: false,
   keepNext: false,
   startsPage: false,

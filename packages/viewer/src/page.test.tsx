@@ -63,6 +63,7 @@ const paragraphOf = (
   topPt: 0,
   anchorTopPt: 0,
   resumesUnderPt: 0,
+  keepsUnderPt: 0,
   heightPt: 14,
   lines: [
     {
@@ -822,6 +823,7 @@ const EQUATION_BOX: ParagraphBox = {
   markTopPt: 90,
   contentBottomPt: 104.6484375,
   resumesUnderPt: 0,
+  keepsUnderPt: 0,
   widowControl: false,
   keepNext: false,
   startsPage: false,

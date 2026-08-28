@@ -188,6 +188,21 @@ export type ParagraphBox = {
   // its cell resumed 12pt below the top of the body, and one inside a 3pt border
   // 3.12pt below it.
   readonly resumesUnderPt: number;
+  /**
+   * What the row a paragraph stands in keeps **below** its text, which has to fit at the
+   * foot of a page before a line of it may be kept there: the margin holding the cell's
+   * text off its lower wall. Nought outside a table.
+   *
+   * Measured on 2026-08-27 by `probes/cell-foot-margin-probe.ts`, sixty lines in one cell
+   * run down to the page foot with the margin varied a case. Word keeps the line whose
+   * room below it is 9.0pt or more and moves the one whose room is 9.5, which is the room
+   * that line left; the bottom border makes no difference at 0.5, 3 or 6pt, so **the
+   * margin has to fit and the border does not**.
+   *
+   * This is `resumesUnderPt`'s mirror, and the pair is why `13c3bf995db3` kept a box
+   * whose foot stood 0.108pt past the body foot while Word moved it.
+   */
+  readonly keepsUnderPt: number;
   // What the paragraph asks of a page break running through it, and of one falling
   // between it and the paragraph after it. Only the break itself can act on either.
   readonly widowControl: boolean;
@@ -1718,11 +1733,15 @@ function placeRows(
       // asks: the outer row states neither, and the page below the tear opens on
       // the nested table's 3pt border.
       const resumesUnderPt = outerTopPt + topMarginPt;
+      // Its mirror: what the row keeps under the text, which a line has to leave free at
+      // the foot of a page. A table inside a cell adds its own, as the top does.
+      const keepsUnderPt = bottomMarginPt;
       for (const box of cell.boxes) {
         const placed = {
           ...shiftBox(box, offset),
           clipTo,
           resumesUnderPt: box.resumesUnderPt + resumesUnderPt,
+          keepsUnderPt: box.keepsUnderPt + keepsUnderPt,
         };
         boxes.push(placed);
         opened.push(placed);
@@ -2525,6 +2544,7 @@ function layOutWholeParagraph(
       markTopPt: input.topPt,
       contentBottomPt: input.topPt,
       resumesUnderPt: 0,
+      keepsUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
       keepNext,
       startsPage: input.startsPage,
@@ -2584,6 +2604,7 @@ function layOutWholeParagraph(
       // tenths of a point.
       contentBottomPt: slot.topPt + height.fittingHeightPt,
       resumesUnderPt: 0,
+      keepsUnderPt: 0,
       widowControl: paragraphFrame.widowControl,
       keepNext,
       startsPage: input.startsPage,
@@ -2629,6 +2650,7 @@ function layOutWholeParagraph(
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
     contentBottomPt: bottomPt,
     resumesUnderPt: 0,
+    keepsUnderPt: 0,
     widowControl: paragraphFrame.widowControl,
     keepNext,
     startsPage: input.startsPage,
