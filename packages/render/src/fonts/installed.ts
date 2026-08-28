@@ -109,9 +109,32 @@ export function installedFaceFiles(
   return found;
 }
 
+/**
+ * Every face the machine offers, **read once a run**.
+ *
+ * The scan opens and parses every font file in every directory, which is a second or
+ * more on a machine with a thousand of them, and nothing about the disk changes while a
+ * sweep is running. It used to be paid again for every document: `ourWrittenPages` gathers
+ * the faces per document, so a sweep of the 718 spent about a quarter of an hour re-reading
+ * the same files, and `fallback.test.ts` timed out at 60s under load while taking 11s alone.
+ *
+ * The cache is keyed on the directories asked for, so a caller naming its own still gets
+ * its own answer, and it lives for the process rather than across one.
+ */
+const scanned = new Map<string, readonly SuppliedFace[]>();
+
 export function installedFaces(
   directories: readonly string[] = fontDirectories(),
 ): readonly SuppliedFace[] {
+  const key = directories.join("\u0000");
+  const already = scanned.get(key);
+  if (already !== undefined) return already;
+  const read = scanFaces(directories);
+  scanned.set(key, read);
+  return read;
+}
+
+function scanFaces(directories: readonly string[]): readonly SuppliedFace[] {
   const found = new Map<string, SuppliedFace>();
 
   const offer = (name: string, bold: boolean, italic: boolean, build: () => SuppliedFace): void => {

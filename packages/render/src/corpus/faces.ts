@@ -32,7 +32,17 @@ function manifestFaces(): readonly SuppliedFace[] {
   }
 }
 
+// Gathered once a run. `ourWrittenPages` and `ourPages` both ask for this per document,
+// so a sweep of the 718 gathered the same faces 718 times and spent about a quarter of an
+// hour doing it.
+let gatheredOnce: readonly SuppliedFace[] | null = null;
+
 export function corpusFaces(): readonly SuppliedFace[] {
+  gatheredOnce ??= gatherCorpusFaces();
+  return gatheredOnce;
+}
+
+function gatherCorpusFaces(): readonly SuppliedFace[] {
   const authored = authoredFace();
   // **A measured face beats a found one, and the order here is the whole of how
   // that is said.** The manifest is a person naming the file behind a name; the

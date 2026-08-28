@@ -195,7 +195,16 @@ const eitherCopy = (first: AdvanceTable, second: AdvanceTable): AdvanceTable => 
 // Word would have used. A machine without them is left as it was: a face nothing
 // supplies still refuses the document rather than being drawn in a guess, and so
 // does a character no face the machine has a glyph for.
+// Read once a run, as the disk scan beside it is: the pack's files do not change while
+// a sweep runs, and every document was paying for them again.
+let pack: readonly SuppliedFace[] | null = null;
+
 export function fallbackFaces(): readonly SuppliedFace[] {
+  pack ??= readPackFaces();
+  return pack;
+}
+
+function readPackFaces(): readonly SuppliedFace[] {
   return [...WORD_FALLBACK_FACES, ...WORD_CHARACTER_FALLBACK_FACES].flatMap((name) => {
     if (name === WORD_SERIF_FALLBACK_FACE) return timesNewRoman();
     const path = fallbackFacePath(name);
