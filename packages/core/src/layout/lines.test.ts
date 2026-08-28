@@ -770,6 +770,87 @@ describe("a run the file scaled", () => {
   });
 });
 
+/**
+ * **A pair is kerned across the places a line comes apart**, which is at every space
+ * and after every hyphen, and across two runs drawn alike.
+ *
+ * Measured on 2026-08-28 by `small-caps-space-kern-probe`, ten repeats of `TA ` in
+ * Arial Bold at 26pt: Word drew the line 8.76pt shorter than this did, which is nine
+ * times the 0.965pt the face gives `A` before a space. `bd42bfc93fdf` is what asked,
+ * whose title Word fits on one line and this broke into two.
+ *
+ * **Alike is the same face at the same size**: with small capitals the same `A` before
+ * the same space is kerned where both are set small and where both are set large, and
+ * not where the letter is large and the space small.
+ */
+describe("kerning across the places a line comes apart", () => {
+  const KERNED: SuppliedFace = {
+    name: "Kerned Sans",
+    bold: false,
+    italic: false,
+    metrics: METRICS,
+    ...(() => {
+      const read = readFontFile(buildSfnt({ ...FIXTURE, kernPairs: { "a ": -100, ab: -200 } }));
+      return {
+        advances: read.advances,
+        ...(read.kerning.kind === "kerning" ? { kerning: read.kerning } : {}),
+      };
+    })(),
+  };
+
+  const kerningFor =
+    (faces: readonly SuppliedFace[]) =>
+    (request: { readonly name: string }): MetricsLookup => {
+      const face = faces.find((each) => each.name === request.name);
+      return face === undefined
+        ? { kind: "missing", fontName: request.name }
+        : {
+            kind: "found",
+            source: "supplied",
+            metrics: face.metrics,
+            advances: face.advances,
+            ...(face.kerning === undefined ? {} : { kerning: face.kerning }),
+          };
+    };
+
+  const kerned = (sizePt = 10): ParagraphMark => ({
+    ...mark(sizePt, "Kerned Sans"),
+    kernFromHalfPoints: 2,
+  });
+
+  const widthOf = (runs: readonly TextRun[]): number => {
+    const result = breakLines({ runs, widthPt: 10000, metricsFor: kerningFor([KERNED]) });
+    if (result.kind !== "lines") throw new Error(result.failure.kind);
+    return result.lines[0]?.widthPt ?? 0;
+  };
+
+  // Every glyph is half an em, so `a b` is three of them at 10pt and the pair is a
+  // tenth of an em.
+  const THREE = 15;
+  const PAIR_PT = 1;
+
+  it("kerns a letter against the space after it, which a line is split at", () => {
+    expect(widthOf([runOf("a b", kerned())])).toBeCloseTo(THREE - PAIR_PT, 9);
+  });
+
+  it("kerns it across two runs drawn alike", () => {
+    expect(widthOf([runOf("a", kerned()), runOf(" b", kerned())])).toBeCloseTo(THREE - PAIR_PT, 9);
+  });
+
+  it("leaves the pair alone where the two are drawn at different sizes", () => {
+    const wide = widthOf([runOf("a", kerned()), runOf(" b", kerned(20))]);
+    expect(wide).toBeCloseTo(5 + 10 + 10, 9);
+  });
+
+  it("still kerns a pair standing inside one word", () => {
+    expect(widthOf([runOf("ab", kerned())])).toBeCloseTo(10 - 2 * PAIR_PT, 9);
+  });
+
+  it("kerns nothing where the run asks for none", () => {
+    expect(widthOf([runOf("a b", mark(10, "Kerned Sans"))])).toBeCloseTo(THREE, 9);
+  });
+});
+
 describe("a character drawn out of another face", () => {
   const BULLET = "\u2022";
 

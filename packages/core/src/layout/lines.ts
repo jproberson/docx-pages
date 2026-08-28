@@ -373,7 +373,16 @@ class Measurer {
   // A character drawn out of another face raises the fragment as a run in that
   // face would have: it stands as tall as the tallest face drawn in it and seats
   // its baseline under the deepest ascent among them.
-  fragment(mark: ParagraphMark, text: string): Fragment | null {
+  /**
+   * `after` is the character drawn immediately before this fragment, where it was
+   * drawn in the same face at the same size. **The kern between it and this
+   * fragment's first character belongs to this fragment**, which is where Word puts
+   * it: a run of `TA TA` kerned closes the space and leaves the `A` before it where
+   * it was. Without it the kern is lost at every place a line comes apart, which is
+   * at every space and after every hyphen, and `A` before a space is worth -76 units
+   * in Arial.
+   */
+  fragment(mark: ParagraphMark, text: string, after: number | null = null): Fragment | null {
     const face = this.faceFor(mark);
     if (face === null) return null;
 
@@ -389,7 +398,7 @@ class Measurer {
     // converted a pair at a time.
     const kerningBetween = runKerns(kerningOf(mark)) ? face.kerningBetween : null;
     let kerningUnits = 0;
-    let lastCodePoint: number | null = null;
+    let lastCodePoint: number | null = after;
 
     for (const character of text) {
       if (beforePointPt === null && character === DECIMAL_POINT) beforePointPt = widthPt;
@@ -547,14 +556,50 @@ function tokenize(runs: readonly TextRun[], measurer: Measurer): Measured<readon
     units.push({ kind, fragments: [fragment] });
   };
 
+  // The character drawn last, carried across the runs a paragraph is written in:
+  // Word kerns a pair whose two characters stand in two runs of the same formatting,
+  // which is how a document that writes a word and the space after it as separate
+  // runs is drawn.
+  let drawn: DrawnBefore = null;
+  const leave = (left: DrawnBefore): void => {
+    drawn = left;
+  };
+
   for (const run of runs) {
     for (const piece of run.pieces) {
-      if (!addPiece(piece, run.mark, units, append, measurer, setting)) return { kind: "failed" };
+      if (!addPiece(piece, run.mark, units, append, measurer, setting, drawn, leave))
+        return { kind: "failed" };
     }
   }
 
   return { kind: "ok", value: units };
 }
+
+// **A pair is kerned only where both its characters are drawn alike**, which is what
+// a run of small capitals says: `A` before a space closes up where both are set small
+// and where both are set large, and not where the `A` is large and the space small.
+// Measured on 2026-08-28 by `small-caps-space-kern-probe`, the same three texts with
+// small capitals on and off.
+const drawnAlike = (one: ParagraphMark, another: ParagraphMark): boolean =>
+  one === another ||
+  (one.fontSizePt === another.fontSizePt &&
+    one.bold === another.bold &&
+    one.italic === another.italic &&
+    one.characterScale === another.characterScale &&
+    one.characterSpacingPt === another.characterSpacingPt &&
+    one.font.kind === another.font.kind &&
+    (one.font.kind !== "named" ||
+      another.font.kind !== "named" ||
+      one.font.name === another.font.name));
+
+const lastCodePointOf = (text: string): number | null => {
+  let last: number | null = null;
+  for (const character of text) last = character.codePointAt(0) ?? 0;
+  return last;
+};
+
+// The character a piece left drawn behind it, which the piece after it kerns against.
+type DrawnBefore = { readonly mark: ParagraphMark; readonly codePoint: number } | null;
 
 function addPiece(
   piece: RunPiece,
@@ -563,6 +608,8 @@ function addPiece(
   append: (kind: "word" | "space", fragment: Fragment) => void,
   measurer: Measurer,
   setting: "display" | "text",
+  drawn: DrawnBefore,
+  leave: (drawn: DrawnBefore) => void,
 ): boolean {
   if (piece.kind === "equation") {
     const face = measurer.mathFaceFor(mark);
@@ -603,11 +650,13 @@ function addPiece(
       ),
       pieces,
     });
+    leave(null);
     return true;
   }
 
   if (piece.kind === "tab") {
     units.push({ kind: "tab" });
+    leave(null);
     return true;
   }
   if (piece.kind === "break") {
@@ -616,6 +665,7 @@ function addPiece(
     const heightPt = measurer.lineHeight(mark);
     if (heightPt === null) return false;
     units.push({ kind: "break", endsPage: piece.endsPage, heightPt });
+    leave(null);
     return true;
   }
   if (piece.kind === "drawing") {
@@ -642,17 +692,23 @@ function addPiece(
       paintHeightPt: room.heightPt,
       fontHeightPt,
     });
+    leave(null);
     return true;
   }
 
+  let before = drawn;
   for (const token of piece.text.split(GAP).filter((each) => each !== "")) {
     const space = IS_GAP.test(token);
     for (const part of space ? [token] : token.split(AFTER_HYPHEN)) {
-      const fragment = measurer.fragment(mark, part);
+      const after = before !== null && drawnAlike(before.mark, mark) ? before.codePoint : null;
+      const fragment = measurer.fragment(mark, part, after);
       if (fragment === null) return false;
       append(space ? "space" : "word", fragment);
+      const last = lastCodePointOf(part);
+      before = last === null ? before : { mark, codePoint: last };
     }
   }
+  leave(before);
   return true;
 }
 
