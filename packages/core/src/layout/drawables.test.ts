@@ -241,6 +241,7 @@ const boxOf = (
   contentBottomPt: (lines.at(-1)?.topPt ?? 0) + 14.6484375,
   resumesUnderPt: 0,
   keepsUnderPt: 0,
+  inACell: false,
   widowControl: false,
   keepNext: false,
   startsPage: false,

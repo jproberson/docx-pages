@@ -203,6 +203,23 @@ export type ParagraphBox = {
    * whose foot stood 0.108pt past the body foot while Word moved it.
    */
   readonly keepsUnderPt: number;
+  /**
+   * Whether the paragraph stands in a table cell, which decides how much of a line has to
+   * fit at the foot of a page.
+   *
+   * **The room a line rule opens below the text hangs past the page foot for an ordinary
+   * paragraph and does not for one in a cell.** Measured on 2026-08-27 by
+   * `probes/line-foot-room-probe.ts`, sixty lines under a multiple of two run down to the
+   * foot with a spacer moving the run: outside a cell Word keeps the line whose **text**
+   * fits, and inside one it keeps only the line whose **whole ruled height** fits, one
+   * line fewer. An exact rule and an `atLeast` rule answer alike either way, since neither
+   * opens room under its text.
+   *
+   * A row's height is the sum of its lines' whole heights, so a cell cannot let that room
+   * hang the way a paragraph can. That is `13c3bf995db3`, whose lines are ruled `auto` in
+   * cells and stand 13.650 where their text stands 12.649.
+   */
+  readonly inACell: boolean;
   // What the paragraph asks of a page break running through it, and of one falling
   // between it and the paragraph after it. Only the break itself can act on either.
   readonly widowControl: boolean;
@@ -1742,6 +1759,7 @@ function placeRows(
           clipTo,
           resumesUnderPt: box.resumesUnderPt + resumesUnderPt,
           keepsUnderPt: box.keepsUnderPt + keepsUnderPt,
+          inACell: true,
         };
         boxes.push(placed);
         opened.push(placed);
@@ -2545,6 +2563,7 @@ function layOutWholeParagraph(
       contentBottomPt: input.topPt,
       resumesUnderPt: 0,
       keepsUnderPt: 0,
+      inACell: false,
       widowControl: paragraphFrame.widowControl,
       keepNext,
       startsPage: input.startsPage,
@@ -2605,6 +2624,7 @@ function layOutWholeParagraph(
       contentBottomPt: slot.topPt + height.fittingHeightPt,
       resumesUnderPt: 0,
       keepsUnderPt: 0,
+      inACell: false,
       widowControl: paragraphFrame.widowControl,
       keepNext,
       startsPage: input.startsPage,
@@ -2651,6 +2671,7 @@ function layOutWholeParagraph(
     contentBottomPt: bottomPt,
     resumesUnderPt: 0,
     keepsUnderPt: 0,
+    inACell: false,
     widowControl: paragraphFrame.widowControl,
     keepNext,
     startsPage: input.startsPage,

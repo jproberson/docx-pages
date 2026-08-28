@@ -414,6 +414,7 @@ const EQUATION_BOX: ParagraphBox = {
   contentBottomPt: 104.6484375,
   resumesUnderPt: 0,
   keepsUnderPt: 0,
+  inACell: false,
   widowControl: false,
   keepNext: false,
   startsPage: false,

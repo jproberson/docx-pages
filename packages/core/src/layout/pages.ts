@@ -309,13 +309,13 @@ function breakOnce(
         // whatever room was left below, and widow control has no say in where a break
         // the document asked for falls.
         const asked = line.startsPage;
-        // **The room the row keeps under its text has to fit as well**, or a line whose
-        // own text just fits is kept where Word moves it: see `keepsUnderPt`.
-        if (
-          !asked &&
-          (carriesABreak(box, at) ||
-            !overflows(line.topPt, line.fittingHeightPt + box.keepsUnderPt))
-        ) {
+        // **A line in a cell has to fit whole**, where an ordinary one lets the room its
+        // rule opens below the text hang past the foot: see `inACell`. And the room the
+        // row keeps under its text has to fit as well, which is `keepsUnderPt`.
+        const needsPt =
+          (box.inACell ? Math.max(line.heightPt, line.fittingHeightPt) : line.fittingHeightPt) +
+          box.keepsUnderPt;
+        if (!asked && (carriesABreak(box, at) || !overflows(line.topPt, needsPt))) {
           at += 1;
           continue;
         }
@@ -515,6 +515,7 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
         : last.topPt + last.heightPt - shiftPt,
     resumesUnderPt: box.resumesUnderPt,
     keepsUnderPt: box.keepsUnderPt,
+    inACell: box.inACell,
     widowControl: box.widowControl,
     // What the paragraph asked of the pages either side of it belongs to the part
     // of it that stands there, and what it holds is held by the part carrying its
