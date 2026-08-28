@@ -125,7 +125,7 @@ export const described = (value: unknown): string => {
  */
 export function sweepDocument(bytes: Uint8Array, faces: readonly SuppliedFace[]): SweptDocument {
   const startedAt = performance.now();
-  const asks = asked(bytes);
+  const asks = asked(bytes, faces);
   const placed = laidOut(bytes, faces);
 
   return {
@@ -137,11 +137,23 @@ export function sweepDocument(bytes: Uint8Array, faces: readonly SuppliedFace[])
   };
 }
 
-// A package this project cannot even open says nothing about what it asked for,
-// and the layout below is what will report why.
-function asked(bytes: Uint8Array): readonly string[] {
+/**
+ * A package this project cannot even open says nothing about what it asked for, and the
+ * layout below is what will report why.
+ *
+ * **The machine's own faces are handed to the report, and that is not a detail.**
+ * `drawablePicture` takes a metafile on trust from a caller with no resolver, because a
+ * resolver that finds nothing would call every metafile undrawable when most of them play
+ * perfectly well on a machine that has the fonts. So a sweep that asked without one could
+ * never name an undrawable picture at all, and `38b5a0336fda` drew its second picture
+ * nowhere while this column said it asked for nothing. Found on 2026-08-27 by looking at
+ * the page; nothing in any report could have said it.
+ */
+function asked(bytes: Uint8Array, faces: readonly SuppliedFace[]): readonly string[] {
   try {
-    return readUnhonoured(openDocx(bytes)).map((each) => each.kind);
+    const pkg = openDocx(bytes);
+    const measuring = substitutingMetrics(faces, WORD_FALLBACK_FACES, readFaceAlternatives(pkg));
+    return readUnhonoured(pkg, measuring.metricsFor).map((each) => each.kind);
   } catch {
     return [];
   }
