@@ -48,6 +48,11 @@ export type LineSegment =
       readonly text: string;
       readonly widthPt: number;
       readonly offsetPt: number;
+      // What the pair standing at the head of this segment took off its width, absent
+      // where no pair stood there. **The squeeze a justified line is allowed is a
+      // quarter of what its spaces advance and not of what they came out**, so it is the
+      // one place that has to add this back.
+      readonly headKernPt?: number;
     }
   | {
       readonly kind: "drawing";
@@ -246,6 +251,9 @@ type Fragment = {
   // where a character inside it ends, since the characters of a face are not all one
   // width, and the reaches are added up here anyway.
   readonly reachPt: readonly number[];
+  // What the pair standing between this fragment and the character drawn before it
+  // took off the width above, which the squeeze the line is allowed adds back.
+  readonly headKernPt: number;
 };
 
 type Unit =
@@ -399,6 +407,8 @@ class Measurer {
     const kerningBetween = runKerns(kerningOf(mark)) ? face.kerningBetween : null;
     let kerningUnits = 0;
     let lastCodePoint: number | null = after;
+    let headKernUnits = 0;
+    let atTheHead = true;
 
     for (const character of text) {
       if (beforePointPt === null && character === DECIMAL_POINT) beforePointPt = widthPt;
@@ -414,8 +424,11 @@ class Measurer {
       }
 
       if (kerningBetween !== null && lastCodePoint !== null) {
-        kerningUnits += kerningBetween(lastCodePoint, codePoint);
+        const pairUnits = kerningBetween(lastCodePoint, codePoint);
+        if (atTheHead) headKernUnits = pairUnits;
+        kerningUnits += pairUnits;
       }
+      atTheHead = false;
       lastCodePoint = codePoint;
 
       // A space takes the spacing as a letter does. A tab never reaches here:
@@ -456,6 +469,7 @@ class Measurer {
       ascentPt: raisedAbovePt,
       fontHeightPt: abovePt + belowPt,
       reachPt,
+      headKernPt: advanceWidthPt(headKernUnits, face.metrics, mark.fontSizePt),
     };
   }
 }
@@ -819,8 +833,18 @@ class LineBuilder {
   private squeezePt(fragments: readonly Fragment[]): number {
     if (!this.justified) return 0;
     const held = [...this.segments, ...this.pending];
+    // **A quarter of what the space advances, before the pair at its head closed it up.**
+    // Measured on 2026-08-28 by `squeeze-quarter-probe`: four spaces each standing after
+    // an `A`, which Arial kerns by -76 units and 0.965pt at 26pt, and the room swept a
+    // quarter of a point at a time. Word kept the last word in a room 1.00pt narrower
+    // than this did, where counting the quarter off the kerned space accounts for 0.965
+    // of it; the same line unkerned put the two at the same room to the twip.
     const gapsPt = held.reduce(
-      (widthPt, segment) => widthPt + (spaceCountOf(segment) === 0 ? 0 : segment.widthPt),
+      (widthPt, segment) =>
+        widthPt +
+        (spaceCountOf(segment) === 0
+          ? 0
+          : segment.widthPt - (segment.kind === "text" ? (segment.headKernPt ?? 0) : 0)),
       0,
     );
     const spaces = held.reduce((count, segment) => count + spaceCountOf(segment), 0);
@@ -1243,6 +1267,7 @@ const segmentOf = (fragment: Fragment): LineSegment => ({
   text: fragment.text,
   widthPt: fragment.widthPt,
   offsetPt: 0,
+  ...(fragment.headKernPt === 0 ? {} : { headKernPt: fragment.headKernPt }),
 });
 
 const startingAt = (segment: LineSegment, offsetPt: number): LineSegment =>
@@ -1328,6 +1353,10 @@ function splitFragment(
           text: tail,
           widthPt: fragment.widthPt - filled,
           reachPt: reachesFrom(fragment, count, filled),
+          // The head kept the pair that stood before the fragment; what the cut now
+          // stands between is the pair above, which is the head's business and not this
+          // one's.
+          headKernPt: 0,
         },
   ];
 }

@@ -1057,6 +1057,67 @@ describe("breakLines squeezing a justified line", () => {
 
     expect(textOf(lines[0] ?? never()).trim()).toBe("aa aa aa aa");
   });
+
+  /**
+   * **The quarter is of what a space advances and not of what it came out**, so a pair
+   * closing a space up leaves the line as much to give as it had before.
+   *
+   * Measured on 2026-08-28 by `squeeze-quarter-probe`: four spaces each standing after
+   * an `A`, which Arial kerns by -76 units and 0.965pt at 26pt, and the room swept a
+   * quarter of a point at a time. Word kept the last word in a room a point narrower
+   * than this did, and the same line written unkerned put the two at the same room to
+   * the twip. `bd42bfc93fdf` is what asked: its title needed a quarter of a point more
+   * room here than in Word, and Word draws it on one line where this drew two.
+   */
+  it("allows a quarter of what its spaces advance, before any pair closed them", () => {
+    const KERNED: SuppliedFace = {
+      name: "Kerned Sans",
+      bold: false,
+      italic: false,
+      metrics: METRICS,
+      ...(() => {
+        // A space after `a` closes by a fifth of the em, which is 2pt at 10pt.
+        const read = readFontFile(buildSfnt({ ...FIXTURE, kernPairs: { "a ": -200 } }));
+        return {
+          advances: read.advances,
+          ...(read.kerning.kind === "kerning" ? { kerning: read.kerning } : {}),
+        };
+      })(),
+    };
+    const kerningFor = (request: { readonly name: string }): MetricsLookup =>
+      request.name === KERNED.name
+        ? {
+            kind: "found",
+            source: "supplied",
+            metrics: KERNED.metrics,
+            advances: KERNED.advances,
+            ...(KERNED.kerning === undefined ? {} : { kerning: KERNED.kerning }),
+          }
+        : { kind: "missing", fontName: request.name };
+
+    const at: ParagraphMark = { ...mark(10, "Kerned Sans"), kernFromHalfPoints: 2 };
+    const wordsIn = (widthPt: number): number => {
+      const result = breakLines({
+        runs: [runOf("aa aa aa aa b", at)],
+        widthPt,
+        metricsFor: kerningFor,
+        justified: true,
+      });
+      if (result.kind !== "lines") throw new Error(result.failure.kind);
+      return textOf(result.lines[0] ?? never())
+        .trim()
+        .split(/\s+/).length;
+    };
+
+    // The same thirteen characters, each space closed by 2pt: the line comes to 65 less
+    // four kerns, which is 57, and the last word advances 10 with its space less its own
+    // kern, which is 8. A third of 8 plus 0.2307 of it over 3.5 is 3.194, under the
+    // quarter of the 20pt the four spaces advance, so 5 is the allowance and the line
+    // takes the word down to 57 - 3.194 = 53.806. Counting the quarter off the spaces as
+    // they came out would allow only 3pt and stop at 54.
+    expect(wordsIn(53.9)).toBe(5);
+    expect(wordsIn(53.7)).toBe(4);
+  });
 });
 
 // Measured against Word itself: every space character on the line takes an equal
