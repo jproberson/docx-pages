@@ -1746,7 +1746,11 @@ describe("measureStack over a section of more than one column", () => {
     // on it: a paragraph added after the run to carry the break is a block of the run
     // like any other, so the run under test would be a paragraph longer than the one
     // Word answered for.
-    const runIn = (paragraphs: readonly string[], columns: SectionColumns) => {
+    const runIn = (
+      paragraphs: readonly string[],
+      columns: SectionColumns,
+      settings: DocumentSettings = MODERN,
+    ) => {
       const closesAt = paragraphs.length - 1;
       const body = [...paragraphs, line("closer")];
       const pkg = openDocx(
@@ -1768,6 +1772,7 @@ describe("measureStack over a section of more than one column", () => {
         columnsOf: (block) =>
           block.kind === "paragraph" && block.paragraph.index <= closesAt ? across : [],
         sectionsClosed: new Map([[closesAt, { opensAPage: false }]]),
+        settings,
       });
       if (result.kind !== "measured") throw new Error(result.blocker.kind);
       const closer = result.boxes.at(-1);
@@ -2006,6 +2011,33 @@ describe("measureStack over a section of more than one column", () => {
       const run = runIn([line("m1"), line("m2"), opensAColumn("m3")], TWO);
       expect(run.drawnIn).toStrictEqual([0, 0, 1]);
       expect(run.costPt).toBeCloseTo(72, 9);
+    });
+
+    // **An old document leaves nothing behind.** Measured on 2026-08-28 by
+    // `column-break-near-side-probe`, L and M written again against compatibility mode
+    // 14: both came back at the first column's own height, where mode 15 makes them a
+    // line taller. `7eaa70746b70` declares 14 and is what asked.
+    it("leaves nothing behind in a document declaring the old compatibility mode", () => {
+      const run = runIn([line("l1"), line("l2"), breakOnly, line("l3")], TWO, LEGACY);
+      expect(run.drawnIn).toStrictEqual([0, 0, 1]);
+      expect(run.costPt).toBeCloseTo(48, 9);
+    });
+
+    it("leaves nothing behind there for a break opening a paragraph carrying text", () => {
+      const run = runIn([line("m1"), line("m2"), opensAColumn("m3")], TWO, LEGACY);
+      expect(run.drawnIn).toStrictEqual([0, 0, 1]);
+      expect(run.costPt).toBeCloseTo(48, 9);
+    });
+
+    // The control for the two above: a break standing after its paragraph's own text
+    // leaves the line it drew, which is a line either kind of document keeps. Word
+    // answered these six cases alike in both modes.
+    it("keeps the line a break standing after its own text drew, old or new", () => {
+      const closes = (name: string) =>
+        `<w:p><w:pPr>${exactly}</w:pPr><w:r><w:t>${name}</w:t><w:br w:type="column"/></w:r></w:p>`;
+      const body = [line("n1"), line("n2"), closes("n3")];
+      expect(runIn(body, TWO).costPt).toBeCloseTo(72, 9);
+      expect(runIn(body, TWO, LEGACY).costPt).toBeCloseTo(72, 9);
     });
   });
 });

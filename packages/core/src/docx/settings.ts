@@ -39,8 +39,8 @@ export const roundsAnchorsToTwips = (settings: DocumentSettings): boolean =>
 export const squeezesAJustifiedLine = (settings: DocumentSettings): boolean =>
   !(settings.compatibilityMode === null || settings.compatibilityMode < 15);
 
-// Whether a document is one of the old ones, which the two rules below are the
-// whole of besides the rounding above.
+// Whether a document is one of the old ones, which the rules below are the whole of
+// besides the rounding above.
 const legacy = roundsAnchorsToTwips;
 
 // An object asking for the largest side with the same room either side of it puts
@@ -63,6 +63,25 @@ export const takesTheRightOnEqualSides = legacy;
 // ask for different margins the table still has one edge, and it is the first
 // row's cell that decides it.
 export const measuresTheIndentToTheText = legacy;
+
+// **Only a modern document leaves an empty line where a column breaks.** A paragraph
+// whose break stands before everything it draws leaves a line of its own height at the
+// foot of the column it breaks out of, which carries everything under the run down by
+// that much; a document declaring 14 leaves nothing there and its run costs the page
+// only what its columns draw. A break standing after its paragraph's own text is alike
+// either way, since the line left behind is one that was drawn.
+//
+// Measured on 2026-08-28 by `column-break-near-side-probe`, eighteen cases written
+// twice and differing in nothing but the mode: all twelve whose break stands before the
+// text, and all twelve whose paragraph holds nothing but the break, put the run a line
+// taller under 15 and exactly as tall as its first column under 14. The six whose break
+// follows its text answered alike.
+//
+// `7eaa70746b70` is what asked: it declares 14, and its two-column run put everything
+// under it 13.80 low here, which is the height of the line its break's own paragraph
+// draws in the column that break opens.
+export const leavesAnEmptyLineWhereAColumnBreaks = (settings: DocumentSettings): boolean =>
+  !legacy(settings);
 
 // A document declaring no compatibility mode does not keep text off the right of
 // an object wrapped on its left: the line takes the run of free space beside the

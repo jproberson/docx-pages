@@ -22,6 +22,7 @@ import type { NumberSuffix } from "../docx/numbering.js";
 import { readRuns, type TextRun } from "../docx/runs.js";
 import type { SectionClose } from "../docx/section.js";
 import {
+  leavesAnEmptyLineWhereAColumnBreaks,
   measuresTheIndentToTheText,
   squeezesAJustifiedLine,
   DEFAULT_SETTINGS,
@@ -1002,7 +1003,9 @@ function fillColumns(
     // that paragraph carries is what opened this column, and was answered for there.
     columnHeightsPt.push(
       kept.heightPt +
-        (cut.keepLines === null ? nearSideOfABreak(measured.boxes, blockOf, forced, cut.at) : 0),
+        (cut.keepLines === null
+          ? nearSideOfABreak(measured.boxes, blocks, blockOf, forced, cut.at, context)
+          : 0),
     );
     from = cut.at;
     carried = kept.rest ?? null;
@@ -1061,17 +1064,43 @@ function reachesOf(box: ParagraphBox, topPt: number, into: number[]): void {
  *
  * It is one line and not the whole paragraph: what follows the break may run to several
  * lines in the column it opens, and only the empty piece before it stays behind.
+ *
+ * **The empty one of the two is left only by a modern document**, which is
+ * `leavesAnEmptyLineWhereAColumnBreaks`. Where the paragraph draws its own text ahead of
+ * the break, the line left behind is one that was drawn and stands in either kind of
+ * document, and this is what answers for it: the whole paragraph went to the column its
+ * break opened.
  */
 function nearSideOfABreak(
   boxes: readonly ParagraphBox[],
+  blocks: readonly Block[],
   blockOf: ReadonlyMap<number, number>,
   forced: ReadonlySet<number>,
   cut: number,
+  context: Context,
 ): number {
   if (!forced.has(cut)) return 0;
+  if (
+    !leavesAnEmptyLineWhereAColumnBreaks(context.settings) &&
+    nothingIsDrawnBeforeTheBreak(blocks[cut], context)
+  ) {
+    return 0;
+  }
   const box = boxes.find((each) => blockOf.get(each.index) === cut);
   if (box === undefined) return 0;
   return box.lines[0]?.heightPt ?? box.heightPt;
+}
+
+// Whether the paragraph carrying the break draws nothing ahead of it, which is what
+// makes the line it leaves behind an empty one.
+function nothingIsDrawnBeforeTheBreak(block: Block | undefined, context: Context): boolean {
+  if (block === undefined || block.kind !== "paragraph") return false;
+  for (const run of readRuns(block.paragraph, context.styles)) {
+    for (const piece of run.pieces) {
+      return piece.kind === "break" && piece.endsColumn;
+    }
+  }
+  return false;
 }
 
 // Where a column ends: the first block of the run that belongs in the next one, and,
