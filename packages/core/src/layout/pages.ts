@@ -326,7 +326,21 @@ function breakOnce(
         // it, which is what a torn row resumes under.
         const cut = asked ? at : cutFor(box, { from, at, shiftPt, topPt: opens.topPt });
         if (cut > from) put(partOf(box, from, cut, shiftPt));
-        shiftPt = (box.lines[cut]?.topPt ?? line.topPt) - opens.topPt - box.resumesUnderPt;
+        // **A paragraph in a cell carries the room above it onto the page it opens**,
+        // where one in the flow leaves that room on the page above and starts its text
+        // at the top. Measured on 2026-08-28 by `torn-row-foot-probe`, a paragraph
+        // keeping six points above its line run down to the foot with the room left
+        // before it opened two points at a time: in a cell Word drew the line 21.84
+        // under the body's top at every room it moved at, and in the flow 15.84, which
+        // is the same line with the six points spent. A paragraph keeping nothing above
+        // it answers alike either way.
+        //
+        // `bd42bfc93fdf` is what asked. It ended a page with 5.7pt of a row that drew
+        // nothing at all, the room its first paragraph keeps above its own text, and
+        // every line of the page below stood 6.1 high.
+        const resumesFromPt =
+          cut === 0 && box.inACell ? box.topPt : (box.lines[cut]?.topPt ?? line.topPt);
+        shiftPt = resumesFromPt - opens.topPt - box.resumesUnderPt;
         open(opens, box.index);
         from = cut;
         at = cut + 1;

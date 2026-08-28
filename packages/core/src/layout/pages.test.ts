@@ -589,6 +589,69 @@ describe("breakStack over paragraphs held to the one after them", () => {
 
 // A cell is not broken by anything of its own: it is cut where the text it holds
 // broke, and the piece of it on each page is what it covered there.
+/**
+ * **A paragraph in a cell carries the room above it onto the page it opens**, where one
+ * in the flow leaves that room behind and starts its text at the top.
+ *
+ * Measured on 2026-08-28 by `torn-row-foot-probe`, a paragraph keeping six points above
+ * its line run down to the page foot with the room left before it opened two points at a
+ * time: in a cell Word drew the line 21.84 under the body's top at every room it moved
+ * at, and in the flow 15.84, which is the same line with the six points spent. A
+ * paragraph keeping nothing above it answers alike either way, and so does one the page
+ * had room for.
+ *
+ * `bd42bfc93fdf` is what asked. It ended a page with 5.7pt of a row that drew nothing at
+ * all, and every line of the page below stood 6.1 high.
+ */
+describe("breakStack over a paragraph whose room above it is all that fitted", () => {
+  // Ten points of room above a ten point line, the whole of it laid out from 100 with
+  // the page ending at 115: the room fits and the line does not.
+  const heldOver = (inACell: boolean) => {
+    const boxes = stack([[10], [10]]).map((box, at) =>
+      at === 1
+        ? {
+            ...box,
+            inACell,
+            // The room the paragraph keeps above its own first line.
+            topPt: box.topPt - 10,
+            heightPt: box.heightPt + 10,
+          }
+        : box,
+    );
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 115 });
+    const second = pages[1]?.boxes[0];
+    return {
+      pages: pages.length,
+      onTheFirst: linesOn(pages[0]),
+      topPt: second?.topPt ?? NaN,
+      linePt: second?.lines[0]?.topPt ?? NaN,
+    };
+  };
+
+  it("starts its text below that room where it stands in a cell", () => {
+    const held = heldOver(true);
+
+    expect(held.pages).toBe(2);
+    expect(held.onTheFirst).toStrictEqual([1]);
+    // The paragraph opens the page with its room, so its text stands ten points down.
+    expect(held.topPt).toBeCloseTo(100, 9);
+    expect(held.linePt).toBeCloseTo(110, 9);
+  });
+
+  it("starts its text at the top where it stands in the flow", () => {
+    const held = heldOver(false);
+
+    expect(held.pages).toBe(2);
+    expect(held.onTheFirst).toStrictEqual([1]);
+    expect(held.linePt).toBeCloseTo(100, 9);
+  });
+
+  it("leaves no piece of itself on the page above either way", () => {
+    expect(heldOver(true).onTheFirst).toStrictEqual([1]);
+    expect(heldOver(false).onTheFirst).toStrictEqual([1]);
+  });
+});
+
 describe("breakStack over the cells of a table", () => {
   const boxes = stack([[20], [20], [20]], 100);
 
