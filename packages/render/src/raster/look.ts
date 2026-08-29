@@ -64,6 +64,9 @@ async function main(): Promise<void> {
       if (sides && mine !== null) {
         writeFileSync(resolve(DIRECTORY, `${id}.mine-${String(at + 1)}.png`), writePng(mine));
       }
+      if (sides && yours !== null) {
+        writeFileSync(resolve(DIRECTORY, `${id}.word-${String(at + 1)}.png`), writePng(yours));
+      }
       process.stdout.write(
         `  page ${String(at + 1).padStart(3)}  ` +
           `${(shareOf(difference) * 100).toFixed(1).padStart(6)}% of ` +
