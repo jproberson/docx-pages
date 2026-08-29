@@ -465,6 +465,18 @@ describe("breakStack over the room a paragraph asks for above itself", () => {
     expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
   });
 
+  it("carries that room onto the page a break opened when it stands in a cell", () => {
+    const inCell = (boxes: readonly ParagraphBox[]): readonly ParagraphBox[] =>
+      boxes.map((box, index) => (index === 1 ? { ...box, inACell: true } : box));
+    const boxes = inCell(roomAbove(asking(stack([[10], [10]]), 0, { endsPage: true }), 1, 18));
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    // The break dropped the room in the flow above; a cell keeps it, its line drawn 18
+    // lower, and the paragraph stays on the page the break gave it rather than moving.
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
+    expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(118);
+  });
+
   it("leaves it behind where the paragraph asked for a page of its own", () => {
     const boxes = roomAbove(asking(stack([[10], [10]]), 1, { startsPage: true }), 1, 18);
     const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });

@@ -1,5 +1,6 @@
 import { borderExtentPt } from "../docx/borders.js";
 import type { Border } from "../docx/borders.js";
+import { shiftBoxes, shiftCells } from "./stack.js";
 import type { AnchoredObject, ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
 
 // The run of a page the body's text may stand in: where it begins under the
@@ -47,6 +48,12 @@ type Opening = {
   readonly shiftPt: number;
   readonly body: PageBody;
   readonly openedBy: number | null;
+  // The room the paragraph opening the page carries above itself, drawn onto the
+  // page without the break having seen it: a cell paragraph opening a page after an
+  // explicit break keeps its space before, where the flow drops it, and the break is
+  // decided as though it were dropped so that carrying it moves no page. See where it
+  // is set below.
+  readonly roomPt: number;
 };
 
 // A paragraph asking to stand with the one after it moves onto the page that one
@@ -132,15 +139,15 @@ function breakOnce(
   let shiftPt = 0;
   // Where in the stack each page started and what it kept, which is what the cells
   // are cut by once the text has said where the pages fall.
-  const opened: Opening[] = [{ shiftPt, body, openedBy: first?.index ?? null }];
+  const opened: Opening[] = [{ shiftPt, body, openedBy: first?.index ?? null, roomPt: 0 }];
 
   const put = (box: ParagraphBox): void => {
     pages[pages.length - 1]?.push(box);
   };
 
-  const open = (next: PageBody, openedBy: number): void => {
+  const open = (next: PageBody, openedBy: number, roomPt = 0): void => {
     body = next;
-    opened.push({ shiftPt, body, openedBy });
+    opened.push({ shiftPt, body, openedBy, roomPt });
     pages.push([]);
   };
 
@@ -168,11 +175,17 @@ function breakOnce(
   // would leave, which is still what keeps the first paragraph of a document off
   // page two. A forced one keeps the older test, which is what stops a row or an
   // object taller than a whole page from opening page after page for itself.
-  const leave = (topPt: number, next: PageBody, openedBy: number, askedFor = false): boolean => {
+  const leave = (
+    topPt: number,
+    next: PageBody,
+    openedBy: number,
+    askedFor = false,
+    roomPt = 0,
+  ): boolean => {
     const holdsNothingYet = (pages[pages.length - 1]?.length ?? 0) === 0;
     if (askedFor ? holdsNothingYet : topPt - shiftPt <= body.topPt + EPSILON) return false;
     shiftPt = topPt - next.topPt;
-    open(next, openedBy);
+    open(next, openedBy, roomPt);
     return true;
   };
 
@@ -219,11 +232,23 @@ function breakOnce(
       // break, only the last drew its first line the 18pt it asked for below the top
       // of the page. So the paragraph's own top goes to the top of the page there,
       // and its first line's does everywhere else.
-      const opensAt =
-        brokenAtASection && !box.startsPage && !carriedForward
-          ? box.topPt
-          : (box.lines[0]?.topPt ?? box.topPt) - box.resumesUnderPt;
-      leave(opensAt, opens, box.index, broken || box.startsPage);
+      const keepsRoomInShift = brokenAtASection && !box.startsPage && !carriedForward;
+      const opensAt = keepsRoomInShift
+        ? box.topPt
+        : (box.lines[0]?.topPt ?? box.topPt) - box.resumesUnderPt;
+      // **A cell paragraph opening a page after an explicit break carries its room
+      // above, where the flow drops it.** Measured on 2026-08-28 by
+      // `probes/cell-after-break-room-probe.ts`: a cell paragraph after a
+      // `<w:br w:type="page"/>` drew its line the room's own amount lower in Word and
+      // the flow control drew it at the page top. The break has already been decided as
+      // though the room were dropped, so the page it lands on and the row it tears are
+      // Word's; the room is carried onto the drawing afterwards, in `pages` below, so
+      // that carrying it moves no page. `13c3bf995db3` page 9 is a table opening after
+      // one of these, and every line of it stood 4.6pt high. Its own section break
+      // already keeps the room in the shift, so it is left out of this.
+      const roomPt =
+        !keepsRoomInShift && box.inACell ? (box.lines[0]?.topPt ?? box.topPt) - box.topPt : 0;
+      leave(opensAt, opens, box.index, broken || box.startsPage, roomPt);
     }
     broken = box.endsPage;
     brokenAtASection = box.endsPageAtASection;
@@ -385,12 +410,15 @@ function breakOnce(
   }
 
   return {
-    pages: pages.map((boxes, index) => ({
-      index,
-      boxes,
-      cells: cellsOn(input, opened, index),
-      openedBy: opened[index]?.openedBy ?? null,
-    })),
+    pages: pages.map((boxes, index) => {
+      const roomPt = opened[index]?.roomPt ?? 0;
+      return {
+        index,
+        boxes: shiftBoxes(boxes, roomPt),
+        cells: shiftCells(cellsOn(input, opened, index), roomPt),
+        openedBy: opened[index]?.openedBy ?? null,
+      };
+    }),
     split,
   };
 }
