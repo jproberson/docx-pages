@@ -119,11 +119,14 @@ describe("layOutTextBox", () => {
     expect(line?.baselinePt).toBeCloseTo(200 + 90 - ARIAL_12 + (12 * (1854 + 67)) / 2048, 9);
   });
 
-  it("lets text overflow a box too short for it rather than clipping it away", () => {
+  it("seats overflowing text against the box's top and spills the rest off its foot", () => {
     const short = { ...RECT, heightPt: 5 };
     const text = place(`${paragraph("aa")}${paragraph("bb")}`, { anchor: "bottom" }, short);
 
-    expect(text.boxes[0]?.topPt).toBeLessThan(200);
+    // Measured 2026-08-28: a bottom-anchored box too short for its text does not lift
+    // the text above its own top, it keeps the first line there and lets the rest hang.
+    expect(text.boxes[0]?.topPt).toBeCloseTo(200, 9);
+    expect(text.boxes[1]?.topPt).toBeCloseTo(200 + ARIAL_12, 9);
   });
 
   it("reports the paragraph it could not measure rather than laying out around it", () => {

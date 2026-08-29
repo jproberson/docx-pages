@@ -119,10 +119,14 @@ function drawingsIn(
 const widestParagraphPt = (boxes: readonly ParagraphBox[]): number =>
   boxes.reduce((widest, box) => Math.max(widest, box.contentWidthPt), 0);
 
-// Word lets text overflow a box it does not fit, so a negative slack still seats
-// the text where the anchor asks rather than clamping it back inside.
+// A box whose text overflows it seats that text against its top and lets the rest
+// spill off its foot, whichever end the anchor names: measured on 2026-08-28 by
+// `probes/textbox-anchor-tail-probe.ts`, a box of two exact lines given three lines
+// of text, two lines and a trailing empty, or two and two empties, all of which drew
+// their first line at the box's own top rather than lifted above it. So the anchor
+// only moves text a box has room for, and the offset never goes below nought.
 function seatingOffset(anchor: TextBoxAnchor, availablePt: number, contentPt: number): number {
-  if (anchor === "center") return (availablePt - contentPt) / 2;
-  if (anchor === "bottom") return availablePt - contentPt;
+  if (anchor === "center") return Math.max(0, (availablePt - contentPt) / 2);
+  if (anchor === "bottom") return Math.max(0, availablePt - contentPt);
   return 0;
 }
