@@ -342,6 +342,25 @@ describe("readUnhonoured", () => {
     expect(reportOf(stop("right"))).toStrictEqual([]);
   });
 
+  it("names a PAGE field, a complex one and a simple one alike", () => {
+    const complex =
+      `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> PAGE  \\* MERGEFORMAT </w:instrText></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r><w:t>1</w:t></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`;
+    const simple = `<w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>`;
+    expect(kinds(reportOf(complex))).toStrictEqual(["page-number-field"]);
+    expect(kinds(reportOf(simple))).toStrictEqual(["page-number-field"]);
+  });
+
+  it("says nothing about a field whose text it draws as it stands", () => {
+    const hyperlink =
+      `<w:p><w:r><w:instrText xml:space="preserve"> HYPERLINK "https://x" </w:instrText></w:r>` +
+      `<w:r><w:t>a link</w:t></w:r></w:p>`;
+    expect(kinds(reportOf(hyperlink))).toStrictEqual([]);
+  });
+
   it("names a drawing it can make neither a picture nor a shape of", () => {
     const drawing = `<w:p><w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}" xmlns:a="${A_NS}">
       <wp:extent cx="914400" cy="914400"/>

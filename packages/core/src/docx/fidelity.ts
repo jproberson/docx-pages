@@ -63,6 +63,7 @@ export type UnhonouredKind =
   | "footnote"
   | "column-break"
   | "bar-tab-stop"
+  | "page-number-field"
   | "page-background"
   | "equation"
   | "unknown-drawing"
@@ -133,6 +134,21 @@ const EFFECTS: Readonly<Record<UnhonouredKind, UnhonouredEffect>> = {
   // refuses, the fraction above all.
   equation: "moves-text",
   "bar-tab-stop": "changes-paint",
+  // A field whose result is the page it lands on is drawn as the value cached in the
+  // file, since nothing here recomputes a field: `w:instrText` and `w:fldChar` are read
+  // nowhere else in the package, so a footer holding a `PAGE` field reads its saved digit
+  // on every page where Word counts up. It is a digit or two standing where Word stands
+  // it, so it is wrong only where it stands and moves nothing below it: `7eaa70746b70`,
+  // found while reading it on 2026-08-28, reads 0.0% on all eight pages with a wrong number
+  // on each. Named rather than built; recomputing a field is separate work.
+  //
+  // **422 of the 718 corpus documents hold a page field and this names it in 13**, because
+  // `readUnhonoured` reads only the last section's default header and footer, and almost
+  // every page number stands in a first-page or even-page footer, or an earlier section's.
+  // Widening that coverage is its own change: it would surface every other kind those parts
+  // hold too and move a shelf of reference expectations, so it is left for when a rule
+  // needs those parts read rather than folded in here.
+  "page-number-field": "changes-paint",
   "page-background": "changes-paint",
   // A drawing that is neither a picture nor a shape, a chart being the one met so
   // far: its room is held and nothing is drawn in it.
@@ -230,6 +246,17 @@ function drawsACustomPath(content: DrawingContent): boolean {
 // What an element says about itself, where what it says is something this project
 // passes over. A name alone is not enough: `w:caps` is written both ways round,
 // and a document that turns a feature off is asking for what it already gets.
+// The field instructions whose result is the page they land on, so the value cached
+// in the file is stale wherever Word counts past it. The instruction is a keyword and
+// then switches; the keyword is all that is read. `PAGEREF` names a page it resolves by
+// layout too, so it belongs here with the three counters.
+const RECOMPUTED_PAGE_FIELDS = new Set(["PAGE", "NUMPAGES", "SECTIONPAGES", "PAGEREF"]);
+
+function namesARecomputedPageField(instruction: string): boolean {
+  const keyword = instruction.trim().split(/\s+/)[0];
+  return keyword !== undefined && RECOMPUTED_PAGE_FIELDS.has(keyword.toUpperCase());
+}
+
 function unhonouredBy(
   element: XmlElement,
   parent: XmlElement | null,
@@ -328,6 +355,17 @@ function unhonouredBy(
         : null;
     case "tab":
       return attribute(element, W_NS, "val") === "bar" ? "bar-tab-stop" : null;
+    // A field whose result is a page count, held in the file as the value it had when
+    // it was saved. The instruction stands in an `w:instrText` inside a complex field
+    // and in the `w:instr` of a `w:fldSimple`, and only the fields Word recomputes from
+    // the page are named: a `HYPERLINK` shows its own display text and is right where it
+    // stands, so it is passed over. See the census in `EFFECTS` above.
+    case "instrText":
+      return namesARecomputedPageField(element.text) ? "page-number-field" : null;
+    case "fldSimple":
+      return namesARecomputedPageField(attribute(element, W_NS, "instr") ?? "")
+        ? "page-number-field"
+        : null;
     // A symbol names the face it is drawn from and the code point inside that face,
     // and the run reader passes over both: the character is drawn nowhere and the
     // line closes over the room it should have taken.
