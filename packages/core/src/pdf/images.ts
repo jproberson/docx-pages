@@ -27,7 +27,17 @@ import {
 } from "./objects.js";
 import type { ObjectDrawable } from "./objects-paint.js";
 import { readGif } from "./gif.js";
-import { hasAlpha, readPng, samplesOf, splitAlpha, type PngImage } from "./png.js";
+import {
+  deinterlacedPixels,
+  hasAlpha,
+  paletteToColourAndAlpha,
+  readPng,
+  samplesOf,
+  splitAlpha,
+  splitInterleavedPixels,
+  type PngImage,
+  type SplitPng,
+} from "./png.js";
 
 // The two kinds of picture a `.docx` holds that this writes, which are not the
 // same kind of thing at all.
@@ -304,11 +314,10 @@ function writePng(options: ImageOptions, bytes: Uint8Array): PdfReference | null
   const png = readPng(bytes);
   if (png === null) return null;
 
-  // The corpus sweep finds no png of another depth at all, and interlaced ones
-  // vanishingly rare. An interlaced png holds its rows in seven passes that would
-  // have to be woven back together, and is left undrawn rather than drawn as the
-  // smear that reading it straight would give. The README names both.
-  if (png.interlaced || png.bitDepth !== BITS) return null;
+  // The corpus sweep finds no png of another depth at all. Interlaced ones are read
+  // through a path of their own below, since a pdf's own predictor cannot unfilter
+  // the seven passes an interlaced png holds its rows in.
+  if (png.bitDepth !== BITS) return null;
 
   const width = pdfNumber(png.widthPixels);
   const height = pdfNumber(png.heightPixels);
@@ -319,6 +328,38 @@ function writePng(options: ImageOptions, bytes: Uint8Array): PdfReference | null
     Height: height,
     BitsPerComponent: pdfNumber(BITS),
   };
+
+  // An interlaced png is woven back into plain pixels first, then drawn as those:
+  // the pdf's FlateDecode predictor reads a png's row filters and an interlaced png
+  // has none left once its passes are put together, so it is written without one.
+  if (png.interlaced) {
+    const pixels = deinterlacedPixels(png);
+    if (pixels === null) return null;
+    // A palette is turned into its own colour and a soft mask, so a partly transparent
+    // one is drawn as it is rather than solid: its indices carry no filter for a pdf to
+    // read once the passes are woven, and the transparency of it is a gradient a
+    // colour-key mask cannot cut.
+    if (png.colourType === 3) {
+      const expanded = paletteToColourAndAlpha(pixels, png);
+      if (expanded === null) return null;
+      return softMasked(options, shared, "DeviceRGB", expanded);
+    }
+    if (!hasAlpha(png.colourType)) {
+      const space = colourSpaceOf(png);
+      if (space === null) return null;
+      return options.objects.add(
+        pdfStream({ ...shared, ColorSpace: space, Mask: maskOf(png) }, pixels),
+      );
+    }
+    const space = PNG_COLOR_SPACES[png.colourType];
+    if (space === undefined) return null;
+    const split = splitInterleavedPixels(
+      pixels,
+      png.widthPixels * png.heightPixels,
+      samplesOf(png.colourType),
+    );
+    return softMasked(options, shared, space, split);
+  }
 
   if (!hasAlpha(png.colourType)) {
     const space = colourSpaceOf(png);
@@ -352,6 +393,22 @@ function writePng(options: ImageOptions, bytes: Uint8Array): PdfReference | null
     pdfStream({ ...shared, ColorSpace: pdfName("DeviceGray") }, split.alpha),
   );
 
+  return options.objects.add(
+    pdfStream({ ...shared, ColorSpace: pdfName(space), SMask: soft }, split.colour),
+  );
+}
+
+// A colour image and what shows through it, written as a pdf wants them: the picture
+// in one stream and its soft mask, a greyscale image of the same size, in another.
+function softMasked(
+  options: ImageOptions,
+  shared: PdfEntries,
+  space: string,
+  split: SplitPng,
+): PdfReference {
+  const soft = options.objects.add(
+    pdfStream({ ...shared, ColorSpace: pdfName("DeviceGray") }, split.alpha),
+  );
   return options.objects.add(
     pdfStream({ ...shared, ColorSpace: pdfName(space), SMask: soft }, split.colour),
   );

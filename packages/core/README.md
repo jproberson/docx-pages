@@ -167,14 +167,15 @@ over is in that report rather than in this list.
   the same document is 1.0MB.
 - **No gif, bmp, tiff or webp.** Only jpeg and png are written, because only those
   two are already compressions a pdf understands. None of the rest is drawn.
-- **No interlaced png**, which holds its rows in seven passes that would have to be
-  woven back together. Left undrawn rather than drawn as a smear. Vanishingly rare.
 - **No png that is not eight bits to a sample.** No other depth has been met at all,
   so this is a gap in principle rather than in practice.
-- **A partly transparent palette is drawn opaque.** Where an indexed png says an
-  entry is wholly invisible it is masked out and the picture still crosses
-  untouched; where it says an entry is _half_ transparent, honouring it would mean
-  opening the pixels, and the picture is drawn solid instead.
+- **A partly transparent palette is drawn opaque unless the png is interlaced.** Where
+  an indexed png says an entry is wholly invisible it is masked out and the picture
+  still crosses untouched; where it says an entry is _half_ transparent, honouring it
+  means opening the pixels, which an interlaced palette already has open by the time it
+  is woven together and is drawn with a soft mask, and a plain one does not and is drawn
+  solid. An interlaced png, which holds its rows in seven passes, is woven back together
+  and drawn either way.
 - **No CMYK jpeg.** Word writes them inverted often enough that drawing one the
   wrong way round is worse than not drawing it, and which of the two it is cannot be
   told from the frame header alone. Greyscale and colour jpegs go through.

@@ -172,6 +172,121 @@ export function splitAlpha(png: PngImage): SplitPng | null {
   return { colour, alpha };
 }
 
+// The seven passes Adam7 lays an interlaced png down in, each a sparse grid of the
+// whole with its own top-left corner and its own step across and down. The passes
+// grow denser: the first is every eighth pixel of every eighth row, the last every
+// pixel of every other row.
+const ADAM7: readonly {
+  readonly x0: number;
+  readonly y0: number;
+  readonly dx: number;
+  readonly dy: number;
+}[] = [
+  { x0: 0, y0: 0, dx: 8, dy: 8 },
+  { x0: 4, y0: 0, dx: 8, dy: 8 },
+  { x0: 0, y0: 4, dx: 4, dy: 8 },
+  { x0: 2, y0: 0, dx: 4, dy: 4 },
+  { x0: 0, y0: 2, dx: 2, dy: 4 },
+  { x0: 1, y0: 0, dx: 2, dy: 2 },
+  { x0: 0, y0: 1, dx: 1, dy: 2 },
+];
+
+/**
+ * Weaves an interlaced png's seven passes back into one image of plain pixels, row
+ * after row with no filter bytes left, which is what the writer draws or splits the
+ * alpha out of. Each pass is a sub-image of its own width and height, filtered on
+ * its own rows, so each is unfiltered on its own before its pixels are scattered to
+ * where they stand in the whole.
+ *
+ * Answers nothing where a pass runs past the bytes the header says the image holds,
+ * which is the same thing `splitAlpha` checks of a plain png: bytes this is about to
+ * walk have to add up first.
+ */
+export function deinterlacedPixels(png: PngImage): Uint8Array | null {
+  const samples = samplesOf(png.colourType);
+  let raw;
+  try {
+    raw = unzlibSync(png.deflated);
+  } catch {
+    return null;
+  }
+
+  const { widthPixels: width, heightPixels: height } = png;
+  const out = new Uint8Array(width * height * samples);
+  let offset = 0;
+  for (const pass of ADAM7) {
+    const passWidth = pass.x0 < width ? Math.ceil((width - pass.x0) / pass.dx) : 0;
+    const passHeight = pass.y0 < height ? Math.ceil((height - pass.y0) / pass.dy) : 0;
+    if (passWidth === 0 || passHeight === 0) continue;
+
+    const rowBytes = passWidth * samples;
+    const need = passHeight * (rowBytes + 1);
+    if (offset + need > raw.byteLength) return null;
+
+    const view = raw.subarray(offset, offset + need);
+    unfilter(view, passHeight, rowBytes, samples);
+    for (let row = 0; row < passHeight; row += 1) {
+      const source = row * (rowBytes + 1) + 1;
+      const y = pass.y0 + row * pass.dy;
+      for (let column = 0; column < passWidth; column += 1) {
+        const x = pass.x0 + column * pass.dx;
+        const to = (y * width + x) * samples;
+        const from = source + column * samples;
+        for (let sample = 0; sample < samples; sample += 1)
+          out[to + sample] = view[from + sample] ?? 0;
+      }
+    }
+    offset += need;
+  }
+  return out;
+}
+
+// A palette image turned into plain colour and alpha, each index looked up in the
+// `PLTE` for its three colours and in the `tRNS` for what shows through it. This is
+// what lets a partly transparent palette be drawn as it is rather than solid: a pdf
+// keeps the soft mask apart from the colour, and a colour-key mask can only cut an
+// entry that is wholly invisible, not one the file makes half so. An entry the `tRNS`
+// does not reach is opaque, which is the format's own default.
+export function paletteToColourAndAlpha(indices: Uint8Array, png: PngImage): SplitPng | null {
+  const palette = png.palette;
+  if (palette === null) return null;
+  const transparency = png.transparency;
+  const count = png.widthPixels * png.heightPixels;
+  const colour = new Uint8Array(count * 3);
+  const alpha = new Uint8Array(count);
+  for (let pixel = 0; pixel < count; pixel += 1) {
+    const index = indices[pixel] ?? 0;
+    colour[pixel * 3] = palette[index * 3] ?? 0;
+    colour[pixel * 3 + 1] = palette[index * 3 + 1] ?? 0;
+    colour[pixel * 3 + 2] = palette[index * 3 + 2] ?? 0;
+    alpha[pixel] =
+      transparency !== null && index < transparency.byteLength
+        ? (transparency[index] ?? 0xff)
+        : 0xff;
+  }
+  return { colour, alpha };
+}
+
+// The colour and the alpha pulled apart from plain pixels that interleave them, one
+// sample of every pixel being what shows through it; the same split `splitAlpha`
+// makes from a png's own rows, off pixels already woven together instead.
+export function splitInterleavedPixels(
+  pixels: Uint8Array,
+  count: number,
+  samples: number,
+): SplitPng {
+  const colourSamples = samples - 1;
+  const colour = new Uint8Array(count * colourSamples);
+  const alpha = new Uint8Array(count);
+  for (let pixel = 0; pixel < count; pixel += 1) {
+    for (let sample = 0; sample < colourSamples; sample += 1) {
+      colour[pixel * colourSamples + sample] = pixels[pixel * samples + sample] ?? 0;
+    }
+    alpha[pixel] = pixels[pixel * samples + colourSamples] ?? 0;
+  }
+  return { colour, alpha };
+}
+
 // Puts back the pixels each row was written as a difference from. Every row states
 // which of the five it used, and each looks left to the pixel before and up to the
 // row above, which is why this runs forwards and in place: the row above has

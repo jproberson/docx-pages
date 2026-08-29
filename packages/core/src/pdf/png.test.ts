@@ -2,7 +2,9 @@ import { zlibSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
 import {
+  deinterlacedPixels,
   hasAlpha,
+  paletteToColourAndAlpha,
   readPng,
   samplesOf,
   splitAlpha,
@@ -201,6 +203,50 @@ describe("reading a png", () => {
 
   it("reads an interlaced png as interlaced rather than refusing it", () => {
     expect(readPng(buildPng({ ...RGBA, interlaced: true }))?.interlaced).toBe(true);
+  });
+
+  // Adam7 lays a 2 by 2 rgba image down in three of its seven passes: pixel (0,0) in
+  // the first, (1,0) in the sixth and both of the bottom row in the seventh. Woven
+  // back, they are the image in row order.
+  it("weaves an interlaced image back into row-major pixels", () => {
+    const png = readPng(
+      buildPng({
+        width: 2,
+        height: 2,
+        colourType: 6,
+        interlaced: true,
+        rows: [
+          [NONE, 255, 0, 0, 255],
+          [NONE, 0, 255, 0, 128],
+          [NONE, 0, 0, 255, 64, 255, 255, 255, 255],
+        ],
+      }),
+    );
+    if (png === null) throw new Error("not a png");
+
+    expect([...(deinterlacedPixels(png) ?? [])]).toStrictEqual([
+      255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 64, 255, 255, 255, 255,
+    ]);
+  });
+
+  it("turns palette indices into their colour and the alpha their transparency states", () => {
+    const png = readPng(
+      buildPng({
+        width: 2,
+        height: 1,
+        colourType: 3,
+        palette: Uint8Array.from([10, 20, 30, 40, 50, 60]),
+        transparency: Uint8Array.from([0, 128]),
+        rows: [[NONE, 0, 1]],
+      }),
+    );
+    if (png === null) throw new Error("not a png");
+    const split = paletteToColourAndAlpha(Uint8Array.from([0, 1]), png);
+
+    expect([...(split?.colour ?? [])]).toStrictEqual([10, 20, 30, 40, 50, 60]);
+    // Index 0's transparency is nought and index 1's is half; an index the tRNS did
+    // not reach would be opaque.
+    expect([...(split?.alpha ?? [])]).toStrictEqual([0, 128]);
   });
 });
 

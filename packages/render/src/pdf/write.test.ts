@@ -701,10 +701,10 @@ describe("a png picture", () => {
     expect(text).toContain("/Indexed /DeviceRGB 1");
   });
 
-  // A png may hold its rows in seven passes instead of one. Left undrawn rather
-  // than drawn as the smear that reading it straight would give.
-  it("leaves an interlaced picture undrawn rather than drawing it wrongly", async () => {
-    expect(await readImagePlacements(wroteWith(png(6, [10, 20, 30, 255], true)))).toStrictEqual([]);
+  // A png may hold its rows in seven passes instead of one, woven back together
+  // before it is drawn rather than left undrawn.
+  it("draws an interlaced picture, woven back from its passes", async () => {
+    expect(await readImagePlacements(wroteWith(png(6, [10, 20, 30, 255], true)))).toHaveLength(1);
   });
 });
 
