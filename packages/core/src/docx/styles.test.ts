@@ -404,6 +404,45 @@ describe("resolveParagraphNumbering", () => {
     expect(resolved(`<w:p/>`).numbering).toBeNull();
   });
 
+  // **A paragraph cancelling its list with `numId="0"` loses the first-line indent its
+  // style gave it, and keeps its left indent and any first line it states itself.**
+  // Measured on 2026-08-28 by `heading-numid-bisect-probe`. A style with a first-line
+  // indent stands in for the Normal `firstLine` the document's heading inherited.
+  describe("the indent of a paragraph cancelling its list with numId zero", () => {
+    // A style carrying a 720-twip first line, the way Normal did in the document.
+    const indenting = styles(
+      `<w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+         <w:name w:val="Normal"/><w:pPr><w:ind w:firstLine="720"/></w:pPr>
+         <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="22"/></w:rPr></w:style>
+       <w:style w:type="paragraph" w:styleId="List">
+         <w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr></w:style>`,
+    );
+    const cancelling = (ind = "") =>
+      `<w:p><w:pPr><w:pStyle w:val="List"/><w:numPr><w:numId w:val="0"/></w:numPr>${ind}</w:pPr></w:p>`;
+
+    it("drops the first-line indent the style gave it", () => {
+      expect(resolved(cancelling(), indenting).frame.indentFirstLineTwips).toBe(0);
+    });
+
+    it("keeps a left indent the paragraph states", () => {
+      const frame = resolved(cancelling(`<w:ind w:left="1000"/>`), indenting).frame;
+      expect(frame.indentLeftTwips).toBe(1000);
+      expect(frame.indentFirstLineTwips).toBe(0);
+    });
+
+    it("keeps a first-line indent the paragraph states itself", () => {
+      const frame = resolved(cancelling(`<w:ind w:firstLine="500"/>`), indenting).frame;
+      expect(frame.indentFirstLineTwips).toBe(500);
+    });
+
+    it("does not zero the first-line indent of a paragraph that keeps its list", () => {
+      // The list level states `hanging="360"`, so a paragraph keeping the list carries
+      // that first line rather than the style's 720 and rather than nought.
+      const kept = `<w:p><w:pPr><w:pStyle w:val="List"/></w:pPr></w:p>`;
+      expect(resolved(kept, indenting).frame.indentFirstLineTwips).toBe(-360);
+    });
+  });
+
   it("has no numbering when the numId resolves to no level", () => {
     const body = `<w:p><w:pPr><w:numPr><w:numId w:val="9"/></w:numPr></w:pPr></w:p>`;
     expect(resolved(body).numbering).toBeNull();

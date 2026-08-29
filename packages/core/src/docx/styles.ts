@@ -1177,19 +1177,31 @@ export type ParagraphNumbering = {
 // would otherwise hand it.
 const NO_LIST = "0";
 
-export function resolveParagraphNumbering(
-  paragraph: Paragraph,
-  table: StyleTable,
-): ParagraphNumbering | null {
+// The number the cascade settles on, "0" included: a paragraph whose own `w:numPr`
+// states `numId="0"` cancels the list its style put it in, and that "0" is a thing
+// `resolveParagraphNumbering` cannot report because it means the same to it as no
+// number at all.
+function resolveNumberId(paragraph: Paragraph, table: StyleTable): string | undefined {
   let resolved = NO_NUMBERING;
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = mergeNumbering(resolved, style.numbering);
   }
   resolved = mergeNumbering(resolved, readNumbering(paragraph.element));
+  return resolved.numId;
+}
 
-  const { numId } = resolved;
+export function resolveParagraphNumbering(
+  paragraph: Paragraph,
+  table: StyleTable,
+): ParagraphNumbering | null {
+  const numId = resolveNumberId(paragraph, table);
   if (numId === undefined || numId === NO_LIST) return null;
 
+  let resolved = NO_NUMBERING;
+  for (const style of styleChain(table, styleIdOf(paragraph, table))) {
+    resolved = mergeNumbering(resolved, style.numbering);
+  }
+  resolved = mergeNumbering(resolved, readNumbering(paragraph.element));
   const ilvl = resolved.ilvl ?? 0;
   const level = numberingLevel(table.numbering, numId, ilvl);
   return level === null ? null : { numId, ilvl, level };
@@ -1238,6 +1250,15 @@ export function resolveParagraphFrame(
   const numbering = resolveParagraphNumbering(paragraph, table);
   if (numbering !== null) {
     resolved = mergeFrames(resolved, readFrame(numbering.level.properties));
+  } else if (resolveNumberId(paragraph, table) === NO_LIST) {
+    // **A paragraph that cancels its list with `numId="0"` loses the first-line
+    // indent its style gave it**, though not one it states directly nor its left
+    // indent. Measured on 2026-08-28 by `heading-numid-bisect-probe`: a Heading2 whose
+    // numbering the paragraph sets to "0" is drawn at the text margin where the style's
+    // 720-twip first line would have set it in 36pt; adding a direct left indent of 1000
+    // twips moved it to that left and no further, and a direct first line of 500 was
+    // kept whole. `bd42bfc93fdf` is what asked, its inline photograph among them.
+    resolved = { ...resolved, indentFirstLineTwips: 0 };
   }
   resolved = mergeFrames(resolved, readFrame(paragraph.element));
 
