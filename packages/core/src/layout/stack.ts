@@ -2993,7 +2993,12 @@ function heightOf(mark: ParagraphMark, metricsFor: MetricsResolver): MarkHeight 
     return { kind: "blocked" };
   const lookup = metricsFor(faceRequestFor(mark));
   if (lookup.kind === "missing") return { kind: "blocked" };
-  return { kind: "height", value: lineHeightPt(lookup.metrics, mark.fontSizePt) };
+  // The line a mark stands on is measured at the size it was declared at, not the
+  // shrunk size a script draws it at: `lineSizePt`, as every run's own line is in
+  // `lines.ts`. An empty paragraph whose mark is a superscript keeps a full line,
+  // which Word draws and this once shrank; measured on 2026-08-28 by
+  // `probes/empty-superscript-height-probe.ts` and found in `12b73e51b62f`.
+  return { kind: "height", value: lineHeightPt(lookup.metrics, mark.lineSizePt) };
 }
 
 function blockerFor(mark: ParagraphMark, part: string, paragraphIndex: number): LayoutBlocker {

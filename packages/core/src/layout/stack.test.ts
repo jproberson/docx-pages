@@ -93,6 +93,15 @@ describe("measureStack", () => {
     expect(result.boxes[0]?.heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
   });
 
+  it("keeps an empty paragraph's line at its declared size when the mark is a script", () => {
+    // The script shrinks what is drawn and leaves the line alone, so the mark's line
+    // is measured at its declared 24pt rather than the two thirds a superscript draws.
+    const body = `<w:p><w:pPr><w:rPr><w:sz w:val="48"/><w:vertAlign w:val="superscript"/></w:rPr></w:pPr></w:p>`;
+    const result = measure(body);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect(result.boxes[0]?.heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
+  });
+
   // **The room a multiple opens below a mark hangs past the foot of a page, as the
   // room below a line of text does.** Measured on 2026-08-24 one document a case, by
   // whether Word opened a second page for a trailing empty paragraph: a mark under a
