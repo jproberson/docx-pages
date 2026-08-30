@@ -18,6 +18,13 @@ const NORMAL = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocess
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr></w:style></w:styles>`;
 
+// A character style a paragraph mark can name, beside the paragraph style every other
+// case here is measured under.
+const WITH_A_TALL_CHARACTER_STYLE = NORMAL.replace(
+  "</w:styles>",
+  `<w:style w:type="character" w:styleId="Tall"><w:rPr><w:sz w:val="48"/></w:rPr></w:style></w:styles>`,
+);
+
 const measure = (
   body: string,
   stylesXml: string = NORMAL,
@@ -91,6 +98,18 @@ describe("measureStack", () => {
     const result = measure(body);
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
     expect(result.boxes[0]?.heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
+  });
+
+  it("takes an empty paragraph's line from the character style its mark names", () => {
+    // Measured on 2026-08-29: an empty paragraph whose mark names a 28pt character style
+    // came out where one stating 28pt itself came out, to a step of Word's own grid.
+    const body = `<w:p><w:pPr><w:rPr><w:rStyle w:val="Tall"/></w:rPr></w:pPr></w:p>`;
+    expect(firstBox(body, WITH_A_TALL_CHARACTER_STYLE).heightPt).toBeCloseTo(ARIAL_12 * 2, 9);
+  });
+
+  it("lets a size the mark states itself beat the character style it names", () => {
+    const body = `<w:p><w:pPr><w:rPr><w:rStyle w:val="Tall"/><w:sz w:val="24"/></w:rPr></w:pPr></w:p>`;
+    expect(firstBox(body, WITH_A_TALL_CHARACTER_STYLE).heightPt).toBeCloseTo(ARIAL_12, 9);
   });
 
   it("keeps an empty paragraph's line at its declared size when the mark is a script", () => {
@@ -898,6 +917,21 @@ describe("measureStack over a numbered paragraph", () => {
   it("counts on down the paragraphs of a list", () => {
     const texts = numberedBoxes(listItem().repeat(3)).map((box) => box.marker?.text);
     expect(texts).toStrictEqual(["1.", "2.", "3."]);
+  });
+
+  it("gives the number the mark's colour and never the mark's underline", () => {
+    // Measured on 2026-08-29 off Word's own drawing of ten numbered paragraphs: the
+    // number came out at the mark's size and in the mark's colour whether the mark
+    // stated them, named a character style stating them, or took them from the
+    // paragraph style, and it came out with no line under it in all three. A mark
+    // carrying `Hyperlink` gives the number the blue and not the rule.
+    const body =
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>` +
+      `<w:rPr><w:color w:val="FF0000"/><w:u w:val="single"/></w:rPr></w:pPr>` +
+      `<w:r><w:t>aaaa</w:t></w:r></w:p>`;
+    const marker = numberedFirst(body).marker;
+    expect(marker?.mark.color).toBe("#FF0000");
+    expect(marker?.mark.underline).toBe(false);
   });
 
   it("draws no number for a paragraph in no list", () => {

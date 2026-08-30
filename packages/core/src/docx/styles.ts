@@ -960,7 +960,20 @@ function paragraphMarkOf(
   for (const style of styleChain(table, styleIdOf(paragraph, table))) {
     resolved = merge(resolved, style.mark);
   }
-  return merge(resolved, readMark(firstNamed(paragraph.element, W_NS, "pPr"), table.themeFonts));
+  // **A character style the mark names stands between the paragraph's own style and what
+  // the mark states beside it.** Measured on 2026-08-29 over three repeats a case: an
+  // empty paragraph whose mark names a 28pt character style came out 65.76 against the
+  // 66.00 of one stating 28pt itself, a style based on that one came out the same, one
+  // naming Times New Roman as well came out 62.88, and a size stated on the mark beside
+  // the style won at 51.36. The same style on a paragraph holding a letter changed
+  // nothing, so this reaches only what the mark alone holds open.
+  const properties = firstNamed(paragraph.element, W_NS, "pPr");
+  if (properties !== null) {
+    for (const style of characterStyleChain(table, properties)) {
+      resolved = merge(resolved, style.mark);
+    }
+  }
+  return merge(resolved, readMark(properties, table.themeFonts));
 }
 
 export const resolveParagraphMark = (
@@ -969,19 +982,37 @@ export const resolveParagraphMark = (
   inTable: InTable | null = null,
 ): ParagraphMark => markOf(paragraphMarkOf(paragraph, table, inTable));
 
-// The number is drawn in the paragraph's own mark except where its level says
-// otherwise, which is how a bullet ends up in a symbol face at the text's size.
+/**
+ * The number is drawn in the paragraph's own mark except where its level says
+ * otherwise, which is how a bullet ends up in a symbol face at the text's size.
+ *
+ * **An underline the mark carries is the one thing the number does not take.**
+ * Measured on 2026-08-29 by ten numbered paragraphs read off Word's own drawing: the
+ * number came out at the mark's size and in the mark's colour whether the mark stated
+ * them itself, named a character style stating them, or took them from the paragraph
+ * style, and it came out with no line under it in every one of those three. The last is
+ * a whole hyperlink's worth of formatting: a mark carrying `Hyperlink` gives the number
+ * the blue and not the rule.
+ *
+ * What the level states is left to speak for itself, since it is merged after this and
+ * a level stating a line of its own was not asked about.
+ */
 export const resolveNumberMark = (
   paragraph: Paragraph,
   table: StyleTable,
   level: NumberingLevel,
 ): ParagraphMark =>
   markOf(
-    merge(paragraphMarkOf(paragraph, table, null), readMark(level.properties, table.themeFonts)),
+    merge(
+      { ...paragraphMarkOf(paragraph, table, null), underline: undefined },
+      readMark(level.properties, table.themeFonts),
+    ),
   );
 
-function runStyleChain(table: StyleTable, run: XmlElement): readonly StyleDefinition[] {
-  const rPr = firstNamed(run, W_NS, "rPr");
+// The character style an `rPr` names, wherever that `rPr` stands: in a run, or in a
+// `w:pPr`, where it describes the paragraph's own mark.
+function characterStyleChain(table: StyleTable, holder: XmlElement): readonly StyleDefinition[] {
+  const rPr = firstNamed(holder, W_NS, "rPr");
   const rStyle = rPr === null ? null : firstNamed(rPr, W_NS, "rStyle");
   const id = rStyle === null ? undefined : attribute(rStyle, W_NS, "val");
   return styleChain(table, id);
@@ -1015,7 +1046,7 @@ export function resolveRuns(
 
 function resolveRunMark(run: XmlElement, inherited: PartialMark, table: StyleTable): ParagraphMark {
   let resolved = inherited;
-  for (const style of runStyleChain(table, run)) resolved = merge(resolved, style.mark);
+  for (const style of characterStyleChain(table, run)) resolved = merge(resolved, style.mark);
   return markOf(merge(resolved, readMark(run, table.themeFonts)));
 }
 
