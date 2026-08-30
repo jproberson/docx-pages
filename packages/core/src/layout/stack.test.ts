@@ -2119,15 +2119,61 @@ describe("measureStack over a table taken out of the flow", () => {
 });
 
 describe("measureStack over a table's own lines", () => {
-  it("leaves each row half of every line drawn along its edges", () => {
+  it("stands each row under the whole of the line above it and over the whole of the one below", () => {
     const result = measure(linedTable(48));
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
-    // Six points of line, half of it inside the row at each edge and half outside.
+    // Six points of line at each edge, the head of it inside the row and the foot
+    // under the table.
     expect(result.boxes[0]?.topPt).toBeCloseTo(36 + 6, 9);
     expect(result.heightPt).toBeCloseTo(6 + ARIAL_12 + 6, 9);
   });
 
-  // The margin holds the text off the wall and the line stands inside that, so a
+  // **A line only one of the two rows either side of it asks for is room all the
+  // same, and the room is the lower row's.** Measured on 2026-08-29 by
+  // `probes/refused-line-room-probe.ts` over widths from a quarter point to twelve at
+  // three margins: four rows of an exact 20pt line held off their walls by 2.75pt
+  // stand 25.52 apart with no line at all, 31.52 apart lined at 6pt, and 28.72 apart
+  // where each of them refuses that same 6pt line at its top and asks for it at its
+  // foot, which is one margin and the whole line. Word paints the line in the room
+  // under the upper row's text, so it is the row below that clears it.
+  const refusingRows = (eighths: number, marginTwips: number) => {
+    const refuses =
+      `<w:tcBorders><w:top w:val="nil"/>` +
+      `<w:bottom w:val="single" w:sz="${String(eighths)}" w:color="FF0000"/></w:tcBorders>`;
+    const row = `<w:tr>${cell(`<w:p/>`, refuses)}</w:tr>`;
+    return `<w:tbl>${walls(marginTwips)}${row}${row}</w:tbl>`;
+  };
+
+  it("gives the row below a refused line the margin or the line, whichever reaches further", () => {
+    const wider = measure(refusingRows(48, 55));
+    if (wider.kind !== "measured") throw new Error(wider.blocker.kind);
+    expect((wider.boxes[1]?.topPt ?? 0) - (wider.boxes[0]?.topPt ?? 0)).toBeCloseTo(
+      ARIAL_12 + 2.75 + 6,
+      9,
+    );
+
+    const narrower = measure(refusingRows(12, 55));
+    if (narrower.kind !== "measured") throw new Error(narrower.blocker.kind);
+    expect((narrower.boxes[1]?.topPt ?? 0) - (narrower.boxes[0]?.topPt ?? 0)).toBeCloseTo(
+      ARIAL_12 + 2.75 + 2.75,
+      9,
+    );
+  });
+
+  it("gives the row below a line its neighbour refused the margin and the whole line", () => {
+    const asks =
+      `<w:tcBorders><w:top w:val="single" w:sz="48" w:color="FF0000"/>` +
+      `<w:bottom w:val="nil"/></w:tcBorders>`;
+    const row = `<w:tr>${cell(`<w:p/>`, asks)}</w:tr>`;
+    const result = measure(`<w:tbl>${walls(55)}${row}${row}</w:tbl>`);
+    if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    expect((result.boxes[1]?.topPt ?? 0) - (result.boxes[0]?.topPt ?? 0)).toBeCloseTo(
+      ARIAL_12 + 2.75 + 6 + 2.75,
+      9,
+    );
+  });
+
+  // The margin holds the text off the wall and the line stands outside that, so a
   // row lined either side is its margins, its text and the whole of both lines.
   it("adds a line to the margin the cell already asks for rather than the larger of the two", () => {
     const result = measure(linedTable(2, 144));
@@ -2138,9 +2184,12 @@ describe("measureStack over a table's own lines", () => {
   it("hands the page a rectangle for every cell, whatever its paragraphs did", () => {
     const result = measure(table(cell(`<w:p/><w:p/>`, lined(8)), cell(`<w:p/>`)));
     if (result.kind !== "measured") throw new Error(result.blocker.kind);
+    // The rectangle opens at the table's own top and the line hangs inside it, so a
+    // cell lined at its head is a whole line taller than its text rather than half of
+    // one, and the line is drawn in the same place either way.
     expect(result.cells.map((each) => [each.topPt, each.heightPt])).toStrictEqual([
-      [36.5, ARIAL_12 * 2 + 1],
-      [36.5, ARIAL_12 * 2 + 1],
+      [36, ARIAL_12 * 2 + 1],
+      [36, ARIAL_12 * 2 + 1],
     ]);
     expect(result.cells[0]?.borders.top?.widthPt).toBe(1);
     expect(result.cells[1]?.borders.top).toBeNull();

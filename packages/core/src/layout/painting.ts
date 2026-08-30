@@ -80,14 +80,19 @@ function linesOf(borders: Borders, rect: Rect, corners: Rect): readonly PaintedL
   });
 }
 
-// A cell's own colour and lines. The fill stops at the inner edge of each border,
-// since a border is centred on the cell's own edge and half of it falls inside.
+// A cell's own colour and lines, and the fill stops where the lines do.
+//
+// **Sideways a line straddles the cell's edge; downwards it hangs below it.** The
+// line between two rows stands in the lower of the two and the one under the last
+// row stands under the table, which is how the room for them is measured, so the
+// whole of a cell's top line falls inside it and the whole of its foot line falls
+// under it. `stack.ts` carries what was measured.
 export function paintOfCell(cell: PlacedCell): Painted {
   const { borders } = cell;
   const left = halfPt(borders.left);
   const right = halfPt(borders.right);
-  const top = halfPt(borders.top);
-  const bottom = halfPt(borders.bottom);
+  const top = borderExtentPt(borders.top);
+  const bottom = borderExtentPt(borders.bottom);
 
   const fills =
     cell.fillColor === null
@@ -98,18 +103,27 @@ export function paintOfCell(cell: PlacedCell): Painted {
             leftPt: cell.leftPt + left,
             topPt: cell.topPt + top,
             widthPt: Math.max(0, cell.widthPt - left - right),
-            heightPt: Math.max(0, cell.heightPt - top - bottom),
+            heightPt: Math.max(0, cell.heightPt - top),
           },
         ];
 
   return {
     fills,
-    lines: linesOf(borders, cell, {
-      leftPt: cell.leftPt - left,
-      topPt: cell.topPt - top,
-      widthPt: cell.widthPt + left + right,
-      heightPt: cell.heightPt + top + bottom,
-    }),
+    lines: linesOf(
+      borders,
+      {
+        leftPt: cell.leftPt,
+        topPt: cell.topPt + top / 2,
+        widthPt: cell.widthPt,
+        heightPt: cell.heightPt - top / 2 + bottom / 2,
+      },
+      {
+        leftPt: cell.leftPt - left,
+        topPt: cell.topPt,
+        widthPt: cell.widthPt + left + right,
+        heightPt: cell.heightPt + bottom,
+      },
+    ),
   };
 }
 

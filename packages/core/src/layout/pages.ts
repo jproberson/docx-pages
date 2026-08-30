@@ -1,5 +1,4 @@
 import { borderExtentPt } from "../docx/borders.js";
-import type { Border } from "../docx/borders.js";
 import { shiftBoxes, shiftCells } from "./stack.js";
 import type { AnchoredObject, ParagraphBox, PlacedCell, UntornRow } from "./stack.js";
 
@@ -482,21 +481,23 @@ function cellsOn(
     // where a page ends exactly where the next one takes up, which a torn row is
     // the case against: the room the row keeps above its text on the page below is
     // room the page above never had.
+    //
+    // **A row a break runs through keeps the line closing it inside the page**: the
+    // edge a cut leaves is a whole border in from where the page ends, since the
+    // line under a row hangs below it. Measured on 2026-08-10 by the authored
+    // `resuming` document, whose 3pt-bordered row was torn with 96pt of it on each
+    // page: Word drew the line closing the first piece over the last 2.88pt of the
+    // body and the one opening the second over the first 2.88pt of it.
     const cutPt = cell.topPt < nextPt && cell.topPt + cell.heightPt > nextPt ? footPt : nextPt;
-    const topPt = Math.max(cell.topPt, fromPt + halfPt(cell.borders.top));
-    const bottomPt = Math.min(cell.topPt + cell.heightPt, cutPt - halfPt(cell.borders.bottom));
+    const topPt = Math.max(cell.topPt, fromPt);
+    const bottomPt = Math.min(
+      cell.topPt + cell.heightPt,
+      cutPt - borderExtentPt(cell.borders.bottom),
+    );
     if (bottomPt - topPt <= 0) return [];
     return [{ ...cell, topPt: topPt - shiftPt, heightPt: bottomPt - topPt }];
   });
 }
-
-// **A row a break runs through keeps the line closing it inside the page**, at
-// both ends: the edge a cut leaves is half a border in from where the page ends
-// rather than on it. Measured on 2026-08-10 by the authored `resuming` document,
-// whose 3pt-bordered row was torn with 96pt of it on each page: Word drew the line
-// closing the first piece over the last 2.88pt of the body and the one opening the
-// second over the first 2.88pt of it.
-const halfPt = (border: Border | null): number => borderExtentPt(border) / 2;
 
 type Cut = {
   // The first of the paragraph's lines still to be placed, and the one whose own

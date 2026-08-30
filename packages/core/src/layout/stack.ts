@@ -1448,10 +1448,18 @@ const bandRound = (
   bottomPt: topPt + heightPt + twipsToPoints(positioning.bottomFromTextTwips),
 });
 
-// Half of a border falls outside the line it is centred on, so half of the ones
-// round the outside of a table falls outside the table. What stands where the
-// table goes is that outer edge: its first grid line is half its widest top
-// border below the flow, and half its widest left border in from its indent.
+// Half of a border falls outside the line it is centred on, so half of the widest
+// left border round the outside of a table falls outside it: its first grid line
+// stands that far in from its indent.
+//
+// **Down the page the lines do not straddle anything.** A line between two rows
+// stands in the lower of them and the line under the last row stands under the
+// table, which is why nothing is taken off the top here and the whole of the foot
+// is: measured on 2026-08-29 by `probes/refused-line-room-probe.ts`, where four
+// rows of an exact 20pt line lined with 6pt and held off no wall put their text at
+// 72, 98.16, 124.08 and 150, the lines at 76.08, 102, 127.92 and 154.08, and the
+// paragraph under the table at 176.16, which is a whole 6pt line under the last row
+// and not half of one.
 function measureTable(
   block: Table,
   context: Context,
@@ -1466,8 +1474,7 @@ function measureTable(
 
   const first = borders[0] ?? [];
   const last = borders[borders.length - 1] ?? [];
-  const outerTopPt = halfOf(first.map((cell) => cell.agreed.top));
-  const outerBottomPt = halfOf(last.map((cell) => cell.agreed.bottom));
+  const outerBottomPt = Math.max(0, ...last.map((cell) => borderExtentPt(cell.drawn.bottom)));
   const outerLeftPt = halfOf(borders.map((row) => row[0]?.drawn.left ?? null));
 
   // An old document's indent is measured to the text rather than to the table, so
@@ -1513,7 +1520,7 @@ function measureTable(
   }
 
   const heightsPt = rowHeights(block, measured, margins);
-  const placed = placeRows(block, measured, margins, heightsPt, topPt + outerTopPt, outerTopPt);
+  const placed = placeRows(block, measured, margins, heightsPt, topPt);
 
   // A cell is measured with no bands at all, so nothing inside a table can anchor
   // an object a page break has to make room for.
@@ -1523,7 +1530,7 @@ function measureTable(
     cells: placed.cells,
     untornRows: placed.untornRows,
     anchoredObjects: [],
-    heightPt: outerTopPt + heightsPt.reduce((total, each) => total + each, 0) + outerBottomPt,
+    heightPt: heightsPt.reduce((total, each) => total + each, 0) + outerBottomPt,
   };
 }
 
@@ -1536,6 +1543,20 @@ const leftMarginOf = (cell: TableCell, insets: TableInsets, borders: Borders): n
 // room the cells on both sides of it have to leave.
 const halfOf = (borders: readonly (Border | null)[]): number =>
   Math.max(0, ...borders.map((border) => borderExtentPt(border) / 2));
+
+// How far one cell holds its text below the line drawn above it, which is where the
+// whole of that line stands: what the row above keeps under its own text is its own
+// margin and nothing more.
+//
+// **A cell asking for the line stands its margin below the whole of it; a cell
+// refusing it stands the margin or the line below the row, whichever reaches
+// further.** Whether the neighbour above asked makes no difference to either: it is
+// the line that is drawn and the cell's own answer to it. Measured on 2026-08-29 by
+// `probes/refused-line-room-probe.ts`; `borders.ts` carries the cases.
+const roomAbovePt = (marginPt: number, cell: CellBorders): number => {
+  const linePt = borderExtentPt(cell.drawn.top);
+  return cell.asked.top === null ? Math.max(marginPt, linePt) : marginPt + linePt;
+};
 
 // A paragraph in the next cell or on the other side of a table is not a
 // neighbour: only what stands beside it in its own run of blocks is.
@@ -1562,12 +1583,10 @@ type MeasuredCell = {
 };
 
 // How far a row holds every cell in it off its own walls, which is the row's
-// business rather than any one cell's.
+// business rather than any one cell's. The line above the row is part of the first,
+// since that line stands inside it.
 type RowMargins = {
   readonly topPt: number;
-  // The cell's own margin at the foot, kept apart from the half of the line cleared
-  // after it, because a row told exactly how tall to be counts one and not the other.
-  readonly bottomCellPt: number;
   readonly bottomPt: number;
 };
 
@@ -1581,12 +1600,13 @@ type RowMargins = {
 // holds every cell in it off the top wall, and the largest bottom margin adds to
 // the row under all of them.
 //
-// **A border is room on top of the margin rather than instead of it.** The half of
-// the line that falls inside the cell is cleared, and then the margin is cleared
-// after it, so two rows lined with 6pt and held off their walls by 5 stand 36pt
-// apart and not 30. Measured on 2026-08-07 by the authored `lined-rows` document
-// over widths from half a point to six at two margins, and all eleven cases are the
-// margins either side plus the whole of the line between them.
+// **A border is room on top of the margin rather than instead of it, and the whole
+// of it stands in the row below it.** Two rows lined with 6pt and held off their
+// walls by 5 stand 36pt apart and not 30, and the 6pt of that is the lower row's:
+// the upper keeps its margin under its text and nothing else. Measured on 2026-08-07
+// by the authored `lined-rows` document over widths from half a point to six at two
+// margins, and again on 2026-08-29 by `probes/refused-line-room-probe.ts`, which
+// reads where the line is painted rather than only how far apart the rows are.
 //
 // What was here before took the larger of the two, which is right only where one of
 // them is nought, and every table in a real document is out by a line a row for it.
@@ -1607,11 +1627,10 @@ function measureRowCells(
     }
   | { readonly kind: "blocked"; readonly blocker: LayoutBlocker } {
   const measured: MeasuredCell[] = [];
-  const bottomCellPt = rowMarginPt(row, insets, "bottomTwips");
+  const topMarginPt = rowMarginPt(row, insets, "topTwips");
   const margins: RowMargins = {
-    topPt: rowMarginPt(row, insets, "topTwips") + halfOf(borders.map((of) => of.agreed.top)),
-    bottomCellPt,
-    bottomPt: bottomCellPt + halfOf(borders.map((of) => of.agreed.bottom)),
+    topPt: Math.max(topMarginPt, ...borders.map((of) => roomAbovePt(topMarginPt, of))),
+    bottomPt: rowMarginPt(row, insets, "bottomTwips"),
   };
 
   // A cell is measured from its own origin and only then moved down to the row, so
@@ -1680,7 +1699,7 @@ function rowHeights(
     );
     return rowHeightPt(row, contentHeightPt, {
       marginsPt: (margins[at]?.topPt ?? 0) + (margins[at]?.bottomPt ?? 0),
-      bottomCellMarginPt: margins[at]?.bottomCellPt ?? 0,
+      bottomMarginPt: margins[at]?.bottomPt ?? 0,
     });
   });
 
@@ -1716,7 +1735,6 @@ function placeRows(
   margins: readonly RowMargins[],
   heightsPt: readonly number[],
   topPt: number,
-  outerTopPt: number,
 ): {
   readonly boxes: readonly ParagraphBox[];
   readonly cells: readonly PlacedCell[];
@@ -1773,12 +1791,13 @@ function placeRows(
           ? { leftPt: cell.leftPt, topPt: rowTopPt, widthPt: cell.widthPt, heightPt: heldToPt }
           : null;
       // What the row draws above its own text where a page opens at it, which is
-      // what it drew above it on the page the table opened on: the table's own top
-      // border and the margin holding the cell's text off its wall. A table inside
-      // a cell adds its own to the one round it, which is what case e of `resuming`
-      // asks: the outer row states neither, and the page below the tear opens on
-      // the nested table's 3pt border.
-      const resumesUnderPt = outerTopPt + topMarginPt;
+      // what it drew above it on the page the table opened on: the line above the
+      // row and the margin holding the cell's text off its wall, both of which the
+      // row's own top margin already holds. A table inside a cell adds its own to
+      // the one round it, which is what case e of `resuming` asks: the outer row
+      // states neither, and the page below the tear opens on the nested table's 3pt
+      // border.
+      const resumesUnderPt = topMarginPt;
       // Its mirror: what the row keeps under the text, which a line has to leave free at
       // the foot of a page. A table inside a cell adds its own, as the top does.
       const keepsUnderPt = bottomMarginPt;
@@ -1834,9 +1853,8 @@ function rowMarginPt(row: TableRow, insets: TableInsets, side: "topTwips" | "bot
 }
 
 // **A stated height is a floor under the text and not under the row.** What the row
-// asks for stands instead of what its cells hold, and the margins holding them off
-// its walls are then cleared on top of that, the half of the line between two rows
-// that falls inside each of them included.
+// asks for stands instead of what its cells hold, and the room holding them off its
+// walls is then cleared on top of that, the line above the row included.
 //
 // Measured on 2026-08-07 by the authored `stated-row-heights` document, which asks
 // for 60pt a row against 20pt of text. Rows held off their walls by 5pt stand 70.08
@@ -1846,7 +1864,7 @@ function rowMarginPt(row: TableRow, insets: TableInsets, side: "topTwips" | "bot
 // three page document a fraction of a point at every row boundary in it.
 //
 // **A row saying it is exact is the stated height and the cell's own margin at the
-// foot, and the line between two rows takes no room in it at all.** The same document
+// foot, and the line above it takes no room in it at all.** The same document
 // says so over four cases: 60pt asked for came out 65.04 both with a 6pt line and
 // without one, so long as the cells were held off their walls by 5.04; and 60pt
 // exactly, line or no line, wherever they were held off by nothing.
@@ -1859,12 +1877,12 @@ function rowMarginPt(row: TableRow, insets: TableInsets, side: "topTwips" | "bot
 function rowHeightPt(
   row: TableRow,
   contentHeightPt: number,
-  margins: { readonly marginsPt: number; readonly bottomCellMarginPt: number },
+  margins: { readonly marginsPt: number; readonly bottomMarginPt: number },
 ): number {
   if (row.height === null) return margins.marginsPt + contentHeightPt;
   const askedPt = twipsToPoints(row.height.twips);
   return row.height.exact
-    ? margins.bottomCellMarginPt + askedPt
+    ? margins.bottomMarginPt + askedPt
     : margins.marginsPt + Math.max(contentHeightPt, askedPt);
 }
 

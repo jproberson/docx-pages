@@ -140,14 +140,29 @@ export function readTableBorders(properties: XmlElement | null): TableBorders {
   };
 }
 
-// A cell's lines: the one drawn along each of its sides, and the one it and its
-// neighbour both asked for.
+// A cell's lines, two ways over: the one it asks for itself once the table's own
+// have cascaded into it, and the one drawn along each of its sides, which is the
+// stronger of its ask and its neighbour's.
 //
-// They are not the same line. **A side that refuses a line its neighbour asks for
-// is still drawn one, and leaves no room for it**: measured on 2026-08-07 by the
-// authored `lined-rows` document, where four rows each refusing a line at their top
-// and asking for one at their foot stand exactly as far apart as four rows with no
-// lines at all, and Word draws the line between every pair of them all the same.
+// They are not the same line, and the room a line takes needs both. **The line
+// between two rows stands in the lower of them**, so what a row keeps above its text
+// answers for it and what the row above keeps below its own never does. Measured on
+// 2026-08-29 by `probes/refused-line-room-probe.ts`, four rows of an exact 20pt line
+// a case: a 6pt line between two rows held off no wall puts them 26pt apart, and Word
+// paints it in the 6pt under the upper row's text and over the lower row's own top.
+//
+// **A row asking for the line above it clears the whole of it and then its margin; a
+// row refusing it clears the margin or the line, whichever reaches further.** The
+// same twelve cases: at a 2.75pt margin a refused line of 0.25, 0.5 or 1.5pt leaves
+// the rows where no line at all does, one of 4pt puts them 6.72 apart and one of 12pt
+// 14.72, which is the margin and the whole line every time. A row that asks stands
+// the margin below the whole line whoever refused it: the same 6pt line refused from
+// above rather than below puts the rows 11.52 apart, margin, line and margin.
+//
+// A third answer stood here until then, the line the two sides had both asked for,
+// which was nothing wherever one of them refused. It was read off `lined-rows` case
+// `o`, whose line is a quarter of a point against a 2.75pt margin, where a refused
+// line and no line at all cannot be told apart.
 //
 // **What two sides asking for different widths agree to is a guess.** Every case
 // measured has the two the same, since a table states one `w:insideH` and both its
@@ -155,14 +170,14 @@ export function readTableBorders(properties: XmlElement | null): TableBorders {
 // nothing has asked Word whether the room follows the drawn line or the narrower
 // ask. A document where the two differ would settle it.
 export type CellBorders = {
+  readonly asked: Borders;
   readonly drawn: Borders;
-  readonly agreed: Borders;
 };
 
-// The lines round every cell of a table, each settled twice over: first through
-// the cascade, where a cell's own side stands instead of whatever the table asks
-// for at that edge, and then between neighbours, since the line between two cells
-// is one line and both of them have something to say about it.
+// The lines round every cell of a table, settled twice over: first through the
+// cascade, where a cell's own side stands instead of whatever the table asks for at
+// that edge, and then between neighbours, since the line between two cells is one
+// line and both of them have something to say about it.
 
 export function resolveCellBorders(
   rows: readonly (readonly StatedBorders[])[],
@@ -177,28 +192,14 @@ export function resolveCellBorders(
     })),
   );
 
-  // The edge of the table has no neighbour to agree with, so what the cell asked
-  // for there is the whole of the answer.
-  const agreedWith = (neighbour: Border | null | undefined, own: Border | null): Border | null =>
-    neighbour === undefined
-      ? own
-      : neighbour === null || own === null
-        ? null
-        : strongerBorder(neighbour, own);
-
   return cascaded.map((cells, row) =>
     cells.map((each, column) => ({
+      asked: each,
       drawn: {
         top: strongerBorder(cascaded[row - 1]?.[column]?.bottom ?? null, each.top),
         bottom: strongerBorder(each.bottom, cascaded[row + 1]?.[column]?.top ?? null),
         left: strongerBorder(cells[column - 1]?.right ?? null, each.left),
         right: strongerBorder(each.right, cells[column + 1]?.left ?? null),
-      },
-      agreed: {
-        top: agreedWith(cascaded[row - 1]?.[column]?.bottom, each.top),
-        bottom: agreedWith(cascaded[row + 1]?.[column]?.top, each.bottom),
-        left: agreedWith(cells[column - 1]?.right, each.left),
-        right: agreedWith(cells[column + 1]?.left, each.right),
       },
     })),
   );

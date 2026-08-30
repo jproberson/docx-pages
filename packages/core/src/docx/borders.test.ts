@@ -149,33 +149,35 @@ describe("resolveCellBorders", () => {
     expect(row?.[0]?.drawn.right?.color).toBe("#FF0000");
   });
 
-  // The line is drawn and no room is left for it, which is not the same answer:
-  // Word draws one between two rows where only the upper of them asks, and stands
-  // them exactly as far apart as two rows with no line at all.
+  // The line is drawn and the side that refused it still asked for none, which is
+  // what says whose room it is: `stack.ts` gives the whole of a line between two rows
+  // to the row below it, and a row that refused it clears the margin or the line
+  // rather than both.
   it("draws the line where one side asks for none and the other asks for one", () => {
     const [row] = resolveCellBorders(
       [[cellBorders(`<w:right w:val="nil"/>`), cellBorders(edge("left", 12, "0070C0"))]],
       NO_TABLE_BORDERS,
     );
     expect(row?.[0]?.drawn.right?.color).toBe("#0070C0");
-    expect(row?.[0]?.agreed.right).toBeNull();
-    expect(row?.[1]?.agreed.left).toBeNull();
+    expect(row?.[0]?.asked.right).toBeNull();
+    expect(row?.[1]?.asked.left?.color).toBe("#0070C0");
   });
 
-  it("leaves room for a line both sides asked for", () => {
+  it("hands both rows either side of a line the table asked for the same line", () => {
     const rows = resolveCellBorders(
       [[NOTHING], [NOTHING]],
       tableBorders(`<w:insideH w:val="single" w:sz="24" w:color="7030A0"/>`),
     );
-    expect(rows[0]?.[0]?.agreed.bottom?.widthPt).toBe(3);
-    expect(rows[1]?.[0]?.agreed.top?.widthPt).toBe(3);
+    expect(rows[0]?.[0]?.asked.bottom?.widthPt).toBe(3);
+    expect(rows[1]?.[0]?.asked.top?.widthPt).toBe(3);
   });
 
-  // Nothing stands on the other side of the table's own edge, so what the cell
-  // asked for there is agreed by default.
-  it("leaves room for the line round the outside of the table", () => {
+  // Nothing stands on the other side of the table's own edge, so what the cell asked
+  // for there is the whole of the answer.
+  it("hands the first row the line round the outside of the table", () => {
     const [row] = resolveCellBorders([[NOTHING]], tableBorders(edge("top", 24, "7030A0")));
-    expect(row?.[0]?.agreed.top?.widthPt).toBe(3);
+    expect(row?.[0]?.asked.top?.widthPt).toBe(3);
+    expect(row?.[0]?.drawn.top?.widthPt).toBe(3);
   });
 
   it("lets a cell asking for none rub out the table's own edge", () => {

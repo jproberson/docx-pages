@@ -23,10 +23,10 @@ const cellWith = (borders: Partial<Borders>, fillColor: string | null = null): P
 });
 
 describe("paintOfCell", () => {
-  it("centres each line on the edge it runs along", () => {
+  it("centres a line at the side on its edge and hangs one above or below under it", () => {
     const { lines } = paintOfCell(cellWith({ left: line(6), top: line(2) }));
     expect(lines.map((each) => [each.vertical, each.atPt, each.widthPt])).toStrictEqual([
-      [false, 200, 2],
+      [false, 201, 2],
       [true, 100, 6],
     ]);
   });
@@ -39,7 +39,7 @@ describe("paintOfCell", () => {
 
   it("draws a double line as the two bands it is", () => {
     const { lines } = paintOfCell(cellWith({ top: line(2, { style: "double" }) }));
-    expect(lines.map((each) => each.atPt)).toStrictEqual([198, 202]);
+    expect(lines.map((each) => each.atPt)).toStrictEqual([201, 205]);
   });
 
   it("stops the fill at the inner side of each line", () => {
