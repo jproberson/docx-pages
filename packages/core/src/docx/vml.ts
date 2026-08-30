@@ -765,6 +765,18 @@ function contentInGroupOf(
   const body = textBoxBodyOf(child, style);
   if (body !== null) return { kind: "text-box", body, paint: paintOf(child) };
 
+  // **A picture a group holds is drawn where the group stands it**, the same as one
+  // standing on its own: its `v:imagedata` names the part and states any crop, and the
+  // group's own box gives it its place. The corpus keeps two screenshots side by side
+  // in a floating group this way, and 36 documents hold such a group.
+  const image = imageOf(child);
+  if (image !== null) {
+    const relationshipId = attribute(image, R_NS, "id");
+    return relationshipId === undefined || relationshipId === "" || isTurned(style)
+      ? null
+      : { kind: "picture", relationshipId, crop: cropOf(image), paint: paintOf(child) };
+  }
+
   // The same reading `readLegacyDrawing` gives a shape standing on its own: its
   // paint, and the geometry its element name states. A group's own children are
   // where the corpus keeps most of its ovals and rounded rectangles.
@@ -774,7 +786,7 @@ function contentInGroupOf(
   // reads one, and a stake drawn upright where the file leans it over is a shape in
   // the wrong place rather than a shape half right.
   const geometry = NAMED_GEOMETRIES.get(child.name);
-  if (geometry === undefined || imageOf(child) !== null || isTurned(style)) return null;
+  if (geometry === undefined || isTurned(style)) return null;
   return { kind: "shape", paint: paintOf(child, geometry) };
 }
 

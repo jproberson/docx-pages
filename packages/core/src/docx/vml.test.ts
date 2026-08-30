@@ -392,6 +392,24 @@ describe("readAnchors over a drawing in the old form", () => {
       expect(child.content.paint.outline).toBeNull();
     });
 
+    // A group holds a picture where the corpus keeps two screenshots side by side,
+    // and 36 documents hold such a group. Its `v:imagedata` names the part and states
+    // any crop, and the group's own box gives it its place.
+    it("reads a child that is a picture out of its own imagedata", () => {
+      const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+      const picture =
+        `<v:shape type="#_x0000_t75" style="position:absolute;left:0;top:0;width:12240;height:1424">` +
+        `<v:imagedata xmlns:r="${R_NS}" r:id="rId7" cropleft="6554f"/></v:shape>`;
+      const anchor = only(anchorsOf(group(picture)));
+      if (anchor.content.kind !== "group") throw new Error("not a group");
+
+      const [child] = anchor.content.children;
+      if (child?.content.kind !== "picture") throw new Error("not a picture");
+      expect(child.content.relationshipId).toBe("rId7");
+      // 6554/65536 of the width is cropped off the left, which `cropOf` reads.
+      expect(child.content.crop.left).toBeCloseTo(6554 / 65536, 6);
+    });
+
     // **A shape the style turns is left undrawn rather than drawn straight.** Three
     // corpus documents state a `rotation` on 43 shapes between them, in fractions of
     // a degree, and nothing here reads one.
