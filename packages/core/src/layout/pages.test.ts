@@ -75,6 +75,7 @@ function stack(
       lines,
       marker: null,
       markTopPt: lines[lines.length - 1]?.topPt ?? top,
+      contentTopPt: lines[0]?.topPt ?? top,
       contentBottomPt: lineTop,
       widowControl,
       keepNext: false,
@@ -310,18 +311,25 @@ describe("breakStack", () => {
 
   // An empty paragraph as tall as the room its mark stands in, and one that keeps
   // room below itself as well.
-  const emptyAt = (index: number, topPt: number, markPt: number, afterPt = 0): ParagraphBox => ({
+  const emptyAt = (
+    index: number,
+    topPt: number,
+    markPt: number,
+    afterPt = 0,
+    abovePt = 0,
+  ): ParagraphBox => ({
     index,
     topPt,
     anchorTopPt: topPt,
     resumesUnderPt: 0,
     keepsUnderPt: 0,
     inACell: false,
-    heightPt: markPt + afterPt,
+    heightPt: abovePt + markPt + afterPt,
     lines: [],
     marker: null,
-    markTopPt: topPt,
-    contentBottomPt: topPt + markPt,
+    markTopPt: topPt + abovePt,
+    contentTopPt: topPt + abovePt,
+    contentBottomPt: topPt + abovePt + markPt,
     widowControl: false,
     keepNext: false,
     startsPage: false,
@@ -436,6 +444,7 @@ describe("breakStack over the room a paragraph asks for above itself", () => {
         topPt: index === at ? box.topPt : lower(box.topPt),
         heightPt: index === at ? box.heightPt + roomPt : box.heightPt,
         markTopPt: lower(box.markTopPt),
+        contentTopPt: lower(box.contentTopPt),
         contentBottomPt: lower(box.contentBottomPt),
         lines: box.lines.map((line) => ({
           ...line,
@@ -490,6 +499,62 @@ describe("breakStack over the room a paragraph asks for above itself", () => {
 
     expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
     expect(pages[1]?.boxes[0]?.lines[0]?.topPt).toBe(100);
+  });
+
+  // An empty paragraph draws no line to be seen at, and answers the same way. Measured
+  // on 2026-08-29 by `probes/empty-para-page-top-room-probe.ts`, the same four kinds of
+  // break with the paragraph opening the page empty as well as with a word in it: the
+  // line under it stood at the same place either way, and the room was kept only where a
+  // section break opened the page. `283b1cac1b6a` page 2 opens at one of these asking
+  // 3.9pt above itself, and every line of the page stood 3.9 low.
+  const emptyAsking = (index: number, topPt: number, abovePt: number, markPt: number) => ({
+    index,
+    topPt,
+    anchorTopPt: topPt,
+    resumesUnderPt: 0,
+    keepsUnderPt: 0,
+    inACell: false,
+    heightPt: abovePt + markPt,
+    lines: [],
+    marker: null,
+    markTopPt: topPt + abovePt,
+    contentTopPt: topPt + abovePt,
+    contentBottomPt: topPt + abovePt + markPt,
+    widowControl: false,
+    keepNext: false,
+    startsPage: false,
+    endsPage: false,
+    endsPageAtASection: false,
+    contentWidthPt: 0,
+    clipTo: null,
+    paint: null,
+  });
+
+  it("leaves it behind where an empty paragraph opened the page at the foot", () => {
+    const boxes = [...stack([[10]]), emptyAsking(1, 110, 18, 10)];
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 110 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
+    expect(pages[1]?.boxes[0]?.markTopPt).toBe(100);
+  });
+
+  it("leaves it behind where a break in the text opened the page at an empty paragraph", () => {
+    const boxes = [...asking(stack([[10]]), 0, { endsPage: true }), emptyAsking(1, 110, 18, 10)];
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
+    expect(pages[1]?.boxes[0]?.markTopPt).toBe(100);
+  });
+
+  it("keeps it where a section break opened the page at an empty paragraph", () => {
+    const boxes = [
+      ...asking(stack([[10]]), 0, { endsPage: true, endsPageAtASection: true }),
+      emptyAsking(1, 110, 18, 10),
+    ];
+    const pages = breakStack({ cells: [], boxes, topPt: 100, bottomPt: 200 });
+
+    expect(pages.map(indexesOn)).toStrictEqual([[0], [1]]);
+    expect(pages[1]?.boxes[0]?.markTopPt).toBe(118);
   });
 });
 

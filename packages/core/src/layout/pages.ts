@@ -232,9 +232,7 @@ function breakOnce(
       // of the page. So the paragraph's own top goes to the top of the page there,
       // and its first line's does everywhere else.
       const keepsRoomInShift = brokenAtASection && !box.startsPage && !carriedForward;
-      const opensAt = keepsRoomInShift
-        ? box.topPt
-        : (box.lines[0]?.topPt ?? box.topPt) - box.resumesUnderPt;
+      const opensAt = keepsRoomInShift ? box.topPt : box.contentTopPt - box.resumesUnderPt;
       // **A cell paragraph opening a page after an explicit break carries its room
       // above, where the flow drops it.** Measured on 2026-08-28 by
       // `probes/cell-after-break-room-probe.ts`: a cell paragraph after a
@@ -245,8 +243,7 @@ function breakOnce(
       // that carrying it moves no page. `13c3bf995db3` page 9 is a table opening after
       // one of these, and every line of it stood 4.6pt high. Its own section break
       // already keeps the room in the shift, so it is left out of this.
-      const roomPt =
-        !keepsRoomInShift && box.inACell ? (box.lines[0]?.topPt ?? box.topPt) - box.topPt : 0;
+      const roomPt = !keepsRoomInShift && box.inACell ? box.contentTopPt - box.topPt : 0;
       leave(opensAt, opens, box.index, broken || box.startsPage, roomPt);
     }
     broken = box.endsPage;
@@ -316,7 +313,10 @@ function breakOnce(
       // portrait pages landscape that way, and a real document lost a page to it.
       const roomPt = box.contentBottomPt - box.topPt;
       if (roomPt > 0 && overflows(box.topPt, roomPt)) {
-        shiftPt = box.topPt - opens.topPt - box.resumesUnderPt;
+        // The room the mark keeps above itself is left behind on the page below, as a
+        // paragraph with lines leaves its own: `contentTopPt` and not `topPt`. Measured
+        // on 2026-08-29 by `probes/empty-para-page-top-room-probe.ts`.
+        shiftPt = box.contentTopPt - opens.topPt - box.resumesUnderPt;
         open(opens, box.index);
       }
       put(partOf(box, 0, 0, shiftPt));
@@ -552,6 +552,7 @@ function partOf(box: ParagraphBox, from: number, to: number, shiftPt: number): P
     // The mark stands at the end of the paragraph, so it goes with the part that
     // holds the last of it.
     markTopPt: to === box.lines.length ? box.markTopPt - shiftPt : bottomPt,
+    contentTopPt: (from === 0 || first === undefined ? box.contentTopPt : first.topPt) - shiftPt,
     contentBottomPt:
       to === box.lines.length || last === undefined
         ? box.contentBottomPt - shiftPt

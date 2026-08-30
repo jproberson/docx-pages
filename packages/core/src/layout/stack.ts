@@ -173,6 +173,20 @@ export type ParagraphBox = {
   // one. A paragraph with no text draws nothing there and still holds the room,
   // and Word answers for it.
   readonly markTopPt: number;
+  // The head of the first thing the paragraph draws: its first line, or the room its
+  // mark stands in where it has none. A page opening at this paragraph opens at this
+  // rather than at its top, since the room a paragraph keeps above itself is left
+  // behind on the page it came from.
+  //
+  // **An empty paragraph leaves that room behind as any other does.** Measured on
+  // 2026-08-29 by `probes/empty-para-page-top-room-probe.ts`, twenty-four cases: a
+  // paragraph keeping six or twelve points above itself run down to the page foot, empty
+  // and with a word in it, on a page opened by the foot filling, by a break in the run
+  // above it, by `w:pageBreakBefore` and by a section break. The line under it stood 36pt
+  // below the body's top in every case but the section break's, where it stood the room
+  // lower. `283b1cac1b6a` page 2 opens at an empty paragraph asking 3.9pt above itself
+  // and every line of the page stood 3.9 low.
+  readonly contentTopPt: number;
   // The foot of the last thing the paragraph draws: its last line, or the room its
   // mark stands in where it has none. A page break is decided by this rather than
   // by the paragraph's whole height, since the room a paragraph keeps below itself
@@ -1928,6 +1942,7 @@ export const shiftBox = (box: ParagraphBox, byPt: number): ParagraphBox => ({
   topPt: box.topPt + byPt,
   anchorTopPt: box.anchorTopPt + byPt,
   markTopPt: box.markTopPt + byPt,
+  contentTopPt: box.contentTopPt + byPt,
   contentBottomPt: box.contentBottomPt + byPt,
   clipTo: box.clipTo === null ? null : { ...box.clipTo, topPt: box.clipTo.topPt + byPt },
   lines: box.lines.map((line) => ({
@@ -2542,6 +2557,7 @@ function droppedPast(box: ParagraphBox, input: LayOutParagraphInput, across: Spa
   return {
     ...box,
     heightPt: box.heightPt + byPt,
+    contentTopPt: box.contentTopPt + byPt,
     contentBottomPt: box.contentBottomPt + byPt,
     markTopPt: box.markTopPt + byPt,
     lines:
@@ -2607,6 +2623,7 @@ function layOutWholeParagraph(
       lines: [],
       marker: null,
       markTopPt: input.topPt,
+      contentTopPt: input.topPt,
       contentBottomPt: input.topPt,
       resumesUnderPt: 0,
       keepsUnderPt: 0,
@@ -2668,6 +2685,7 @@ function layOutWholeParagraph(
       // not fit either, opened a second page. Two corpus documents of one template
       // turn on it, each opening a page for a mark that missed the foot by two
       // tenths of a point.
+      contentTopPt: slot.topPt,
       contentBottomPt: slot.topPt + height.fittingHeightPt,
       resumesUnderPt: 0,
       keepsUnderPt: 0,
@@ -2715,6 +2733,7 @@ function layOutWholeParagraph(
     lines: placed,
     marker: markerAt(number, placed[0]?.baselinePt ?? input.topPt),
     markTopPt: last === undefined ? input.topPt : last.slot.topPt + last.height.seatPt,
+    contentTopPt: placed[0]?.topPt ?? input.topPt,
     contentBottomPt: bottomPt,
     resumesUnderPt: 0,
     keepsUnderPt: 0,

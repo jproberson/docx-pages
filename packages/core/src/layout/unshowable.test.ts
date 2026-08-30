@@ -79,6 +79,7 @@ const paragraphOf = (lines: readonly PlacedLine[], index = 0): ParagraphBox => (
   lines,
   marker: null,
   markTopPt: lines[0]?.topPt ?? 0,
+  contentTopPt: lines[0]?.topPt ?? 0,
   contentBottomPt: (lines[0]?.topPt ?? 0) + HEIGHT_PT * lines.length,
   widowControl: true,
   keepNext: false,
